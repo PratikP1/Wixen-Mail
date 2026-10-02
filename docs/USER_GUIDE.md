@@ -143,9 +143,11 @@ account is the one.
 
 ### Emptying the Trash
 
-An IMAP account's editor has a choice on its connection page, "Empty the Trash
-(experimental)", reached with `Alt+Y`. It offers Never, After 15 days and After
-30 days, and it is Never for every account until you choose.
+An account's editor has a choice on its connection page, "Empty the Trash
+(experimental)", reached with `Alt+Y`. It offers Never, When Wixen Mail closes,
+After 15 days and After 30 days, and it is Never for every account until you
+choose. A POP account has it as well, described in
+[A POP account's Trash](#a-pop-accounts-trash) below.
 
 With After 15 days or After 30 days, the first time each day that Wixen Mail
 checks the whole account for mail, it takes off the mail server every message
@@ -176,6 +178,43 @@ counts from that day.
 
 When it takes something, you hear one sentence for the account, for example:
 "Emptied 12 messages from Trash in Work that had been there more than 30 days."
+
+#### When Wixen Mail closes
+
+With When Wixen Mail closes, the Trash is emptied as you close Wixen Mail,
+however long each message has been in it, and never at a check.
+
+- It happens only when Wixen Mail really closes. Closing the window while Wixen
+  Mail keeps running in the notification area empties nothing.
+- The window goes at once. The emptying happens after it, in at most five
+  seconds for every account together, and then Wixen Mail signs off as before.
+- Nothing is said as it closes. The log notes, for each account, how many
+  messages were emptied and how many were left.
+- If the five seconds run out, the message being taken off at that moment is
+  sent at the first check after you start Wixen Mail again, before that check
+  reads any folder. The rest stay in the Trash for the next close.
+- A very full Trash can take several closes to empty. Empty Folder on the Trash
+  empties it at once.
+- If Allow Changes does not let the account change mail, or the account does
+  not say which of its folders is its Trash, nothing is emptied when Wixen Mail
+  closes, and the account's first check of the day says so.
+
+#### A POP account's Trash
+
+A POP account keeps its Trash on this computer, one Trash shared by every POP
+account. Emptying it never touches the POP server: whether a message leaves
+the server is decided by the account's own "Leave mail on the server after
+downloading it" and "Then remove it after this many days" settings, as before.
+
+- Each account empties only the messages it put in the shared Trash.
+- After 15 or 30 days is done at the start of the account's first check of the
+  day, before Wixen Mail connects to the POP server, so a server that cannot be
+  reached does not stop it. When Wixen Mail closes is done as it closes, POP
+  accounts first.
+- If "Let me delete mail on this computer" is off for the account, nothing is
+  emptied, and the check says so once that day.
+- Messages that were in the Trash before this version belong to no account,
+  so no account's setting empties them. Empty Folder on the Trash does.
 
 Gmail and Microsoft accounts are not offered the choice, because their
 providers empty the Trash themselves: Gmail 30 days after a message goes into

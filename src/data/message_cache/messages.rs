@@ -781,6 +781,10 @@ impl MessageCache {
     /// and a message somebody deleted is marked and hidden, and both are still
     /// mail this computer has had. Reading only the inbox downloads them again
     /// on the very next check, so deleting POP mail would put it straight back.
+    ///
+    /// The account's own folders and the rows it put in a folder every
+    /// account shares, which name the account in `original_account_id`
+    /// (13-44.7, D18): the shared Trash is where a POP delete goes.
     pub fn pop_uidls_for_account(
         &self,
         account_id: &str,
@@ -790,7 +794,8 @@ impl MessageCache {
             .prepare_cached(
                 "SELECT m.pop_uidl FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
-                 WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL",
+                 WHERE (f.account_id = ?1 OR m.original_account_id = ?1)
+                   AND m.pop_uidl IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
         stmt.query_map(params![account_id], |row| row.get::<_, String>(0))
@@ -814,7 +819,8 @@ impl MessageCache {
             .prepare_cached(
                 "SELECT m.pop_uidl, m.downloaded_at FROM messages m
                  INNER JOIN folders f ON m.folder_id = f.id
-                 WHERE f.account_id = ?1 AND m.pop_uidl IS NOT NULL
+                 WHERE (f.account_id = ?1 OR m.original_account_id = ?1)
+                   AND m.pop_uidl IS NOT NULL
                    AND m.downloaded_at IS NOT NULL",
             )
             .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
@@ -884,9 +890,16 @@ impl MessageCache {
 
     /// The move both of the above are.
     ///
-    /// `origin` is `None` for an ordinary move, which leaves both origin
-    /// columns exactly as they were: a message moved to the Trash after the
-    /// merge must not lose the record of where the merge found it.
+    /// `origin` is `None` for an ordinary move, which never overwrites the
+    /// origin columns: a message moved to the Trash after the merge must not
+    /// lose the record of where the merge found it.
+    ///
+    /// Since 13-44.7 an ordinary move records whose it was the first time a
+    /// row leaves a folder stored under an account for one every account
+    /// shares, and only while the columns are empty (D18). A POP message
+    /// deleted here goes to the shared Trash, which names no account, and
+    /// without the record the next check could not tell it had already
+    /// downloaded the message, nor could the account's own setting empty it.
     fn move_message_from(
         &self,
         message_id: i64,
@@ -900,6 +913,10 @@ impl MessageCache {
             WrittenDownAs::FiledHereCountingDownFromTheTop => {
                 self.next_reserved_uid(into_folder)?
             }
+        };
+        let origin = match origin {
+            Some(merged_from) => Some(merged_from.to_string()),
+            None => self.the_account_leaving_for_a_shared_folder(message_id, into_folder)?,
         };
         // Set, never cleared. Moving a copy of a sent message into the Trash
         // on this computer leaves it a copy this program filed, and clearing
@@ -926,6 +943,33 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to move the message: {}", e)))?;
 
         Ok(Renumbering { was, now: uid })
+    }
+
+    /// The account whose own folder a row is leaving, when it moves into a
+    /// folder every account shares, or `None` for any other move.
+    fn the_account_leaving_for_a_shared_folder(
+        &self,
+        message_id: i64,
+        into_folder: i64,
+    ) -> Result<Option<String>> {
+        use crate::application::local_folders::is_this_computer;
+        let leaving: Option<(String, Option<String>)> = self
+            .conn
+            .query_row(
+                "SELECT f.account_id, (SELECT account_id FROM folders WHERE id = ?2)
+                 FROM messages m JOIN folders f ON m.folder_id = f.id
+                 WHERE m.id = ?1",
+                params![message_id, into_folder],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("Whose message is moving could not be read: {e}")))?;
+        Ok(match leaving {
+            Some((from, Some(into))) if is_this_computer(&into) && !is_this_computer(&from) => {
+                Some(from)
+            }
+            _ => None,
+        })
     }
 
     /// What number a message holds, or `None` if there is no such message.

@@ -36,6 +36,8 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 
 use crate::application::allowed::SETTINGS_SECTION;
 use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
+use crate::application::local_delete;
+use crate::application::local_folders::{self, LocalDelete};
 use crate::application::moves_waiting::{
     APushUnderWay, DeletedHereThenAtTheServer, ReplaysAMove, delete_here_then_at_the_server,
 };
@@ -43,9 +45,10 @@ use crate::application::what_rules_tell_the_server::{Because, ForTheChange, Unti
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
 use crate::common::types::{FolderType, Protocol};
-use crate::data::message_cache::MessageCache;
+use crate::data::account::Account;
 use crate::data::message_cache::in_the_trash::InTheTrash;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
+use crate::data::message_cache::{CachedFolder, MessageCache};
 use crate::service::caldav::how_many;
 use crate::service::outward;
 
@@ -56,6 +59,9 @@ pub enum WhenTheTrashIsEmptied {
     /// emptying the Trash cannot be undone (D1).
     #[default]
     Never,
+    /// Everything in the Trash, as Wixen Mail really closes, within a few
+    /// seconds, and never at a check (13-44.7, D19 and D23).
+    WhenWixenMailCloses,
     /// What went into the Trash here more than 15 days ago.
     After15Days,
     /// What went into the Trash here more than 30 days ago.
@@ -64,7 +70,12 @@ pub enum WhenTheTrashIsEmptied {
 
 impl WhenTheTrashIsEmptied {
     /// Every answer, in the order the choice offers them.
-    pub const ALL: [Self; 3] = [Self::Never, Self::After15Days, Self::After30Days];
+    pub const ALL: [Self; 4] = [
+        Self::Never,
+        Self::WhenWixenMailCloses,
+        Self::After15Days,
+        Self::After30Days,
+    ];
 
     /// Read back from the word stored, where a word this build does not know
     /// reads as Never, the safe end (D11).
@@ -79,6 +90,7 @@ impl WhenTheTrashIsEmptied {
     pub fn as_stored(self) -> &'static str {
         match self {
             Self::Never => "never",
+            Self::WhenWixenMailCloses => "when_wixen_mail_closes",
             Self::After15Days => "after_15_days",
             Self::After30Days => "after_30_days",
         }
@@ -88,6 +100,7 @@ impl WhenTheTrashIsEmptied {
     pub fn said(self) -> &'static str {
         match self {
             Self::Never => "Never",
+            Self::WhenWixenMailCloses => "When Wixen Mail closes",
             Self::After15Days => "After 15 days",
             Self::After30Days => "After 30 days",
         }
@@ -97,7 +110,7 @@ impl WhenTheTrashIsEmptied {
     /// `None` for an answer that empties nothing on a schedule.
     pub fn days(self) -> Option<i64> {
         match self {
-            Self::Never => None,
+            Self::Never | Self::WhenWixenMailCloses => None,
             Self::After15Days => Some(15),
             Self::After30Days => Some(30),
         }
@@ -256,11 +269,38 @@ pub fn what_the_emptying_said(
     days: i64,
     came_to: &WhatTheEmptyingCameTo,
 ) -> Option<String> {
+    the_emptying_in_words(
+        &format!("from {folder_name} in {account_name}"),
+        days,
+        came_to,
+    )
+}
+
+/// The one sentence a POP account's emptying says, naming the account and
+/// saying the Trash is the one on this computer (13-44.7, D5).
+fn what_emptying_here_said(
+    account_name: &str,
+    days: i64,
+    came_to: &WhatTheEmptyingCameTo,
+) -> Option<String> {
+    the_emptying_in_words(
+        &format!("of {account_name}'s from the Trash on this computer"),
+        days,
+        came_to,
+    )
+}
+
+/// The sentence, with where the messages were emptied from in words.
+fn the_emptying_in_words(
+    emptied_from: &str,
+    days: i64,
+    came_to: &WhatTheEmptyingCameTo,
+) -> Option<String> {
     if *came_to == WhatTheEmptyingCameTo::default() {
         return None;
     }
     let emptied = format!(
-        "Emptied {} from {folder_name} in {account_name} that had been there more than {days} days",
+        "Emptied {} {emptied_from} that had been there more than {days} days",
         how_many(came_to.emptied, "message")
     );
     let kept_waiting = (came_to.kept_waiting > 0).then(|| {
@@ -291,6 +331,66 @@ pub fn what_the_emptying_said(
     Some(format!("{}.", clauses.join("; ")))
 }
 
+/// Where an account keeps deleted mail on this computer, as the menu's
+/// Delete finds it (D9).
+enum TheTrashHere {
+    /// The account has never listed its folders.
+    NotKnownYet,
+    /// None of its folders is the one deleted mail goes to.
+    NotRecognised,
+    Found(CachedFolder),
+}
+
+/// Find this account's Trash the way the menu's Delete finds it.
+fn the_trash_of(cache: &MessageCache, account_id: &str) -> Result<TheTrashHere> {
+    let folders = cache.get_folders_for_account(account_id)?;
+    let goes_to = where_a_deleted_message_goes(
+        folders.iter().map(|folder| {
+            (
+                folder.path.as_str(),
+                FolderType::from_stored(&folder.folder_type),
+            )
+        }),
+        "",
+        Deleting::ToTrash,
+    );
+    Ok(match goes_to {
+        DeletedGoesTo::NoFoldersKnownYet => TheTrashHere::NotKnownYet,
+        DeletedGoesTo::TheTrash(trash_path) => folders
+            .iter()
+            .find(|folder| folder.path == trash_path)
+            .cloned()
+            .map_or(TheTrashHere::NotRecognised, TheTrashHere::Found),
+        DeletedGoesTo::NoTrashFolderFound | DeletedGoesTo::OffTheServer => {
+            TheTrashHere::NotRecognised
+        }
+    })
+}
+
+/// What a check says of an account set to When Wixen Mail closes whose
+/// Trash the close will not empty, or `None` when the close will (D26).
+/// Worded as what will not happen, because nothing is said at close and
+/// silence would read as working.
+fn why_closing_will_not_empty_it(
+    trash: Option<&CachedFolder>,
+    account_name: &str,
+    allowed_mail: bool,
+) -> Option<String> {
+    match trash {
+        None => Some(format!(
+            "Nothing will be emptied in {account_name} when Wixen Mail closes. {NO_TRASH_TO_EMPTY}"
+        )),
+        Some(trash) if outward::permitted(allowed_mail, "empty the Trash").is_err() => {
+            Some(format!(
+                "Nothing will be emptied from {} in {account_name} when Wixen Mail closes, \
+                 because {SETTINGS_SECTION} does not let this account change mail.",
+                trash.name
+            ))
+        }
+        Some(_) => None,
+    }
+}
+
 /// What the check says when Allow Changes keeps this account's Trash as it
 /// is, once a day. Worded here rather than taken from `outward::refusal`,
 /// whose words are about sending and deleting at a key.
@@ -316,6 +416,11 @@ fn nothing_emptied_with_changes_off(folder_name: &str, account_name: &str) -> St
 /// said at most once a day; it is not used by an account this program does
 /// not empty, nor by one that has never listed its folders, which says
 /// nothing (D9).
+///
+/// An account set to When Wixen Mail closes is never emptied here (13-44.7,
+/// D23). Nothing is said at close, so its check says, once a day, what will
+/// stop the close emptying it: no Trash recognised, or Allow Changes closed
+/// (D26). With neither, it says nothing and uses no day.
 pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
@@ -325,31 +430,25 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     now: DateTime<Utc>,
     today: NaiveDate,
 ) -> Result<Option<String>> {
-    let Some(days) = when
-        .days()
-        .filter(|_| account.who_empties == WhoEmptiesTheTrash::ThisProgram)
-    else {
+    if when == WhenTheTrashIsEmptied::Never
+        || account.who_empties != WhoEmptiesTheTrash::ThisProgram
+    {
         return Ok(None);
-    };
+    }
     if cache.the_trash_was_last_emptied_on(account.id)? == Some(today) {
         return Ok(None);
     }
-    let folders = cache.get_folders_for_account(account.id)?;
-    let trash = match where_a_deleted_message_goes(
-        folders.iter().map(|folder| {
-            (
-                folder.path.as_str(),
-                FolderType::from_stored(&folder.folder_type),
-            )
-        }),
-        "",
-        Deleting::ToTrash,
-    ) {
-        DeletedGoesTo::NoFoldersKnownYet => return Ok(None),
-        DeletedGoesTo::TheTrash(trash_path) => {
-            folders.iter().find(|folder| folder.path == trash_path)
+    let trash = match the_trash_of(cache, account.id)? {
+        TheTrashHere::NotKnownYet => return Ok(None),
+        TheTrashHere::NotRecognised => None,
+        TheTrashHere::Found(trash) => Some(trash),
+    };
+    let Some(days) = when.days() else {
+        let why = why_closing_will_not_empty_it(trash.as_ref(), account.name, allowed_mail);
+        if why.is_some() {
+            cache.the_trash_was_emptied_on(account.id, today)?;
         }
-        DeletedGoesTo::NoTrashFolderFound | DeletedGoesTo::OffTheServer => None,
+        return Ok(why);
     };
     cache.the_trash_was_emptied_on(account.id, today)?;
     let Some(trash) = trash else {
@@ -394,11 +493,395 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     ))
 }
 
+// ── A POP account's Trash, on this computer (13-44.7) ──────────────────────
+
+/// Empty a POP account's Trash on this computer of its own messages that are
+/// due, at the start of its check, before the POP server is dialled, and
+/// answer the sentence to say, if any (D5, D22).
+///
+/// The Trash is the one every account shares, where Delete moves a POP
+/// message, and only what this account put there is taken (D18). Each
+/// message goes through [`local_delete::perform`], the delete Empty Folder
+/// uses there: marked deleted here, keeping its identifier and its download
+/// time, so the next check does not download it again and the account's own
+/// removal setting still counts from it. The POP server is never asked. A
+/// refusal, "Let me delete mail on this computer" off, ends it with one
+/// sentence. Once a day and at most [`AT_MOST_IN_A_DAY`], as an IMAP
+/// account's check is.
+///
+/// Set to When Wixen Mail closes, a check empties nothing and says, once a
+/// day, only what will stop the close emptying it (D23, D26).
+pub fn empty_the_trash_here_at_a_pop_check(
+    cache: &MessageCache,
+    account: &Account,
+    when: WhenTheTrashIsEmptied,
+    now: DateTime<Utc>,
+    today: NaiveDate,
+) -> Result<Option<String>> {
+    if when == WhenTheTrashIsEmptied::Never {
+        return Ok(None);
+    }
+    if cache.the_trash_was_last_emptied_on(&account.id)? == Some(today) {
+        return Ok(None);
+    }
+    let Some(trash) = the_trash_here_of(cache, account)? else {
+        return Ok(None);
+    };
+    let Some(days) = when.days() else {
+        let why = why_closing_will_not_empty_the_trash_here(&trash, account);
+        if why.is_some() {
+            cache.the_trash_was_emptied_on(&account.id, today)?;
+        }
+        return Ok(why);
+    };
+    cache.the_trash_was_emptied_on(&account.id, today)?;
+    let due = what_is_due(
+        &cache.what_this_account_put_in_the_shared_trash(trash.id, &account.id)?,
+        days,
+        now,
+    );
+    let mut came_to = WhatTheEmptyingCameTo::default();
+    let mut tried = 0;
+    for message in due.iter().take(AT_MOST_IN_A_DAY) {
+        tried += 1;
+        match take_it_off_this_computer(cache, account, message.row)? {
+            TakenHere::Emptied => came_to.emptied += 1,
+            TakenHere::Refused(why) => {
+                return Ok(Some(format!(
+                    "Nothing was emptied from the Trash on this computer for {}. {why}",
+                    account.name
+                )));
+            }
+            TakenHere::NotOnThisComputer => came_to.left_for_another_day += 1,
+        }
+    }
+    came_to.left_for_another_day += due.len() - tried;
+    Ok(what_emptying_here_said(&account.name, days, &came_to))
+}
+
+/// The Trash on this computer an account's deleted mail goes to, the one
+/// every account shares, or `None` when it keeps none here or it has not
+/// been made yet.
+fn the_trash_here_of(cache: &MessageCache, account: &Account) -> Result<Option<CachedFolder>> {
+    let Some(path) = local_folders::local_trash(account.protocol()) else {
+        return Ok(None);
+    };
+    cache.get_folder(local_folders::stored_under(&path, &account.id), &path)
+}
+
+/// What one delete on this computer came to.
+enum TakenHere {
+    Emptied,
+    /// Refused, with the words the refusal gave.
+    Refused(String),
+    /// Not a folder on this computer after all, so nothing was done.
+    NotOnThisComputer,
+}
+
+/// Take one message out of a Trash on this computer through the delete
+/// Empty Folder uses, deciding nothing it decides.
+fn take_it_off_this_computer(
+    cache: &MessageCache,
+    account: &Account,
+    message_row_id: i64,
+) -> Result<TakenHere> {
+    Ok(
+        match local_delete::perform(cache, account, message_row_id, Deleting::ToTrash)? {
+            Some(outcome) if outcome.message_left_the_folder => TakenHere::Emptied,
+            Some(refused) => TakenHere::Refused(refused.said),
+            None => TakenHere::NotOnThisComputer,
+        },
+    )
+}
+
+/// What a check says of a POP account set to When Wixen Mail closes whose
+/// Trash on this computer the close will not empty, in the words the delete
+/// itself refuses with (D26).
+fn why_closing_will_not_empty_the_trash_here(
+    trash: &CachedFolder,
+    account: &Account,
+) -> Option<String> {
+    match local_folders::deleting(
+        &trash.path,
+        account.protocol(),
+        Deleting::ToTrash,
+        account.allow_deleting_here,
+    ) {
+        Some(LocalDelete::Refuse(why)) => Some(format!(
+            "Nothing will be emptied from the Trash on this computer for {} when Wixen Mail \
+             closes. {why}",
+            account.name
+        )),
+        _ => None,
+    }
+}
+
+// ── When Wixen Mail closes (13-44.7) ───────────────────────────────────────
+
+/// What opens the session an account's Trash is emptied on as Wixen Mail
+/// closes.
+///
+/// A seam of its own rather than `moves_waiting::OpensASession`, whose
+/// session has to answer for a crossing between two accounts as well; an
+/// emptying asks only what [`ReplaysAMove`] asks. The program's answer is
+/// [`crate::application::mail_session::TheAccountsSetUpHere`], signing in
+/// through `mail_session::the_session_at`. The session is whatever holds
+/// one, the shared session the program keeps per account.
+pub(crate) trait OpensTheSessionToEmpty {
+    type Session: std::ops::Deref<Target: ReplaysAMove + Sized>;
+    async fn session_for(&self, account_id: &str) -> Result<Self::Session>;
+}
+
+impl OpensTheSessionToEmpty for crate::application::mail_session::TheAccountsSetUpHere<'_> {
+    type Session = std::sync::Arc<crate::application::mail_controller::MailController>;
+
+    async fn session_for(&self, account_id: &str) -> Result<Self::Session> {
+        let account = self
+            .0
+            .iter()
+            .find(|account| account.id == account_id)
+            .ok_or_else(|| {
+                crate::common::Error::Other(format!(
+                    "The account {account_id} is no longer set up here"
+                ))
+            })?;
+        crate::application::mail_session::the_session_at(account).await
+    }
+}
+
+/// An account as the close sees it: what was chosen for its Trash and what
+/// lets it be emptied.
+#[derive(Debug, Clone, Copy)]
+pub struct AnAccountToEmpty<'a> {
+    /// The account as it is set up here, whole, because a POP account's
+    /// Trash is emptied through the delete Empty Folder uses, which reads
+    /// its protocol and whether it may delete mail on this computer.
+    pub account: &'a Account,
+    /// What the account editor stored for its Trash.
+    pub answer: WhenTheTrashIsEmptied,
+    /// Who empties its Trash, from the one check.
+    pub who_empties: WhoEmptiesTheTrash,
+    /// Whether Allow Changes lets this account change mail.
+    pub allowed_mail: bool,
+}
+
+/// What closing did with one account's Trash, for the log (D21).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WhatTheCloseDid {
+    pub account_name: String,
+    /// Taken off the server, or off this computer for POP.
+    pub emptied: usize,
+    /// Made here and kept in the queue, for the next start's first check.
+    pub waiting: usize,
+    /// Still in the Trash, untouched, for the next close.
+    pub left: usize,
+}
+
+/// The log's line for what closing did with one account's Trash: the
+/// account and three counts, never a subject (D21).
+pub fn what_the_close_did_for_the_log(did: &WhatTheCloseDid) -> String {
+    format!(
+        "On the way out, the Trash in {}: {} emptied, {} waiting for the next check, {} left for \
+         the next close.",
+        did.account_name, did.emptied, did.waiting, did.left
+    )
+}
+
+impl WhatTheCloseDid {
+    /// Counted from what the deletes came to, out of what the Trash held:
+    /// whatever was neither emptied nor kept waiting is still there.
+    fn of(account_name: &str, in_the_trash: usize, came_to: &WhatTheEmptyingCameTo) -> Self {
+        Self {
+            account_name: account_name.to_string(),
+            emptied: came_to.emptied,
+            waiting: came_to.kept_waiting,
+            left: in_the_trash.saturating_sub(came_to.emptied + came_to.kept_waiting),
+        }
+    }
+}
+
+impl AnAccountToEmpty<'_> {
+    /// Whether closing empties this account's Trash: set to When Wixen Mail
+    /// closes, a Trash this program empties, and, for a Trash at a server,
+    /// Allow Changes letting it change mail (D23, D26). A POP account's
+    /// Trash is on this computer and its own delete answers for it. A
+    /// refusal is not said here; the account's check says it.
+    fn is_emptied_on_the_way_out(&self) -> bool {
+        self.answer == WhenTheTrashIsEmptied::WhenWixenMailCloses
+            && self.who_empties == WhoEmptiesTheTrash::ThisProgram
+            && (self.is_emptied_here()
+                || outward::permitted(self.allowed_mail, "empty the Trash").is_ok())
+    }
+
+    /// Whether its Trash is on this computer, which is a POP account's.
+    fn is_emptied_here(&self) -> bool {
+        self.account.protocol() == Protocol::Pop3
+    }
+}
+
+/// What one account's emptying at close came to, for the log, with a
+/// failure written there rather than ending the close.
+fn the_close_did(
+    account: &Account,
+    emptying: Result<Option<WhatTheCloseDid>>,
+) -> Option<WhatTheCloseDid> {
+    emptying
+        .inspect_err(|why| {
+            tracing::warn!(
+                "The Trash of {} could not be emptied on the way out: {why}",
+                account.name
+            );
+        })
+        .ok()
+        .flatten()
+}
+
+/// Empty, as Wixen Mail closes, the Trash of every account set to When Wixen
+/// Mail closes, returning by `deadline` whatever the servers do (D19, D20).
+///
+/// One deadline for every account together, read before each message and
+/// bounding every wait, so a server that has gone quiet costs the limit and
+/// no more. Each message is made here and sent before the next is touched:
+/// at the limit the one in flight is left waiting in the store the next
+/// start's first check replays before it lists anything, and the rest stay
+/// in the Trash, untouched, for the next close. One answer per account
+/// whose Trash held something, for the log; nothing is said (D21).
+///
+/// POP accounts first, since their Trash is on this computer and needs no
+/// network, so a quiet server cannot spend the limit before them (D22).
+pub(crate) async fn empty_on_the_way_out<O: OpensTheSessionToEmpty>(
+    opener: &O,
+    cache: &MessageCache,
+    accounts: &[AnAccountToEmpty<'_>],
+    deadline: tokio::time::Instant,
+) -> Vec<WhatTheCloseDid> {
+    let (here, at_a_server): (Vec<&AnAccountToEmpty<'_>>, Vec<&AnAccountToEmpty<'_>>) = accounts
+        .iter()
+        .filter(|to_empty| to_empty.is_emptied_on_the_way_out())
+        .partition(|to_empty| to_empty.is_emptied_here());
+    let mut did: Vec<WhatTheCloseDid> = here
+        .into_iter()
+        .filter_map(|to_empty| {
+            the_close_did(
+                to_empty.account,
+                empty_one_trash_here_on_the_way_out(cache, to_empty.account, deadline),
+            )
+        })
+        .collect();
+    for to_empty in at_a_server {
+        let emptying =
+            empty_one_imap_trash_on_the_way_out(opener, cache, to_empty.account, deadline).await;
+        did.extend(the_close_did(to_empty.account, emptying));
+    }
+    did
+}
+
+/// One POP account's Trash on this computer, of its own messages, emptied
+/// through the delete Empty Folder uses, the deadline read before each.
+fn empty_one_trash_here_on_the_way_out(
+    cache: &MessageCache,
+    account: &Account,
+    deadline: tokio::time::Instant,
+) -> Result<Option<WhatTheCloseDid>> {
+    let Some(trash) = the_trash_here_of(cache, account)? else {
+        return Ok(None);
+    };
+    let in_the_trash = cache.what_this_account_put_in_the_shared_trash(trash.id, &account.id)?;
+    if in_the_trash.is_empty() {
+        return Ok(None);
+    }
+    let mut came_to = WhatTheEmptyingCameTo::default();
+    for message in &in_the_trash {
+        if tokio::time::Instant::now() >= deadline {
+            break;
+        }
+        match take_it_off_this_computer(cache, account, message.row)? {
+            TakenHere::Emptied => came_to.emptied += 1,
+            // Said at the account's check, once a day (D26).
+            TakenHere::Refused(_) => break,
+            TakenHere::NotOnThisComputer => {}
+        }
+    }
+    Ok(Some(WhatTheCloseDid::of(
+        &account.name,
+        in_the_trash.len(),
+        &came_to,
+    )))
+}
+
+/// One IMAP account's Trash, emptied at the server within the deadline,
+/// each message through the step the menu's Delete in the Trash takes. An
+/// account with nothing there opens no session.
+async fn empty_one_imap_trash_on_the_way_out<O: OpensTheSessionToEmpty>(
+    opener: &O,
+    cache: &MessageCache,
+    account: &Account,
+    deadline: tokio::time::Instant,
+) -> Result<Option<WhatTheCloseDid>> {
+    let TheTrashHere::Found(trash) = the_trash_of(cache, &account.id)? else {
+        return Ok(None);
+    };
+    let in_the_trash = cache.what_has_been_in_the_trash(trash.id)?;
+    if in_the_trash.is_empty() {
+        return Ok(None);
+    }
+    let mut came_to = WhatTheEmptyingCameTo::default();
+    match tokio::time::timeout_at(deadline, opener.session_for(&account.id)).await {
+        Ok(Ok(session)) => {
+            let _under_way = APushUnderWay::begins(&account.id);
+            for message in &in_the_trash {
+                if tokio::time::Instant::now() >= deadline {
+                    break;
+                }
+                let asked = AWaitingMove {
+                    message_row_id: message.row,
+                    account_id: account.id.clone(),
+                    from_folder_path: trash.path.clone(),
+                    uid: message.uid,
+                    what: WhatAWaitingMoveDoes::DeleteOutright,
+                    asked_at: Utc::now().to_rfc3339(),
+                };
+                let sent = tokio::time::timeout_at(
+                    deadline,
+                    delete_here_then_at_the_server(&*session, cache, &asked, ""),
+                );
+                match sent.await {
+                    Ok(deleted) => {
+                        if came_to.count(deleted) == Next::StopForToday {
+                            break;
+                        }
+                    }
+                    // Made here and kept in the store, and the server not
+                    // heard from by the limit (D20).
+                    Err(_at_the_limit) => {
+                        came_to.kept_waiting += 1;
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(Err(why)) => tracing::warn!(
+            "{} could not be signed in to on the way out: {why}",
+            account.name
+        ),
+        Err(_at_the_limit) => tracing::warn!(
+            "{} was not signed in to before the limit on the way out",
+            account.name
+        ),
+    }
+    Ok(Some(WhatTheCloseDid::of(
+        &account.name,
+        in_the_trash.len(),
+        &came_to,
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::data::message_cache::moves_waiting::MarksFirst;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use local_folders::DELETING_IS_SWITCHED_OFF;
     use std::cell::RefCell;
     use std::collections::BTreeMap;
 
@@ -414,6 +897,9 @@ mod tests {
         log: RefCell<Vec<String>>,
         /// How every delete is answered, when it is not taken.
         refuses_a_delete_with: std::cell::Cell<Option<Refusal>>,
+        /// The number whose delete is never answered, as a server that has
+        /// taken the command and gone quiet.
+        never_answers_the_delete_of: std::cell::Cell<Option<u32>>,
     }
 
     /// The ways a delete does not go.
@@ -445,11 +931,17 @@ mod tests {
                 folders: RefCell::new(BTreeMap::from([("Trash".to_string(), held)])),
                 log: RefCell::new(Vec::new()),
                 refuses_a_delete_with: std::cell::Cell::new(None),
+                never_answers_the_delete_of: std::cell::Cell::new(None),
             }
         }
 
         fn refusing_a_delete(self, refusal: Refusal) -> Self {
             self.refuses_a_delete_with.set(Some(refusal));
+            self
+        }
+
+        fn never_answering_the_delete_of(self, uid: u32) -> Self {
+            self.never_answers_the_delete_of.set(Some(uid));
             self
         }
 
@@ -479,6 +971,9 @@ mod tests {
                 Some(trash) => format!("DELETE {uid} in {folder} into {trash}"),
                 None => format!("DELETE {uid} in {folder} off the server"),
             });
+            if self.never_answers_the_delete_of.get() == Some(uid) {
+                std::future::pending::<()>().await;
+            }
             if let Some(refusal) = self.refuses_a_delete_with.get() {
                 return Err(refusal.as_error());
             }
@@ -725,12 +1220,21 @@ mod tests {
             WhenTheTrashIsEmptied::Never
         );
         assert_eq!(
-            WhenTheTrashIsEmptied::ALL.map(WhenTheTrashIsEmptied::days),
-            [None, Some(15), Some(30)]
+            WhenTheTrashIsEmptied::ALL
+                .map(WhenTheTrashIsEmptied::days)
+                .as_slice(),
+            [None, None, Some(15), Some(30)]
         );
         assert_eq!(
-            WhenTheTrashIsEmptied::ALL.map(WhenTheTrashIsEmptied::said),
-            ["Never", "After 15 days", "After 30 days"]
+            WhenTheTrashIsEmptied::ALL
+                .map(WhenTheTrashIsEmptied::said)
+                .as_slice(),
+            [
+                "Never",
+                "When Wixen Mail closes",
+                "After 15 days",
+                "After 30 days"
+            ]
         );
     }
 
@@ -1168,5 +1672,594 @@ mod tests {
             what_the_emptying_said("Trash", "Work", 30, &WhatTheEmptyingCameTo::default()),
             None
         );
+    }
+
+    // ── When Wixen Mail closes (13-44.7) ───────────────────────────────────
+
+    const ON_CLOSE: WhenTheTrashIsEmptied = WhenTheTrashIsEmptied::WhenWixenMailCloses;
+
+    /// The sessions a close opens: one double per account, and the accounts
+    /// it was asked for, in order.
+    struct Sessions {
+        servers: BTreeMap<&'static str, std::rc::Rc<AServerThatHoldsTheTrash>>,
+        opened: RefCell<Vec<String>>,
+    }
+
+    impl Sessions {
+        fn of(servers: impl IntoIterator<Item = (&'static str, AServerThatHoldsTheTrash)>) -> Self {
+            Self {
+                servers: servers
+                    .into_iter()
+                    .map(|(id, server)| (id, std::rc::Rc::new(server)))
+                    .collect(),
+                opened: RefCell::new(Vec::new()),
+            }
+        }
+
+        fn the_server_of(&self, account_id: &str) -> &AServerThatHoldsTheTrash {
+            self.servers
+                .get(account_id)
+                .expect("a server for the account")
+        }
+
+        fn opened(&self) -> Vec<String> {
+            self.opened.borrow().clone()
+        }
+    }
+
+    impl OpensTheSessionToEmpty for Sessions {
+        type Session = std::rc::Rc<AServerThatHoldsTheTrash>;
+
+        async fn session_for(&self, account_id: &str) -> Result<Self::Session> {
+            self.opened.borrow_mut().push(account_id.to_string());
+            self.servers
+                .get(account_id)
+                .cloned()
+                .ok_or_else(|| crate::common::Error::Network(format!("no server for {account_id}")))
+        }
+    }
+
+    /// A second account in the same store, with its own Inbox and Trash,
+    /// answering its Trash.
+    fn another_account(cache: &MessageCache, id: &str) -> i64 {
+        for (name, kind) in [("Inbox", FolderType::Inbox), ("Trash", FolderType::Trash)] {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: id.to_string(),
+                    name: name.to_string(),
+                    path: name.to_string(),
+                    folder_type: kind.as_str().to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("the folder");
+        }
+        cache
+            .get_folder(id, "Trash")
+            .expect("the folder read")
+            .expect("the Trash is there")
+            .id
+    }
+
+    /// An account set up here, under this id, read with this protocol.
+    fn an_account_set_up(id: &str, name: &str, protocol: Protocol) -> Account {
+        Account {
+            id: id.to_string(),
+            protocol: protocol.as_str().to_string(),
+            ..Account::new(name.to_string(), "me@example.com".to_string())
+        }
+    }
+
+    static WORK: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up(THE_ACCOUNT, "Work", Protocol::Imap));
+    static HOME: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("home", "Home", Protocol::Imap));
+
+    /// Work, an IMAP account set to empty its Trash as Wixen Mail closes.
+    fn work_on_close() -> AnAccountToEmpty<'static> {
+        AnAccountToEmpty {
+            account: &WORK,
+            answer: ON_CLOSE,
+            who_empties: WhoEmptiesTheTrash::ThisProgram,
+            allowed_mail: true,
+        }
+    }
+
+    fn home(answer: WhenTheTrashIsEmptied) -> AnAccountToEmpty<'static> {
+        AnAccountToEmpty {
+            account: &HOME,
+            answer,
+            ..work_on_close()
+        }
+    }
+
+    /// How long past its limit a close may take before a case calls it
+    /// hung: the limit is read before each message and bounds each wait,
+    /// so what is left is this computer's own scheduling.
+    const A_MARGIN: std::time::Duration = std::time::Duration::from_secs(1);
+
+    /// One close with this long to empty, answering what it did and how
+    /// long it took. A close that runs past its limit and a margin fails
+    /// here rather than holding the run.
+    fn closing(
+        sessions: &Sessions,
+        cache: &MessageCache,
+        accounts: &[AnAccountToEmpty<'_>],
+        within: std::time::Duration,
+    ) -> (Vec<WhatTheCloseDid>, std::time::Duration) {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("a runtime");
+        let started = std::time::Instant::now();
+        let did = runtime
+            .block_on(async {
+                tokio::time::timeout(
+                    within + A_MARGIN,
+                    empty_on_the_way_out(
+                        sessions,
+                        cache,
+                        accounts,
+                        tokio::time::Instant::now() + within,
+                    ),
+                )
+                .await
+            })
+            .expect("the close ran past its limit and a margin");
+        (did, started.elapsed())
+    }
+
+    const FIVE_SECONDS: std::time::Duration = std::time::Duration::from_secs(5);
+
+    fn did(account_name: &str, emptied: usize, waiting: usize, left: usize) -> WhatTheCloseDid {
+        WhatTheCloseDid {
+            account_name: account_name.to_string(),
+            emptied,
+            waiting,
+            left,
+        }
+    }
+
+    #[test]
+    fn test_closing_empties_everything_in_the_trash_of_an_account_set_to_empty_on_close() {
+        let (_dir, cache, trash) = an_account();
+        let sessions = Sessions::of([(
+            THE_ACCOUNT,
+            AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2, 3]),
+        )]);
+        // However long each has been there: a close empties the whole Trash.
+        let rows = [
+            in_the_trash_for(&cache, trash, 1, 45),
+            in_the_trash_for(&cache, trash, 2, 3),
+            in_the_trash_for(&cache, trash, 3, 0),
+        ];
+
+        let (did_it, _) = closing(&sessions, &cache, &[work_on_close()], FIVE_SECONDS);
+
+        assert_eq!(
+            sessions.the_server_of(THE_ACCOUNT).the_log(),
+            [
+                "DELETE 1 in Trash off the server",
+                "DELETE 2 in Trash off the server",
+                "DELETE 3 in Trash off the server"
+            ]
+        );
+        assert!(sessions.the_server_of(THE_ACCOUNT).the_trash().is_empty());
+        for row in rows {
+            assert!(is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+        }
+        assert_eq!(did_it, [did("Work", 3, 0, 0)]);
+    }
+
+    #[test]
+    fn test_closing_stops_at_the_deadline_leaving_one_waiting_and_the_rest_untouched() {
+        let (_dir, cache, trash) = an_account();
+        let sessions = Sessions::of([(
+            THE_ACCOUNT,
+            AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2, 3])
+                .never_answering_the_delete_of(2),
+        )]);
+        let first = in_the_trash_for(&cache, trash, 1, 50);
+        let in_flight = in_the_trash_for(&cache, trash, 2, 40);
+        let untouched = in_the_trash_for(&cache, trash, 3, 30);
+        let within = std::time::Duration::from_millis(300);
+
+        let (did_it, took) = closing(&sessions, &cache, &[work_on_close()], within);
+
+        assert!(took < within + A_MARGIN, "the close took {took:?}");
+        assert_eq!(
+            sessions.the_server_of(THE_ACCOUNT).the_log(),
+            [
+                "DELETE 1 in Trash off the server",
+                "DELETE 2 in Trash off the server"
+            ]
+        );
+        assert!(is_deleted_here(&cache, first) && !is_waiting(&cache, first));
+        // Made here and kept in the store the next start's check replays
+        // before it lists any folder.
+        assert!(is_deleted_here(&cache, in_flight) && is_waiting(&cache, in_flight));
+        assert!(!is_deleted_here(&cache, untouched) && !is_waiting(&cache, untouched));
+        assert!(
+            cache
+                .in_the_trash_since(untouched)
+                .expect("the stamp")
+                .is_some()
+        );
+        assert_eq!(did_it, [did("Work", 1, 1, 1)]);
+    }
+
+    #[test]
+    fn test_closing_opens_no_session_for_an_account_with_nothing_in_the_trash() {
+        let (_dir, cache, trash) = an_account();
+        another_account(&cache, "home");
+        let sessions = Sessions::of([
+            (
+                THE_ACCOUNT,
+                AServerThatHoldsTheTrash::holding_in_the_trash(&[1]),
+            ),
+            ("home", AServerThatHoldsTheTrash::holding_in_the_trash(&[])),
+        ]);
+        in_the_trash_for(&cache, trash, 1, 2);
+
+        let (did_it, _) = closing(
+            &sessions,
+            &cache,
+            &[home(ON_CLOSE), work_on_close()],
+            FIVE_SECONDS,
+        );
+
+        assert_eq!(sessions.opened(), [THE_ACCOUNT]);
+        assert_eq!(did_it, [did("Work", 1, 0, 0)]);
+    }
+
+    #[test]
+    fn test_closing_leaves_an_account_set_to_thirty_days_alone() {
+        let (_dir, cache, trash) = an_account();
+        let homes_trash = another_account(&cache, "home");
+        let sessions = Sessions::of([
+            (
+                THE_ACCOUNT,
+                AServerThatHoldsTheTrash::holding_in_the_trash(&[1]),
+            ),
+            ("home", AServerThatHoldsTheTrash::holding_in_the_trash(&[7])),
+        ]);
+        in_the_trash_for(&cache, trash, 1, 2);
+        let homes = in_the_trash_for(&cache, homes_trash, 7, 45);
+
+        let (did_it, _) = closing(
+            &sessions,
+            &cache,
+            &[home(THIRTY), work_on_close()],
+            FIVE_SECONDS,
+        );
+
+        assert_eq!(sessions.opened(), [THE_ACCOUNT]);
+        assert!(sessions.the_server_of("home").the_log().is_empty());
+        assert!(!is_deleted_here(&cache, homes));
+        assert_eq!(did_it, [did("Work", 1, 0, 0)]);
+    }
+
+    #[test]
+    fn test_a_check_leaves_an_account_set_to_empty_on_close_alone() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1]);
+        let row = in_the_trash_for(&cache, trash, 1, 45);
+
+        assert_eq!(a_check(&server, &cache, ON_CLOSE), None);
+
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        assert!(!is_deleted_here(&cache, row));
+        assert_eq!(last_emptied(&cache), None, "a day was used");
+    }
+
+    #[test]
+    fn test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day() {
+        let (_dir, cache, trash) = an_account();
+        let sessions = Sessions::of([(
+            THE_ACCOUNT,
+            AServerThatHoldsTheTrash::holding_in_the_trash(&[1]),
+        )]);
+        let row = in_the_trash_for(&cache, trash, 1, 45);
+        let changes_off = AnAccountToEmpty {
+            allowed_mail: false,
+            ..work_on_close()
+        };
+
+        let (did_it, _) = closing(&sessions, &cache, &[changes_off], FIVE_SECONDS);
+
+        assert!(sessions.opened().is_empty(), "{:?}", sessions.opened());
+        assert!(did_it.is_empty(), "{did_it:?}");
+        assert!(!is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+
+        // Nothing is said at close, so the check says it, once a day.
+        let server = sessions.the_server_of(THE_ACCOUNT);
+        assert_eq!(
+            a_check_of(server, &cache, work(), ON_CLOSE, false, 0).as_deref(),
+            Some(
+                "Nothing will be emptied from Trash in Work when Wixen Mail closes, because \
+                 Allow Changes does not let this account change mail."
+            )
+        );
+        assert_eq!(a_check_of(server, &cache, work(), ON_CLOSE, false, 0), None);
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+
+        // And an account none of whose folders is its Trash, the same way.
+        let (_dir, without) = an_account_without_a_trash();
+        assert_eq!(
+            a_check_of(server, &without, work(), ON_CLOSE, true, 0),
+            Some(format!(
+                "Nothing will be emptied in Work when Wixen Mail closes. {NO_TRASH_TO_EMPTY}"
+            ))
+        );
+        assert_eq!(
+            a_check_of(server, &without, work(), ON_CLOSE, true, 0),
+            None
+        );
+    }
+
+    #[test]
+    fn test_what_the_close_did_names_the_account_and_three_counts_and_no_subject() {
+        assert_eq!(
+            what_the_close_did_for_the_log(&did("Work", 2, 1, 3)),
+            "On the way out, the Trash in Work: 2 emptied, 1 waiting for the next check, 3 left \
+             for the next close."
+        );
+        assert_eq!(
+            what_the_close_did_for_the_log(&did("Home", 0, 0, 12)),
+            "On the way out, the Trash in Home: 0 emptied, 0 waiting for the next check, 12 left \
+             for the next close."
+        );
+    }
+
+    // ── A POP account's Trash, on this computer (13-44.7) ──────────────────
+
+    static OLD_ISP: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("pop", "Old ISP", Protocol::Pop3));
+    static THE_CLUB: std::sync::LazyLock<Account> =
+        std::sync::LazyLock::new(|| an_account_set_up("club", "Club", Protocol::Pop3));
+
+    fn the_inbox_path() -> String {
+        format!("{}/Inbox", crate::application::local_folders::LOCAL_PREFIX)
+    }
+
+    /// A store holding each POP account's Inbox on this computer and the
+    /// Trash every account shares, stored where the program stores them,
+    /// answering the shared Trash.
+    fn a_pop_store() -> (tempfile::TempDir, MessageCache, i64) {
+        use crate::application::local_folders;
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        for account in [&*OLD_ISP, &*THE_CLUB] {
+            cache
+                .save_folder(&CachedFolder {
+                    id: 0,
+                    account_id: account.id.clone(),
+                    name: "Inbox".to_string(),
+                    path: the_inbox_path(),
+                    folder_type: FolderType::Inbox.as_str().to_string(),
+                    unread_count: 0,
+                    total_count: 0,
+                })
+                .expect("the inbox");
+        }
+        let path = local_folders::local_trash(Protocol::Pop3).expect("a Trash here");
+        let trash = cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: local_folders::stored_under(&path, &OLD_ISP.id).to_string(),
+                name: "Trash".to_string(),
+                path,
+                folder_type: FolderType::Trash.as_str().to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("the shared Trash");
+        (dir, cache, trash)
+    }
+
+    fn the_uidl_of(account: &Account, uid: u32) -> String {
+        format!("{}-{uid}", account.id)
+    }
+
+    /// A message this POP account downloaded, deleted here the way Delete
+    /// deletes it, into the shared Trash, `days` ago.
+    fn deleted_here_by(cache: &MessageCache, account: &Account, uid: u32, days: i64) -> i64 {
+        let inbox = cache
+            .get_folder(&account.id, &the_inbox_path())
+            .expect("the folder read")
+            .expect("the inbox is there")
+            .id;
+        let row = cache
+            .upsert_message(&crate::data::message_cache::IncomingMessage {
+                folder_id: inbox,
+                uid,
+                message_id: format!("<{uid}.{}@example.com>", account.id),
+                subject: "Lunch".to_string(),
+                from_addr: "ada@example.com".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-09-19T09:00:00Z".to_string(),
+                internal_date: None,
+                size_bytes: Some(10),
+                refs_header: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: Some(the_uidl_of(account, uid)),
+            })
+            .expect("a downloaded message");
+        crate::application::local_delete::perform(cache, account, row, Deleting::ToTrash)
+            .expect("the delete")
+            .expect("a folder on this computer");
+        cache
+            .it_went_into_the_trash_at(row, Utc::now() - Duration::days(days))
+            .expect("the stamp set");
+        row
+    }
+
+    /// One POP check of an account, as many days after the first as `later`.
+    fn a_pop_check(
+        cache: &MessageCache,
+        account: &Account,
+        when: WhenTheTrashIsEmptied,
+        later: i64,
+    ) -> Option<String> {
+        empty_the_trash_here_at_a_pop_check(
+            cache,
+            account,
+            when,
+            Utc::now() + Duration::days(later),
+            the_first_day() + Duration::days(later),
+        )
+        .expect("the emptying to finish")
+    }
+
+    fn on_close(account: &Account) -> AnAccountToEmpty<'_> {
+        AnAccountToEmpty {
+            account,
+            ..work_on_close()
+        }
+    }
+
+    #[test]
+    fn test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers()
+     {
+        let (_dir, cache, _trash) = a_pop_store();
+        let old = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let recent = deleted_here_by(&cache, &OLD_ISP, 2, 10);
+
+        let said = a_pop_check(&cache, &OLD_ISP, THIRTY, 0);
+
+        assert!(is_deleted_here(&cache, old));
+        assert!(!is_deleted_here(&cache, recent));
+        // The identifier is what stops the next check downloading it again.
+        assert!(
+            cache
+                .pop_uidls_for_account(&OLD_ISP.id)
+                .expect("the identifiers read")
+                .contains(&the_uidl_of(&OLD_ISP, 1)),
+            "the emptied message's identifier is no longer this account's"
+        );
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 1 message of Old ISP's from the Trash on this computer that had been \
+                 there more than 30 days."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let mine = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let theirs = deleted_here_by(&cache, &THE_CLUB, 1, 45);
+
+        a_pop_check(&cache, &OLD_ISP, THIRTY, 0);
+
+        assert!(is_deleted_here(&cache, mine));
+        assert!(
+            !is_deleted_here(&cache, theirs),
+            "another account's message in the shared Trash was emptied"
+        );
+    }
+
+    #[test]
+    fn test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let row = deleted_here_by(&cache, &OLD_ISP, 1, 45);
+        let deleting_off = Account {
+            allow_deleting_here: false,
+            ..OLD_ISP.clone()
+        };
+
+        assert_eq!(
+            a_pop_check(&cache, &deleting_off, THIRTY, 0),
+            Some(format!(
+                "Nothing was emptied from the Trash on this computer for Old ISP. \
+                 {DELETING_IS_SWITCHED_OFF}"
+            ))
+        );
+        assert_eq!(a_pop_check(&cache, &deleting_off, THIRTY, 0), None);
+        assert!(!is_deleted_here(&cache, row));
+
+        // Set to empty as Wixen Mail closes, its check says what the close
+        // will not do, once a day (D26).
+        assert_eq!(
+            a_pop_check(&cache, &deleting_off, ON_CLOSE, 1),
+            Some(format!(
+                "Nothing will be emptied from the Trash on this computer for Old ISP when \
+                 Wixen Mail closes. {DELETING_IS_SWITCHED_OFF}"
+            ))
+        );
+        assert_eq!(a_pop_check(&cache, &deleting_off, ON_CLOSE, 1), None);
+        assert!(!is_deleted_here(&cache, row));
+    }
+
+    #[test]
+    fn test_a_pop_account_is_emptied_with_no_server_to_ask() {
+        let (_dir, cache, _trash) = a_pop_store();
+        let rows = [
+            deleted_here_by(&cache, &OLD_ISP, 1, 45),
+            deleted_here_by(&cache, &OLD_ISP, 2, 0),
+        ];
+        let no_server_at_all = Sessions::of([]);
+
+        let (did_it, _) = closing(
+            &no_server_at_all,
+            &cache,
+            &[on_close(&OLD_ISP)],
+            FIVE_SECONDS,
+        );
+
+        assert!(no_server_at_all.opened().is_empty());
+        for row in rows {
+            assert!(is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+        }
+        assert_eq!(did_it, [did("Old ISP", 2, 0, 0)]);
+    }
+
+    #[test]
+    fn test_closing_empties_a_pop_account_first_and_within_the_deadline() {
+        let (_dir, cache, _trash) = a_pop_store();
+        a_folder(&cache, "Inbox", "INBOX", FolderType::Inbox);
+        let works_trash = a_folder(&cache, "Trash", "Trash", FolderType::Trash);
+        let in_flight = in_the_trash_for(&cache, works_trash, 1, 10);
+        let pop_rows = [
+            deleted_here_by(&cache, &OLD_ISP, 1, 45),
+            deleted_here_by(&cache, &OLD_ISP, 2, 3),
+        ];
+        let sessions = Sessions::of([(
+            THE_ACCOUNT,
+            AServerThatHoldsTheTrash::holding_in_the_trash(&[1]).never_answering_the_delete_of(1),
+        )]);
+        let within = std::time::Duration::from_millis(300);
+
+        // Work is listed first; POP goes first anyway, since it needs no
+        // network and the limit is shared.
+        let (did_it, took) = closing(
+            &sessions,
+            &cache,
+            &[work_on_close(), on_close(&OLD_ISP)],
+            within,
+        );
+
+        assert!(took < within + A_MARGIN, "the close took {took:?}");
+        for row in pop_rows {
+            assert!(is_deleted_here(&cache, row));
+        }
+        assert!(is_deleted_here(&cache, in_flight) && is_waiting(&cache, in_flight));
+        assert_eq!(did_it, [did("Old ISP", 2, 0, 0), did("Work", 0, 1, 0)]);
     }
 }

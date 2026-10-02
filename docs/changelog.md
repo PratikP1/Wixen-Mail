@@ -8,6 +8,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Empty the Trash when Wixen Mail closes, and on POP accounts (GAP-14).** The second half
+  of Pratik's request of 2026-09-29: "delete deleted mail upon the close of the app", and
+  "pop/smtp accounts". "Empty the Trash (experimental)" (`Alt+Y`) now offers
+  When Wixen Mail closes, second of four answers. When Wixen Mail really closes, not when it
+  hides to the
+  notification area, the window goes at once, then each account set that way has its Trash
+  emptied within five seconds for all of them together, then Wixen Mail signs off as
+  before. Nothing is said; the log notes for each account how many were emptied, how many
+  wait and how many are left, never a subject. A message the five seconds cut short is sent
+  at the first check after the next start, before that check reads any folder, and the rest
+  stay in the Trash for the next close. An account set this way whose mail changes are off,
+  or whose Trash is not recognised, hears why once a day at its first check. A POP account
+  is now offered the same four answers. Its Trash is the one on this computer that every
+  account shares, and emptying it takes only that account's own messages, marks them deleted
+  here the way Empty Folder does, and never asks the POP server, where "Leave mail on the
+  server after downloading it" still decides. After 15 or 30 days is done at the start of the
+  account's first check of the day, before the POP server is dialled; when Wixen Mail closes,
+  POP accounts go first. With "Let me delete mail on this computer" off, nothing is emptied
+  and the check says so once a day. The mail database now notes which account a message came
+  from when it moves into a folder every account shares, which the privacy page says. The
+  version does not move: no build has been cut since 1.0.0-alpha.1. Known limitations: no
+  close has emptied a real mail server, nor has a real POP account been emptied; messages
+  that were in the shared Trash before this version belong to no account, so Empty Folder
+  empties them and no setting does; a Trash of thousands empties over several closes.
 - **Empty the Trash of an IMAP account after 15 or 30 days, chosen per account (GAP-14).**
   Pratik asked on 2026-09-29 for "a setting to delete mail from local deleted
   mailbox/trash" for accounts "that are not Gmail or Microsoft". The account editor's
@@ -28,8 +52,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: no emptying has met a real mail server; a message already in a Trash
   when this version first runs counts from that moment, not from when it really went in;
   a server that cannot remove one message at a time marks it for removal instead, and it
-  is counted as emptied; POP accounts and emptying when Wixen Mail closes come with the
-  next change.
+  is counted as emptied. Corrected 2026-10-02: this entry said POP accounts and emptying
+  when Wixen Mail closes came with the next change; the entry above is that change.
 - **Run a rule over a folder when you ask, hearing first what it would change (#61,
   GAP-12).** #61 asked for "a 'Run on this folder' command in the Filter Manager and on the
   This Folder menu", "a dry run that counts matches and asks before acting", "the same
@@ -679,6 +703,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Closing Wixen Mail takes the window away at once, before it signs off.** The window
+  used to stay on the screen for the up to three seconds the sign-off takes, which by ear is
+  a window that has stopped answering. It now goes first, then any Trash set to be emptied
+  as Wixen Mail closes is emptied, then the sign-off happens as before. Hiding to the
+  notification area is unchanged.
 - **One check decides whether an account is Gmail or Microsoft, so Google Workspace and
   Microsoft 365 accounts on their own domains are recognised, experimental (#54, GAP-06).**
   It reads the incoming server first, then the address, then the provider the account was
@@ -1207,6 +1236,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A POP message deleted here is no longer downloaded again by the next check (GAP-14).**
+  With "Leave mail on the server after downloading it" on, which is the default, a POP
+  message moved to the Trash came straight back to the Inbox at the next check, because the
+  Trash every account shares names no account and the check counted only the account's own
+  folders. For the same reason a message in the Trash stopped counting towards "Then remove
+  it after this many days" until it was downloaded again. The account a message came from is
+  now noted when it first moves into a folder every account shares, and both counts read it.
+  Messages that were already in the shared Trash were downloaded again before this version.
 - **Report as Junk no longer tells a Microsoft 365 account its messages were "reported as
   junk" (#54, GAP-06).** An account on its organisation's own domain was read by the
   provider it was set up with, which is empty for one typed in by hand, so it heard

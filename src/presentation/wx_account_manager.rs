@@ -998,22 +998,23 @@ impl TrashFields {
 /// The IMAP server box and the address box, and no recorded name: OK writes
 /// the recorded name from the address alone, so a name an earlier build
 /// stored does not survive the save, and reading it here would show a line
-/// the check would not agree with once the account was saved. Nothing on a
-/// POP account until 13-44.7 makes emptying work there. Called when the page
-/// opens and whenever the protocol or the IMAP server changes, so it never
-/// offers the choice to an account somebody has just typed Gmail's server
-/// into. Shows nothing while the identity page is open.
+/// the check would not agree with once the account was saved. A POP account
+/// is offered the choice whatever its provider, since its Trash is the one
+/// on this computer (13-44.7), and never the line about a Trash its folders
+/// do not show: those are the server's folders, which POP has none of.
+/// Called when the page opens and whenever the protocol or the IMAP server
+/// changes, so it never offers the choice to an account somebody has just
+/// typed Gmail's server into. Shows nothing while the identity page is open.
 fn show_who_empties_the_trash(w: &AccountEditWidgets) {
     let fields = w.trash_fields;
     fields.hide();
-    let on_the_connection_page = w.protocol_choice.is_shown();
-    let on_imap = selected_protocol(&w.protocol_choice) == Protocol::Imap;
-    if !on_the_connection_page || !on_imap {
+    if !w.protocol_choice.is_shown() {
         w.dialog.layout();
         return;
     }
+    let protocol = selected_protocol(&w.protocol_choice);
     let who = who_empties_the_trash(
-        Protocol::Imap,
+        protocol,
         WhoRunsTheMail::from_what_is_known(WhatIsKnown {
             incoming_server: &w.imap_f.get_value(),
             address: &w.email_f.get_value(),
@@ -1031,7 +1032,7 @@ fn show_who_empties_the_trash(w: &AccountEditWidgets) {
             fields.choice.show(true);
             fields
                 .no_trash
-                .show(!fields.no_trash.get_label().is_empty());
+                .show(protocol == Protocol::Imap && !fields.no_trash.get_label().is_empty());
         }
     }
     w.dialog.layout();

@@ -262,6 +262,14 @@ Written down so you do not spend time reporting things already on the list.
   account, on a server that removes one message at a time or on one that can
   only mark them. If you try it, tell us the sentence you heard and whether the
   messages are gone from the Trash in another mail program or on your phone.
+- **Emptying the Trash when Wixen Mail closes has never reached a real mail
+  server.** An IMAP account set to When Wixen Mail closes takes its Trash off
+  the server in the five seconds after the window goes, and a message the
+  limit cut short is sent at the first check after the next start. Neither has
+  run against a real account. If you try it, tell us whether the window went
+  at once, and whether the Trash was empty in another mail program afterwards.
+  A POP account's Trash is emptied on this computer only, and nobody has tried
+  that on a real account either.
 - **Report as Junk has reached no real mail server.** Action, Report as
   Junk (`Ctrl+Shift+J`) sets the junk mark where a folder says it keeps one
   and moves the messages to the junk folder, and the menu item's description

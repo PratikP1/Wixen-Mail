@@ -206,6 +206,13 @@ Trash after 15 or 30 days uses them to know which messages are due and to empty 
 They are kept with your mail in the `cache` folder and nowhere else, they are not sent
 anywhere, and like everything else in that folder they are not encrypted.
 
+Since the same version, when a message moves out of one of an account's own folders into a
+folder every account shares, such as the Trash a POP account's deleted mail goes to, the mail
+database also notes which account it came from and the number it had there. That is how the
+next check knows it has already downloaded the message, and how emptying one account's Trash
+leaves the other accounts' messages alone. It is kept in the same place and the same way as
+the rest.
+
 ### Contact groups stay here
 
 A contact group is a name you give to some of the people in your address book, so you can write

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 591 records have arrived since and have not been through it.
+# 598 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -707,6 +707,9 @@ red = [
     "application::emptying_the_trash::tests::test_the_next_day_empties_what_has_come_due_since",
     "application::emptying_the_trash::tests::test_the_sentence_says_each_count_and_reason_once_and_the_singular_right",
     "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
+    # Added 2026-10-02 by 13-44.7, found by --remeasure: a POP account's
+    # emptying says its count in the same words.
+    "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
@@ -715,7 +718,7 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -5356,7 +5359,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 51 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12751,7 +12754,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 41 },
-    { file = "src/application/pop_sync.rs", tests = 51 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
@@ -16842,7 +16845,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 51 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -33700,7 +33703,7 @@ red = [
     "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 51 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
 ]
 
 # A do-half that says something: Star's sentence said from inside the
@@ -36238,7 +36241,7 @@ red = [
     "application::pop_sync::tests::test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 51 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
 ]
 
 # A run's move that carries no keyword for the labels the run puts on, so
@@ -36633,9 +36636,13 @@ after = '''                 CREATE TRIGGER IF NOT EXISTS a_message_is_moved_into
 red = [
     "data::message_cache::in_the_trash::tests::test_a_folder_typed_trash_in_any_case_is_a_trash",
     "data::message_cache::in_the_trash::tests::test_a_message_moved_into_the_trash_is_stamped_when_it_arrives",
+    # Added 2026-10-02 by 13-44.7, found by --remeasure: what one account put
+    # in the shared Trash is read through the stamp as well.
+    "data::message_cache::in_the_trash::tests::test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account",
+    "data::message_cache::in_the_trash::tests::test_the_shared_trash_answers_only_for_the_account_a_message_came_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/in_the_trash.rs", tests = 8 },
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -36661,9 +36668,14 @@ red = [
     "application::emptying_the_trash::tests::test_the_next_day_empties_what_has_come_due_since",
     "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
+    # Added 2026-10-02 by 13-44.7, found by --remeasure: a POP account's
+    # emptying reads what is due the same way.
+    "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
+    "application::emptying_the_trash::tests::test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day",
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # The row marked deleted here and never sent, in place of the step the
@@ -36695,7 +36707,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # A second place in the window naming the emptying, planted as a string the
@@ -36716,7 +36728,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 4 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 7 },
 ]
 
 # The day an account's Trash last had its turn never matched, so every
@@ -36732,9 +36744,12 @@ red = [
     "application::emptying_the_trash::tests::test_a_second_check_the_same_day_empties_nothing_more",
     "application::emptying_the_trash::tests::test_an_account_with_no_trash_is_left_alone_and_says_so_once_a_day",
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
+    # Added 2026-10-02 by 13-44.7, found by --remeasure: an account set to
+    # empty on close says why it will not, once a day, on the same day.
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # Allow Changes read as open whatever the account's answer, so an emptying
@@ -36750,7 +36765,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # Every IMAP account answered as one this program empties, so a Gmail or
@@ -36772,7 +36787,7 @@ red = [
     "application::emptying_the_trash::tests::test_each_answer_of_the_one_check_says_who_empties_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
 ]
 
 # The day's bound dropped, so a Trash of thousands is emptied in one check
@@ -36781,13 +36796,173 @@ tests_last_seen = [
 [[guard]]
 name = "no more than five hundred go in a day"
 file = "src/application/emptying_the_trash.rs"
-before = '''    for message in due.iter().take(AT_MOST_IN_A_DAY) {'''
-after = '''    for message in due.iter() {'''
+before = '''    for message in due.iter().take(AT_MOST_IN_A_DAY) {
+        tried += 1;
+        let asked = AWaitingMove {'''
+after = '''    for message in due.iter() {
+        tried += 1;
+        let asked = AWaitingMove {'''
 red = [
     "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+]
+
+# The limit taken off the wait for each delete at close, so a server that
+# has taken the command and gone quiet holds closing for as long as it
+# likes (13-44.7, D6, T-13-44.7-01). The case bounds the whole pass from
+# outside, so the break fails it at its margin rather than hanging the run.
+# Written 2026-10-02 by 13-44.7, taken by hand against the whole library
+# first.
+[[guard]]
+name = "closing never waits past its limit"
+file = "src/application/emptying_the_trash.rs"
+before = '''                let sent = tokio::time::timeout_at(
+                    deadline,
+                    delete_here_then_at_the_server(&*session, cache, &asked, ""),'''
+after = '''                let sent = tokio::time::timeout_at(
+                    deadline + std::time::Duration::from_secs(3600),
+                    delete_here_then_at_the_server(&*session, cache, &asked, ""),'''
+red = [
+    "application::emptying_the_trash::tests::test_closing_stops_at_the_deadline_leaving_one_waiting_and_the_rest_untouched",
+    # Added 2026-10-02 by 13-44.7's second task, found by --remeasure: its
+    # IMAP account's delete is never answered either.
+    "application::emptying_the_trash::tests::test_closing_empties_a_pop_account_first_and_within_the_deadline",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+]
+
+# The window left on the screen while the Trash is emptied at close, so a
+# screen reader sits on a window that has stopped answering (13-44.7, D19).
+# The plan's break moved the call into the hide to the tray; a record holds
+# one contiguous edit, so this one drops the hide in front of the call, and
+# the companion case plants the move. Written 2026-10-02 by 13-44.7, taken
+# by hand against the target first.
+[[guard]]
+name = "only a real close empties the Trash, after the window is hidden"
+file = "src/presentation/wx_app.rs"
+suite = "the_trash_is_emptied_on_purpose"
+before = '''                            frame.show(false);
+                            let accounts = lock_state(&state).accounts.clone();'''
+after = '''                            let accounts = lock_state(&state).accounts.clone();'''
+red = [
+    "test_only_a_real_close_empties_the_trash_and_only_after_the_window_is_hidden",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 7 },
+]
+
+# An account set to When Wixen Mail closes read as a schedule of no days,
+# so its check empties the whole Trash every day (13-44.7, D23). Written
+# 2026-10-02 by 13-44.7, taken by hand against the whole library first.
+[[guard]]
+name = "an account set to empty on close is not emptied at a check"
+file = "src/application/emptying_the_trash.rs"
+before = '''    let Some(days) = when.days() else {
+        let why = why_closing_will_not_empty_it(trash.as_ref(), account.name, allowed_mail);'''
+after = '''    let Some(days) = when.days().or(Some(0)) else {
+        let why = why_closing_will_not_empty_it(trash.as_ref(), account.name, allowed_mail);'''
+red = [
+    "application::emptying_the_trash::tests::test_a_check_leaves_an_account_set_to_empty_on_close_alone",
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+]
+
+# The account a row came from no longer counted by the identifier query, so
+# a POP message in the Trash every account shares is downloaded again by the
+# next check while it is left on the server, premise 3's defect (13-44.7,
+# D18, T-13-44.7-05). Written 2026-10-02 by 13-44.7, taken by hand against
+# the whole library first.
+[[guard]]
+name = "a POP message in the Trash every account shares is not downloaded again"
+file = "src/data/message_cache/messages.rs"
+before = '''                 WHERE (f.account_id = ?1 OR m.original_account_id = ?1)
+                   AND m.pop_uidl IS NOT NULL",'''
+after = '''                 WHERE f.account_id = ?1
+                   AND m.pop_uidl IS NOT NULL",'''
+red = [
+    "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
+    "application::pop_sync::tests::test_a_message_moved_to_the_trash_every_account_shares_is_not_downloaded_again",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
+]
+
+# An ordinary move into a folder every account shares records nobody, so
+# the shared Trash's POP messages belong to no account: downloaded again,
+# their download time lost to the policy, and no account's setting empties
+# them (13-44.7, D18). Written 2026-10-02 by 13-44.7, taken by hand against
+# the whole library first.
+[[guard]]
+name = "a move into a shared folder records whose it was"
+file = "src/data/message_cache/messages.rs"
+before = '''            None => self.the_account_leaving_for_a_shared_folder(message_id, into_folder)?,'''
+after = '''            None => None,'''
+red = [
+    "application::emptying_the_trash::tests::test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day",
+    "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
+    "application::emptying_the_trash::tests::test_a_pop_account_is_emptied_with_no_server_to_ask",
+    "application::emptying_the_trash::tests::test_closing_empties_a_pop_account_first_and_within_the_deadline",
+    "application::pop_sync::tests::test_a_message_moved_to_the_trash_every_account_shares_is_not_downloaded_again",
+    "application::pop_sync::tests::test_the_download_time_of_a_message_in_the_shared_trash_still_counts_towards_the_policy",
+    "data::message_cache::in_the_trash::tests::test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account",
+    "data::message_cache::in_the_trash::tests::test_the_shared_trash_answers_only_for_the_account_a_message_came_from",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+    { file = "src/application/pop_sync.rs", tests = 53 },
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
+]
+
+# The owner dropped from the read of the shared Trash, so a POP account's
+# emptying takes every account's messages there (13-44.7, T-13-44.7-04).
+# The plan put this record on the module; the break is in the store's read,
+# which the module asks. Written 2026-10-02 by 13-44.7, taken by hand
+# against the whole library first.
+[[guard]]
+name = "a POP account empties only its own messages from the shared Trash"
+file = "src/data/message_cache/in_the_trash.rs"
+before = '''                   AND (?2 IS NULL OR m.original_account_id = ?2)'''
+after = '''                   AND (?2 IS NULL OR 1)'''
+red = [
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
+    "data::message_cache::in_the_trash::tests::test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account",
+    "data::message_cache::in_the_trash::tests::test_the_shared_trash_answers_only_for_the_account_a_message_came_from",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
+    { file = "src/application/emptying_the_trash.rs", tests = 32 },
+]
+
+# The POP server dialled before the Trash is emptied, as the reading sees
+# it, so an unreachable server would stop an emptying that needs none
+# (13-44.7, D22). Planted as a constructor call above the emptying, one
+# contiguous edit the reading cannot tell from the dial. Written 2026-10-02
+# by 13-44.7, taken by hand against the target first.
+[[guard]]
+name = "a POP check empties its Trash before it dials the server"
+file = "src/presentation/wx_app.rs"
+suite = "the_trash_is_emptied_on_purpose"
+before = '''    // The Trash on this computer of an account somebody set to be emptied
+    // (13-44.7, D22): after the folders are made and before the POP server is'''
+after = '''    let _ = MailController::new();
+    // The Trash on this computer of an account somebody set to be emptied
+    // (13-44.7, D22): after the folders are made and before the POP server is'''
+red = [
+    "test_a_pop_check_empties_its_trash_before_it_dials_the_server",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 7 },
 ]
 
 # The passphrase box made read-only, so it refuses a paste and a password

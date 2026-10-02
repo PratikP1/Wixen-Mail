@@ -278,7 +278,11 @@ fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
     // own steps; nothing else sends a rule's delete, and the replay's steps
     // are called by the replay and by the one step a check's delete shares,
     // which a rule's Delete and an emptying of the Trash (13-44.6, D4) call
-    // and nothing else does.
+    // and nothing else does. Since 13-44.7 the emptying as Wixen Mail closes
+    // calls it too, on the account's own session, because somebody closing
+    // the program is the moment they chose for it (D19); the window's reading
+    // in `tests/the_trash_is_emptied_on_purpose.rs` holds that call to the
+    // real close.
     let check = fs::read_to_string("src/application/mail_sync.rs").expect("the check");
     let replay = fs::read_to_string("src/application/moves_waiting.rs").expect("the waiting moves");
     let emptying =
@@ -309,7 +313,11 @@ fn test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail() {
     );
     assert_eq!(
         callers_of(THE_SHARED_DELETE),
-        ["carry_out_the_deletes", "empty_at_a_check"],
+        [
+            "carry_out_the_deletes",
+            "empty_at_a_check",
+            "empty_one_imap_trash_on_the_way_out"
+        ],
         "a delete made here and sent on a check's session is called from somewhere new; \
          read this test's comment"
     );

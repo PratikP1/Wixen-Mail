@@ -6219,6 +6219,8 @@ impl WxMailApp {
                 let really_quitting = really_quitting.clone();
                 let tray = tray.clone();
                 let runtime = runtime.clone();
+                let state = state.clone();
+                let message_cache = message_cache.clone();
                 let said_it_once = std::rc::Rc::new(std::cell::Cell::new(false));
                 move |event| {
                     use crate::application::closing::{Asked, Closing, what_closing_should_do};
@@ -6253,6 +6255,14 @@ impl WxMailApp {
                         }
                         Closing::LetItClose => {
                             tracing::info!("Frame on_close fired, window is closing");
+                            // Gone from the screen first, so a screen reader
+                            // moves on at once rather than sitting on a window
+                            // that has stopped answering while the Trash of
+                            // each account set that way is emptied (13-44.7,
+                            // D19).
+                            frame.show(false);
+                            let accounts = lock_state(&state).accounts.clone();
+                            emptying_the_trash_on_the_way_out(&runtime, &message_cache, &accounts);
                             // Signed out of rather than dropped. A session this
                             // program was holding stays open at the provider
                             // until it times it out, and counts against the
@@ -21915,6 +21925,49 @@ fn signing_off(rt: &Arc<Runtime>, ending: impl std::future::Future<Output = ()>)
     });
 }
 
+/// Empty the Trash of every account set to When Wixen Mail closes, within a
+/// few seconds for all of them together (13-44.7, D19 to D21).
+///
+/// On the window's thread, as the sign-off is, and before it, since the
+/// sign-off closes the sessions this uses. Each account's answer and gates
+/// are read the way the check reads them, and who empties its Trash is the
+/// one check's, through `who_empties_the_trash`. Nothing is said: the window
+/// has gone. The log gets one line per account, the counts and never a
+/// subject. What the limit cuts short waits for the next start's first
+/// check, or for the next close.
+fn emptying_the_trash_on_the_way_out(
+    rt: &Arc<Runtime>,
+    cache: &Option<Arc<MessageCache>>,
+    accounts: &[Account],
+) {
+    use crate::application::emptying_the_trash::{
+        AnAccountToEmpty, empty_on_the_way_out, what_the_close_did_for_the_log,
+        who_empties_the_trash,
+    };
+    use crate::application::who_runs_the_mail::WhoRunsTheMail;
+    const LONG_ENOUGH_TO_EMPTY_THE_TRASH: std::time::Duration = std::time::Duration::from_secs(5);
+    let Some(cache) = cache else {
+        return;
+    };
+    let to_empty: Vec<AnAccountToEmpty<'_>> = accounts
+        .iter()
+        .map(|account| AnAccountToEmpty {
+            account,
+            answer: when_the_trash_is_emptied(&account.id),
+            who_empties: who_empties_the_trash(account.protocol(), WhoRunsTheMail::of(account)),
+            allowed_mail: crate::application::allowed::allowed_for(&account.id).mail,
+        })
+        .collect();
+    let opener = crate::application::mail_session::TheAccountsSetUpHere(accounts);
+    let did = rt.block_on(async {
+        let deadline = tokio::time::Instant::now() + LONG_ENOUGH_TO_EMPTY_THE_TRASH;
+        empty_on_the_way_out(&opener, cache, &to_empty, deadline).await
+    });
+    for one in &did {
+        tracing::info!("{}", what_the_close_did_for_the_log(one));
+    }
+}
+
 /// Handle Account Manager dialog result.
 fn handle_account_mgr(
     frame: &Frame,
@@ -27133,6 +27186,26 @@ fn check_pop_mail(
         Ok(folders) => folders,
         Err(e) => return fail(format!("Could not set up the folders: {e}")),
     };
+
+    // The Trash on this computer of an account somebody set to be emptied
+    // (13-44.7, D22): after the folders are made and before the POP server is
+    // dialled, since it needs no server and one that cannot be reached must
+    // not stop it. One sentence for the account; the log names the account
+    // and never a subject.
+    match crate::application::emptying_the_trash::empty_the_trash_here_at_a_pop_check(
+        &cache,
+        account,
+        when_the_trash_is_emptied(&account.id),
+        chrono::Utc::now(),
+        chrono::Local::now().date_naive(),
+    ) {
+        Ok(Some(said)) => {
+            tracing::info!("The Trash of {} was emptied: {said}", account.name);
+            say(UIUpdate::TheTrashWasEmptied(said));
+        }
+        Ok(None) => {}
+        Err(why) => tracing::warn!("The Trash of {} could not be emptied: {why}", account.name),
+    }
 
     say(UIUpdate::ConnectionStatusChanged(
         ConnectionStatus::Connecting,
