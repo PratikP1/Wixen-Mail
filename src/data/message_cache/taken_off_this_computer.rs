@@ -672,4 +672,43 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail() {
+        // Every open of the store rebuilds the whole index when it holds
+        // fewer entries than there are rows, so a row written back with no
+        // entry would cost every message's words written again at the next
+        // open, once after every removal.
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        a_pop_message_in_the_trash(&cache, "bbb", b"another file");
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        assert_eq!(
+            cache
+                .build_any_missing_search_index()
+                .expect("the index measured"),
+            0,
+            "taking a message off left the index short, so the next open rebuilds it"
+        );
+    }
+
+    #[test]
+    fn test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        let as_it_was: i64 = cache
+            .conn
+            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
+            .expect("the setting read");
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        let after: i64 = cache
+            .conn
+            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
+            .expect("the setting read");
+        assert_eq!(after, as_it_was, "the removal left secure delete changed");
+    }
 }
