@@ -109,6 +109,13 @@ const THE_CALLERS: &[Caller] = &[
         signature: Some("fn spawn_mail_sync("),
         names: "WhoRunsTheMail::of(",
     },
+    // And the close asks it of each account set to empty as Wixen Mail
+    // closes (13-44.7).
+    Caller {
+        file: "src/presentation/wx_app.rs",
+        signature: Some("fn emptying_the_trash_on_the_way_out("),
+        names: "WhoRunsTheMail::of(",
+    },
     // The three followers name the function rather than call it in one
     // shape: the notes backend hands it to `and_then`.
     Caller {
