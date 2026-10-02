@@ -622,10 +622,20 @@ mod the_built_tree {
     const VK_RETURN: usize = 0x0D;
 
     const UOI_NAME: i32 = 2;
+    const GENERIC_ALL: u32 = 0x1000_0000;
 
     #[link(name = "user32")]
     unsafe extern "system" {
         fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+        fn CreateDesktopW(
+            name: *const u16,
+            device: *const u16,
+            mode: *const u8,
+            flags: u32,
+            access: u32,
+            attributes: *const u8,
+        ) -> isize;
+        fn SetThreadDesktop(desktop: isize) -> i32;
         fn GetThreadDesktop(thread: u32) -> isize;
         fn GetUserObjectInformationW(
             object: isize,
@@ -640,6 +650,46 @@ mod the_built_tree {
     unsafe extern "system" {
         fn GetCurrentThreadId() -> u32;
         fn GetLastError() -> u32;
+    }
+
+    /// Move the calling thread onto a desktop made for this run, on the
+    /// window station the process is already on, before its first window.
+    ///
+    /// A window on the interactive desktop is put in front while nobody uses
+    /// the machine and is not while somebody does, so a reading there
+    /// depends on what the person is doing. Nothing a person types reaches a
+    /// desktop that is not the input desktop. The name carries the process
+    /// id, so two runs at once never share one. Measured on 2026-10-02: the
+    /// tree's Enter passed 20 of 20 here, and two runs at once 20 rounds of
+    /// 20, where on one shared desktop it failed one round in 25. Not a
+    /// station of its own, where a posted Alt+letter pressed nothing.
+    ///
+    /// The handle stays open for the life of the process, because the
+    /// thread's windows live on it.
+    fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+        let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: the name is null-terminated and every other pointer is
+        // null, which CreateDesktopW takes as "none".
+        unsafe {
+            let desktop = CreateDesktopW(
+                name.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                GENERIC_ALL,
+                std::ptr::null(),
+            );
+            if desktop == 0 {
+                return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+            }
+            if SetThreadDesktop(desktop) == 0 {
+                return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+            }
+        }
+        Ok(())
     }
 
     /// The name of the desktop the calling thread's windows are made on.
@@ -737,6 +787,7 @@ mod the_built_tree {
     }
 
     fn take_the_measurement() -> Result<EnterOnAParent, String> {
+        a_desktop_of_its_own("move-tree")?;
         let outcome: Arc<Mutex<Option<Result<EnterOnAParent, String>>>> =
             Arc::new(Mutex::new(None));
         let result = {

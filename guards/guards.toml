@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 584 records have arrived since and have not been through it.
+# 585 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27511,7 +27511,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The undo dropped from the arm a refusal arrives on: the server said no,
@@ -27537,7 +27537,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # A check wired into the arm that runs when the network comes back, which
@@ -27568,7 +27568,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The activation binding dropped from the Move dialog's tree, which is the
@@ -27596,7 +27596,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The bytes not kept before the append goes out, as the first step of a
@@ -36892,4 +36892,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
+]
+
+# The move reading builds its tree on a desktop made for its run. The break
+# turns the call into a comment, so the tree is built on the interactive
+# desktop again, where a person's keys and a second run reach its Enter. The
+# case reading the session's desktop goes red; the Enter case itself passes
+# while nobody types, which is why the case exists. Written 2026-10-02 by
+# 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test a_move_completes_here_first`.
+[[guard]]
+name = "the move reading builds its tree on a desktop made for its run"
+file = "tests/a_move_completes_here_first.rs"
+suite = "a_move_completes_here_first"
+before = '''        a_desktop_of_its_own("move-tree")?;'''
+after = '''        // a_desktop_of_its_own("move-tree")?;'''
+red = [
+    "the_built_tree::test_the_built_tree_is_read_on_a_desktop_made_for_this_run",
+]
+tests_last_seen = [
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
