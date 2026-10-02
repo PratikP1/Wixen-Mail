@@ -805,3 +805,135 @@ fn test_the_clipboard_census_sees_a_call_planted_in_another_target() {
     assert_eq!(clipboard_calls_in(path, in_a_comment), Vec::<String>::new());
     assert_eq!(clipboard_calls_in(path, in_a_literal), Vec::<String>::new());
 }
+
+// ── A key is sent only on a desktop made for its run ───────────────────────
+//
+// A window on the interactive desktop takes the keys a person types and is
+// put in front of them and read by their screen reader, and two runs at once
+// on one desktop activate each other's windows. Key-posting cases stopped the
+// merges of 13-44 and 13-44.5 that way, and ledger 580 is mark_as_read
+// failing while the tester used the machine. So every target that sends a key
+// or a click builds its windows on a desktop it makes for its run, named with
+// its process id, and this census refuses one that does not. It shares the
+// clipboard census's reading, so a key named in a comment or a string is never
+// a hit.
+//
+// What it cannot see: it reads presence, not order, so a desktop made after
+// the first window is caught only at run time, where `SetThreadDesktop`
+// refuses a thread that already holds a window; and a new file under `tests/`
+// alone reaches it only at the phase's full gate and on CI.
+
+/// What a test sending a key or a click to a window writes, in code.
+const KEY_SENDS: [&str; 7] = [
+    "WM_KEYDOWN",
+    "WM_SYSKEYDOWN",
+    "WM_CHAR",
+    "WM_SYSCHAR",
+    "BM_CLICK",
+    "SendInput",
+    "keybd_event",
+];
+
+/// The five whose window holds a browser or whose reading starts a second
+/// copy of itself, so a thread moved alone cannot carry them. 13-44.6.3 runs
+/// them in a process of their own on such a desktop and removes this constant.
+const NOT_YET_IN_A_PROCESS_OF_THEIR_OWN: [&str; 5] = [
+    "tests/a_marker_counts_at_the_start_of_any_line.rs",
+    "tests/a_signature_follows_the_from_account.rs",
+    "tests/the_invitation_is_answered_from_the_reader.rs",
+    "tests/a_meeting_change_reaches_the_calendar.rs",
+    "tests/every_spin_control_names_the_field_a_person_types_in.rs",
+];
+
+/// Every key a file sends in code on a desktop it did not make for its run,
+/// as `path: sends TOKEN on a desktop it did not make for its run`.
+fn keys_sent_off_a_desktop_of_its_run(path: &str, text: &str) -> Vec<String> {
+    let code = code_only(text);
+    let names = |token: &str| {
+        code.lines().any(|line| {
+            line.match_indices(token)
+                .any(|(at, _)| stands_alone(line, at, token))
+        })
+    };
+    if names("CreateDesktopW") && names("process::id()") {
+        return Vec::new();
+    }
+    KEY_SENDS
+        .into_iter()
+        .filter(|token| names(token))
+        .map(|token| format!("{path}: sends {token} on a desktop it did not make for its run"))
+        .collect()
+}
+
+#[test]
+fn test_no_target_sends_a_key_outside_a_desktop_made_for_its_run() {
+    let files = every_test_target();
+    assert!(
+        files.len() > 100,
+        "read {} files under tests, so the reading found nothing to judge",
+        files.len()
+    );
+
+    let found: Vec<String> = files
+        .iter()
+        .filter(|(path, _)| !NOT_YET_IN_A_PROCESS_OF_THEIR_OWN.contains(&path.as_str()))
+        .flat_map(|(path, text)| keys_sent_off_a_desktop_of_its_run(path, text))
+        .collect();
+
+    assert!(
+        found.is_empty(),
+        "these targets send keys where a person's typing, a locked session or a second run \
+         reaches them; build their windows on a desktop made for the run: {found:#?}"
+    );
+}
+
+#[test]
+fn test_the_key_census_sees_a_sender_planted_without_a_desktop() {
+    let path = "tests/a_reading_that_types.rs";
+    let in_code =
+        "fn types(hwnd: isize) {\n    unsafe { PostMessageW(hwnd, WM_KEYDOWN, 0x0D, 1) };\n}\n";
+    let in_a_comment = "fn types() {\n    // WM_KEYDOWN is never posted here\n}\n";
+    let in_a_literal =
+        "fn types() {\n    let said = \"WM_KEYDOWN\";\n    let raw = r#\"BM_CLICK \"\"#;\n}\n";
+
+    assert_eq!(
+        keys_sent_off_a_desktop_of_its_run(path, in_code),
+        vec![format!(
+            "{path}: sends WM_KEYDOWN on a desktop it did not make for its run"
+        )]
+    );
+    assert_eq!(
+        keys_sent_off_a_desktop_of_its_run(path, in_a_comment),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        keys_sent_off_a_desktop_of_its_run(path, in_a_literal),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn test_the_key_census_sees_a_desktop_not_named_for_its_run() {
+    let path = "tests/a_reading_that_types.rs";
+    let sender = "    unsafe { SendMessageW(hwnd, WM_KEYDOWN, 0x0D, 1) };\n";
+    let fixed = format!(
+        "fn reads(hwnd: isize) {{\n    let name = wide(\"wixen-a-reading-test\");\n    \
+         let desktop = unsafe {{ CreateDesktopW(name.as_ptr(), null(), null(), 0, ALL, null()) }};\n\
+         {sender}}}\n"
+    );
+    let for_its_run = fixed.replace(
+        "wide(\"wixen-a-reading-test\")",
+        "wide(&format!(\"wixen-a-reading-{}\", std::process::id()))",
+    );
+
+    assert_eq!(
+        keys_sent_off_a_desktop_of_its_run(path, &fixed),
+        vec![format!(
+            "{path}: sends WM_KEYDOWN on a desktop it did not make for its run"
+        )]
+    );
+    assert_eq!(
+        keys_sent_off_a_desktop_of_its_run(path, &for_its_run),
+        Vec::<String>::new()
+    );
+}
