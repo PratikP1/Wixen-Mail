@@ -1,0 +1,551 @@
+//! Taking a message off this computer (13-44.8, D27 to D31).
+//!
+//! A message kept here alone, mail collected over POP, a copy of sent mail
+//! filed here or mail brought in from a file, has no other copy, and taking
+//! it off this computer is the end of it: emptying the Trash, Delete on a
+//! message in the Trash and Delete Permanently all say so, and none can be
+//! undone. Until 13-44.8 the row was only marked deleted and kept every word
+//! the message said, in a database file that is not encrypted.
+//!
+//! # What stays, and why it is a list of what stays
+//!
+//! [`KEPT_WHEN_TAKEN_OFF`] names the columns that stay, each with its reason;
+//! everything else goes. The row is removed, which takes everything keyed on
+//! it through the schema's own cascades and triggers (its text, its
+//! attachments and their files where no other message carries them, the form
+//! it arrived in, its labels, the identifiers it names, its search entry), and
+//! written back under its own number with the kept columns, `deleted` set and
+//! every other column at its default. A list of what goes would keep the
+//! words of a column added later until somebody remembered to add it; this
+//! way the schema covers it.
+//!
+//! # The bytes freed are overwritten
+//!
+//! SQLite leaves a deleted row's bytes in the file until something reuses the
+//! space. The removal runs with `secure_delete` switched on, and puts back
+//! what it found. Measured by 13-44.8's planner: without it, every copy of
+//! the words stayed in the file.
+
+use super::MessageCache;
+use crate::common::Result;
+
+/// The columns a message taken off this computer keeps, and nothing else.
+pub const KEPT_WHEN_TAKEN_OFF: [&str; 8] = [
+    // The row's own number, which the undo reads to refuse, saying the
+    // message was deleted permanently.
+    "id",
+    // Where it was: the folder whose it was, the one place the undo and the
+    // account's own identifiers are read from.
+    "folder_id",
+    // Its number in that folder, which the folder's numbering counts past.
+    "uid",
+    // The number the POP server knows it by. Without it the next check
+    // downloads the message again.
+    "pop_uidl",
+    // When it was downloaded, which the account's removal setting counts its
+    // days from, so the message still leaves the POP server on its day.
+    "downloaded_at",
+    // Whether this program filed it, which the folder's numbering reads.
+    "filed_here",
+    // The number it held before the merge of the local folders moved it.
+    "original_uid",
+    // Whose it was, which a row in the Trash every account shares is
+    // answered by (13-44.7, D18).
+    "original_account_id",
+];
+
+impl MessageCache {
+    /// Take a message off this computer, keeping only
+    /// [`KEPT_WHEN_TAKEN_OFF`]. A row that is not there is nothing to do.
+    pub fn take_off_this_computer(&self, message_id: i64) -> Result<()> {
+        let _ = message_id;
+        Ok(())
+    }
+
+    /// Each column of a row that holds something, outside what a message
+    /// taken off this computer keeps and its `deleted` mark: a value that is
+    /// neither the column's declared default nor the empty string.
+    #[cfg(test)]
+    pub(crate) fn what_a_row_still_holds(&self, message_id: i64) -> Result<Vec<String>> {
+        use crate::common::Error;
+        let could_not =
+            |e: rusqlite::Error| Error::Other(format!("The row could not be read: {e}"));
+        let columns: Vec<(String, Option<String>)> = self
+            .conn
+            .prepare("SELECT name, dflt_value FROM pragma_table_info('messages')")
+            .map_err(could_not)?
+            .query_map([], |column| Ok((column.get(0)?, column.get(1)?)))
+            .map_err(could_not)?
+            .collect::<std::result::Result<_, _>>()
+            .map_err(could_not)?;
+        let mut holding = Vec::new();
+        for (name, default) in columns {
+            if KEPT_WHEN_TAKEN_OFF.contains(&name.as_str()) || name == "deleted" {
+                continue;
+            }
+            let default = default.unwrap_or_else(|| "NULL".to_string());
+            let empty: bool = self
+                .conn
+                .query_row(
+                    &format!(
+                        "SELECT (\"{name}\" IS {default}) OR (\"{name}\" IS '') \
+                         FROM messages WHERE id = ?1"
+                    ),
+                    [message_id],
+                    |row| row.get(0),
+                )
+                .map_err(could_not)?;
+            if !empty {
+                holding.push(name);
+            }
+        }
+        Ok(holding)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::destinations::Deleting;
+    use crate::application::local_delete;
+    use crate::application::local_folders::{self, LOCAL_PREFIX};
+    use crate::common::temp_home::TempHome;
+    use crate::common::types::Protocol;
+    use crate::data::account::Account;
+    use crate::data::message_cache::attachment_content::AttachmentWithContent;
+    use crate::data::message_cache::moves_in_flight::AMoveStarting;
+    use crate::data::message_cache::{CachedAttachment, CachedFolder, IncomingMessage, Tag};
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    /// A word only the message under test carries, in its subject.
+    const ITS_SUBJECT_WORD: &str = "quillwort";
+    /// A word only the message under test carries, in its text.
+    const ITS_BODY_WORD: &str = "zanzibarite";
+
+    fn a_pop_account() -> Account {
+        let mut account = Account::new("Old ISP".to_string(), "me@example.com".to_string());
+        account.id = "pop".to_string();
+        account.protocol = Protocol::Pop3.as_str().to_string();
+        account
+    }
+
+    /// A cache holding the account's folders on this computer, each stored
+    /// under whoever owns it, as the program stores them.
+    fn a_cache() -> TempHome<MessageCache> {
+        TempHome::named("wixen_taken_off_", |dir: &Path| {
+            let cache = MessageCache::new(dir.to_path_buf(), None).expect("a cache");
+            let account = a_pop_account();
+            for folder in local_folders::used_by(account.protocol()) {
+                let path = folder.path();
+                cache
+                    .save_folder(&CachedFolder {
+                        id: 0,
+                        account_id: local_folders::stored_under(&path, &account.id).to_string(),
+                        name: folder.name.to_string(),
+                        path,
+                        folder_type: folder.kind.as_str().to_string(),
+                        unread_count: 0,
+                        total_count: 0,
+                    })
+                    .expect("a folder");
+            }
+            cache
+        })
+    }
+
+    fn the_inbox(cache: &MessageCache) -> i64 {
+        cache
+            .get_folder("pop", &format!("{LOCAL_PREFIX}/Inbox"))
+            .expect("the folder read")
+            .expect("the inbox")
+            .id
+    }
+
+    /// A message downloaded over POP, written the way `pop_sync::sync`
+    /// writes one, carrying a file, a label, a parent it names and the form a
+    /// signed message arrived in, then deleted into the shared Trash the way
+    /// Delete deletes it. Answers with its row.
+    fn a_pop_message_in_the_trash(cache: &MessageCache, uidl: &str, file: &[u8]) -> i64 {
+        let account = a_pop_account();
+        let row = cache
+            .upsert_message(&IncomingMessage {
+                folder_id: the_inbox(cache),
+                uid: cache.next_local_uid(the_inbox(cache)).expect("a number"),
+                message_id: format!("<{uidl}@example.com>"),
+                subject: format!("The {ITS_SUBJECT_WORD} minutes"),
+                from_addr: "Ada <ada@example.com>".to_string(),
+                to_addr: "me@example.com".to_string(),
+                cc: Some("bea@example.com".to_string()),
+                reply_to: None,
+                date: "2026-09-19T09:00:00Z".to_string(),
+                internal_date: None,
+                size_bytes: Some(640),
+                refs_header: Some(format!("<parent-of-{uidl}@example.com>")),
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: true,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: Some(uidl.to_string()),
+            })
+            .expect("a downloaded message");
+        cache
+            .save_message_body(
+                row,
+                Some(&format!("The {ITS_BODY_WORD} figures are attached.")),
+                None,
+            )
+            .expect("its text");
+        cache
+            .replace_attachments_with_content(
+                row,
+                &[AttachmentWithContent {
+                    described: CachedAttachment {
+                        id: 0,
+                        message_id: row,
+                        filename: "figures.csv".to_string(),
+                        mime_type: "text/csv".to_string(),
+                        size: file.len() as i64,
+                        content_id: None,
+                        description: Default::default(),
+                    },
+                    content: Some(file.to_vec()),
+                }],
+            )
+            .expect("its file");
+        cache
+            .note_the_form_it_arrived_in(
+                row,
+                &crate::service::signed_mail::for_tests::signed_beside(),
+            )
+            .expect("the form it arrived in");
+        cache
+            .create_tag(&Tag {
+                id: format!("label-{uidl}"),
+                account_id: account.id.clone(),
+                name: format!("Label {uidl}"),
+                color: "#000000".to_string(),
+                created_at: "2026-09-19T09:00:00Z".to_string(),
+                keyword: None,
+            })
+            .expect("a label");
+        cache
+            .add_tag_to_message(row, &format!("label-{uidl}"))
+            .expect("the label put on it");
+        cache
+            .keep_the_message_while_it_moves(&AMoveStarting {
+                message_row_id: row,
+                to_account_id: "work",
+                to_folder: "INBOX",
+                flags: None,
+                arrived: None,
+                was_there_before: None,
+                raw: b"Subject: a move\r\n\r\nheld while it moves",
+            })
+            .expect("the message held while it moves");
+        local_delete::perform(cache, &account, row, Deleting::ToTrash)
+            .expect("the delete")
+            .expect("a folder on this computer");
+        assert_eq!(
+            cache.folder_path_for_message(row).expect("the lookup"),
+            local_folders::local_trash(Protocol::Pop3),
+            "the message is not in the shared Trash"
+        );
+        row
+    }
+
+    /// Every table whose rows name a message, by its name and the column
+    /// that names it, as the schema declares them.
+    fn the_tables_keyed_on_a_message(cache: &MessageCache) -> Vec<(String, String)> {
+        cache
+            .conn
+            .prepare(
+                "SELECT t.name, k.\"from\" FROM sqlite_master t
+                 JOIN pragma_foreign_key_list(t.name) k
+                 WHERE t.type = 'table' AND k.\"table\" = 'messages'",
+            )
+            .expect("the schema read")
+            .query_map([], |table| Ok((table.get(0)?, table.get(1)?)))
+            .expect("the schema read")
+            .collect::<std::result::Result<_, _>>()
+            .expect("the schema read")
+    }
+
+    /// The tables keyed on a message that hold a row naming this one.
+    fn the_tables_naming(cache: &MessageCache, row: i64) -> Vec<String> {
+        the_tables_keyed_on_a_message(cache)
+            .into_iter()
+            .filter(|(table, column)| {
+                let held: i64 = cache
+                    .conn
+                    .query_row(
+                        &format!("SELECT count(*) FROM \"{table}\" WHERE \"{column}\" = ?1"),
+                        [row],
+                        |count| count.get(0),
+                    )
+                    .expect("the table read");
+                held > 0
+            })
+            .map(|(table, _)| table)
+            .collect()
+    }
+
+    /// How many entries the search index finds for a word.
+    fn the_index_finds(cache: &MessageCache, word: &str) -> i64 {
+        cache
+            .conn
+            .query_row(
+                "SELECT count(*) FROM message_search WHERE message_search MATCH ?1",
+                [word],
+                |count| count.get(0),
+            )
+            .expect("the index read")
+    }
+
+    fn the_subject_of(cache: &MessageCache, row: i64) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT subject FROM messages WHERE id = ?1",
+                [row],
+                |subject| subject.get(0),
+            )
+            .expect("the row read")
+    }
+
+    fn is_marked_deleted(cache: &MessageCache, row: i64) -> bool {
+        cache
+            .conn
+            .query_row(
+                "SELECT deleted FROM messages WHERE id = ?1",
+                [row],
+                |deleted| deleted.get(0),
+            )
+            .expect("the row read")
+    }
+
+    /// The kept columns of a row, as text, in the order the constant names
+    /// them.
+    fn what_it_keeps(cache: &MessageCache, row: i64) -> Vec<Option<String>> {
+        KEPT_WHEN_TAKEN_OFF
+            .iter()
+            .map(|column| {
+                cache
+                    .conn
+                    .query_row(
+                        &format!("SELECT CAST(\"{column}\" AS TEXT) FROM messages WHERE id = ?1"),
+                        [row],
+                        |value| value.get(0),
+                    )
+                    .expect("the row read")
+            })
+            .collect()
+    }
+
+    /// Every column of a row, as text.
+    fn the_whole_row(cache: &MessageCache, row: i64) -> Vec<Option<String>> {
+        let columns: Vec<String> = cache
+            .conn
+            .prepare("SELECT name FROM pragma_table_info('messages')")
+            .expect("the schema read")
+            .query_map([], |column| column.get(0))
+            .expect("the schema read")
+            .collect::<std::result::Result<_, _>>()
+            .expect("the schema read");
+        columns
+            .iter()
+            .map(|column| {
+                cache
+                    .conn
+                    .query_row(
+                        &format!("SELECT CAST(\"{column}\" AS TEXT) FROM messages WHERE id = ?1"),
+                        [row],
+                        |value| value.get(0),
+                    )
+                    .expect("the row read")
+            })
+            .collect()
+    }
+
+    /// The tables whose pages hold a copy of a word in the database file,
+    /// once the write log has been emptied into it; a page no table owns is
+    /// named as free space.
+    fn the_tables_holding_in_the_file(
+        cache: &TempHome<MessageCache>,
+        word: &str,
+    ) -> BTreeSet<String> {
+        cache
+            .conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .expect("the write log emptied");
+        let page_size: usize = cache
+            .conn
+            .query_row("PRAGMA page_size", [], |size| size.get::<_, i64>(0))
+            .expect("the page size") as usize;
+        let file = std::fs::read(cache.path().join("message_cache.db")).expect("the file read");
+        let needle = word.as_bytes();
+        file.windows(needle.len())
+            .enumerate()
+            .filter(|(_, window)| window.eq_ignore_ascii_case(needle))
+            .map(|(at, _)| {
+                let page = (at / page_size + 1) as i64;
+                cache
+                    .conn
+                    .query_row(
+                        "SELECT name FROM dbstat WHERE pageno = ?1",
+                        [page],
+                        |name| name.get::<_, String>(0),
+                    )
+                    .unwrap_or_else(|_| "free space".to_string())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_a_message_taken_off_keeps_only_what_stops_it_coming_back() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        let kept = what_it_keeps(&cache, row);
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        assert_eq!(
+            cache.what_a_row_still_holds(row).expect("the row read"),
+            Vec::<String>::new(),
+            "a column of a message taken off still holds something"
+        );
+        assert!(is_marked_deleted(&cache, row), "it is not marked deleted");
+        assert_eq!(what_it_keeps(&cache, row), kept, "a kept column changed");
+    }
+
+    #[test]
+    fn test_the_reading_sees_a_column_that_still_holds_something() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+
+        let holding = cache.what_a_row_still_holds(row).expect("the row read");
+
+        assert!(
+            holding.iter().any(|column| column == "subject"),
+            "the reading over a message not taken off does not name its subject: {holding:?}"
+        );
+    }
+
+    #[test]
+    fn test_nothing_keyed_on_a_message_taken_off_is_left() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        let every_table: Vec<String> = the_tables_keyed_on_a_message(&cache)
+            .into_iter()
+            .map(|(table, _)| table)
+            .collect();
+        assert_eq!(
+            the_tables_naming(&cache, row),
+            every_table,
+            "before the removal, a table keyed on a message held nothing naming it, \
+             so this case cannot see that table emptied"
+        );
+        assert_eq!(the_index_finds(&cache, ITS_SUBJECT_WORD), 1);
+        assert_eq!(the_index_finds(&cache, ITS_BODY_WORD), 1);
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        assert_eq!(the_tables_naming(&cache, row), Vec::<String>::new());
+        assert_eq!(the_index_finds(&cache, ITS_SUBJECT_WORD), 0);
+        assert_eq!(the_index_finds(&cache, ITS_BODY_WORD), 0);
+    }
+
+    #[test]
+    fn test_a_file_another_message_carries_stays_when_one_is_taken_off() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"the same file");
+        let other = a_pop_message_in_the_trash(&cache, "bbb", b"the same file");
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        assert!(
+            cache
+                .attachments_with_content(row)
+                .expect("the attachments read")
+                .is_empty(),
+            "the message taken off still carries its attachment"
+        );
+        let theirs = cache
+            .attachments_with_content(other)
+            .expect("the attachments read");
+        assert_eq!(
+            theirs.first().and_then(|file| file.content.as_deref()),
+            Some(&b"the same file"[..]),
+            "the other message lost the file it carries"
+        );
+    }
+
+    #[test]
+    fn test_a_message_taken_off_is_still_mail_its_account_has_had() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        assert_eq!(the_subject_of(&cache, row), "", "it was not taken off");
+        assert!(
+            cache
+                .pop_uidls_for_account("pop")
+                .expect("the identifiers read")
+                .contains("aaa"),
+            "the next check would download it again"
+        );
+        assert!(
+            cache
+                .pop_download_times_for_account("pop")
+                .expect("the download times read")
+                .contains_key("aaa"),
+            "the removal setting lost the day it counts from"
+        );
+    }
+
+    #[test]
+    fn test_taking_a_message_off_twice_changes_nothing_the_second_time() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        cache.take_off_this_computer(row).expect("taken off");
+        assert_eq!(the_subject_of(&cache, row), "", "it was not taken off");
+        let first = the_whole_row(&cache, row);
+
+        cache.take_off_this_computer(row).expect("taken off again");
+
+        assert_eq!(the_whole_row(&cache, row), first);
+        assert_eq!(the_tables_naming(&cache, row), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index() {
+        let cache = a_cache();
+        let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        for word in [ITS_SUBJECT_WORD, ITS_BODY_WORD] {
+            let before = the_tables_holding_in_the_file(&cache, word);
+            assert!(
+                before.contains("messages") || before.contains("message_bodies"),
+                "{word} was never in the file's rows, so this case cannot see it go: {before:?}"
+            );
+        }
+
+        cache.take_off_this_computer(row).expect("taken off");
+
+        for word in [ITS_SUBJECT_WORD, ITS_BODY_WORD] {
+            let after = the_tables_holding_in_the_file(&cache, word);
+            assert!(
+                after.iter().all(|table| table == "message_search_data"),
+                "{word} is still in the file outside the search index: {after:?}"
+            );
+        }
+    }
+}

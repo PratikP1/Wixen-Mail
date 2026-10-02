@@ -46,6 +46,7 @@ pub mod shared_folders;
 mod signatures;
 pub mod signed_original;
 mod tags;
+pub mod taken_off_this_computer;
 pub mod taking_back;
 pub mod tasks;
 pub mod waiting_flag_changes;
