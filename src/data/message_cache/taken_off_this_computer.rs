@@ -114,6 +114,10 @@ impl MessageCache {
                 [message_id],
             )
             .map_err(could_not)?;
+        // An entry holding no word, so the index stays as full as the mail:
+        // every open rebuilds the whole index when it holds fewer entries
+        // than there are rows.
+        self.index_message_for_search(message_id)?;
         taking.commit().map_err(could_not)
     }
 

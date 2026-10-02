@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 602 records have arrived since and have not been through it.
+# 604 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -36901,7 +36901,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 7 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
 ]
 
 # An ordinary move into a folder every account shares records nobody, so
@@ -36935,7 +36935,7 @@ tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 7 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
 ]
 
 # The owner dropped from the read of the shared Trash, so a POP account's
@@ -37249,9 +37249,12 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_taking_a_message_off_twice_changes_nothing_the_second_time",
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
     "data::message_cache::taken_off_this_computer::tests::test_the_reading_sees_a_column_that_still_holds_something",
+    # Added the same day by --remeasure: since the written-back row is
+    # indexed, a kept subject is found by a search again.
+    "data::message_cache::taken_off_this_computer::tests::test_nothing_keyed_on_a_message_taken_off_is_left",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 7 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
 ]
 
 # The POP identifier left off what a message taken off this computer keeps,
@@ -37279,7 +37282,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/application/pop_sync.rs", tests = 54 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 7 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
 ]
 
 # The soft delete put back in the arm every way of taking a message off
@@ -37314,5 +37317,37 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 7 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+]
+
+# The written-back row left with no search entry, so the index holds fewer
+# entries than there are rows and the next open rebuilds the whole of it
+# (13-44.8, found writing task 1). Written 2026-10-02 by 13-44.8, taken by
+# hand against the whole library first.
+[[guard]]
+name = "a message taken off this computer leaves the search index as full as the mail"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''        self.index_message_for_search(message_id)?;
+        taking.commit().map_err(could_not)'''
+after = '''        taking.commit().map_err(could_not)'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
+]
+
+# Secure delete left on after a removal instead of put back as it was found
+# (13-44.8, D31). Written 2026-10-02 by 13-44.8, taken by hand against the
+# whole library first.
+[[guard]]
+name = "secure delete is put back as it was after a message is taken off this computer"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''        if let Err(e) = self.conn.pragma_update(None, "secure_delete", self.found) {'''
+after = '''        if let Err(e) = self.conn.pragma_update(None, "secure_delete", 1) {'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 9 },
 ]
