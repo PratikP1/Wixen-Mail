@@ -176,7 +176,9 @@ fn wide(text: &str) -> Vec<u16> {
 
 /// Move this thread onto a desktop in a window station of this process's
 /// own, so no window it makes reaches the screen of whoever runs the tests.
-/// Must run before the first window of the process is made.
+/// Must run before the first window of the process is made. The desktop's
+/// name carries the process id: every run of one logon is handed the same
+/// station, so a fixed name was one desktop two runs at once shared.
 fn a_desktop_of_its_own() -> Result<(), String> {
     // SAFETY: every argument is a valid null-terminated string or null.
     unsafe {
@@ -191,8 +193,12 @@ fn a_desktop_of_its_own() -> Result<(), String> {
                 GetLastError()
             ));
         }
+        let name = wide(&format!(
+            "wixen-directory-window-test-{}",
+            std::process::id()
+        ));
         let desktop = CreateDesktopW(
-            wide("wixen-directory-window-test").as_ptr(),
+            name.as_ptr(),
             std::ptr::null(),
             std::ptr::null(),
             0,

@@ -65,6 +65,43 @@ unsafe extern "system" {
     fn NotifyWinEvent(event: u32, hwnd: isize, id_object: i32, id_child: i32);
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetCurrentThreadId() -> u32;
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const u8,
+        flags: u32,
+        access: u32,
+        attributes: *const u8,
+    ) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
+    fn GetKeyboardState(state: *mut u8) -> i32;
+    fn SetKeyboardState(state: *const u8) -> i32;
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of two key targets
+/// came while the person at the machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
 }
 
 #[link(name = "kernel32")]
@@ -72,6 +109,46 @@ unsafe extern "system" {
     fn GetCurrentProcessId() -> u32;
     fn GetModuleHandleW(name: *const u16) -> *mut c_void;
     fn GetLastError() -> u32;
+}
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+
+/// Move the calling thread onto a desktop made for this run, on the window
+/// station the process is already on, before its first window.
+///
+/// A window on the interactive desktop is put in front while nobody uses the
+/// machine and is not while somebody does, and nothing a person types
+/// reaches a desktop that is not the input desktop. The name carries the
+/// process id, so two runs at once never share one. Measured 2026-10-02:
+/// this target passed 20 of 20 with its window thread on such a desktop.
+/// Not a station of its own, where a posted Alt+letter pressed nothing.
+///
+/// The handle stays open for the life of the process, because the thread's
+/// windows live on it.
+fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+    let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: the name is null-terminated and every other pointer is null,
+    // which CreateDesktopW takes as "none".
+    unsafe {
+        let desktop = CreateDesktopW(
+            name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            GENERIC_ALL,
+            std::ptr::null(),
+        );
+        if desktop == 0 {
+            return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+        }
+        if SetThreadDesktop(desktop) == 0 {
+            return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+        }
+    }
+    Ok(())
 }
 
 /// One event the control raised: which kind, on which window, about which child.
@@ -169,6 +246,7 @@ fn press(hwnd: isize, key: usize, from: Keyboard) {
         Keyboard::Main => KF_EXTENDED,
         Keyboard::Numpad => 0,
     };
+    only_these_modifiers_down(&[]);
     // SAFETY: `hwnd` is a live window on this thread, built by the caller.
     unsafe {
         SendMessageW(hwnd, WM_KEYDOWN, key, 1 | extended);
@@ -204,6 +282,8 @@ fn one_reading_of(raised: &[Raised], reached: i32) -> Result<(), String> {
 
 #[test]
 fn test_one_arrow_on_the_settings_tab_row_raises_one_focus_event() {
+    a_desktop_of_its_own("settings-tab-row")
+        .expect("the tab row is built on a desktop made for this run");
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();

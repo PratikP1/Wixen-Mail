@@ -87,6 +87,60 @@ unsafe extern "system" {
     fn GetKeyboardState(state: *mut u8) -> i32;
     fn SetKeyboardState(state: *const u8) -> i32;
     fn FindWindowExW(parent: isize, after: isize, class: *const u16, title: *const u16) -> isize;
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const u8,
+        flags: u32,
+        access: u32,
+        attributes: *const u8,
+    ) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
+}
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetLastError() -> u32;
+}
+
+/// Move the calling thread onto a desktop made for this run, on the window
+/// station the process is already on, before its first window.
+///
+/// A window on the interactive desktop is put in front while nobody uses the
+/// machine and is not while somebody does, and nothing a person types
+/// reaches a desktop that is not the input desktop. The name carries the
+/// process id, so two runs at once never share one. Measured 2026-10-02:
+/// this target passed 20 of 20 with its window thread on such a desktop.
+/// Not a station of its own, where a posted Alt+letter pressed nothing.
+///
+/// The handle stays open for the life of the process, because the thread's
+/// windows live on it.
+fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+    let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: the name is null-terminated and every other pointer is null,
+    // which CreateDesktopW takes as "none".
+    unsafe {
+        let desktop = CreateDesktopW(
+            name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            GENERIC_ALL,
+            std::ptr::null(),
+        );
+        if desktop == 0 {
+            return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+        }
+        if SetThreadDesktop(desktop) == 0 {
+            return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+        }
+    }
+    Ok(())
 }
 
 /// winuser.h.
@@ -116,28 +170,25 @@ fn type_into(box_: &TextCtrl, words: &str) {
 }
 
 fn type_into_window(window: isize, words: &str) {
+    let before = only_these_modifiers_down(&[]);
     for unit in words.encode_utf16() {
         // SAFETY: a live window on this thread; the message carries a
         // character and no pointer.
         unsafe { SendMessageW(window, WM_CHAR, usize::from(unit), PRESSED) };
     }
+    put_back_the_keyboard_state(&before);
 }
 
 /// Control held while `letter` is pressed in the box: the key-down and the
-/// control character Windows makes of it, then the release. Control is set
-/// in this thread's keyboard state and put back afterwards.
+/// control character Windows makes of it, then the release. Control alone of
+/// the modifiers is set in this thread's keyboard state, and the state is
+/// put back afterwards.
 fn press_with_control(box_: &TextCtrl, letter: u8) {
     press_with_control_in(handle(box_), letter);
 }
 
 fn press_with_control_in(window: isize, letter: u8) {
-    let mut before = [0u8; 256];
-    // SAFETY: the buffer is the 256 bytes the call writes.
-    unsafe { GetKeyboardState(before.as_mut_ptr()) };
-    let mut held = before;
-    held[VK_CONTROL] = 0x80;
-    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
-    unsafe { SetKeyboardState(held.as_ptr()) };
+    let before = only_these_modifiers_down(&[VK_CONTROL]);
     let control_character = usize::from(letter - b'A' + 1);
     // SAFETY: a live window on this thread; the messages carry numbers only.
     unsafe {
@@ -145,8 +196,58 @@ fn press_with_control_in(window: isize, letter: u8) {
         SendMessageW(window, WM_CHAR, control_character, PRESSED);
         SendMessageW(window, WM_KEYUP, usize::from(letter), RELEASED);
     }
-    // SAFETY: as above, the state read at the start.
+    put_back_the_keyboard_state(&before);
+}
+
+/// winuser.h: Shift, and the left Shift key Windows sets beside it.
+const VK_SHIFT: usize = 0x10;
+const VK_LSHIFT: usize = 0xA0;
+
+/// Shift set down in this thread's keyboard state, as Windows leaves it
+/// when the person at the machine is holding Shift; the state before is
+/// handed back so it can be put back.
+fn as_if_the_person_held_shift() -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    held[VK_SHIFT] = 0x80;
+    held[VK_LSHIFT] = 0x80;
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
+}
+
+fn put_back_the_keyboard_state(before: &[u8; 256]) {
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(before.as_ptr()) };
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of this file and
+/// `mark_as_read_says_which_way_it_will_go` came while the person at the
+/// machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+    let mut before = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+    before
 }
 
 fn counter_on(bind: impl FnOnce(Rc<Cell<u32>>)) -> Rc<Cell<u32>> {
@@ -219,6 +320,18 @@ fn take_the_readings(frame: &Frame, harvest: &mut Harvest) {
     );
     press_with_control(&box_, b'Y');
     harvest.insert("the box after Ctrl+Y", box_.get_value());
+
+    // The same Ctrl+Z with Shift left down in this thread's keyboard state,
+    // the way a person holding Shift left it (ledger 580's shape).
+    set_anew(&box_, "");
+    type_into(&box_, "gamma delta");
+    let before = as_if_the_person_held_shift();
+    press_with_control(&box_, b'Z');
+    put_back_the_keyboard_state(&before);
+    harvest.insert(
+        "the box after Ctrl+Z with Shift left down",
+        box_.get_value(),
+    );
 
     take_the_combo_box_readings(&panel, harvest);
     take_the_dialog_readings(frame, harvest);
@@ -412,6 +525,7 @@ fn one_misspelling_of_world() -> spell_session::Finding {
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
+    a_desktop_of_its_own("several-steps")?;
     let data = tempfile::tempdir().map_err(|e| format!("a data directory: {e}"))?;
     // SAFETY: set before the window session starts any thread, and nothing
     // has read either yet.
@@ -555,6 +669,21 @@ fn test_ctrl_z_in_the_box_undoes_one_step_and_the_box_does_not_undo_again() {
 #[test]
 fn test_ctrl_y_in_the_box_puts_the_step_back() {
     assert_eq!(reading("the box after Ctrl+Y"), "alpha beta");
+}
+
+#[test]
+fn test_ctrl_z_holds_when_the_person_at_the_machine_holds_shift() {
+    // On 2026-10-02 every failed run of this file came while the person at
+    // the machine held Shift, its windows already on a desktop of their
+    // own: Ctrl+Shift+Z is left alone (it is Undo Send in the main window),
+    // so the control character reached the box and its own undo emptied it.
+    // Here Shift is left down in the thread's keyboard state on purpose: the
+    // key is sent with the modifiers it means, so a Shift somebody holds
+    // changes nothing.
+    assert_eq!(
+        reading("the box after Ctrl+Z with Shift left down"),
+        "gamma "
+    );
 }
 
 #[test]

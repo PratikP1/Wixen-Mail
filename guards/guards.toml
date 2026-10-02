@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 584 records have arrived since and have not been through it.
+# 589 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26903,7 +26903,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/list_keys.rs", tests = 3 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 15 },
 ]
 
 # ── A tool's new label reaches the control ──────────────────────────────────
@@ -26929,7 +26929,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/toolbar_text.rs", tests = 1 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 15 },
 ]
 
 # ── The words follow the row landed on ──────────────────────────────────────
@@ -26961,7 +26961,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 15 },
 ]
 
 # ── M goes through the helper that consumes it ──────────────────────────────
@@ -27007,7 +27007,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 14 },
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 15 },
 ]
 
 # ── The first Space starts no clock ─────────────────────────────────────────
@@ -27511,7 +27511,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The undo dropped from the arm a refusal arrives on: the server said no,
@@ -27537,7 +27537,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # A check wired into the arm that runs when the network comes back, which
@@ -27568,7 +27568,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The activation binding dropped from the Move dialog's tree, which is the
@@ -27596,7 +27596,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 15 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
 ]
 
 # The bytes not kept before the append goes out, as the first step of a
@@ -31123,7 +31123,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # The history not taking the value it hands back, so the box's change on a
@@ -31156,7 +31156,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/text_history.rs", tests = 10 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # A note chosen in the list written into the editor with `set_value`, which
@@ -31175,7 +31175,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # The composer's Subject box built without its history, so it keeps Windows'
@@ -31222,7 +31222,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # A stored contact's nickname written into the editor with `set_value`, which
@@ -31241,7 +31241,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # The Check Spelling box built without its history, so a word typed after the
@@ -31263,7 +31263,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # An undo of a mark reaching the messages the action did not change: Mark as
@@ -31499,7 +31499,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/text_history_keys.rs", tests = 0 },
-    { file = "tests/several_steps_come_back.rs", tests = 18 },
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
 # An undone delete its account was never told of answered by making the item
@@ -32706,7 +32706,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
 ]
 
 # A single message opened in a reader window no longer asking for the
@@ -32727,7 +32727,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
 ]
 
 # A PGP signature said to hold once a key in the list is the one it names,
@@ -36829,7 +36829,7 @@ red = [
     "test_the_real_paste_target_is_where_the_clipboard_is_opened",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
 ]
 
 # A refused clipboard told the lock state without asking Windows, so a locked
@@ -36892,4 +36892,109 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
+]
+
+# The move reading builds its tree on a desktop made for its run. The break
+# turns the call into a comment, so the tree is built on the interactive
+# desktop again, where a person's keys and a second run reach its Enter. The
+# case reading the session's desktop goes red; the Enter case itself passes
+# while nobody types, which is why the case exists. Written 2026-10-02 by
+# 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test a_move_completes_here_first`.
+[[guard]]
+name = "the move reading builds its tree on a desktop made for its run"
+file = "tests/a_move_completes_here_first.rs"
+suite = "a_move_completes_here_first"
+before = '''        a_desktop_of_its_own("move-tree")?;'''
+after = '''        // a_desktop_of_its_own("move-tree")?;'''
+red = [
+    "the_built_tree::test_the_built_tree_is_read_on_a_desktop_made_for_this_run",
+]
+tests_last_seen = [
+    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+]
+
+# The key census stops asking that a desktop be named for its run, so a
+# target making one desktop with a fixed name, which two runs at once share,
+# passes it. The fixed-name companion goes red; the census itself stays
+# green, since every sender on the tree now names its desktop with its
+# process id. Written 2026-10-02 by 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "a key sent from a test is sent on a desktop made for its run"
+file = "tests/a_locked_key_asks_for_its_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''    if names("CreateDesktopW") && names("process::id()") {'''
+after = '''    if names("CreateDesktopW") {'''
+red = [
+    "test_the_key_census_sees_a_desktop_not_named_for_its_run",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+]
+
+# The modifier census lets every file through, so a target sending keys
+# with whatever Shift, Control or Alt the person at the machine holds
+# passes it. The planted companion goes red; the census itself stays
+# green, since every key sender on the tree now sets its modifiers.
+# Written 2026-10-02 by 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "a key sent from a test is sent with only the modifiers it means"
+file = "tests/a_locked_key_asks_for_its_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''    if names("only_these_modifiers_down") {'''
+after = '''    if true || names("only_these_modifiers_down") {'''
+red = [
+    "test_the_modifier_census_sees_a_sender_that_sets_no_modifiers",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 14 },
+]
+
+# M pressed with the keyboard state as it stands rather than with no
+# modifier down, so a Shift the person holds makes it Shift+M and the
+# bare-press handler lets it pass (ledger 580's shape). The reading with
+# Shift left down goes red alone. Written 2026-10-02 by 13-44.6.2, measured
+# by hand with `cargo test --no-fail-fast --test
+# mark_as_read_says_which_way_it_will_go`.
+[[guard]]
+name = "m on a real list is pressed with no modifier down, whatever the person holds"
+file = "tests/mark_as_read_says_which_way_it_will_go.rs"
+suite = "mark_as_read_says_which_way_it_will_go"
+before = '''fn press_m(hwnd: isize) {
+    let before = only_these_modifiers_down(&[]);'''
+after = '''fn press_m(hwnd: isize) {
+    let mut before = [0u8; 256];
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };'''
+red = [
+    "test_reading_a_holds_when_the_person_at_the_machine_holds_shift",
+]
+tests_last_seen = [
+    { file = "tests/mark_as_read_says_which_way_it_will_go.rs", tests = 15 },
+]
+
+# Ctrl+Z pressed with Control added to the keyboard state as it stands, the
+# way it was before 13-44.6.2, so a Shift the person holds makes it
+# Ctrl+Shift+Z, the history leaves it alone and the box's own undo empties
+# it. The reading with Shift left down goes red alone. Written 2026-10-02 by
+# 13-44.6.2, measured by hand with
+# `cargo test --no-fail-fast --test several_steps_come_back`.
+[[guard]]
+name = "ctrl+z in a box is pressed with control alone down, whatever the person holds"
+file = "tests/several_steps_come_back.rs"
+suite = "several_steps_come_back"
+before = '''fn press_with_control_in(window: isize, letter: u8) {
+    let before = only_these_modifiers_down(&[VK_CONTROL]);'''
+after = '''fn press_with_control_in(window: isize, letter: u8) {
+    let mut before = [0u8; 256];
+    unsafe { GetKeyboardState(before.as_mut_ptr()) };
+    let mut held = before;
+    held[VK_CONTROL] = 0x80;
+    unsafe { SetKeyboardState(held.as_ptr()) };'''
+red = [
+    "test_ctrl_z_holds_when_the_person_at_the_machine_holds_shift",
+]
+tests_last_seen = [
+    { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]

@@ -155,6 +155,60 @@ unsafe extern "system" {
     fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
     fn GetParent(hwnd: isize) -> isize;
     fn GetDlgCtrlID(hwnd: isize) -> i32;
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const u8,
+        flags: u32,
+        access: u32,
+        attributes: *const u8,
+    ) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
+}
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetLastError() -> u32;
+}
+
+/// Move the calling thread onto a desktop made for this run, on the window
+/// station the process is already on, before its first window.
+///
+/// A window on the interactive desktop is put in front while nobody uses the
+/// machine and is not while somebody does, and nothing a person types
+/// reaches a desktop that is not the input desktop. The name carries the
+/// process id, so two runs at once never share one. Measured 2026-10-02:
+/// this target passed 20 of 20 with its window thread on such a desktop,
+/// and failed 3 of 3 on a station of its own, which is why it is not one.
+///
+/// The handle stays open for the life of the process, because the thread's
+/// windows live on it.
+fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+    let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: the name is null-terminated and every other pointer is null,
+    // which CreateDesktopW takes as "none".
+    unsafe {
+        let desktop = CreateDesktopW(
+            name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            GENERIC_ALL,
+            std::ptr::null(),
+        );
+        if desktop == 0 {
+            return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+        }
+        if SetThreadDesktop(desktop) == 0 {
+            return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+        }
+    }
+    Ok(())
 }
 
 #[link(name = "oleacc")]
@@ -507,6 +561,7 @@ fn read_the_mechanism(frame: &Frame) -> Result<Mechanism, String> {
 /// Everything, inside one `wxdragon::main`, with every failure carried out
 /// as a value: nothing in here panics, for the reason the file comment gives.
 fn take_the_harvest() -> Result<Harvest, String> {
+    a_desktop_of_its_own("settings-checkbox")?;
     if std::mem::size_of::<Variant>() != 24 {
         return Err("VARIANT is not 24 bytes here, so the reader's layout is wrong".to_string());
     }

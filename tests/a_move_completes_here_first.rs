@@ -621,10 +621,137 @@ mod the_built_tree {
     const WM_KEYUP: u32 = 0x0101;
     const VK_RETURN: usize = 0x0D;
 
+    const UOI_NAME: i32 = 2;
+    const GENERIC_ALL: u32 = 0x1000_0000;
+
     #[link(name = "user32")]
     unsafe extern "system" {
         fn SendMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> isize;
+        fn CreateDesktopW(
+            name: *const u16,
+            device: *const u16,
+            mode: *const u8,
+            flags: u32,
+            access: u32,
+            attributes: *const u8,
+        ) -> isize;
+        fn SetThreadDesktop(desktop: isize) -> i32;
+        fn GetKeyboardState(state: *mut u8) -> i32;
+        fn SetKeyboardState(state: *const u8) -> i32;
+        fn GetThreadDesktop(thread: u32) -> isize;
+        fn GetUserObjectInformationW(
+            object: isize,
+            index: i32,
+            info: *mut u16,
+            length: u32,
+            needed: *mut u32,
+        ) -> i32;
     }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentThreadId() -> u32;
+        fn GetLastError() -> u32;
+    }
+
+    /// Move the calling thread onto a desktop made for this run, on the
+    /// window station the process is already on, before its first window.
+    ///
+    /// A window on the interactive desktop is put in front while nobody uses
+    /// the machine and is not while somebody does, so a reading there
+    /// depends on what the person is doing. Nothing a person types reaches a
+    /// desktop that is not the input desktop. The name carries the process
+    /// id, so two runs at once never share one. Measured on 2026-10-02: the
+    /// tree's Enter passed 20 of 20 here, and two runs at once 20 rounds of
+    /// 20, where on one shared desktop it failed one round in 25. Not a
+    /// station of its own, where a posted Alt+letter pressed nothing.
+    ///
+    /// The handle stays open for the life of the process, because the
+    /// thread's windows live on it.
+    fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+        let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: the name is null-terminated and every other pointer is
+        // null, which CreateDesktopW takes as "none".
+        unsafe {
+            let desktop = CreateDesktopW(
+                name.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                GENERIC_ALL,
+                std::ptr::null(),
+            );
+            if desktop == 0 {
+                return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+            }
+            if SetThreadDesktop(desktop) == 0 {
+                return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+            }
+        }
+        Ok(())
+    }
+
+    /// winuser.h: Shift, Control and Alt, each with its left and right key.
+    const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+    /// Set this thread's keyboard state with exactly `down` of the modifier
+    /// keys held and every other key as it was, and hand back the state
+    /// before.
+    ///
+    /// wxWidgets reads a key's modifiers from this state, and a desktop of
+    /// the run's own keeps out the keys a person presses but not the ones
+    /// they hold: measured 2026-10-02, every one of eight failed runs of two
+    /// key targets came while the person at the machine held Shift.
+    fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
+        let mut before = [0u8; 256];
+        // SAFETY: the buffer is the 256 bytes the call writes.
+        unsafe { GetKeyboardState(before.as_mut_ptr()) };
+        let mut held = before;
+        for key in MODIFIERS {
+            held[key] = 0;
+        }
+        for &key in down {
+            held[key] = 0x80;
+        }
+        // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+        unsafe { SetKeyboardState(held.as_ptr()) };
+        before
+    }
+
+    /// The name of the desktop the calling thread's windows are made on.
+    fn the_desktop_this_thread_is_on() -> Result<String, String> {
+        let mut buffer = [0u16; 256];
+        let mut needed = 0u32;
+        // SAFETY: the buffer's length is passed in bytes and the handle is
+        // this thread's own desktop, which Windows owns.
+        let read = unsafe {
+            GetUserObjectInformationW(
+                GetThreadDesktop(GetCurrentThreadId()),
+                UOI_NAME,
+                buffer.as_mut_ptr(),
+                (buffer.len() * 2) as u32,
+                &mut needed,
+            )
+        };
+        if read == 0 {
+            // SAFETY: reads this thread's last error and nothing else.
+            return Err(format!("GetUserObjectInformationW failed: {}", unsafe {
+                GetLastError()
+            }));
+        }
+        let end = buffer
+            .iter()
+            .position(|&unit| unit == 0)
+            .unwrap_or(buffer.len());
+        Ok(String::from_utf16_lossy(&buffer[..end]))
+    }
+
+    /// The desktop the window session ran on, read inside it and kept
+    /// beside the measurement rather than in it.
+    static READ_ON: OnceLock<Result<String, String>> = OnceLock::new();
 
     /// What the control did with Enter on a collapsed parent.
     #[derive(Debug, Clone, PartialEq, Eq)]
@@ -670,6 +797,7 @@ mod the_built_tree {
         tree.set_focus();
         let expanded_before = tree.is_expanded(&parent);
         let hwnd = tree.get_handle() as isize;
+        only_these_modifiers_down(&[]);
         // SAFETY: a live window this file built, sent the two messages a
         // key press is.
         unsafe {
@@ -689,11 +817,13 @@ mod the_built_tree {
     }
 
     fn take_the_measurement() -> Result<EnterOnAParent, String> {
+        a_desktop_of_its_own("move-tree")?;
         let outcome: Arc<Mutex<Option<Result<EnterOnAParent, String>>>> =
             Arc::new(Mutex::new(None));
         let result = {
             let outcome = outcome.clone();
             wxdragon::main(move |app| {
+                let _ = READ_ON.set(the_desktop_this_thread_is_on());
                 let frame = Frame::builder().build();
                 let taken = measure(&frame);
                 if let Ok(mut slot) = outcome.lock() {
@@ -739,6 +869,24 @@ mod the_built_tree {
             },
             "measured 2026-09-19 on this machine's comctl32 through wxWidgets 3.3.2: Enter \
              raises the activation and neither expands the row nor moves off it"
+        );
+    }
+
+    #[test]
+    fn test_the_built_tree_is_read_on_a_desktop_made_for_this_run() {
+        // The Enter above is sent to a tree nobody can type into and no
+        // second run can share: a desktop made for this run, named for its
+        // process, which is never the desktop a person's keys land on.
+        let _ = the_measurement();
+        let read_on = READ_ON
+            .get()
+            .expect("the window session ran and read its desktop")
+            .as_ref()
+            .unwrap_or_else(|why| panic!("the session's desktop could not be read: {why}"));
+        assert_eq!(
+            read_on,
+            &format!("wixen-move-tree-{}", std::process::id()),
+            "the built tree was read on the desktop {read_on:?}"
         );
     }
 }

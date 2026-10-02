@@ -78,6 +78,60 @@ unsafe extern "system" {
     fn PostMessageW(hwnd: isize, message: u32, wparam: usize, lparam: isize) -> i32;
     fn GetKeyboardState(state: *mut u8) -> i32;
     fn SetKeyboardState(state: *const u8) -> i32;
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const u8,
+        flags: u32,
+        access: u32,
+        attributes: *const u8,
+    ) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
+}
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetLastError() -> u32;
+}
+
+/// Move the calling thread onto a desktop made for this run, on the window
+/// station the process is already on, before its first window.
+///
+/// A window on the interactive desktop is put in front while nobody uses the
+/// machine and is not while somebody does, and nothing a person types
+/// reaches a desktop that is not the input desktop. The name carries the
+/// process id, so two runs at once never share one. Measured 2026-10-02:
+/// this target passed 20 of 20 with its window thread on such a desktop.
+/// Not a station of its own, where a posted Alt+letter pressed nothing.
+///
+/// The handle stays open for the life of the process, because the thread's
+/// windows live on it.
+fn a_desktop_of_its_own(short: &str) -> Result<(), String> {
+    let name: Vec<u16> = format!("wixen-{short}-{}", std::process::id())
+        .encode_utf16()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: the name is null-terminated and every other pointer is null,
+    // which CreateDesktopW takes as "none".
+    unsafe {
+        let desktop = CreateDesktopW(
+            name.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            0,
+            GENERIC_ALL,
+            std::ptr::null(),
+        );
+        if desktop == 0 {
+            return Err(format!("CreateDesktopW failed: {}", GetLastError()));
+        }
+        if SetThreadDesktop(desktop) == 0 {
+            return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+        }
+    }
+    Ok(())
 }
 
 /// winuser.h.
@@ -278,14 +332,34 @@ fn press_alt_and(control: isize, digit: u8) {
     }
 }
 
-/// Alt set down in this thread's keyboard state; the state before is
-/// handed back so it can be put back.
+/// Alt, and no other modifier, set down in this thread's keyboard state; the
+/// state before is handed back so it can be put back.
 fn alt_held_in_this_thread() -> [u8; 256] {
+    only_these_modifiers_down(&[VK_MENU])
+}
+
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, and hand back the state before.
+///
+/// wxWidgets reads a key's modifiers from this state, and a desktop of the
+/// run's own keeps out the keys a person presses but not the ones they hold:
+/// measured 2026-10-02, every one of eight failed runs of two key targets
+/// came while the person at the machine held Shift. A Shift or Control held
+/// there would make these keys something other than Alt and a digit.
+fn only_these_modifiers_down(down: &[usize]) -> [u8; 256] {
     let mut before = [0u8; 256];
     // SAFETY: the buffer is the 256 bytes the call writes.
     unsafe { GetKeyboardState(before.as_mut_ptr()) };
     let mut held = before;
-    held[VK_MENU] = 0x80;
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
     // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
     unsafe { SetKeyboardState(held.as_ptr()) };
     before
@@ -398,6 +472,7 @@ fn the_range_arm_lands_then_runs(app: &str) -> Result<(), String> {
 // ── The window session ────────────────────────────────────────────────────
 
 fn take_the_harvest() -> Result<Harvest, String> {
+    a_desktop_of_its_own("saved-searches")?;
     let data = tempfile::tempdir().map_err(|e| format!("a data directory: {e}"))?;
     // SAFETY: set before the window session starts any thread, and nothing
     // has read either yet.
