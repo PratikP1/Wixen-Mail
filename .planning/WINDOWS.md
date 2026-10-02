@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 680
+open_count: 683
 waived_count: 0
-fixed_count: 93
-total_count: 773
-last_updated: 2026-10-02T13:20:00.000Z
+fixed_count: 96
+total_count: 779
+last_updated: 2026-10-02T15:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -594,7 +594,7 @@ last_updated: 2026-10-02T13:20:00.000Z
 | 577 | 12 | unrun-verify | nvda-tests/helpers/launch-app.js |  | 12-03.1: Alt+Tab on the runner. In runs 35839692317 and 35839954840 the link case pressed Alt+Tab to come back to the page window and, when its ten seconds ran out, the window in front was an untitled one of another process, pid 2036, while NVDA had called the Edge window unavailable; activateWindow then brought the page window back. The likeliest reading is a first-run window of Edge's disabling its main window. foregroundWindow now records the class and the process name of the window in front, so the next run says whose that window is, and whether Alt+Tab is worth keeping as the first way back | fixed | Fixed by 12-03.1 on 2026-09-23, answered: in NVDA run 35876075636 on pull request #94 at 2b6efecf, Alt+Tab brought the page window back on neither return, and both times the window in front when its ten seconds ran out was an untitled Chrome_WidgetWin_1 of msedge, pid 1464, which is Edge's; activateWindow brought the page window back both times. Whether Alt+Tab stays as the first way back is not decided here | 2026-09-23T14:10:00.000Z | 2026-09-23T15:06:51.000Z |
 | 578 | 12 | unrun-verify | src/presentation/page_focus.rs |  | 12-03.1: the tester's ear. Switching away from the window that shows a conversation as headings and back, under NVDA, then pressing K or H at once: the keyboard should be in the message and the key should move. What is held here is a message a test sends to a built window, reproducing the one path in wxWidgets that leaves the keyboard on the frame; a real switch is read only by the NVDA workflow, and nobody has heard it. Also to hear: moving to the attachments list or the warning bar, switching away and back, and finding the keyboard still there | open |  | 2026-09-23T14:10:00.000Z |  |
 | 579 | 12 | todo | src/presentation/page_window.rs | 186 | 12-03.1: the separate window has no such handler. Its frame has no parent, so the wxWidgets path that restores a frame to itself, because it was saved as its own last focused child, cannot happen there: with no parent the saved frame is dropped and the first child that takes the keyboard gets it. The other two ways the keyboard could be lost on coming back, an activation wxWidgets drops because it arrives marked minimised, and the browser letting the keyboard go after a real foreground change, are unmeasured on it. Owed: the frame-saved reading's shape over the separate window, and presentation::page_focus bound there if it comes back red | open |  | 2026-09-23T14:10:00.000Z |  |
-| 580 | 12 | todo | tests/mark_as_read_says_which_way_it_will_go.rs |  | 13-44.6.2 carries the fix, written 2026-10-02 on Pratik's "yes to moving the plan as well as others." and added the same day. 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first | open |  | 2026-09-23T14:10:00.000Z |  |
+| 580 | 12 | todo | tests/mark_as_read_says_which_way_it_will_go.rs |  | 13-44.6.2 carries the fix, written 2026-10-02 on Pratik's "yes to moving the plan as well as others." and added the same day. 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first. Cause removed by 13-44.6.2 on 2026-10-02: the candidate above was the cause, and moving the windows was not enough to remove it. With the windows on a desktop made for each run, where no key a person presses arrives, the reading still failed one round of 20 run two at once, and with Shift, Control and Alt watched on the machine's keyboard every failure of it and of several_steps_come_back, eight of eight, came while the person held Shift, and none of the 345 watched runs without a held modifier failed. wxWidgets reads a key's modifiers from the thread's keyboard state, so M arrived as Shift+M and the bare-press handler let it pass. Every key target now sets exactly the modifiers its key means before sending it (only_these_modifiers_down), held by a census in tests/a_locked_key_asks_for_its_passphrase.rs and by a reading that leaves Shift down on purpose and passes. Before: 20 of 20 on the interactive desktop while nobody typed (13-44.6.2 premise 3) and this entry's failure while the tester used the machine. After, at 9440d3cf: 20 of 20 alone, 100 of 100 more, and 20 rounds of two at once with both runs green every round, Alt or Control held during 9 of those rounds and Shift during none, so the Shift case is the planted reading. The locked session nobody may stage is ledger 776 | fixed |  | 2026-09-23T14:10:00.000Z | 2026-10-02T15:00:00.000Z |
 | 581 | 12 | todo | src/service/secret_store.rs |  | 12-03.2: ledger 374's second finding, carried on when 374 was fixed for its race. The in-memory seam in secret_store.rs is cfg(test), so an integration target never sees it and every target that reaches the credential store, a_move_says_what_has_not_been_sent and the_credential_store_is_ready_for_every_thread among them, reaches the real Windows Credential Manager of whoever runs it. The new target only reads an entry under a service name nothing stores under, and writes nothing. A seam the integration targets can see, or a store they are handed, is the fix; not built here because 12-03.2 fixed the race and left the seam's shape alone | open |  | 2026-09-23T15:55:00.000Z |  |
 | 582 | 12 | todo | scripts/which-checks.sh |  | 12-03.2: nothing holds the real include lines to the shape the compiled-in scan reads. which-checks.sh maps a staged file to the sources whose include_str! or include_bytes! argument, a string literal on the macro's line or the next, resolves to it. The suites test that rule over fixture copies of three real lines (spellcheck/mod.rs:1050, catalogue.rs:153, sent_copy.rs:1133 on 2026-09-23), and the real tree's answers were read by hand once. If the dictionary's include changed shape, for instance to concat!(env!("CARGO_MANIFEST_DIR"), ...), both suites would stay green and a change to the dictionary would silently read as a document again. A reading of the real include lines that runs on the commits that could break them is owed; a unit test beside the include was set aside because it would add a test to files that 32 and 6 guard records name, setting off the count check for every one | open |  | 2026-09-23T16:20:00.000Z |  |
 | 583 | 12 | todo | src/application/contact_groups.rs |  | 12-03.2: documents src reads at test time with read_to_string reach no scoped run. docs/privacy.md is read by src/application/contact_groups.rs and src/service/update_check.rs, docs/development/the-notes-seam.md by src/service/onenote_page.rs, and docs/ALPHA_TESTING.md by src/presentation/help_page.rs, which alone is on the document-reading list. A commit changing only docs/privacy.md or the notes seam page runs none of the tests that read it. Until 2026-09-23 the whole gate at the merge covered them; 12-03.2 moved that gate to once a phase, which widened this hole to the phase's close. A mapping from a document to the sources that read it at test time, the way which-checks.sh maps a compiled-in file to its source, is owed | open |  | 2026-09-23T16:50:00.000Z |  |
@@ -788,6 +788,12 @@ last_updated: 2026-10-02T13:20:00.000Z
 | 771 | 13 | todo | src/application/emptying_the_trash.rs |  | 13-44.6, for phase 14 under REAL-02's delete line: an IMAP account set to After 15 or 30 days emptied at a real mail server, one with UIDPLUS and one without; the rows marked deleted here forgotten at the next read of the Trash; the next day's first check emptying what came due since; a server refusing one message, and one dropped part way, whose waiting delete the next check's replay sends | open |  | 2026-10-02T12:00:00.000Z |  |
 | 772 | 13 | todo | src/application/moves_waiting.rs |  | 13-44.6, D17, for Pratik: on a server without UIDPLUS MailController::delete_message marks a message deleted and leaves it, because a bare EXPUNGE would take every message anybody flagged, and the replay's delete_it answers Ok for both outcomes and only logs which, so an emptying counts a message marked and left as emptied, and the menu's Delete inside the Trash says the same for both. The question: should the replay tell the two apart, so an emptying's sentence can say how many were only marked for removal? Recommendation: yes, hand the Deletion back from delete_it through replay_one and give the sentence a clause for it; it changes what the menu's Delete in the Trash says too, so it belongs in a plan of its own | open |  | 2026-10-02T12:00:00.000Z |  |
 | 773 | 13 | unrun-verify | tests/a_passphrase_box_takes_a_real_paste.rs |  | 13-44.6.1: nobody has seen either passphrase target run while the Windows session is locked, and nobody may lock this session to watch it. The first gate run on a locked session settles it: a_passphrase_box_takes_a_real_paste should fail with the sentence beginning "the clipboard is refused while the session is locked", and a_locked_key_asks_for_its_passphrase should pass. The reasoning: on 2026-09-29 the locked harvest got as far as the paste and failed there, not at CreateDesktopW or AccessibleObjectFromWindow, so the station, the desktop, the dialog and its MSAA readings ran under the lock | open |  | 2026-10-02T13:20:00.000Z |  |
+| 774 | 13 | todo | tests/a_move_completes_here_first.rs |  | 13-44.6.2: the built tree's Enter case failed a gate in 13-44 (deviation 6, in the minute after an unlock while somebody typed) and in 13-44.5 (deviation 9, the activation not raised), and once in 25 rounds of two runs started half a second apart on one shared desktop (13-44.6.2 premise 3). Cause removed by 13-44.6.2 on 2026-10-02: the tree is built on a desktop named for its run, where no key a person presses and no second run reaches it, and Enter is sent with no modifier down. Before: 20 of 20 on the interactive desktop while nobody typed, 24 of 25 rounds of two on one desktop. After, at 9440d3cf: 20 of 20 alone, and 20 rounds of two at once with both runs green every round | fixed |  | 2026-10-02T15:00:00.000Z | 2026-10-02T15:00:00.000Z |
+| 775 | 13 | todo | tests/a_kept_folder_reads_as_a_checked_check_box.rs |  | 13-44.6.2: Space on the kept-folder tree answered nothing in 13-44's first gate run after an unlock while somebody typed (13-44 deviation 6). Cause removed by 13-44.6.2 on 2026-10-02: the reading's windows are built on a desktop named for its run and Space is sent with no modifier down. Before: 20 of 20 on the interactive desktop while nobody typed, and 25 of 25 rounds of two on one desktop. After, at 9440d3cf: 20 of 20 alone | fixed |  | 2026-10-02T15:00:00.000Z | 2026-10-02T15:00:00.000Z |
+| 776 | 13 | unrun-verify | tests/a_locked_key_asks_for_its_passphrase.rs |  | 13-44.6.2: nobody has seen the eleven moved key targets run while the Windows session is locked, and nobody may lock this session to watch. The first gate run on a locked session settles it, where every one should pass: their windows are on desktops made for their runs, which a lock does not make the input desktop. Seen with somebody at the machine: in the after-measurement at 9440d3cf the person used the machine during 63 of the 420 runs made one at a time and held Alt or Control during 27 of them and during 9 of the 20 rounds of two, all green; nobody held Shift during any of them, so a held Shift is proved only by the two readings that leave it down on purpose | open |  | 2026-10-02T15:00:00.000Z |  |
+| 777 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs |  | 13-44.6.2, premise 1: seven targets that send no key or click are left as they are. Four read focus on the interactive desktop, tab_from_the_tree_lands_on_the_newest_message, the_event_form_scrolls_to_the_field_in_focus, the_from_list_chooses_who_sends and the_page_window_keeps_the_document_focused_when_it_comes_back (which sends WM_ACTIVATE to itself), and each passed once with the whole process on a desktop of its own. Three build on a desktop with a fixed name, a_locked_key_asks_for_its_passphrase, other_addresses_are_managed_per_account and the_quick_step_manager_says_what_each_step_does, and were not run there; two runs at once of the same one share its desktop. None is in a gate failure on record | open |  | 2026-10-02T15:00:00.000Z |  |
+| 778 | 13 | todo | tests/a_locked_key_asks_for_its_passphrase.rs |  | 13-44.6.2, for 13-44.6.3, whose premise corrections say so: a desktop of its own keeps out a person's key presses, not the modifiers they hold, so 13-44.6.2 added only_these_modifiers_down to its key targets and a second census, test_no_target_sends_a_key_with_whatever_modifiers_are_held, which exempts the five targets 13-44.6.3 moves through the same NOT_YET_IN_A_PROCESS_OF_THEIR_OWN constant. When that plan removes the constant, each of the five sends its keys with only the modifiers they mean, the invitation's Alt+C and the meeting change's Alt+R with Alt alone down | open |  | 2026-10-02T15:00:00.000Z |  |
+| 779 | 13 | todo | tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs |  | 13-44.6.2: two runs of this target under a first probe that read a run's output through a pipe only once the run ended were still running after 958 s and 53 s and were stopped, the first with Shift, Control and Alt each held at some point during it and the second with none held. A failing run's output can fill such a pipe and stall the run, so whether these two failed or hung is not known, and the second had no held modifier to explain a failure. Forty runs straight after with the output to a file passed, the longest 0.99 s, and 20 more at 9440d3cf passed. Not diagnosed; written down so a later stall of this target is met as the second | open |  | 2026-10-02T15:00:00.000Z |  |
 
 ````json
 [
@@ -7745,11 +7751,11 @@ last_updated: 2026-10-02T13:20:00.000Z
     "phase": "12",
     "file": "tests/mark_as_read_says_which_way_it_will_go.rs",
     "line": null,
-    "description": "13-44.6.2 carries the fix, written 2026-10-02 on Pratik's \"yes to moving the plan as well as others.\" and added the same day. 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first",
-    "status": "open",
+    "description": "13-44.6.2 carries the fix, written 2026-10-02 on Pratik's \"yes to moving the plan as well as others.\" and added the same day. 12-03.1: test_reading_a_the_letter_reaches_its_handler_on_a_real_list_and_the_search_does_not_get_it failed once on 2026-09-23, inside the gate of a commit that changed nothing it reads, while the tester was using the machine with NVDA running: the handler wired on M was called with no rows where one was wanted. The same target passed three runs of three straight after, and the commit went through on its second attempt. Not diagnosed. The reading sends WM_KEYDOWN and WM_CHAR to a real list, and one candidate, unmeasured, is that the modifier state wxWidgets reads for the key comes from the keyboard of the person at the machine. Written down so the next intermittent failure of this test is met as the second and not the first. Cause removed by 13-44.6.2 on 2026-10-02: the candidate above was the cause, and moving the windows was not enough to remove it. With the windows on a desktop made for each run, where no key a person presses arrives, the reading still failed one round of 20 run two at once, and with Shift, Control and Alt watched on the machine's keyboard every failure of it and of several_steps_come_back, eight of eight, came while the person held Shift, and none of the 345 watched runs without a held modifier failed. wxWidgets reads a key's modifiers from the thread's keyboard state, so M arrived as Shift+M and the bare-press handler let it pass. Every key target now sets exactly the modifiers its key means before sending it (only_these_modifiers_down), held by a census in tests/a_locked_key_asks_for_its_passphrase.rs and by a reading that leaves Shift down on purpose and passes. Before: 20 of 20 on the interactive desktop while nobody typed (13-44.6.2 premise 3) and this entry's failure while the tester used the machine. After, at 9440d3cf: 20 of 20 alone, 100 of 100 more, and 20 rounds of two at once with both runs green every round, Alt or Control held during 9 of those rounds and Shift during none, so the Shift case is the planted reading. The locked session nobody may stage is ledger 776",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-23T14:10:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-02T15:00:00.000Z"
   },
   {
     "id": 581,
@@ -10065,6 +10071,78 @@ last_updated: 2026-10-02T13:20:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-02T13:20:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 774,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_move_completes_here_first.rs",
+    "line": null,
+    "description": "13-44.6.2: the built tree's Enter case failed a gate in 13-44 (deviation 6, in the minute after an unlock while somebody typed) and in 13-44.5 (deviation 9, the activation not raised), and once in 25 rounds of two runs started half a second apart on one shared desktop (13-44.6.2 premise 3). Cause removed by 13-44.6.2 on 2026-10-02: the tree is built on a desktop named for its run, where no key a person presses and no second run reaches it, and Enter is sent with no modifier down. Before: 20 of 20 on the interactive desktop while nobody typed, 24 of 25 rounds of two on one desktop. After, at 9440d3cf: 20 of 20 alone, and 20 rounds of two at once with both runs green every round",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
+    "resolved_at": "2026-10-02T15:00:00.000Z"
+  },
+  {
+    "id": 775,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_kept_folder_reads_as_a_checked_check_box.rs",
+    "line": null,
+    "description": "13-44.6.2: Space on the kept-folder tree answered nothing in 13-44's first gate run after an unlock while somebody typed (13-44 deviation 6). Cause removed by 13-44.6.2 on 2026-10-02: the reading's windows are built on a desktop named for its run and Space is sent with no modifier down. Before: 20 of 20 on the interactive desktop while nobody typed, and 25 of 25 rounds of two on one desktop. After, at 9440d3cf: 20 of 20 alone",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
+    "resolved_at": "2026-10-02T15:00:00.000Z"
+  },
+  {
+    "id": 776,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "tests/a_locked_key_asks_for_its_passphrase.rs",
+    "line": null,
+    "description": "13-44.6.2: nobody has seen the eleven moved key targets run while the Windows session is locked, and nobody may lock this session to watch. The first gate run on a locked session settles it, where every one should pass: their windows are on desktops made for their runs, which a lock does not make the input desktop. Seen with somebody at the machine: in the after-measurement at 9440d3cf the person used the machine during 63 of the 420 runs made one at a time and held Alt or Control during 27 of them and during 9 of the 20 rounds of two, all green; nobody held Shift during any of them, so a held Shift is proved only by the two readings that leave it down on purpose",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 777,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_locked_key_asks_for_its_passphrase.rs",
+    "line": null,
+    "description": "13-44.6.2, premise 1: seven targets that send no key or click are left as they are. Four read focus on the interactive desktop, tab_from_the_tree_lands_on_the_newest_message, the_event_form_scrolls_to_the_field_in_focus, the_from_list_chooses_who_sends and the_page_window_keeps_the_document_focused_when_it_comes_back (which sends WM_ACTIVATE to itself), and each passed once with the whole process on a desktop of its own. Three build on a desktop with a fixed name, a_locked_key_asks_for_its_passphrase, other_addresses_are_managed_per_account and the_quick_step_manager_says_what_each_step_does, and were not run there; two runs at once of the same one share its desktop. None is in a gate failure on record",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 778,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_locked_key_asks_for_its_passphrase.rs",
+    "line": null,
+    "description": "13-44.6.2, for 13-44.6.3, whose premise corrections say so: a desktop of its own keeps out a person's key presses, not the modifiers they hold, so 13-44.6.2 added only_these_modifiers_down to its key targets and a second census, test_no_target_sends_a_key_with_whatever_modifiers_are_held, which exempts the five targets 13-44.6.3 moves through the same NOT_YET_IN_A_PROCESS_OF_THEIR_OWN constant. When that plan removes the constant, each of the five sends its keys with only the modifiers they mean, the invitation's Alt+C and the meeting change's Alt+R with Alt alone down",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 779,
+    "kind": "todo",
+    "phase": "13",
+    "file": "tests/a_settings_page_reached_from_inside_a_page_gives_focus_to_its_first_control.rs",
+    "line": null,
+    "description": "13-44.6.2: two runs of this target under a first probe that read a run's output through a pipe only once the run ended were still running after 958 s and 53 s and were stopped, the first with Shift, Control and Alt each held at some point during it and the second with none held. A failing run's output can fill such a pipe and stall the run, so whether these two failed or hung is not known, and the second had no held modifier to explain a failure. Forty runs straight after with the output to a file passed, the longest 0.99 s, and 20 more at 9440d3cf passed. Not diagnosed; written down so a later stall of this target is met as the second",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-02T15:00:00.000Z",
     "resolved_at": null
   }
 ]
