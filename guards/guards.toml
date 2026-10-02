@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 579 records have arrived since and have not been through it.
+# 581 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -32706,7 +32706,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
 ]
 
 # A single message opened in a reader window no longer asking for the
@@ -32727,7 +32727,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 8 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
 ]
 
 # A PGP signature said to hold once a key in the list is the one it names,
@@ -36788,4 +36788,46 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 20 },
+]
+
+# The passphrase box made read-only, so it refuses a paste and a password
+# manager cannot fill it (WCAG 3.3.8). The real paste moved to a target of its
+# own, coupled to the dialog alone, so a locked session no longer fails the
+# dialog's other readings (ledger 716). The same break also reddens
+# `test_focus_lands_on_the_field_and_it_is_named_passphrase_there` in
+# `a_locked_key_asks_for_its_passphrase`, which is another suite and not this
+# record's. Written 2026-10-02 by 13-44.6.1, measured by hand with
+# `cargo test --no-fail-fast --test a_passphrase_box_takes_a_real_paste`.
+[[guard]]
+name = "the passphrase box takes a real paste"
+file = "src/presentation/wx_passphrase.rs"
+suite = "a_passphrase_box_takes_a_real_paste"
+before = '''    let field = TextCtrl::builder(&dialog)
+        .with_style(TextCtrlStyle::Password)'''
+after = '''    let field = TextCtrl::builder(&dialog)
+        .with_style(TextCtrlStyle::Password | TextCtrlStyle::ReadOnly)'''
+red = [
+    "test_a_pasted_passphrase_is_taken_and_ok_hands_it_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_passphrase.rs", tests = 2 },
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 2 },
+]
+
+# The census allowing a file that does not exist, so the real paste target is
+# counted as one more target reaching the clipboard and the allowance names
+# nothing. Written 2026-10-02 by 13-44.6.1, measured by hand with
+# `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+[[guard]]
+name = "only the real paste target opens the clipboard"
+file = "tests/a_locked_key_asks_for_its_passphrase.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''const THE_REAL_PASTE: &str = "tests/a_passphrase_box_takes_a_real_paste.rs";'''
+after = '''const THE_REAL_PASTE: &str = "tests/a_paste_target_no_file_is.rs";'''
+red = [
+    "test_no_target_but_the_real_paste_opens_the_clipboard",
+    "test_the_real_paste_target_is_where_the_clipboard_is_opened",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 9 },
 ]
