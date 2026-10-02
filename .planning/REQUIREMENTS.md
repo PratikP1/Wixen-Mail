@@ -6782,8 +6782,8 @@ requirement was added, so the coverage below stays at 122."
     a refused format is not a menu item.
   - [S] A real Outlook file is his.
 
-- [ ] **GAP-14**: Deleted mail is emptied from the Trash on a schedule chosen per account, where
-  the provider does not empty it itself.
+- [x] **GAP-14**: Deleted mail is emptied from the Trash on a schedule chosen per account, where
+  the provider does not empty it itself. Ticked 2026-10-02 by 13-44.7.
   - Evidence: nothing records when a message went into the Trash. `grep -rn -i
     'in_the_trash\|trashed_at\|went_into_the_trash' src/data/message_cache/` on `main` at
     `90a4662e`, 2026-09-29: nothing; `grep -n 'downloaded_at' src/data/message_cache/mod.rs`
@@ -6833,6 +6833,44 @@ requirement was added, so the coverage below stays at 122."
     `tests/account_edit_protocol_fields.rs`, `tests/one_check_says_who_runs_the_mail.rs` and
     `tests/nothing_sends_a_flag_change_unasked.rs`. Nothing has met a real server (ledger
     771). It adds no `[D]` clause, and the box stays for 13-44.7 to tick.
+  - 13-44.7 on 2026-10-02: the fourth answer, When Wixen Mail closes, second of four; when
+    Wixen Mail really closes, the window goes first, then each account set that way has its
+    Trash emptied within five seconds for all accounts together, POP accounts first, then the
+    sign-off; at the limit the delete under way waits for the next start's first check and
+    the rest stay for the next close; nothing is said, and the log keeps the account and
+    three counts. An account set to empty on close is not emptied at a check, and its check
+    says once a day what will stop the close. POP accounts are offered the four answers, and
+    their Trash, the one every account shares on this computer, is emptied here only, of the
+    account's own messages, through the delete Empty Folder uses, at the start of the check
+    before the POP server is dialled or at close; the POP server is never asked. The defect of
+    ledger 753 is fixed: a move into a shared folder records whose it was, and the POP checks
+    count it. Held by `test_closing_empties_everything_in_the_trash_of_an_account_set_to_empty_on_close`,
+    `test_closing_stops_at_the_deadline_leaving_one_waiting_and_the_rest_untouched`,
+    `test_closing_opens_no_session_for_an_account_with_nothing_in_the_trash`,
+    `test_closing_leaves_an_account_set_to_thirty_days_alone`,
+    `test_a_check_leaves_an_account_set_to_empty_on_close_alone`,
+    `test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day`,
+    `test_what_the_close_did_names_the_account_and_three_counts_and_no_subject`,
+    `test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers`,
+    `test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash`,
+    `test_a_pop_account_with_deleting_here_off_empties_nothing_and_says_so_once_a_day`,
+    `test_a_pop_account_is_emptied_with_no_server_to_ask` and
+    `test_closing_empties_a_pop_account_first_and_within_the_deadline` in
+    `application::emptying_the_trash::tests`;
+    `test_a_message_moved_to_the_trash_every_account_shares_is_not_downloaded_again` and
+    `test_the_download_time_of_a_message_in_the_shared_trash_still_counts_towards_the_policy`
+    in `application::pop_sync::tests`;
+    `test_the_shared_trash_answers_only_for_the_account_a_message_came_from` and
+    `test_a_message_in_the_shared_trash_before_this_build_belongs_to_no_account` in
+    `data::message_cache::in_the_trash::tests`;
+    `test_only_a_real_close_empties_the_trash_and_only_after_the_window_is_hidden`,
+    `test_the_reading_refuses_an_emptying_on_the_way_to_the_tray` and
+    `test_a_pop_check_empties_its_trash_before_it_dials_the_server` in
+    `tests/the_trash_is_emptied_on_purpose.rs`; the dialog test in
+    `tests/account_edit_protocol_fields.rs`, which reads four answers on both protocols. Both
+    plans together offer every answer Pratik named on every kind of account he named. Nothing
+    has met a real server (ledgers 771 and 784), and nothing has been heard (ledgers 770 and
+    783). It adds no `[D]` clause.
 
 ### The real-account proofs
 
@@ -7023,7 +7061,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-11 | Phase 13 | Done 2026-09-30, 13-23, 13-24, 13-24.1 and 13-40 to 13-42: Quick Steps kept per account, made in the Quick Step Manager, listed on Action, Quick Steps with `Ctrl+Shift+7` to `Ctrl+Shift+9`, and run over the selection through the one runner with one sentence, held by `tests/a_quick_step_runs_over_the_selection.rs`, `tests/the_quick_step_manager_says_what_each_step_does.rs` and `application::quick_steps`' cases; the real server is ledger 745, the ear ledger 746. Until 13-42 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; 13-24 done 2026-09-28, the five set actions as quiet do-halves a Quick Step's runner calls; 13-24.1 done 2026-09-28, the runner a Quick Step's actions are carried out through, answering what it did for the step's own sentence; 13-40 done 2026-09-30, the steps stored and named per account in a rule's action words, with their refusals, keys and sentence, and nothing yet running one (ledger 742); 13-41 done 2026-09-30, the Quick Step Manager on Action, Quick Steps and the step editor, steps made, changed and put in order and none run yet; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43, 13-44 and 13-44.3 (done 2026-10-01, a rule's marks, flags and labels on arriving mail sent to the mail server in the check and a rule's Delete to the Trash there, ledger 678 closed): a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Planned 2026-09-29: 13-44.3 sends a rule's marks, flags and labels on arriving mail to the mail server in the check (ledger 678), and a rule's Delete to the Trash there through the menu's delete path; no `[D]` clause is added. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20" |
 | GAP-13 | Phase 13 | Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20" |
-| GAP-14 | Phase 13 | Pending; 13-44.6 done 2026-10-02: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft, held by `application::emptying_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledger 771). 13-44.7 ticks it. Until 13-44.6 the row read "Pending" |
+| GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784). Until 13-44.7 the row read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending" |
 | REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
 | REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
 
