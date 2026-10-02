@@ -105,8 +105,16 @@ impl WhoRunsTheMail {
     }
 
     /// Where an app password for this mail is handed out, or nothing.
+    ///
+    /// Google's page alone. Microsoft's own pages say no password reaches a
+    /// Microsoft 365 or Outlook.com mailbox over IMAP or POP any more, app
+    /// passwords included, so sending somebody to make one would send them
+    /// round a loop that ends in "authentication failed".
     pub fn app_password_url(self) -> Option<&'static str> {
-        None
+        match self {
+            WhoRunsTheMail::Gmail => Some("https://myaccount.google.com/apppasswords"),
+            WhoRunsTheMail::Microsoft | WhoRunsTheMail::SomebodyElse => None,
+        }
     }
 }
 

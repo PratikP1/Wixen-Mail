@@ -18,6 +18,7 @@
 //! Nothing here reads an address, a name or a message. The accounts are
 //! described by the kind of mail they are, never by what they are called.
 
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::data::account::Account;
 
 /// The screen readers known by their process, in the order one is named
@@ -127,18 +128,25 @@ pub fn file_version_text(most_significant: u32, least_significant: u32) -> Strin
 
 /// The kinds of account set up, without their addresses.
 ///
-/// The provider's name when the account was made from a preset, otherwise
-/// the protocol it reads mail with; each kind once, in the accounts' order.
+/// "Gmail" or "Microsoft" where the one check says so, so a Workspace or
+/// Microsoft 365 account on its own domain is named by who runs its mail.
+/// Only for an account somebody else runs is the name it was saved with
+/// read, after the check, and otherwise the protocol it reads mail with;
+/// each kind once, in the accounts' order.
 pub fn providers(accounts: &[Account]) -> Vec<String> {
     let mut kinds: Vec<String> = Vec::new();
     for account in accounts {
-        let kind = account
-            .provider
-            .as_deref()
-            .map(str::trim)
-            .filter(|provider| !provider.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| account.protocol().as_str().to_uppercase());
+        let kind = match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => "Gmail".to_string(),
+            WhoRunsTheMail::Microsoft => "Microsoft".to_string(),
+            WhoRunsTheMail::SomebodyElse => account
+                .provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| account.protocol().as_str().to_uppercase()),
+        };
         if !kinds.contains(&kind) {
             kinds.push(kind);
         }

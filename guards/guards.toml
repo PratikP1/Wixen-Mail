@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 568 records have arrived since and have not been through it.
+# 571 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8650,11 +8650,20 @@ tests_last_seen = [
 [[guard]]
 name = "the password box's description carries the app password advice for the right addresses"
 file = "src/presentation/wx_account_manager.rs"
-before = """fn password_box_description(address: &str, _incoming_server: &str) -> Option<&'static str> {
-    offers_app_passwords(address).then_some(APP_PASSWORD_HINT)
+before = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,
+        address,
+        recorded_provider: None,
+    });
+    match who {
+        WhoRunsTheMail::Gmail => Some(APP_PASSWORD_HINT),
+        WhoRunsTheMail::Microsoft => Some(MICROSOFT_ASKS_FOR_THE_BROWSER),
+        WhoRunsTheMail::SomebodyElse => None,
+    }
 }"""
-after = """fn password_box_description(address: &str, _incoming_server: &str) -> Option<&'static str> {
-    let _ = address;
+after = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let _ = (address, incoming_server);
     None
 }"""
 red = [
@@ -36339,7 +36348,7 @@ red = [
     "application::who_runs_the_mail::tests::test_the_server_says_who_runs_the_mail_whatever_the_address",
 ]
 tests_last_seen = [
-    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
 # A host matched by `contains`, so `imap.gmail.com.example.net` and
@@ -36357,7 +36366,7 @@ red = [
     "application::who_runs_the_mail::tests::test_a_server_named_like_google_or_microsoft_but_not_under_their_domains_is_nobodys",
 ]
 tests_last_seen = [
-    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
 # The saved name compared exactly, so the editor's "Gmail" and "Outlook",
@@ -36374,11 +36383,18 @@ after = '''    if name == "gmail" {
         Some(WhoRunsTheMail::Gmail)
     } else if name == "outlook" {'''
 red = [
+    # Added later the same day, found by --remeasure rather than predicted:
+    # once the sign-in asked the check, an account saved as "Gmail" on its own
+    # domain and one saved as "Outlook" lost their sign-in under this break.
+    "application::looking_people_up::tests::test_microsoft_is_asked_for_an_outlook_account_signed_in_through_the_browser",
+    "application::mail_auth::tests::test_a_workspace_account_on_its_own_domain_is_found_by_its_provider",
     "application::who_runs_the_mail::tests::test_every_account_an_old_reading_called_gmail_or_microsoft_is_still_called_so",
     "application::who_runs_the_mail::tests::test_with_neither_the_recorded_name_decides_ignoring_case_and_space",
 ]
 tests_last_seen = [
-    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+    { file = "src/application/looking_people_up.rs", tests = 43 },
+    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
 # The outgoing server read when no incoming one is typed, so a mailbox kept
@@ -36398,7 +36414,7 @@ red = [
     "application::who_runs_the_mail::tests::test_the_outgoing_server_says_nothing_about_who_runs_the_mail",
 ]
 tests_last_seen = [
-    { file = "src/application/who_runs_the_mail.rs", tests = 8 },
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
 # The scan account given Gmail's server, so the one check calls it Gmail and
@@ -36509,5 +36525,79 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
+]
+
+# The account editor handing the check an empty server, so the advice goes
+# by the address alone and a Workspace account typed onto imap.gmail.com is
+# told nothing (Pratik's answer of 2026-09-30). Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "the account editor hands the check the server typed"
+file = "src/presentation/wx_account_manager.rs"
+before = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server,"""
+after = """fn password_box_description(address: &str, incoming_server: &str) -> Option<&'static str> {
+    let who = WhoRunsTheMail::from_what_is_known(WhatIsKnown {
+        incoming_server: "","""
+red = [
+    "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# Microsoft given the page for personal accounts' app passwords, which
+# Microsoft's own pages say no longer reach IMAP or POP (D11, T-13-PK-06).
+# Taken by hand, it also reddens the account editor's description case,
+# whose Get App Password rows read the same answer. Written 2026-10-01 by
+# 13-44.5.
+[[guard]]
+name = "only Google's page is offered for an app password"
+file = "src/application/who_runs_the_mail.rs"
+before = """            WhoRunsTheMail::Microsoft | WhoRunsTheMail::SomebodyElse => None,"""
+after = """            WhoRunsTheMail::Microsoft => Some("https://account.live.com/proofs/AppPassword"),
+            WhoRunsTheMail::SomebodyElse => None,"""
+red = [
+    "application::who_runs_the_mail::tests::test_only_googles_page_is_offered_for_an_app_password",
+    "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
+]
+tests_last_seen = [
+    { file = "src/application/who_runs_the_mail.rs", tests = 9 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# The feedback report naming accounts by the saved name alone again, so a
+# Workspace account is "IMAP" and a saved "Outlook" is "Outlook". The census
+# refuses it; taken by hand against the library the same break also
+# reddens this_machine's account kinds case. Written 2026-10-01 by 13-44.5.
+[[guard]]
+name = "the feedback report names an account's kind by the one check"
+file = "src/service/this_machine.rs"
+suite = "one_check_says_who_runs_the_mail"
+before = """        let kind = match WhoRunsTheMail::of(account) {
+            WhoRunsTheMail::Gmail => "Gmail".to_string(),
+            WhoRunsTheMail::Microsoft => "Microsoft".to_string(),
+            WhoRunsTheMail::SomebodyElse => account
+                .provider
+                .as_deref()
+                .map(str::trim)
+                .filter(|provider| !provider.is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| account.protocol().as_str().to_uppercase()),
+        };"""
+after = """        let kind = account
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|provider| !provider.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| account.protocol().as_str().to_uppercase());"""
+red = [
+    "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
+]
+tests_last_seen = [
+    { file = "src/service/this_machine.rs", tests = 7 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
