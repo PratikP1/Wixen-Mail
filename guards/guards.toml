@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 591 records have arrived since and have not been through it.
+# 594 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -715,7 +715,7 @@ tests_last_seen = [
     { file = "src/application/choosing_messages.rs", tests = 18 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -36663,7 +36663,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # The row marked deleted here and never sent, in place of the step the
@@ -36695,7 +36695,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # A second place in the window naming the emptying, planted as a string the
@@ -36716,7 +36716,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 4 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 6 },
 ]
 
 # The day an account's Trash last had its turn never matched, so every
@@ -36732,9 +36732,12 @@ red = [
     "application::emptying_the_trash::tests::test_a_second_check_the_same_day_empties_nothing_more",
     "application::emptying_the_trash::tests::test_an_account_with_no_trash_is_left_alone_and_says_so_once_a_day",
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
+    # Added 2026-10-02 by 13-44.7, found by --remeasure: an account set to
+    # empty on close says why it will not, once a day, on the same day.
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # Allow Changes read as open whatever the account's answer, so an emptying
@@ -36750,7 +36753,7 @@ red = [
     "application::emptying_the_trash::tests::test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # Every IMAP account answered as one this program empties, so a Gmail or
@@ -36772,7 +36775,7 @@ red = [
     "application::emptying_the_trash::tests::test_each_answer_of_the_one_check_says_who_empties_the_trash",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # The day's bound dropped, so a Trash of thousands is emptied in one check
@@ -36787,7 +36790,66 @@ red = [
     "application::emptying_the_trash::tests::test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying_the_trash.rs", tests = 20 },
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
+]
+
+# The limit taken off the wait for each delete at close, so a server that
+# has taken the command and gone quiet holds closing for as long as it
+# likes (13-44.7, D6, T-13-44.7-01). The case bounds the whole pass from
+# outside, so the break fails it at its margin rather than hanging the run.
+# Written 2026-10-02 by 13-44.7, taken by hand against the whole library
+# first.
+[[guard]]
+name = "closing never waits past its limit"
+file = "src/application/emptying_the_trash.rs"
+before = '''                let sent = tokio::time::timeout_at(
+                    deadline,
+                    delete_here_then_at_the_server(&*session, cache, &asked, ""),'''
+after = '''                let sent = tokio::time::timeout_at(
+                    deadline + std::time::Duration::from_secs(3600),
+                    delete_here_then_at_the_server(&*session, cache, &asked, ""),'''
+red = [
+    "application::emptying_the_trash::tests::test_closing_stops_at_the_deadline_leaving_one_waiting_and_the_rest_untouched",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
+]
+
+# The window left on the screen while the Trash is emptied at close, so a
+# screen reader sits on a window that has stopped answering (13-44.7, D19).
+# The plan's break moved the call into the hide to the tray; a record holds
+# one contiguous edit, so this one drops the hide in front of the call, and
+# the companion case plants the move. Written 2026-10-02 by 13-44.7, taken
+# by hand against the target first.
+[[guard]]
+name = "only a real close empties the Trash, after the window is hidden"
+file = "src/presentation/wx_app.rs"
+suite = "the_trash_is_emptied_on_purpose"
+before = '''                            frame.show(false);
+                            let accounts = lock_state(&state).accounts.clone();'''
+after = '''                            let accounts = lock_state(&state).accounts.clone();'''
+red = [
+    "test_only_a_real_close_empties_the_trash_and_only_after_the_window_is_hidden",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_trash_is_emptied_on_purpose.rs", tests = 6 },
+]
+
+# An account set to When Wixen Mail closes read as a schedule of no days,
+# so its check empties the whole Trash every day (13-44.7, D23). Written
+# 2026-10-02 by 13-44.7, taken by hand against the whole library first.
+[[guard]]
+name = "an account set to empty on close is not emptied at a check"
+file = "src/application/emptying_the_trash.rs"
+before = '''    let Some(days) = when.days() else {'''
+after = '''    let Some(days) = when.days().or(Some(0)) else {'''
+red = [
+    "application::emptying_the_trash::tests::test_a_check_leaves_an_account_set_to_empty_on_close_alone",
+    "application::emptying_the_trash::tests::test_with_changing_mail_off_closing_dials_nothing_and_a_check_says_it_once_a_day",
+]
+tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 27 },
 ]
 
 # The passphrase box made read-only, so it refuses a paste and a password

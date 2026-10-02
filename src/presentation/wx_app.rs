@@ -6255,6 +6255,12 @@ impl WxMailApp {
                         }
                         Closing::LetItClose => {
                             tracing::info!("Frame on_close fired, window is closing");
+                            // Gone from the screen first, so a screen reader
+                            // moves on at once rather than sitting on a window
+                            // that has stopped answering while the Trash of
+                            // each account set that way is emptied (13-44.7,
+                            // D19).
+                            frame.show(false);
                             let accounts = lock_state(&state).accounts.clone();
                             emptying_the_trash_on_the_way_out(&runtime, &message_cache, &accounts);
                             // Signed out of rather than dropped. A session this

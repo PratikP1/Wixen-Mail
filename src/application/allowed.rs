@@ -443,7 +443,8 @@ pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your ac
 pub const EMPTYING_THE_TRASH_IS_EXPERIMENTAL: &str = "Experimental: this has never been run \
      against a real account. It takes the messages in this account's Trash off the mail server \
      for good, on every device, and only when Allow Changes lets this account change mail. The \
-     days count from when a message went into the Trash on this computer.";
+     days count from when a message went into the Trash on this computer. When Wixen Mail closes \
+     empties what it can in a few seconds as Wixen Mail closes, and the rest the next time.";
 
 /// Everything that has an opinion about what may be changed.
 ///
