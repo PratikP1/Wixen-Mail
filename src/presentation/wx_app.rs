@@ -30455,9 +30455,13 @@ fn spawn_mail_sync(
                     crate::application::emptying_the_trash::TheAccount {
                         id: &account.id,
                         name: &account.name,
+                        who_empties:
+                            crate::application::emptying_the_trash::WhoEmptiesTheTrash::ThisProgram,
                     },
                     when_the_trash_is_emptied(&account.id),
+                    crate::application::allowed::allowed_for(&account.id).mail,
                     chrono::Utc::now(),
+                    chrono::Local::now().date_naive(),
                 )) {
                     Ok(Some(said)) => {
                         tracing::info!("The Trash of {} was emptied: {said}", account.name);

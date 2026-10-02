@@ -34,7 +34,7 @@
 
 use super::MessageCache;
 use crate::common::{Error, Result};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::{OptionalExtension, params};
 
 /// One message stored in a Trash, and when it went in here.
@@ -124,6 +124,23 @@ impl MessageCache {
         // different number of decimal places would put out of order.
         held.sort_by_key(|in_the_trash| (in_the_trash.since, in_the_trash.row));
         Ok(held)
+    }
+
+    /// The day this account's Trash was last emptied, on this computer's
+    /// clock, or `None` when it never has been.
+    ///
+    /// A day is used by a check that emptied, found nothing due, found no
+    /// Trash or met Allow Changes closed, so an emptying and each refusal is
+    /// said at most once a day (D7).
+    pub fn the_trash_was_last_emptied_on(&self, account_id: &str) -> Result<Option<NaiveDate>> {
+        let _ = account_id;
+        Ok(None)
+    }
+
+    /// Write down that this account's Trash had its turn on this day.
+    pub fn the_trash_was_emptied_on(&self, account_id: &str, day: NaiveDate) -> Result<()> {
+        let _ = (account_id, day);
+        Ok(())
     }
 
     /// Say a row went into the Trash at this moment, for a case that needs a

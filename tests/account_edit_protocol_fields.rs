@@ -21,7 +21,7 @@ use wixen_mail::data::config::ConfigManager;
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_account_manager::{
     AccountEditWidgets, SignatureChoices, advance_to_connection_page, build_account_edit_dialog,
-    build_account_manager_dialog, return_to_identity_page,
+    build_account_manager_dialog, return_to_identity_page, say_whether_the_trash_is_recognised,
 };
 use wxdragon::prelude::*;
 
@@ -208,6 +208,11 @@ fn expect_no_connection_field_shown(name: &'static str, w: &AccountEditWidgets, 
         ),
         ("fetch message text for this account", &w.allow_reading_here),
         ("empty the trash", &w.empty_the_trash),
+        (
+            "the line saying the provider empties the trash",
+            &w.trash_left_to_the_provider,
+        ),
+        ("the line saying there is no trash", &w.no_trash_to_empty),
     ] {
         if widget.is_shown() {
             into.push((name, format!("{field} is shown on the identity page")));
@@ -496,6 +501,92 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
                 &w,
                 &mut wrong,
             );
+            // Google empties a Gmail account's Trash itself, so the choice
+            // gives way to a line saying so (13-44.6, D2): the one check
+            // calls this account Gmail by its address.
+            expect_shown(
+                "Gmail account, connection page: empty the trash hidden",
+                &w.empty_the_trash,
+                false,
+                &mut wrong,
+            );
+            if labels_showing(&w.dialog)
+                .iter()
+                .any(|label| label == EMPTY_THE_TRASH)
+            {
+                wrong.push((
+                    "Gmail account, connection page: empty the trash",
+                    format!("{EMPTY_THE_TRASH} is still shown"),
+                ));
+            }
+            expect_shown(
+                "Gmail account, connection page: the provider's line shown",
+                &w.trash_left_to_the_provider,
+                true,
+                &mut wrong,
+            );
+            expect_eq(
+                "Gmail account, connection page: the provider's line",
+                &w.trash_left_to_the_provider.get_label(),
+                "Gmail empties this account's Trash itself, 30 days after a message goes into \
+                 it, so Wixen Mail leaves it alone.",
+                &mut wrong,
+            );
+
+            // ── An IMAP account somebody else runs is offered the choice,
+            // ── and told when Wixen Mail does not recognise its Trash. ────
+            let elsewhere = Account {
+                imap_server: "imap.example.com".to_string(),
+                use_oauth: false,
+                ..Account::new("Work".to_string(), "me@example.com".to_string())
+            };
+            let w = build_account_edit_dialog(
+                &manager.dialog,
+                Some(&elsewhere),
+                &a11y,
+                None,
+                &SignatureChoices::default(),
+            );
+            advance_to_connection_page(&w);
+            expect_shown(
+                "imap.example.com, connection page: empty the trash shown",
+                &w.empty_the_trash,
+                true,
+                &mut wrong,
+            );
+            expect_shown(
+                "imap.example.com, connection page: the provider's line hidden",
+                &w.trash_left_to_the_provider,
+                false,
+                &mut wrong,
+            );
+            expect_shown(
+                "imap.example.com, its Trash not yet known: the no-Trash line hidden",
+                &w.no_trash_to_empty,
+                false,
+                &mut wrong,
+            );
+            say_whether_the_trash_is_recognised(&w, Some(false));
+            expect_shown(
+                "imap.example.com, no Trash among its folders: the no-Trash line shown",
+                &w.no_trash_to_empty,
+                true,
+                &mut wrong,
+            );
+            say_whether_the_trash_is_recognised(&w, Some(true));
+            expect_shown(
+                "imap.example.com, a Trash among its folders: the no-Trash line hidden",
+                &w.no_trash_to_empty,
+                false,
+                &mut wrong,
+            );
+            expect_every_letter_its_own(
+                "imap.example.com, connection page: Alt letters",
+                &w,
+                &mut wrong,
+            );
+            return_to_identity_page(&w);
+            expect_no_connection_field_shown("imap.example.com, back to identity", &w, &mut wrong);
 
             drop(wrong);
             wxdragon::call_after(Box::new(move || {

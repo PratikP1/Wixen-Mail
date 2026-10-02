@@ -30,15 +30,18 @@
 //! double that keeps folders and writes down what it was asked; phase 14's
 //! ledger line carries a real account.
 
-use chrono::{DateTime, Duration, Utc};
+use std::collections::BTreeMap;
+
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 
 use crate::application::destinations::{DeletedGoesTo, Deleting, where_a_deleted_message_goes};
 use crate::application::moves_waiting::{
     APushUnderWay, DeletedHereThenAtTheServer, ReplaysAMove, delete_here_then_at_the_server,
 };
-use crate::application::what_rules_tell_the_server::ForTheChange;
+use crate::application::what_rules_tell_the_server::{Because, ForTheChange};
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::Result;
-use crate::common::types::FolderType;
+use crate::common::types::{FolderType, Protocol};
 use crate::data::message_cache::MessageCache;
 use crate::data::message_cache::in_the_trash::InTheTrash;
 use crate::data::message_cache::moves_waiting::{AWaitingMove, WhatAWaitingMoveDoes};
@@ -99,12 +102,66 @@ impl WhenTheTrashIsEmptied {
     }
 }
 
+/// Who empties an account's Trash.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhoEmptiesTheTrash {
+    /// Nobody but this program, if somebody chooses a schedule.
+    ThisProgram,
+    /// Google, 30 days after a message goes into it.
+    Gmail,
+    /// Microsoft, as Outlook.com or an organisation sets it.
+    Microsoft,
+}
+
+/// Who empties this account's Trash, from its protocol and the one check's
+/// answer (D12).
+///
+/// POP first, emptied here whatever its provider, as `AccountKind::of` puts
+/// POP first; then what 13-44.5's check says. Reads no address, server or
+/// recorded name itself, so this can never disagree with the rest of the
+/// program about who runs an account's mail.
+pub fn who_empties_the_trash(
+    protocol: Protocol,
+    who_runs_it: WhoRunsTheMail,
+) -> WhoEmptiesTheTrash {
+    let _ = (protocol, who_runs_it);
+    WhoEmptiesTheTrash::ThisProgram
+}
+
+/// The line the account editor shows in place of the choice, for an
+/// account whose provider empties its Trash itself.
+pub fn the_provider_empties_it(who: WhoEmptiesTheTrash) -> Option<&'static str> {
+    let _ = who;
+    None
+}
+
+/// What is said of an account none of whose folders is its Trash, in the
+/// account editor and once a day at its check (D9).
+pub const NO_TRASH_TO_EMPTY: &str = "This account does not say which of its folders it keeps \
+     deleted mail in, so Wixen Mail cannot empty its Trash.";
+
 /// The account an emptying is for.
 #[derive(Debug, Clone, Copy)]
 pub struct TheAccount<'a> {
     pub id: &'a str,
     /// What the sentence calls it.
     pub name: &'a str,
+    /// Who empties its Trash, which decides whether this program does.
+    pub who_empties: WhoEmptiesTheTrash,
+}
+
+/// What one emptying came to, counted for its sentence.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WhatTheEmptyingCameTo {
+    /// Taken off the server.
+    pub emptied: usize,
+    /// Due and not tried, left for the next day's first check.
+    pub left_for_another_day: usize,
+    /// Made here and kept in the queue, because the server could not be
+    /// reached; the next check's replay sends it.
+    pub kept_waiting: usize,
+    /// Put back in the Trash here, by why.
+    pub put_back: BTreeMap<Because, usize>,
 }
 
 /// What of the Trash is due: what went in here more than `days` days before
@@ -123,14 +180,14 @@ pub fn what_is_due(in_the_trash: &[InTheTrash], days: i64, now: DateTime<Utc>) -
 pub fn what_the_emptying_said(
     folder_name: &str,
     account_name: &str,
-    emptied: usize,
     days: i64,
+    came_to: &WhatTheEmptyingCameTo,
 ) -> Option<String> {
-    (emptied > 0).then(|| {
+    (came_to.emptied > 0).then(|| {
         format!(
             "Emptied {} from {folder_name} in {account_name} that had been there more than \
              {days} days.",
-            how_many(emptied, "message")
+            how_many(came_to.emptied, "message")
         )
     })
 }
@@ -147,8 +204,11 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     cache: &MessageCache,
     account: TheAccount<'_>,
     when: WhenTheTrashIsEmptied,
+    allowed_mail: bool,
     now: DateTime<Utc>,
+    today: NaiveDate,
 ) -> Result<Option<String>> {
+    let _ = (allowed_mail, today);
     let Some(days) = when.days() else {
         return Ok(None);
     };
@@ -170,7 +230,7 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
     };
     let due = what_is_due(&cache.what_has_been_in_the_trash(trash.id)?, days, now);
     let _under_way = APushUnderWay::begins(account.id);
-    let mut emptied = 0;
+    let mut came_to = WhatTheEmptyingCameTo::default();
     for message in &due {
         let asked = AWaitingMove {
             message_row_id: message.row,
@@ -184,14 +244,14 @@ pub(crate) async fn empty_at_a_check<S: ReplaysAMove>(
         // key, and an emptying says one sentence for the account (D8).
         let deleted = delete_here_then_at_the_server(server, cache, &asked, "").await;
         if let DeletedHereThenAtTheServer::Became(ForTheChange::Done) = deleted {
-            emptied += 1;
+            came_to.emptied += 1;
         }
     }
     Ok(what_the_emptying_said(
         &trash.name,
         account.name,
-        emptied,
         days,
+        &came_to,
     ))
 }
 
@@ -213,6 +273,29 @@ mod tests {
     struct AServerThatHoldsTheTrash {
         folders: RefCell<BTreeMap<String, Vec<(u32, String)>>>,
         log: RefCell<Vec<String>>,
+        /// How every delete is answered, when it is not taken.
+        refuses_a_delete_with: std::cell::Cell<Option<Refusal>>,
+    }
+
+    /// The ways a delete does not go.
+    #[derive(Debug, Clone, Copy)]
+    enum Refusal {
+        /// The server answered, and the answer was no.
+        SaidNo,
+        /// The connection went before anything came back.
+        Dropped,
+        /// This computer's own gate refused it before anything was sent.
+        TheGate,
+    }
+
+    impl Refusal {
+        fn as_error(self) -> crate::common::Error {
+            match self {
+                Refusal::SaidNo => crate::common::Error::Protocol("NO not today".into()),
+                Refusal::Dropped => crate::common::Error::Network("the connection went".into()),
+                Refusal::TheGate => crate::common::Error::Security("Allow Changes is off".into()),
+            }
+        }
     }
 
     impl AServerThatHoldsTheTrash {
@@ -222,7 +305,13 @@ mod tests {
             Self {
                 folders: RefCell::new(BTreeMap::from([("Trash".to_string(), held)])),
                 log: RefCell::new(Vec::new()),
+                refuses_a_delete_with: std::cell::Cell::new(None),
             }
+        }
+
+        fn refusing_a_delete(self, refusal: Refusal) -> Self {
+            self.refuses_a_delete_with.set(Some(refusal));
+            self
         }
 
         fn the_log(&self) -> Vec<String> {
@@ -251,6 +340,9 @@ mod tests {
                 Some(trash) => format!("DELETE {uid} in {folder} into {trash}"),
                 None => format!("DELETE {uid} in {folder} off the server"),
             });
+            if let Some(refusal) = self.refuses_a_delete_with.get() {
+                return Err(refusal.as_error());
+            }
             if let Some(held) = self.folders.borrow_mut().get_mut(folder) {
                 held.retain(|(held_uid, _)| *held_uid != uid);
             }
@@ -341,19 +433,53 @@ mod tests {
         TheAccount {
             id: THE_ACCOUNT,
             name: "Work",
+            who_empties: WhoEmptiesTheTrash::ThisProgram,
         }
     }
 
+    /// The day a case's first check runs on.
+    fn the_first_day() -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 10, 2).expect("a day")
+    }
+
+    /// One check of the account, with changes allowed, now, on the first day.
     fn a_check(
         server: &AServerThatHoldsTheTrash,
         cache: &MessageCache,
         when: WhenTheTrashIsEmptied,
     ) -> Option<String> {
+        a_check_of(server, cache, work(), when, true, 0)
+    }
+
+    /// One check of an account, as many days after the first as `later`.
+    fn a_check_of(
+        server: &AServerThatHoldsTheTrash,
+        cache: &MessageCache,
+        account: TheAccount<'_>,
+        when: WhenTheTrashIsEmptied,
+        allowed_mail: bool,
+        later: i64,
+    ) -> Option<String> {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("a runtime")
-            .block_on(empty_at_a_check(server, cache, work(), when, Utc::now()))
+            .block_on(empty_at_a_check(
+                server,
+                cache,
+                account,
+                when,
+                allowed_mail,
+                Utc::now() + Duration::days(later),
+                the_first_day() + Duration::days(later),
+            ))
             .expect("the emptying to finish")
+    }
+
+    fn is_waiting(cache: &MessageCache, row: i64) -> bool {
+        cache
+            .the_move_waiting_for(row)
+            .expect("the store read")
+            .is_some()
     }
 
     fn is_deleted_here(cache: &MessageCache, row: i64) -> bool {
@@ -499,14 +625,409 @@ mod tests {
         );
     }
 
+    /// An emptying that took this many and nothing else happened.
+    fn only_emptied(emptied: usize) -> WhatTheEmptyingCameTo {
+        WhatTheEmptyingCameTo {
+            emptied,
+            ..WhatTheEmptyingCameTo::default()
+        }
+    }
+
     #[test]
     fn test_one_message_is_said_in_the_singular() {
         assert_eq!(
-            what_the_emptying_said("Deleted Items", "Home", 1, 15).as_deref(),
+            what_the_emptying_said("Deleted Items", "Home", 15, &only_emptied(1)).as_deref(),
             Some(
                 "Emptied 1 message from Deleted Items in Home that had been there more than 15 days."
             )
         );
-        assert_eq!(what_the_emptying_said("Trash", "Home", 0, 15), None);
+        assert_eq!(
+            what_the_emptying_said("Trash", "Home", 15, &only_emptied(0)),
+            None
+        );
+    }
+
+    /// The day this account's Trash was last emptied, as the store says.
+    fn last_emptied(cache: &MessageCache) -> Option<NaiveDate> {
+        cache
+            .the_trash_was_last_emptied_on(THE_ACCOUNT)
+            .expect("the day read")
+    }
+
+    /// A cache holding the account's Inbox and no folder it keeps deleted
+    /// mail in.
+    fn an_account_without_a_trash() -> (tempfile::TempDir, MessageCache) {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        a_folder(&cache, "Inbox", "INBOX", FolderType::Inbox);
+        (dir, cache)
+    }
+
+    /// A message stored in the Trash that went in there this long ago.
+    fn in_the_trash_ago(cache: &MessageCache, trash: i64, uid: u32, ago: Duration) -> i64 {
+        let row = in_the_trash_for(cache, trash, uid, 0);
+        cache
+            .it_went_into_the_trash_at(row, Utc::now() - ago)
+            .expect("the stamp set");
+        row
+    }
+
+    const THIRTY: WhenTheTrashIsEmptied = WhenTheTrashIsEmptied::After30Days;
+
+    #[test]
+    fn test_a_second_check_the_same_day_empties_nothing_more() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2]);
+        in_the_trash_for(&cache, trash, 1, 45);
+        assert!(a_check(&server, &cache, THIRTY).is_some());
+
+        let second = in_the_trash_for(&cache, trash, 2, 45);
+        assert_eq!(a_check(&server, &cache, THIRTY), None);
+
+        assert_eq!(server.the_log(), ["DELETE 1 in Trash off the server"]);
+        assert!(!is_deleted_here(&cache, second));
+        assert_eq!(last_emptied(&cache), Some(the_first_day()));
+    }
+
+    #[test]
+    fn test_the_next_day_empties_what_has_come_due_since() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2]);
+        in_the_trash_for(&cache, trash, 1, 45);
+        let a_day_short = in_the_trash_ago(&cache, trash, 2, Duration::hours(29 * 24 + 12));
+        a_check(&server, &cache, THIRTY);
+        assert!(!is_deleted_here(&cache, a_day_short), "emptied a day early");
+
+        let said = a_check_of(&server, &cache, work(), THIRTY, true, 1);
+
+        assert_eq!(
+            server.the_log(),
+            [
+                "DELETE 1 in Trash off the server",
+                "DELETE 2 in Trash off the server"
+            ]
+        );
+        assert_eq!(
+            said.as_deref(),
+            Some("Emptied 1 message from Trash in Work that had been there more than 30 days.")
+        );
+        assert_eq!(
+            last_emptied(&cache),
+            Some(the_first_day() + Duration::days(1))
+        );
+    }
+
+    #[test]
+    fn test_with_changing_mail_off_nothing_is_dialled_and_it_is_said_once_a_day() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1]);
+        let row = in_the_trash_for(&cache, trash, 1, 45);
+
+        let said = a_check_of(&server, &cache, work(), THIRTY, false, 0);
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Nothing was emptied from Trash in Work, because Allow Changes does not let this \
+                 account change mail."
+            )
+        );
+        assert_eq!(a_check_of(&server, &cache, work(), THIRTY, false, 0), None);
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+        assert!(!is_deleted_here(&cache, row));
+
+        // Allowed the next day, it empties at that day's first check.
+        assert!(a_check_of(&server, &cache, work(), THIRTY, true, 1).is_some());
+        assert_eq!(server.the_log(), ["DELETE 1 in Trash off the server"]);
+    }
+
+    #[test]
+    fn test_an_account_with_no_trash_is_left_alone_and_says_so_once_a_day() {
+        let (_dir, cache) = an_account_without_a_trash();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[]);
+
+        let said = a_check(&server, &cache, THIRTY);
+        assert_eq!(
+            said,
+            Some(format!("Nothing was emptied in Work. {NO_TRASH_TO_EMPTY}"))
+        );
+        assert_eq!(a_check(&server, &cache, THIRTY), None);
+        assert!(server.the_log().is_empty(), "{:?}", server.the_log());
+    }
+
+    #[test]
+    fn test_an_account_that_has_never_listed_its_folders_says_nothing() {
+        let dir = tempfile::tempdir().expect("a temporary folder");
+        let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1]);
+
+        assert_eq!(a_check(&server, &cache, THIRTY), None);
+        assert_eq!(
+            last_emptied(&cache),
+            None,
+            "a day was used with nothing known"
+        );
+
+        // Its folders listed later the same day, the day is still there to use.
+        a_folder(&cache, "Inbox", "INBOX", FolderType::Inbox);
+        let trash = a_folder(&cache, "Trash", "Trash", FolderType::Trash);
+        in_the_trash_for(&cache, trash, 1, 45);
+        assert_eq!(
+            a_check(&server, &cache, THIRTY).as_deref(),
+            Some("Emptied 1 message from Trash in Work that had been there more than 30 days.")
+        );
+        assert_eq!(last_emptied(&cache), Some(the_first_day()));
+    }
+
+    #[test]
+    fn test_no_more_than_five_hundred_go_in_a_day_and_the_rest_are_said_to_be_left() {
+        let (_dir, cache, trash) = an_account();
+        let uids: Vec<u32> = (1..=501).collect();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&uids);
+        // The first is the oldest, so the last is the one left.
+        let rows: Vec<i64> = uids
+            .iter()
+            .map(|uid| in_the_trash_for(&cache, trash, *uid, 31 + 501 - i64::from(*uid)))
+            .collect();
+
+        let said = a_check(&server, &cache, THIRTY);
+
+        let log = server.the_log();
+        assert_eq!(log.len(), 500);
+        assert_eq!(
+            log.first().map(String::as_str),
+            Some("DELETE 1 in Trash off the server")
+        );
+        assert_eq!(
+            log.last().map(String::as_str),
+            Some("DELETE 500 in Trash off the server")
+        );
+        assert!(!is_deleted_here(&cache, rows[500]));
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 500 messages from Trash in Work that had been there more than 30 days; \
+                 1 more message left for the next day."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2, 3])
+            .refusing_a_delete(Refusal::Dropped);
+        let first = in_the_trash_for(&cache, trash, 1, 50);
+        let rest = [
+            in_the_trash_for(&cache, trash, 2, 40),
+            in_the_trash_for(&cache, trash, 3, 35),
+        ];
+
+        let said = a_check(&server, &cache, THIRTY);
+
+        assert_eq!(server.the_log(), ["DELETE 1 in Trash off the server"]);
+        assert!(is_deleted_here(&cache, first) && is_waiting(&cache, first));
+        for row in rest {
+            assert!(!is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+        }
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 0 messages from Trash in Work that had been there more than 30 days; \
+                 1 message kept waiting until the mail server can be reached; 2 more messages \
+                 left for the next day."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_delete_the_server_refuses_is_put_back_in_the_trash() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2])
+            .refusing_a_delete(Refusal::SaidNo);
+        let rows = [
+            in_the_trash_for(&cache, trash, 1, 50),
+            in_the_trash_for(&cache, trash, 2, 40),
+        ];
+
+        let said = a_check(&server, &cache, THIRTY);
+
+        assert_eq!(
+            server.the_log(),
+            [
+                "DELETE 1 in Trash off the server",
+                "DELETE 2 in Trash off the server"
+            ]
+        );
+        for row in rows {
+            assert!(!is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+            assert!(
+                cache.in_the_trash_since(row).expect("the stamp").is_some(),
+                "row {row} is no longer in the Trash here"
+            );
+        }
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 0 messages from Trash in Work that had been there more than 30 days; \
+                 2 messages put back because the mail server said no."
+            )
+        );
+    }
+
+    #[test]
+    fn test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1])
+            .refusing_a_delete(Refusal::TheGate);
+        let row = in_the_trash_for(&cache, trash, 1, 50);
+
+        let said = a_check(&server, &cache, THIRTY);
+
+        assert!(!is_deleted_here(&cache, row) && !is_waiting(&cache, row));
+        assert_eq!(
+            said.as_deref(),
+            Some(
+                "Emptied 0 messages from Trash in Work that had been there more than 30 days; \
+                 1 message put back because changing mail is not allowed."
+            )
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_delete_is_still_waiting_is_left_for_another_day() {
+        let (_dir, cache, trash) = an_account();
+        let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1, 2]);
+        in_the_trash_for(&cache, trash, 1, 50);
+        let waiting = in_the_trash_for(&cache, trash, 2, 40);
+        cache
+            .keep_a_move_waiting(&AWaitingMove {
+                message_row_id: waiting,
+                account_id: THE_ACCOUNT.to_string(),
+                from_folder_path: "Trash".to_string(),
+                uid: 2,
+                what: WhatAWaitingMoveDoes::DeleteOutright,
+                asked_at: Utc::now().to_rfc3339(),
+            })
+            .expect("a delete kept waiting");
+
+        let said = a_check(&server, &cache, THIRTY);
+
+        assert_eq!(server.the_log(), ["DELETE 1 in Trash off the server"]);
+        assert!(
+            is_waiting(&cache, waiting),
+            "the waiting delete was settled here"
+        );
+        assert_eq!(
+            said.as_deref(),
+            Some("Emptied 1 message from Trash in Work that had been there more than 30 days.")
+        );
+    }
+
+    #[test]
+    fn test_an_account_whose_provider_empties_its_trash_is_left_alone() {
+        for who in [WhoEmptiesTheTrash::Gmail, WhoEmptiesTheTrash::Microsoft] {
+            let (_dir, cache, trash) = an_account();
+            let server = AServerThatHoldsTheTrash::holding_in_the_trash(&[1]);
+            let row = in_the_trash_for(&cache, trash, 1, 45);
+            let account = TheAccount {
+                who_empties: who,
+                ..work()
+            };
+
+            assert_eq!(a_check_of(&server, &cache, account, THIRTY, true, 0), None);
+
+            assert!(
+                server.the_log().is_empty(),
+                "{who:?}: {:?}",
+                server.the_log()
+            );
+            assert!(!is_deleted_here(&cache, row), "{who:?}");
+            assert_eq!(last_emptied(&cache), None, "{who:?} used a day");
+        }
+    }
+
+    #[test]
+    fn test_each_answer_of_the_one_check_says_who_empties_the_trash() {
+        for (runs_it, empties_it, line) in [
+            (
+                WhoRunsTheMail::Gmail,
+                WhoEmptiesTheTrash::Gmail,
+                Some(
+                    "Gmail empties this account's Trash itself, 30 days after a message goes \
+                     into it, so Wixen Mail leaves it alone.",
+                ),
+            ),
+            (
+                WhoRunsTheMail::Microsoft,
+                WhoEmptiesTheTrash::Microsoft,
+                Some(
+                    "Microsoft empties this account's Deleted Items itself: Outlook.com after 30 \
+                     days, and a work or school account as its organisation has set it, so Wixen \
+                     Mail leaves it alone.",
+                ),
+            ),
+            (
+                WhoRunsTheMail::SomebodyElse,
+                WhoEmptiesTheTrash::ThisProgram,
+                None,
+            ),
+        ] {
+            let who = who_empties_the_trash(Protocol::Imap, runs_it);
+            assert_eq!(who, empties_it, "{runs_it:?}");
+            assert_eq!(the_provider_empties_it(who), line, "{who:?}");
+        }
+    }
+
+    #[test]
+    fn test_pop_is_emptied_here_whatever_its_provider() {
+        for runs_it in [
+            WhoRunsTheMail::Gmail,
+            WhoRunsTheMail::Microsoft,
+            WhoRunsTheMail::SomebodyElse,
+        ] {
+            assert_eq!(
+                who_empties_the_trash(Protocol::Pop3, runs_it),
+                WhoEmptiesTheTrash::ThisProgram,
+                "{runs_it:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_sentence_says_each_count_and_reason_once_and_the_singular_right() {
+        let everything = WhatTheEmptyingCameTo {
+            emptied: 1,
+            left_for_another_day: 1,
+            kept_waiting: 1,
+            put_back: BTreeMap::from([
+                (Because::TheServerSaidNo, 1),
+                (Because::ChangingMailIsNotAllowed, 2),
+            ]),
+        };
+        assert_eq!(
+            what_the_emptying_said("Trash", "Work", 30, &everything).as_deref(),
+            Some(
+                "Emptied 1 message from Trash in Work that had been there more than 30 days; \
+                 1 message kept waiting until the mail server can be reached; 2 messages put \
+                 back because changing mail is not allowed; 1 message put back because the mail \
+                 server said no; 1 more message left for the next day."
+            )
+        );
+        let many = WhatTheEmptyingCameTo {
+            emptied: 3,
+            left_for_another_day: 12,
+            ..WhatTheEmptyingCameTo::default()
+        };
+        assert_eq!(
+            what_the_emptying_said("Deleted Items", "Home", 15, &many).as_deref(),
+            Some(
+                "Emptied 3 messages from Deleted Items in Home that had been there more than 15 \
+                 days; 12 more messages left for the next day."
+            )
+        );
+        assert_eq!(
+            what_the_emptying_said("Trash", "Work", 30, &WhatTheEmptyingCameTo::default()),
+            None
+        );
     }
 }

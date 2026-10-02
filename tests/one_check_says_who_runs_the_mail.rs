@@ -91,6 +91,24 @@ const THE_CALLERS: &[Caller] = &[
         signature: Some("pub fn providers("),
         names: "WhoRunsTheMail::of(",
     },
+    // Who empties an account's Trash (13-44.6, D12): the decision maps the
+    // check's answer, the mail check asks it of the account, and the account
+    // editor of what is typed.
+    Caller {
+        file: "src/application/emptying_the_trash.rs",
+        signature: Some("pub fn who_empties_the_trash("),
+        names: "WhoRunsTheMail::",
+    },
+    Caller {
+        file: "src/presentation/wx_account_manager.rs",
+        signature: Some("fn show_who_empties_the_trash("),
+        names: "WhoRunsTheMail::from_what_is_known(",
+    },
+    Caller {
+        file: "src/presentation/wx_app.rs",
+        signature: Some("fn spawn_mail_sync("),
+        names: "WhoRunsTheMail::of(",
+    },
     // The three followers name the function rather than call it in one
     // shape: the notes backend hands it to `and_then`.
     Caller {

@@ -163,6 +163,49 @@ fn test_the_reading_refuses_an_emptying_called_from_somewhere_else() {
     );
 }
 
+/// The text from `opening` to the first line after it that closes a block at
+/// `closing`, which is how a handler or a function ends in the editor.
+fn the_block_from(source: &str, opening: &str, closing: &str) -> Result<String, String> {
+    let at = source.find(opening).ok_or(format!(
+        "{opening} is not in the editor, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let end = rest
+        .find(closing)
+        .ok_or(format!("{opening} never closes"))?;
+    Ok(rest[..end].to_string())
+}
+
+#[test]
+fn test_what_shows_is_decided_on_next_and_on_each_change() {
+    // Whether the choice or the provider's line shows depends on the
+    // protocol and the incoming server, and both can change while the
+    // connection page is open, so one function decides it, called when the
+    // page opens and from both handlers (13-44.6, D12). A handler that
+    // forgot would leave the choice offered to an account somebody has just
+    // typed Gmail's server into.
+    let editor = fs::read_to_string("src/presentation/wx_account_manager.rs")
+        .expect("the account editor")
+        .replace("\r\n", "\n");
+    let ships = the_shipping_lines(&editor).join("\n");
+    assert_eq!(
+        ships.matches("fn show_who_empties_the_trash(").count(),
+        1,
+        "the function that decides what shows is not defined once"
+    );
+    for (opening, closing) in [
+        ("pub fn advance_to_connection_page(", "\n}\n"),
+        ("protocol_choice.on_selection_changed(", "\n    });\n"),
+        ("imap_f.on_text_changed(", "\n    });\n"),
+    ] {
+        let block = the_block_from(&ships, opening, closing).unwrap_or_else(|why| panic!("{why}"));
+        assert!(
+            block.contains("show_who_empties_the_trash("),
+            "{opening} does not decide again whether the choice or the provider's line shows"
+        );
+    }
+}
+
 #[test]
 fn test_the_account_editor_offers_the_trash_setting_and_keeps_its_answer() {
     let editor =

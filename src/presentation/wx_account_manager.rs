@@ -1450,6 +1450,10 @@ pub struct AccountEditWidgets {
     pub allow_reading_here: CheckBox,
     /// When this account's Trash is emptied (13-44.6).
     pub empty_the_trash: Choice,
+    /// In its place for an account whose provider empties its Trash itself.
+    pub trash_left_to_the_provider: StaticText,
+    /// Beside it for an account none of whose folders is its Trash.
+    pub no_trash_to_empty: StaticText,
     pub next: Button,
     pub back: Button,
     pub ok: Button,
@@ -1488,6 +1492,13 @@ pub fn advance_to_connection_page(w: &AccountEditWidgets) {
     w.ok.set_default();
     w.dialog.layout();
     w.protocol_choice.set_focus();
+}
+
+/// Say beside the choice of when the Trash is emptied whether this account
+/// has a Trash Wixen Mail recognises: `Some(false)` when its folders are
+/// known and none of them is one, `None` when they are not known yet.
+pub fn say_whether_the_trash_is_recognised(w: &AccountEditWidgets, recognised: Option<bool>) {
+    let _ = (w, recognised);
 }
 
 /// Move from the connection and sign-in page back to the identity page, and
@@ -2057,6 +2068,10 @@ pub fn build_account_edit_dialog(
         fields.add(&c, 1, SizerFlag::Expand | SizerFlag::All, 4);
         (l, c)
     };
+    let trash_left_to_the_provider = StaticText::builder(&dlg).with_label("").build();
+    trash_left_to_the_provider.show(false);
+    let no_trash_to_empty = StaticText::builder(&dlg).with_label("").build();
+    no_trash_to_empty.show(false);
     let imap_fields = ImapFields {
         section_heading: imap_section_heading,
         server_label: imap_label,
@@ -2215,6 +2230,8 @@ pub fn build_account_edit_dialog(
         allow_personal_information_here,
         allow_reading_here,
         empty_the_trash,
+        trash_left_to_the_provider,
+        no_trash_to_empty,
         next,
         back,
         ok,
