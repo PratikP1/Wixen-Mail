@@ -52,6 +52,7 @@ use crate::common::{Error, Result};
 use crate::data::account::Account;
 use crate::data::message_cache::{CachedFolder, IncomingMessage};
 use crate::service::safety::Verdict;
+use std::collections::HashMap;
 
 /// The database file the store keeps its mail in.
 const THE_FILE: &str = "message_cache.db";
@@ -74,16 +75,67 @@ fn the_word_of(n: usize) -> String {
 enum Place {
     /// In the file, on a page `dbstat` names as this table's or index's.
     Page(String),
+    /// In the file, on a page `dbstat` does not list: the free list.
+    Free,
 }
 
 /// Every offset in `bytes` where `word` starts.
-fn copies_of(_word: &str, _bytes: &[u8]) -> Vec<usize> {
-    Vec::new()
+fn copies_of(word: &str, bytes: &[u8]) -> Vec<usize> {
+    let needle = word.as_bytes();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter(|(_, window)| *window == needle)
+        .map(|(at, _)| at)
+        .collect()
 }
 
 /// Each offset's place in the store's file, by the page it starts on.
-fn where_each_lies(_cache: &MessageCache, offsets: &[usize]) -> Result<Vec<Place>> {
-    Ok(offsets.iter().map(|_| Place::Page(String::new())).collect())
+fn where_each_lies(cache: &MessageCache, offsets: &[usize]) -> Result<Vec<Place>> {
+    let page_size = the_page_size(cache)?;
+    let owners = the_owner_of_each_page(cache)?;
+    Ok(offsets
+        .iter()
+        .map(|at| {
+            let page = (at / page_size + 1) as i64;
+            owners
+                .get(&page)
+                .map_or(Place::Free, |owner| Place::Page(owner.clone()))
+        })
+        .collect())
+}
+
+/// The words of an error met while reading the file's shape.
+fn could_not_read(e: rusqlite::Error) -> Error {
+    Error::Other(format!("The shape of the mail file could not be read: {e}"))
+}
+
+/// The size of a page of the store's file, as SQLite reports it.
+fn the_page_size(cache: &MessageCache) -> Result<usize> {
+    let size: i64 = cache
+        .conn
+        .query_row("PRAGMA page_size", [], |size| size.get(0))
+        .map_err(could_not_read)?;
+    Ok(size as usize)
+}
+
+/// Every page `dbstat` lists, by its number, with the table or index it
+/// belongs to. Read once, because a lookup per copy scans the whole file
+/// each time.
+fn the_owner_of_each_page(cache: &MessageCache) -> Result<HashMap<i64, String>> {
+    let mut statement = cache
+        .conn
+        .prepare("SELECT pageno, name FROM dbstat")
+        .map_err(could_not_read)?;
+    let owners = statement
+        .query_map([], |page| Ok((page.get(0)?, page.get(1)?)))
+        .map_err(could_not_read)?
+        .collect::<std::result::Result<_, _>>()
+        .map_err(could_not_read)?;
+    Ok(owners)
 }
 
 /// Copy the write log into the file and truncate it, as 13-44.8's
