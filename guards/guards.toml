@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 630 records have arrived since and have not been through it.
+# 634 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -22856,7 +22856,7 @@ red = [
     "test_the_reading_can_see_a_row_whose_date_is_missing",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # ── Phase 8, plan 02: a figure on any page carries its date and its source ──
@@ -22886,7 +22886,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # A line that says `target` is stating an aim and is excused from the date. The
@@ -22946,7 +22946,7 @@ red = [
     "test_the_provenance_reading_excuses_a_line_that_names_a_target",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # The agreement reading holds a test count on the three pages that state one
@@ -22969,7 +22969,7 @@ red = [
     "test_the_three_pages_that_state_the_test_count_quote_one_row",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # The share of history before red/green is computed on every commit, and no
@@ -22997,7 +22997,7 @@ red = [
     "test_the_share_of_history_before_red_green_is_computed_and_printed",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # A figure in prose that restates a constant the code holds is held to it.
@@ -23021,7 +23021,7 @@ red = [
     "test_the_constants_reading_refuses_a_phrase_that_has_gone",
 ]
 tests_last_seen = [
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # The same rule from the other side: the constant moves and the page does not.
@@ -23053,7 +23053,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/attachment_content.rs", tests = 23 },
-    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 26 },
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
 ]
 
 # ── The usable line, and the harness that reads it ──────────────────────────
@@ -29495,7 +29495,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The first character typed after a closing inline delimiter is plain. The
@@ -29522,7 +29522,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The browser is the first thing in the formatted message window that takes
@@ -30589,7 +30589,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── The Signature Manager lists every account's signatures (#43) ──────────
@@ -30611,7 +30611,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── A box ticked in a signature's editor is the account's (#43, T-12-44) ──
@@ -30632,7 +30632,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── An account's labels are read in the order it keeps (#48, T-12-34) ──────
@@ -37238,7 +37238,7 @@ red = [
     "test_a_child_that_never_reported_the_test_says_so",
 ]
 tests_last_seen = [
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The browser rule stops asking for the one turn, so a target typing into a
@@ -37290,7 +37290,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # The POP identifier left off what a message taken off this computer keeps,
@@ -37342,7 +37342,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/application/pop_sync.rs", tests = 54 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # Secure delete left off for the removal, so the bytes it frees keep the
@@ -37364,7 +37364,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # The written-back row left with no search entry, so the index holds fewer
@@ -37418,7 +37418,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # The settle removes the record whatever its count, so a message taken off
@@ -37476,7 +37476,7 @@ red = [
     "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # Taking a message off this computer no longer switches secure delete on, so
@@ -37498,7 +37498,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # The forgetting rows written without their commit cell, so a figure on the
@@ -37514,7 +37514,7 @@ red = [
     "data::message_cache::what_forgetting_costs::tests::test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
 # A mailbox file nothing went into put in place anyway, so a backup already
@@ -37948,4 +37948,80 @@ red = [
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# A repository read as no history, so a forgetting row taken where a history
+# exists carries the sentence in place of its commit and the check would let
+# it (13.1-01, D-09, D-12). Written 2026-10-03 by 13.1-01, measured against
+# the library.
+[[guard]]
+name = "a forgetting row says there is no history only where git finds no repository"
+file = "src/data/message_cache/what_forgetting_costs.rs"
+before = '''    if !there_is_a_repository(&git)? {
+        return Ok(NO_HISTORY_HERE.to_string());'''
+after = '''    if there_is_a_repository(&git).is_ok() {
+        return Ok(NO_HISTORY_HERE.to_string());'''
+red = [
+    "data::message_cache::what_forgetting_costs::tests::test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed",
+    "data::message_cache::what_forgetting_costs::tests::test_where_a_repository_answers_the_commit_cell_is_its_commit",
+    "data::message_cache::what_forgetting_costs::tests::test_a_repository_that_will_not_name_its_commit_fails_quoting_git",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
+]
+
+# A repository read as no history, so the share of history before red/green
+# is never computed where there is one and a history without 18a02454 no
+# longer fails (13.1-01, D-09, D-12). The share case itself stays green under
+# this break, since it prints whichever line it is handed; the two decision
+# cases are what hold it. Written 2026-10-03 by 13.1-01, measured against the
+# suite.
+[[guard]]
+name = "the share of history is not computed only where git finds no repository"
+file = "tests/every_number_carries_its_command_and_its_date.rs"
+suite = "every_number_carries_its_command_and_its_date"
+before = '''        Err(why) => return Err(why),
+        Ok(_) => {}'''
+after = '''        Err(why) => return Err(why),
+        Ok(_) => return Ok(TheShare::NoHistoryHere),'''
+red = [
+    "test_a_history_holding_the_commit_gives_the_share",
+    "test_a_history_without_the_commit_is_still_a_failure",
+]
+tests_last_seen = [
+    { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
+]
+
+# The marker reading's window test sent to a child on GitHub's runner too,
+# where an elevated child's browser opens on the shell's desktop and the
+# page never comes, so every pull request's Test Suite is red again
+# (13.1-01, D-01, ledger 785). Written 2026-10-03 by 13.1-01, measured
+# against the suite.
+[[guard]]
+name = "the marker reading runs its window test on the runner's own desktop where CI is set"
+file = "tests/a_marker_counts_at_the_start_of_any_line.rs"
+suite = "a_marker_counts_at_the_start_of_any_line"
+before = '''        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,'''
+after = '''        Some(_) => WhereTheBodyRuns::InAChild,'''
+red = [
+    "test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set",
+]
+tests_last_seen = [
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
+]
+
+# The signature reading's window tests sent to a child on GitHub's runner
+# too, for the same reason (13.1-01, D-01, ledger 785). Written 2026-10-03 by
+# 13.1-01, measured against the suite.
+[[guard]]
+name = "the signature reading runs its window tests on the runner's own desktop where CI is set"
+file = "tests/a_signature_follows_the_from_account.rs"
+suite = "a_signature_follows_the_from_account"
+before = '''        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,'''
+after = '''        Some(_) => WhereTheBodyRuns::InAChild,'''
+red = [
+    "test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set",
+]
+tests_last_seen = [
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]

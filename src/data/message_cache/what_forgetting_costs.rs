@@ -1163,9 +1163,14 @@ fn with_commas(n: usize) -> String {
 const THE_COMMAND: &str = "`cargo test --release --lib data::message_cache::what_forgetting_costs:: -- --ignored --nocapture --test-threads=1`";
 
 /// The rows the page takes, one per figure.
-fn the_rows(shape: Shape, measured: &[Measured], build: &str, machine: &str) -> Vec<String> {
-    let (date, commit, version) = today_commit_and_version();
-    measured
+fn the_rows(
+    shape: Shape,
+    measured: &[Measured],
+    build: &str,
+    machine: &str,
+) -> std::result::Result<Vec<String>, String> {
+    let (date, commit, version) = today_commit_and_version()?;
+    Ok(measured
         .iter()
         .map(|m| {
             let conditions = format!(
@@ -1180,7 +1185,7 @@ fn the_rows(shape: Shape, measured: &[Measured], build: &str, machine: &str) -> 
             );
             the_row(&[&m.what, &m.value, THE_COMMAND, &date, &commit, &conditions])
         })
-        .collect()
+        .collect())
 }
 
 /// Word a row the page will accept: a pipe inside a cell is written `\|` so
@@ -1191,15 +1196,63 @@ fn the_row(cells: &[&str]) -> String {
 }
 
 /// The date, the commit and the version, for the rows.
-fn today_commit_and_version() -> (String, String, String) {
+fn today_commit_and_version() -> std::result::Result<(String, String, String), String> {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let commit = std::process::Command::new("git")
-        .args(["rev-parse", "--short=8", "HEAD"])
+    let commit = the_commit_asking(ask_git)?;
+    Ok((date, commit, env!("CARGO_PKG_VERSION").to_string()))
+}
+
+/// What a row's commit cell says where git finds no repository to read a
+/// commit from, as in the copy `cargo mutants` builds, which holds no `.git`
+/// (ledger 458, 13.1-01).
+const NO_HISTORY_HERE: &str = "no commit: this copy holds no git history to read one from";
+
+/// What git printed for one question, or why it refused, in its own words.
+type GitsAnswer = std::result::Result<String, String>;
+
+/// Ask the git on this machine.
+fn ask_git(args: &[&str]) -> GitsAnswer {
+    let output = std::process::Command::new("git")
+        .args(args)
         .output()
-        .ok()
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
-    (date, commit, env!("CARGO_PKG_VERSION").to_string())
+        .map_err(|e| format!("git could not be run: {e}"))?;
+    let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_string();
+    if output.status.success() {
+        Ok(said(&output.stdout))
+    } else {
+        Err(said(&output.stderr))
+    }
+}
+
+/// Whether git's refusal says there is no repository here at all, which is
+/// what it answers in a copy with no `.git`.
+fn says_there_is_no_repository(refusal: &str) -> bool {
+    refusal.contains("not a git repository")
+}
+
+/// Whether git finds a repository here, asked of `git`; a refusal for any
+/// other reason is handed back in git's words.
+fn there_is_a_repository(
+    git: &impl Fn(&[&str]) -> GitsAnswer,
+) -> std::result::Result<bool, String> {
+    match git(&["rev-parse", "--git-dir"]) {
+        Ok(_) => Ok(true),
+        Err(why) if says_there_is_no_repository(&why) => Ok(false),
+        Err(why) => Err(format!(
+            "git could not say whether this is a repository: {why}"
+        )),
+    }
+}
+
+/// The commit a row carries, asked of `git`: `HEAD`'s where there is a
+/// repository, the sentence where there is none, and a failure quoting git
+/// where a repository will not name its commit.
+fn the_commit_asking(git: impl Fn(&[&str]) -> GitsAnswer) -> std::result::Result<String, String> {
+    if !there_is_a_repository(&git)? {
+        return Ok(NO_HISTORY_HERE.to_string());
+    }
+    git(&["rev-parse", "--short=8", "HEAD"])
+        .map_err(|why| format!("this repository would not name its commit: {why}"))
 }
 
 /// The processor, its logical core count and the memory, as Windows reports
@@ -1312,7 +1365,7 @@ fn measured_alone(shape: Shape) -> Vec<Measured> {
     let pointed = PointedAt::the_folder(&temporary);
     let measured = measure(shape, into.path()).expect("the measurement");
     drop(pointed);
-    for row in the_rows(shape, &measured, "release", &machine) {
+    for row in the_rows(shape, &measured, "release", &machine).expect("the rows") {
         println!("{row}");
     }
     measured
@@ -1464,7 +1517,10 @@ mod tests {
     fn test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed() {
         let into = tempfile::tempdir().expect("a folder to leave nothing in");
         let measured = measure(A_FEW, into.path()).expect("the measurement at a few messages");
-        let rows = the_rows(A_FEW, &measured, "debug", "a machine");
+        let rows = the_rows(A_FEW, &measured, "debug", "a machine").expect("the rows");
+        // Asked first, so a copy with no history is held to the sentence and
+        // a repository is held to a commit exactly as before.
+        let here_is_a_history = there_is_a_repository(&ask_git).expect("git's answer");
 
         assert_eq!(
             rows.len(),
@@ -1486,7 +1542,65 @@ mod tests {
                 "the row does not carry its command: {row}"
             );
             assert!(is_a_date(cells[3]), "the row carries no date: {row}");
-            assert!(is_a_commit(cells[4]), "the row carries no commit: {row}");
+            if here_is_a_history {
+                assert!(is_a_commit(cells[4]), "the row carries no commit: {row}");
+            } else {
+                assert_eq!(
+                    cells[4], NO_HISTORY_HERE,
+                    "the row does not say there is no history here: {row}"
+                );
+            }
         }
+    }
+
+    /// Git's words where it finds no repository, as it says them outside one.
+    const NOT_A_REPOSITORY: &str =
+        "fatal: not a git repository (or any of the parent directories): .git";
+
+    /// A git answering `--git-dir` with `repository` and `HEAD`'s commit with
+    /// `commit`, and refusing anything else.
+    fn a_git(repository: GitsAnswer, commit: GitsAnswer) -> impl Fn(&[&str]) -> GitsAnswer {
+        move |args| match args {
+            ["rev-parse", "--git-dir"] => repository.clone(),
+            ["rev-parse", "--short=8", "HEAD"] => commit.clone(),
+            other => Err(format!("this git was not asked {other:?}")),
+        }
+    }
+
+    #[test]
+    fn test_where_git_finds_no_repository_the_commit_cell_says_so() {
+        let git = a_git(
+            Err(NOT_A_REPOSITORY.to_string()),
+            Err(NOT_A_REPOSITORY.to_string()),
+        );
+        assert_eq!(the_commit_asking(git), Ok(NO_HISTORY_HERE.to_string()));
+    }
+
+    #[test]
+    fn test_where_a_repository_answers_the_commit_cell_is_its_commit() {
+        let git = a_git(Ok(".git".to_string()), Ok("ce526701".to_string()));
+        assert_eq!(the_commit_asking(git), Ok("ce526701".to_string()));
+    }
+
+    #[test]
+    fn test_a_repository_that_will_not_name_its_commit_fails_quoting_git() {
+        let refused = "fatal: ambiguous argument 'HEAD': unknown revision";
+        let git = a_git(Ok(".git".to_string()), Err(refused.to_string()));
+        let answer = the_commit_asking(git);
+        assert!(
+            matches!(&answer, Err(why) if why.contains(refused)),
+            "not a failure quoting git: {answer:?}"
+        );
+    }
+
+    #[test]
+    fn test_git_refusing_for_another_reason_is_a_failure_quoting_git() {
+        let refused = "fatal: bad config line 1 in file .git/config";
+        let git = a_git(Err(refused.to_string()), Err(refused.to_string()));
+        let answer = the_commit_asking(git);
+        assert!(
+            matches!(&answer, Err(why) if why.contains(refused)),
+            "not a failure quoting git: {answer:?}"
+        );
     }
 }

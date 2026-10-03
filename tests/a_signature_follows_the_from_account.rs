@@ -566,12 +566,69 @@ fn ran_in_a_child_on_a_desktop_of_its_own(test: &str) -> bool {
     if std::env::var_os(ON_A_DESKTOP_OF_THEIR_OWN).is_some() {
         return false;
     }
+    if where_the_body_runs(std::env::var_os("CI").as_deref())
+        == WhereTheBodyRuns::OnTheRunnersOwnDesktop
+    {
+        static SAID: std::sync::Once = std::sync::Once::new();
+        SAID.call_once(|| say_past_the_capture(ON_THE_RUNNERS_OWN_DESKTOP));
+        return false;
+    }
     static THE_CHILD: OnceLock<ChildRun> = OnceLock::new();
     let run = THE_CHILD.get_or_init(|| the_child_run("signature"));
     if let Err(why) = what_the_child_said(test, run) {
         panic!("{why}");
     }
     true
+}
+
+/// Where a window test's body runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WhereTheBodyRuns {
+    /// In a child of this executable on a desktop made for the run.
+    InAChild,
+    /// In this process, on the desktop it was started on.
+    OnTheRunnersOwnDesktop,
+}
+
+/// Where a window test's body runs, given the `CI` variable, which GitHub
+/// sets on every runner.
+///
+/// On the runner every process is elevated, and the browser an elevated
+/// child asks for is started by `explorer.exe`, unelevated and on the
+/// shell's desktop, so its window cannot be made inside the child's: every
+/// run there ended "Invalid window handle" with the page never coming (ledger
+/// 785; CI runs 37151597179 and 37154501219 named the starter, in the marker
+/// reading's child). Nobody types on a runner, so there the bodies run here,
+/// as they did before 13-44.6.3, and say so.
+fn where_the_body_runs(ci: Option<&OsStr>) -> WhereTheBodyRuns {
+    match ci {
+        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,
+        None => WhereTheBodyRuns::InAChild,
+    }
+}
+
+/// What a run whose bodies run on the runner's own desktop says, once.
+const ON_THE_RUNNERS_OWN_DESKTOP: &str = "the window tests ran on the runner's own desktop, not \
+     in a child on a desktop of their own, because CI is set: nobody types on a runner, and \
+     there an elevated child's browser opens on the shell's desktop and cannot open in the \
+     child's (ledger 785)";
+
+/// Write `line` to standard error itself, past libtest's capture, so a
+/// runner's log carries it whatever the verdict.
+fn say_past_the_capture(line: &str) {
+    use std::io::Write;
+    let mut stderr = std::io::stderr().lock();
+    // A line that cannot be written is a sentence lost, not a failure.
+    let _ = writeln!(stderr, "{line}");
+}
+
+/// The one turn, for a session that runs in this process on the runner's
+/// own desktop; in the child the parent holds it already.
+fn the_turn_for_a_body_run_here() -> Result<Option<TheOneTurn>, String> {
+    if std::env::var_os(ON_A_DESKTOP_OF_THEIR_OWN).is_some() {
+        return Ok(None);
+    }
+    TheOneTurn::take().map(Some)
 }
 
 /// How the child run ended.
@@ -1178,6 +1235,7 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView, choice: &Choice) -> Ph
 // ── The session ───────────────────────────────────────────────────────────
 
 fn take_the_harvest() -> Result<Harvest, String> {
+    let _turn = the_turn_for_a_body_run_here()?;
     let data = tempfile::tempdir().map_err(|e| format!("a data directory: {e}"))?;
     // SAFETY: set before the window session starts any thread, and nothing
     // has read either yet.
@@ -1361,6 +1419,22 @@ fn the_block_was_left_alone(before: &str, after: &str) -> Result<(), String> {
             "the edited message changed:\nbefore {before}\nafter  {after}"
         )),
     }
+}
+
+// ── Where the window tests run ────────────────────────────────────────────
+
+#[test]
+fn test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set() {
+    assert_eq!(
+        where_the_body_runs(Some(OsStr::new("true"))),
+        WhereTheBodyRuns::OnTheRunnersOwnDesktop,
+        "with CI set"
+    );
+    assert_eq!(
+        where_the_body_runs(None),
+        WhereTheBodyRuns::InAChild,
+        "without CI"
+    );
 }
 
 // ── The store ─────────────────────────────────────────────────────────────

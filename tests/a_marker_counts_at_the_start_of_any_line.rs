@@ -603,9 +603,16 @@ fn the_end_of(child: &ProcessInformation) -> Result<ChildEnd, String> {
 /// Whether this window test was run in a child on a desktop made for the
 /// run, which is so in the parent; there it fails, with one sentence saying
 /// why, unless the child's line for it says ok. In the child it answers
-/// false and the test runs its body.
+/// false and the test runs its body, and on a runner it says so and answers
+/// false, and the test runs its body here.
 fn ran_in_a_child_on_a_desktop_of_its_own(test: &str) -> bool {
     if std::env::var_os(ON_A_DESKTOP_OF_THEIR_OWN).is_some() {
+        return false;
+    }
+    if where_the_body_runs(std::env::var_os("CI").as_deref())
+        == WhereTheBodyRuns::OnTheRunnersOwnDesktop
+    {
+        say_past_the_capture(ON_THE_RUNNERS_OWN_DESKTOP);
         return false;
     }
     static THE_CHILD: OnceLock<ChildRun> = OnceLock::new();
@@ -614,6 +621,56 @@ fn ran_in_a_child_on_a_desktop_of_its_own(test: &str) -> bool {
         panic!("{why}");
     }
     true
+}
+
+/// Where a window test's body runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WhereTheBodyRuns {
+    /// In a child of this executable on a desktop made for the run.
+    InAChild,
+    /// In this process, on the desktop it was started on.
+    OnTheRunnersOwnDesktop,
+}
+
+/// Where a window test's body runs, given the `CI` variable, which GitHub
+/// sets on every runner.
+///
+/// On the runner every process is elevated, and the browser an elevated
+/// child asks for is started by `explorer.exe`, unelevated and on the
+/// shell's desktop, so its window cannot be made inside the child's: every
+/// run there ended "Invalid window handle" with the page never coming (ledger
+/// 785; CI runs 37151597179 and 37154501219 named the starter, and asking the
+/// browser not to de-elevate changed nothing). Nobody types on a runner, so
+/// there the body runs here, as it did before 13-44.6.3, and says so.
+fn where_the_body_runs(ci: Option<&OsStr>) -> WhereTheBodyRuns {
+    match ci {
+        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,
+        None => WhereTheBodyRuns::InAChild,
+    }
+}
+
+/// What a run whose body runs on the runner's own desktop says, once.
+const ON_THE_RUNNERS_OWN_DESKTOP: &str = "the window test ran on the runner's own desktop, not \
+     in a child on a desktop of its own, because CI is set: nobody types on a runner, and there \
+     an elevated child's browser opens on the shell's desktop and cannot open in the child's \
+     (ledger 785)";
+
+/// Write `line` to standard error itself, past libtest's capture, so a
+/// runner's log carries it whatever the verdict.
+fn say_past_the_capture(line: &str) {
+    use std::io::Write;
+    let mut stderr = std::io::stderr().lock();
+    // A line that cannot be written is a sentence lost, not a failure.
+    let _ = writeln!(stderr, "{line}");
+}
+
+/// The one turn, for a body that runs in this process on the runner's own
+/// desktop; in the child the parent holds it already.
+fn the_turn_for_a_body_run_here() -> Result<Option<TheOneTurn>, String> {
+    if std::env::var_os(ON_A_DESKTOP_OF_THEIR_OWN).is_some() {
+        return Ok(None);
+    }
+    TheOneTurn::take().map(Some)
 }
 
 /// How the child run ended.
@@ -1221,6 +1278,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
     ) {
         return;
     }
+    let _turn = the_turn_for_a_body_run_here().unwrap_or_else(|why| panic!("{why}"));
     let data_dir = tempfile::tempdir().expect("a temporary data directory");
     // SAFETY: set before any thread is started and before anything reads it.
     unsafe {
@@ -1552,6 +1610,20 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
 // every other ending says which it was and what Windows says about the lock.
 
 const A_TEST: &str = "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure";
+
+#[test]
+fn test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set() {
+    assert_eq!(
+        where_the_body_runs(Some(OsStr::new("true"))),
+        WhereTheBodyRuns::OnTheRunnersOwnDesktop,
+        "with CI set"
+    );
+    assert_eq!(
+        where_the_body_runs(None),
+        WhereTheBodyRuns::InAChild,
+        "without CI"
+    );
+}
 
 fn a_child_run(end: ChildEnd, output: &str, lock: SessionLock) -> ChildRun {
     ChildRun {

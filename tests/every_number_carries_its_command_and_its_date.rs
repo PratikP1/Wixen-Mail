@@ -1298,15 +1298,50 @@ fn git(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-fn commits_counted_to(revision: &str) -> Result<u64, String> {
+fn commits_counted_to(
+    git: &impl Fn(&[&str]) -> Result<String, String>,
+    revision: &str,
+) -> Result<u64, String> {
     let answer = git(&["rev-list", "--count", revision])?;
     answer
         .parse()
         .map_err(|_| format!("`git rev-list --count {revision}` answered `{answer}`, not a count"))
 }
 
+/// What the share of history before red/green came to.
+#[derive(Debug, PartialEq)]
+enum TheShare {
+    /// This many commits predate red/green, of this many in all.
+    Computed { before: u64, in_all: u64 },
+    /// Git finds no repository here, as in the copy `cargo mutants` builds,
+    /// which holds no `.git` (ledger 458).
+    NoHistoryHere,
+}
+
+/// The line the share case prints where git finds no repository.
+const NO_HISTORY_HERE: &str = "the share of history before red/green was not computed: this \
+                               copy holds no git history to compute it from";
+
 /// How many commits predate red/green, and how many there are in all.
-fn the_share_of_history_before_red_green() -> Result<(u64, u64), String> {
+fn the_share_of_history_before_red_green() -> Result<TheShare, String> {
+    the_share_asking(git)
+}
+
+/// Whether git's refusal says there is no repository here at all, which is
+/// what it answers in a copy with no `.git`.
+fn says_there_is_no_repository(refusal: &str) -> bool {
+    refusal.contains("not a git repository")
+}
+
+/// The share, asked of `git`. Decided by whether git finds a repository at
+/// all: none is said rather than failed, and a repository that does not hold
+/// the commit fails as a shallow checkout did on 2026-09-15.
+fn the_share_asking(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<TheShare, String> {
+    match git(&["rev-parse", "--git-dir"]) {
+        Err(why) if says_there_is_no_repository(&why) => return Ok(TheShare::NoHistoryHere),
+        Err(why) => return Err(why),
+        Ok(_) => {}
+    }
     git(&[
         "merge-base",
         "--is-ancestor",
@@ -1319,15 +1354,15 @@ fn the_share_of_history_before_red_green() -> Result<(u64, u64), String> {
                  compute a share of: {why}"
         )
     })?;
-    let before = commits_counted_to(&format!("{THE_COMMIT_RED_GREEN_STARTED_AT}^"))?;
-    let in_all = commits_counted_to("HEAD")?;
+    let before = commits_counted_to(&git, &format!("{THE_COMMIT_RED_GREEN_STARTED_AT}^"))?;
+    let in_all = commits_counted_to(&git, "HEAD")?;
     if before >= in_all {
         return Err(format!(
             "{before} commits predate {THE_COMMIT_RED_GREEN_STARTED_AT} and the history holds \
              {in_all}, which cannot be"
         ));
     }
-    Ok((before, in_all))
+    Ok(TheShare::Computed { before, in_all })
 }
 
 /// A line with its indentation and its comment marker taken off, so the
@@ -1399,19 +1434,77 @@ fn read_the_sites() -> Vec<(String, String)> {
         .collect()
 }
 
+/// Git's words where it finds no repository, as it says them through `git`.
+const NOT_A_REPOSITORY: &str = "`git rev-parse --git-dir` refused: fatal: not a git repository \
+                                (or any of the parent directories): .git";
+
+/// A git holding a history of 2,040 commits, 181 of them before red/green
+/// when `holds_the_commit`, and refusing anything it was not written for.
+fn a_history(holds_the_commit: bool) -> impl Fn(&[&str]) -> Result<String, String> {
+    move |args| match args {
+        ["rev-parse", "--git-dir"] => Ok(".git".to_string()),
+        [
+            "merge-base",
+            "--is-ancestor",
+            THE_COMMIT_RED_GREEN_STARTED_AT,
+            "HEAD",
+        ] => {
+            if holds_the_commit {
+                Ok(String::new())
+            } else {
+                Err("`git merge-base` refused: fatal: Not a valid commit name 18a02454".into())
+            }
+        }
+        ["rev-list", "--count", "18a02454^"] => Ok("181".to_string()),
+        ["rev-list", "--count", "HEAD"] => Ok("2040".to_string()),
+        other => Err(format!("this git was not asked {other:?}")),
+    }
+}
+
+#[test]
+fn test_where_git_finds_no_repository_the_share_is_not_computed() {
+    let no_repository = |_: &[&str]| Err(NOT_A_REPOSITORY.to_string());
+    assert_eq!(the_share_asking(no_repository), Ok(TheShare::NoHistoryHere));
+}
+
+#[test]
+fn test_a_history_holding_the_commit_gives_the_share() {
+    assert_eq!(
+        the_share_asking(a_history(true)),
+        Ok(TheShare::Computed {
+            before: 181,
+            in_all: 2040
+        })
+    );
+}
+
+#[test]
+fn test_a_history_without_the_commit_is_still_a_failure() {
+    let answer = the_share_asking(a_history(false));
+    assert!(
+        matches!(&answer, Err(why) if why.contains("is not in this history")),
+        "a history without {THE_COMMIT_RED_GREEN_STARTED_AT} was not a failure: {answer:?}"
+    );
+}
+
 #[test]
 fn test_the_share_of_history_before_red_green_is_computed_and_printed() {
-    let (before, in_all) =
-        the_share_of_history_before_red_green().unwrap_or_else(|why| panic!("{why}"));
-    let share = before as f64 * 100.0 / in_all as f64;
+    let share = the_share_of_history_before_red_green().unwrap_or_else(|why| panic!("{why}"));
     let today = chrono::Local::now().format("%Y-%m-%d");
-    println!("{before} of {in_all} commits, {share:.1}%, predate red/green as of {today}");
+    let said = match share {
+        TheShare::Computed { before, in_all } => {
+            let percent = before as f64 * 100.0 / in_all as f64;
+            format!("{before} of {in_all} commits, {percent:.1}%, predate red/green as of {today}")
+        }
+        TheShare::NoHistoryHere => NO_HISTORY_HERE.to_string(),
+    };
+    println!("{said}");
 
     let wrong = sites_that_state_the_ratio(&read_the_sites());
     assert!(
         wrong.is_empty(),
-        "the share of history before red/green is {before} of {in_all} today and moves with \
-         every commit, so no page states it as two absolutes:\n  {}",
+        "the share of history before red/green moves with every commit ({said}), so no page \
+         states it as two absolutes:\n  {}",
         wrong.join("\n  ")
     );
 }
