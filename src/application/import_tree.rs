@@ -54,7 +54,7 @@
 //! lets each entry go again.
 
 use crate::application::importing_messages::{
-    ReadAs, WhatSavedOutlookMessagesLeft, what_saved_outlook_messages_left,
+    MessagesImported, ReadAs, WhatSavedOutlookMessagesLeft, what_saved_outlook_messages_left,
 };
 use crate::application::local_folders::LOCAL_PREFIX;
 use crate::application::message_files::{self, FileHolds};
@@ -355,8 +355,16 @@ pub struct FoldersImported {
     /// Folders in the archive that would have had the same name here as one
     /// already made, so their mail was filed into that one.
     pub filed_together: usize,
+    /// Files on the messages brought in that were larger than this computer
+    /// keeps.
+    pub files_too_large_to_keep: usize,
     /// What the saved Outlook messages in the archive left in their files.
     pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
+}
+
+impl FoldersImported {
+    /// Take on what filling the folders counted about their mail.
+    pub fn carry_the_mail_counts(&mut self, _mail: &MessagesImported) {}
 }
 
 /// The folders an archive turns into, and what to say about the rest of it.
@@ -988,6 +996,69 @@ mod tests {
     }
 
     #[test]
+    fn test_files_too_large_to_keep_are_said_after_the_folders() {
+        // In the words the import of one file uses, with where the files are.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                files_too_large_to_keep: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 1 file was over 25 MB, the most Wixen Mail keeps \
+             of one file, so it is listed on its message and stays only in the file you \
+             imported from."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 2,
+                messages: 9,
+                files_too_large_to_keep: 2,
+                ..FoldersImported::default()
+            }),
+            "Imported 2 folders, 9 messages. 2 files were over 25 MB, the most Wixen Mail \
+             keeps of one file, so they are listed on their messages and stay only where you \
+             imported them from."
+        );
+    }
+
+    #[test]
+    fn test_the_folder_import_carries_what_the_mail_import_counted() {
+        // The folders are counted when the archive is looked over and the mail
+        // as the folders fill, so what the mail counted has to be carried
+        // across before anything is said, or it is counted and never heard.
+        let mut counted = FoldersImported {
+            folders: 2,
+            held_no_mail: 1,
+            ..FoldersImported::default()
+        };
+        let saved = WhatSavedOutlookMessagesLeft {
+            read: 1,
+            blind_copies: 1,
+            ..WhatSavedOutlookMessagesLeft::default()
+        };
+
+        counted.carry_the_mail_counts(&MessagesImported {
+            brought_in: 5,
+            files_too_large_to_keep: 2,
+            from_saved_outlook_messages: saved,
+            ..MessagesImported::default()
+        });
+
+        assert_eq!(
+            counted,
+            FoldersImported {
+                folders: 2,
+                messages: 5,
+                held_no_mail: 1,
+                files_too_large_to_keep: 2,
+                from_saved_outlook_messages: saved,
+                ..FoldersImported::default()
+            }
+        );
+    }
+
+    #[test]
     fn test_everything_this_module_says_is_a_sentence_and_names_no_machinery() {
         // All of it is read aloud. A fragment with no stop on the end runs into
         // whatever is spoken next, and a sentence naming a mechanism tells
@@ -1000,6 +1071,7 @@ mod tests {
                 held_no_mail: 1,
                 names_refused: 1,
                 filed_together: 1,
+                files_too_large_to_keep: 1,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
             what_the_folder_import_did(&FoldersImported {
@@ -1008,6 +1080,7 @@ mod tests {
                 held_no_mail: 2,
                 names_refused: 3,
                 filed_together: 2,
+                files_too_large_to_keep: 2,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
         ];

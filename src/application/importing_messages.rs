@@ -523,6 +523,10 @@ pub struct MessagesImported {
     /// Separate from the count above because it is a different thing to act on:
     /// there is nothing wrong with the file, and trying again may well work.
     pub not_written_down: usize,
+    /// Files on the messages brought in that were larger than this computer
+    /// keeps, so each is listed on its message and stays only in what was
+    /// imported.
+    pub files_too_large_to_keep: usize,
     /// Whether the folder it was filed in is one the account's server also
     /// fills.
     ///
@@ -1544,6 +1548,7 @@ mod tests {
                 already_here: 2,
                 could_not_be_read: 2,
                 not_written_down: 2,
+                files_too_large_to_keep: 2,
                 the_server_also_fills_this_folder: true,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
@@ -1552,6 +1557,7 @@ mod tests {
                 already_here: 1,
                 could_not_be_read: 1,
                 not_written_down: 1,
+                files_too_large_to_keep: 1,
                 the_server_also_fills_this_folder: true,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
@@ -1737,6 +1743,32 @@ mod tests {
                 ..MessagesImported::default()
             }),
             "No messages were imported. 1 saved Outlook item was not a message and was left out."
+        );
+    }
+
+    #[test]
+    fn test_files_too_large_to_keep_are_said_with_where_they_still_are() {
+        // What happened, why, and where the file still is, singular and plural
+        // written out because several words have to agree.
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 1,
+                files_too_large_to_keep: 1,
+                ..MessagesImported::default()
+            }),
+            "Imported 1 message. 1 file was over 25 MB, the most Wixen Mail keeps of one \
+             file, so it is listed on its message and stays only in the file you imported \
+             from."
+        );
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 3,
+                files_too_large_to_keep: 2,
+                ..MessagesImported::default()
+            }),
+            "Imported 3 messages. 2 files were over 25 MB, the most Wixen Mail keeps of one \
+             file, so they are listed on their messages and stay only where you imported \
+             them from."
         );
     }
 
@@ -2305,6 +2337,57 @@ mod end_to_end {
         assert_eq!(
             the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
             listed
+        );
+    }
+
+    #[test]
+    fn test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said() {
+        // One byte over the limit. The store lists it without keeping it, as
+        // it does for a message read from a server, and the count is taken by
+        // the same rule the store keeps by, so the two cannot disagree.
+        use crate::data::message_cache::attachment_content::LARGEST_ATTACHMENT_KEPT_BYTES;
+        let (cache, folder_id) = a_cache();
+        let one_byte_over = usize::try_from(LARGEST_ATTACHMENT_KEPT_BYTES).expect("a size") + 1;
+        let saved =
+            a_message_carrying(&[("recording.wav", "audio/wav", &vec![b'a'; one_byte_over])]);
+
+        let mut counted = MessagesImported::default();
+        for read in each_message_in(&saved, ReadAs::OneMessage) {
+            counted.count_one(WhatToDoWithIt::BringItIn);
+            counted.count_one_written(file_one_imported_message(
+                &cache,
+                &read.expect("a message"),
+                folder_id,
+            ));
+        }
+
+        let kept = cache
+            .attachments_with_content(the_row_in(&cache, folder_id))
+            .expect("the files stored for the message");
+        let listed: Vec<(&str, i64, Option<&[u8]>)> = kept
+            .iter()
+            .map(|file| {
+                (
+                    file.described.filename.as_str(),
+                    file.described.size,
+                    file.content.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            vec![(
+                "recording.wav",
+                i64::try_from(one_byte_over).expect("a size"),
+                None
+            )]
+        );
+        assert_eq!(counted.files_too_large_to_keep, 1);
+        assert_eq!(
+            what_the_mail_import_did(&counted),
+            "Imported 1 message. 1 file was over 25 MB, the most Wixen Mail keeps of one \
+             file, so it is listed on its message and stays only in the file you imported \
+             from."
         );
     }
 }
