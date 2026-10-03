@@ -8,6 +8,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Messages Outlook saved (`.msg`) come in through both imports (#53, point 5; GAP-13).**
+  Issue 53 said: "`.msg` (Outlook's single-message file): nothing reads or writes it". File,
+  Import Mailbox now takes one: its picker lists `.msg` beside the other kinds, and the
+  message goes under Imported like any saved message. Import a Folder of Messages, and a zip
+  chosen through Import Mailbox, read every one inside them into the folder it sat in, so a
+  folder of messages dragged out of Outlook arrives as that folder. A file is recognised by
+  how it begins, never by its name. The reader is Outlook's data file reader's own mapping,
+  over the `cfb` package Pratik confirmed on 2026-09-24, so a saved message and a message in
+  a data file are read the same way. Appointments, contacts, tasks and notes saved as `.msg`
+  files are refused by name ("That is an Outlook appointment, not a message"), and inside a
+  folder are counted. The sentence at the end of either import says, one cause at a time,
+  what a saved message held and did not bring: an attached file Outlook kept as another
+  message or a link, a blind copy recipient, formatting kept only in Outlook's own format,
+  and a signature; then that this reading is new and has been tried on only a few files. The
+  version does not move: no build has been cut since 1.0.0-alpha.1. Known limitations: four
+  real `.msg` files saved by Outlook were read by hand on 2026-10-03 and no other has been
+  through this reader, so check what arrived against Outlook; formatting Outlook kept only in
+  its own format arrives as plain words (ledger 793); a message that was encrypted arrives
+  with no words and its encrypted part as a file, and nothing counts it yet (ledger 794); a
+  folder holding only old Office documents, which begin the same way, is made under Imported
+  and left empty (ledger 797); and nobody has heard the picker or the new sentences with a
+  screen reader.
 - **Export Folder as Message Files, on the File menu (#53, point 4; GAP-13).** The second half
   of issue 53's point 4, the loose `.eml` files it asked for. File, Export Folder as Message
   Files (`Alt+F`, then `X`, no shortcut key) asks for a folder to write into and writes the
@@ -2347,7 +2369,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   On 2026-10-03 the first half of point 4 landed: File, Export Folder as a Mailbox File writes a
   bare mailbox file of one folder (see Added under Unreleased). The second half landed the same
   day: File, Export Folder as Message Files writes a folder as loose `.eml` files (see Added
-  under Unreleased).
+  under Unreleased). Later on 2026-10-03 the reading half of point 5 landed: both imports read
+  messages Outlook saved as `.msg` files (see Added under Unreleased); nothing writes one.
 
 - **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
   build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."

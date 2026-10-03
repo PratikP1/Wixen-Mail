@@ -113,6 +113,12 @@ through File, Import a Folder of Messages since the same build; before it the
 only picker could not answer with a folder. Goes out "the same way" is still
 generous: export writes one zip of mbox files, and nothing else.
 
+Corrected on 2026-10-03: mail also comes in from messages Outlook saved as
+`.msg` files, chosen one at a time through Import Mailbox or found inside a
+folder or a zip. Four real ones were read by hand that day; every other check
+is against files the tests build. Appointments, contacts, tasks and notes
+saved the same way are refused by name rather than read.
+
 Saved searches have since been built too. A search you run in the morning can be
 kept under a name, and it sits in the folder tree under Saved Searches. Press
 Enter on the row and it runs again and says how much it found.

@@ -2096,8 +2096,8 @@ arrow to them.
 
 | Command | What it takes | What it leaves |
 | --- | --- | --- |
-| Import Mailbox | One file: a zip of mailbox files, a single saved message (`.eml`), a mailbox file (`.mbox`), or an Outlook data file (`.pst`) | Folders under Imported, in the shape the mail was in |
-| Import a Folder of Messages | A folder you choose, holding saved messages and mailbox files, with folders inside it | The same, one folder here for each folder there |
+| Import Mailbox | One file: a zip of mailbox files, a single saved message (`.eml`), a message Outlook saved (`.msg`), a mailbox file (`.mbox`), or an Outlook data file (`.pst`) | Folders under Imported, in the shape the mail was in |
+| Import a Folder of Messages | A folder you choose, holding saved messages, messages Outlook saved and mailbox files, with folders inside it | The same, one folder here for each folder there |
 | Export Mailbox | The folder you are looking at, and everything inside it | One zip of mailbox files, one per folder, with the folder names kept |
 | Export Folder as a Mailbox File | The mail of the folder you are looking at, without the folders inside it | One mailbox file (`.mbox`), under the name you choose; the folder's own name is offered |
 | Export Folder as Message Files | The mail of the folder you are looking at, and of every folder inside it | One saved message per file (`.eml`) in a folder you choose, with a folder for each folder inside |
@@ -2135,13 +2135,28 @@ is not mail is counted and named in the sentence at the end, not quietly
 skipped. The status bar and your screen reader say when an import starts, how
 far it has got, and what it did.
 
-Two things to know before you rely on this:
+A message Outlook saved, a `.msg` file such as the one you get by dragging a
+message out of Outlook onto your desktop, goes into Imported like any saved
+message. One found inside a folder or a zip goes into the folder it sat in.
+Outlook saves appointments, contacts, tasks and notes as `.msg` files too.
+Chosen on its own, each is refused by what it is, for example "That is an
+Outlook appointment, not a message"; inside a folder, they are counted in the
+sentence at the end. That sentence also says what a saved message held and did
+not bring: an attached file Outlook kept as another message or a link, a blind
+copy recipient, formatting Outlook kept only in its own format (the words
+arrive without it), and a signature.
+
+Three things to know before you rely on this:
 
 - **No real Outlook data file has been through the `.pst` import yet.** The
   reader is tested against what it hands over, item by item, and against its
   own reading of each kind of item, because neither Wixen Mail nor the library
   it reads with can write a data file to test against. The sentence at the end
   of an import says this too. Check what arrived against Outlook.
+- **Only a few messages saved by Outlook have been read so far.** Four real
+  `.msg` files were read on 2026-10-03, by hand, and every other check is
+  against files built by the tests. The sentence at the end of an import says
+  so. Check what arrived against Outlook before you delete the original.
 - **A Thunderbird profile folder is not recognised as one.** Thunderbird keeps
   each folder as a mailbox file with no ending beside a `.msf` index and, for
   a folder with folders inside it, a `.sbd` folder holding them. Import a
