@@ -72,18 +72,9 @@ pub fn keep_every_part(
         tracing::warn!("Could not read the files of message {message_row_id}: {e}");
         Vec::new()
     });
-    let kept: Vec<AttachmentWithContent> = parts
-        .iter()
-        .enumerate()
-        .map(|(at, part)| {
-            AttachmentWithContent::from_a_parsed_part(
-                message_row_id,
-                part,
-                // every part with its file, not only the calendar's
-                files.get(at).map(|file| file.bytes.clone()),
-            )
-        })
-        .collect();
+    // Every part with its file, not only the calendar's, through the one
+    // pairing the import of a file of mail uses too.
+    let kept = AttachmentWithContent::all_from_a_parse(message_row_id, parts, &files);
     // Replaced rather than added to, so a body downloaded again does not list
     // every part twice.
     cache.replace_attachments_with_content(message_row_id, &kept)?;

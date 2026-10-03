@@ -395,12 +395,14 @@ pub enum WhetherItWasWrittenDown {
 /// The one place that files an imported message, so the single messages and
 /// the messages inside an archive cannot come to be written down differently.
 ///
-/// Three things go in and all three have to. The row, without which there is no
+/// Four things go in and all four have to. The row, without which there is no
 /// message. Its text, without which the message is in the list and opening it
-/// asks a server that has never held it. And, where the message says it is
-/// signed, the bytes it arrived as: a signature is arithmetic over exactly
-/// those, so a signed message filed without them reads afterwards as though it
-/// had never claimed a signature at all.
+/// asks a server that has never held it. Where the message says it is signed,
+/// the bytes it arrived as: a signature is arithmetic over exactly those, so a
+/// signed message filed without them reads afterwards as though it had never
+/// claimed a signature at all. And the files it carried, which have no server
+/// to be fetched from either: until 13-50 the row said the message had files
+/// and none were kept, so opening one asked a server that never held it.
 pub fn file_one_imported_message(
     cache: &crate::data::message_cache::MessageCache,
     read: &message_files::MessageFromAFile,
@@ -451,6 +453,17 @@ pub fn file_one_imported_message(
         && let Err(e) = cache.note_the_form_it_arrived_in(stored, raw)
     {
         tracing::warn!("Could not record the form an imported message arrived in: {e}");
+    }
+    // The files it carried, through the pairing the reader uses. Logged and
+    // not fatal for the reason the text is: the row is in the folder.
+    let files =
+        crate::data::message_cache::attachment_content::AttachmentWithContent::all_from_a_parse(
+            stored,
+            &read.message.attachments,
+            &read.files,
+        );
+    if let Err(e) = cache.replace_attachments_with_content(stored, &files) {
+        tracing::warn!("Could not store the files of an imported message: {e}");
     }
     WhetherItWasWrittenDown::ItIsInTheFolder
 }

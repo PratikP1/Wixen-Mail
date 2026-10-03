@@ -99,6 +99,14 @@ pub struct MessageFromAFile {
     /// message at a time so that no part of the file is ever held twice, and
     /// carrying every message's bytes beside its parse would undo that.
     pub the_form_it_arrived_in: Option<Vec<u8>>,
+    /// The files this one message carries, in the order the parse lists them,
+    /// and nothing for a message that lists none.
+    ///
+    /// Held for the one message being filed and let go with it, so a mailbox
+    /// read a message at a time still never holds more than one message's
+    /// files. A message brought in from a file has no server to fetch them
+    /// from again: these are the only copy this computer will be handed.
+    pub files: Vec<crate::service::mime::AttachmentWithBytes>,
 }
 
 impl MessageFromAFile {
@@ -113,12 +121,34 @@ impl MessageFromAFile {
     /// the cache then refuses are a copy of somebody's mailbox held for
     /// nothing, and bytes dropped here that the cache would have kept leave a
     /// signed message reading as ordinary mail.
+    ///
+    /// The files are walked out of the bytes only when the parse lists any, so
+    /// ordinary mail pays nothing for them.
     fn read_out_of(raw: &[u8], message: ParsedMessage) -> Self {
         Self {
             the_form_it_arrived_in: crate::service::signed_mail::claims_a_signature(raw)
                 .then(|| raw.to_vec()),
+            files: Self::the_files_in(raw, &message),
             message,
         }
+    }
+
+    /// The files a message lists, walked out of the bytes it was parsed from.
+    ///
+    /// A walk that fails after the parse succeeded leaves the files listed
+    /// and not kept, which is said in the log without anything the message
+    /// holds.
+    fn the_files_in(
+        raw: &[u8],
+        message: &ParsedMessage,
+    ) -> Vec<crate::service::mime::AttachmentWithBytes> {
+        if message.attachments.is_empty() {
+            return Vec::new();
+        }
+        crate::service::mime::attachments_with_bytes(raw).unwrap_or_else(|e| {
+            tracing::warn!("Could not read the files of a message brought in from a file: {e}");
+            Vec::new()
+        })
     }
 }
 

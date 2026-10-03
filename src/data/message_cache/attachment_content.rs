@@ -123,12 +123,27 @@ impl AttachmentWithContent {
 
     /// The rows for every attachment a parse listed, each with its file from
     /// the walk of the same message.
+    ///
+    /// By position, which the parse and the walk share: the nth file is the
+    /// nth attachment's. One function for every place that records a message
+    /// it has whole, the reader keeping a message it fetched and the import
+    /// filing a message read out of a file, so no two of them can come to pair
+    /// a name with another attachment's file. A walk shorter than the parse
+    /// leaves the rows past its end listed and without a file.
     pub fn all_from_a_parse(
-        _message_id: i64,
-        _parsed: &[crate::service::mime::AttachmentInfo],
-        _files: &[crate::service::mime::AttachmentWithBytes],
+        message_id: i64,
+        parsed: &[crate::service::mime::AttachmentInfo],
+        files: &[crate::service::mime::AttachmentWithBytes],
     ) -> Vec<Self> {
-        Vec::new()
+        parsed
+            .iter()
+            .enumerate()
+            .map(|(at, part)| {
+                // every part with its file, the nth file with the nth part
+                let file = files.get(at).map(|file| file.bytes.clone());
+                Self::from_a_parsed_part(message_id, part, file)
+            })
+            .collect()
     }
 }
 
