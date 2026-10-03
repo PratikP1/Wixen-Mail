@@ -119,6 +119,16 @@ folder or a zip. Four real ones were read by hand that day; every other check
 is against files the tests build. Appointments, contacts, tasks and notes
 saved the same way are refused by name rather than read.
 
+Corrected later on 2026-10-03: "still generous" above no longer describes
+what goes out. Three commands on the File menu write a folder: as one zip of
+mbox files with the folders inside it, as one mbox file without them, or as
+one `.eml` file per message with a folder for each folder. Nobody has yet
+opened a file any of them wrote in another mail program. Outlook data files
+are read and not written: the one library that writes them is too new to
+trust with somebody's mail, and only Outlook can check the result. Messages
+Outlook saved are read and not written either, because what was asked for
+was reading them.
+
 Saved searches have since been built too. A search you run in the morning can be
 kept under a name, and it sits in the folder tree under Saved Searches. Press
 Enter on the row and it runs again and says how much it found.
