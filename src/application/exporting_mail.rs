@@ -9,9 +9,12 @@
 use crate::application::export_tree::{self, FoldersExported, WhatBecameOfIt};
 use crate::application::message_files;
 use crate::common::Result;
+use crate::data::message_cache::attachment_content::AttachmentWithContent;
+use crate::data::message_cache::bodies::MessageBody;
 use crate::data::message_cache::signed_original::SignedOriginal;
 use crate::data::message_cache::{MessageCache, MessageListRow};
 use crate::service::mailbox_archive;
+use std::collections::HashSet;
 use std::path::Path;
 
 /// How many messages go in between two words about how far the export has got.
@@ -78,23 +81,47 @@ fn built_from_the_store(
     message: &MessageListRow,
     into: &mut Vec<u8>,
 ) -> WhatBecameOfIt {
-    let text = cache.get_message_body(message.id).ok().flatten();
-    // The files this computer kept when the message was read. An attachment it
-    // does not have comes back described and empty, which is what the count of
-    // files left out is made of.
-    let files = cache
-        .attachments_with_content(message.id)
-        .unwrap_or_default();
-    // The form a signed message arrived in, where this computer kept it.
-    // Written as it arrived, its signature survives the trip; put back together
-    // from the columns, it does not, and importing the export again says
-    // nothing about a signature at all. A store that cannot be read answers the
-    // way a message that never claimed a signature does, which writes the
-    // message and says nothing false.
-    let arrived_as = cache
-        .signed_original(message.id)
-        .unwrap_or(SignedOriginal::NotSigned);
-    export_tree::added_to_the_archive(into, message, text.as_ref(), &files, &arrived_as)
+    let held = WhatTheStoreHolds::of(cache, message);
+    export_tree::added_to_the_archive(
+        into,
+        message,
+        held.text.as_ref(),
+        &held.files,
+        &held.arrived_as,
+    )
+}
+
+/// What the store holds of one message beyond its row: everything an export
+/// writes it from.
+struct WhatTheStoreHolds {
+    text: Option<MessageBody>,
+    files: Vec<AttachmentWithContent>,
+    arrived_as: SignedOriginal,
+}
+
+impl WhatTheStoreHolds {
+    /// Read once for every shape an export takes, so none of them can come to
+    /// build one message from a different reading.
+    fn of(cache: &MessageCache, message: &MessageListRow) -> Self {
+        Self {
+            text: cache.get_message_body(message.id).ok().flatten(),
+            // The files this computer kept when the message was read. An
+            // attachment it does not have comes back described and empty,
+            // which is what the count of files left out is made of.
+            files: cache
+                .attachments_with_content(message.id)
+                .unwrap_or_default(),
+            // The form a signed message arrived in, where this computer kept
+            // it. Written as it arrived, its signature survives the trip; put
+            // back together from the columns, it does not, and importing the
+            // export again says nothing about a signature at all. A store that
+            // cannot be read answers the way a message that never claimed a
+            // signature does, which writes the message and says nothing false.
+            arrived_as: cache
+                .signed_original(message.id)
+                .unwrap_or(SignedOriginal::NotSigned),
+        }
+    }
 }
 
 /// Write one folder's mail, and not the folders inside it, into one mailbox
@@ -159,6 +186,127 @@ pub fn one_folder_as_a_mailbox_file(
     export_tree::what_the_mailbox_file_export_did(&counted, folders_inside)
 }
 
+/// Write one folder's mail, and every folder inside it, as one saved message
+/// per file under `root`, and say what was done.
+///
+/// Each folder becomes a folder under `root`, laid out and named as Export
+/// Mailbox lays its folders out, so Import a Folder of Messages reads back the
+/// same shape. A folder no message went into is still made, as the zip keeps
+/// an empty folder. Each message is the file Save As writes, named by its day
+/// and its subject, told apart from every other name in its folder, and never
+/// written over a file already there. `progress` hears how many messages have
+/// gone out, every hundred and at the end.
+///
+/// What went out before a failure stays, and the sentence says how much.
+pub fn one_folder_as_message_files(
+    cache: &MessageCache,
+    account: &str,
+    folder: &str,
+    root: &Path,
+    progress: &dyn Fn(usize),
+) -> String {
+    let folders = match the_folder_and_every_folder_inside(cache, account, folder) {
+        Ok(folders) if folders.is_empty() => {
+            return "That folder is not on this computer, so nothing was written out.".to_string();
+        }
+        Ok(folders) => folders,
+        Err(why) => {
+            return format!(
+                "The mail in that folder could not be read, so nothing was written out. {why}"
+            );
+        }
+    };
+    let writing = match mailbox_archive::message_files_written_under(root) {
+        Ok(writing) => writing,
+        Err(why) => return why.to_string(),
+    };
+    let mut counted = FoldersExported::default();
+    let mut numbered_because_taken = 0;
+    for place in export_tree::where_each_folder_goes(&folders) {
+        match one_folder_written(cache, account, &place, &writing, &mut counted, progress) {
+            Ok(numbered) => numbered_because_taken += numbered,
+            Err(why) => {
+                return export_tree::message_files_that_broke_off(counted.messages.written, &why);
+            }
+        }
+        counted.folders += 1;
+    }
+    progress(counted.messages.written);
+    export_tree::what_the_message_files_export_did(&counted, numbered_because_taken)
+}
+
+/// One folder's messages written into the folder it goes to, counted into
+/// `counted`, answering how many went under a numbered name because a file
+/// already had the one they would have had.
+fn one_folder_written(
+    cache: &MessageCache,
+    account: &str,
+    place: &export_tree::FolderInTheFile,
+    writing: &mailbox_archive::MessageFilesBeingWritten,
+    counted: &mut FoldersExported,
+    progress: &dyn Fn(usize),
+) -> Result<usize> {
+    let into = writing.a_folder(&place.named)?;
+    let Some(row) = cache.get_folder(account, &place.stored_at)? else {
+        return Ok(0);
+    };
+    let mut taken = HashSet::new();
+    let mut numbered_because_taken = 0;
+    for message in cache.get_message_list(row.id, account)? {
+        let held = WhatTheStoreHolds::of(cache, &message);
+        let (became, bytes) = export_tree::one_message_written_out_and_counted(
+            &message,
+            held.text.as_ref(),
+            &held.files,
+            &held.arrived_as,
+        );
+        let Some(bytes) = bytes else {
+            became.counted_in(counted);
+            continue;
+        };
+        let named = export_tree::one_nothing_else_has_taken(
+            &export_tree::a_message_file_named(&message.date, &message.subject),
+            &mut taken,
+        );
+        let went = writing.a_message_file(&into, export_tree::numbered_names(&named), &bytes)?;
+        became.counted_in(counted);
+        numbered_because_taken += usize::from(!went.took_the_first_name);
+        if counted
+            .messages
+            .written
+            .is_multiple_of(MESSAGES_BETWEEN_PROGRESS)
+        {
+            progress(counted.messages.written);
+        }
+    }
+    Ok(numbered_because_taken)
+}
+
+/// The paths of a folder and every folder inside it, or none when this
+/// computer does not have the folder.
+///
+/// Inside means a path that starts with the folder's own and then the mark
+/// between a folder and the folder inside it, as for the mailbox file.
+fn the_folder_and_every_folder_inside(
+    cache: &MessageCache,
+    account: &str,
+    folder: &str,
+) -> Result<Vec<String>> {
+    if cache.get_folder(account, folder)?.is_none() {
+        return Ok(Vec::new());
+    }
+    let inside = format!("{folder}/");
+    let mut folders = vec![folder.to_string()];
+    folders.extend(
+        cache
+            .get_folders_for_account(account)?
+            .into_iter()
+            .map(|other| other.path)
+            .filter(|path| path.starts_with(&inside)),
+    );
+    Ok(folders)
+}
+
 /// The messages filed in one folder, and how many folders lie inside it, or
 /// nothing when this computer does not have the folder.
 ///
@@ -186,6 +334,7 @@ fn what_the_folder_holds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::import_tree;
     use crate::application::message_files::each_message_read_piece_by_piece;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, IncomingMessage};
@@ -215,6 +364,24 @@ mod tests {
 
     /// A message filed in a folder, its text not yet downloaded.
     fn a_message(store: &MessageCache, folder_id: i64, uid: u32, subject: &str, day: u32) -> i64 {
+        a_message_dated(
+            store,
+            folder_id,
+            uid,
+            subject,
+            &format!("2026-07-{day:02}T10:00:00+00:00"),
+        )
+    }
+
+    /// A message filed in a folder under the date given, as the store keeps
+    /// one, its text not yet downloaded.
+    fn a_message_dated(
+        store: &MessageCache,
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+        date: &str,
+    ) -> i64 {
         store
             .upsert_message(&IncomingMessage {
                 folder_id,
@@ -225,7 +392,7 @@ mod tests {
                 to_addr: "me@example.com".to_string(),
                 cc: None,
                 reply_to: None,
-                date: format!("2026-07-{day:02}T10:00:00+00:00"),
+                date: date.to_string(),
                 internal_date: None,
                 size_bytes: Some(512),
                 refs_header: None,
@@ -256,6 +423,21 @@ mod tests {
         text: &str,
     ) {
         let id = a_message(store, folder_id, uid, subject, day);
+        store
+            .save_message_body(id, Some(text), None)
+            .expect("the text is kept");
+    }
+
+    /// A message filed under the date given, with its text downloaded.
+    fn a_downloaded_message_dated(
+        store: &MessageCache,
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+        date: &str,
+        text: &str,
+    ) {
+        let id = a_message_dated(store, folder_id, uid, subject, date);
         store
             .save_message_body(id, Some(text), None)
             .expect("the text is kept");
@@ -422,6 +604,96 @@ mod tests {
             "No messages were exported, so no file was written. 1 message was left out, \
              because it has not been downloaded to this computer: open it once, then \
              export again."
+        );
+    }
+
+    /// The name of every file under `root`, its folders and all, in the order
+    /// the names sort.
+    fn every_file_under(root: &Path) -> Vec<String> {
+        let archive = mailbox_archive::opened(root).expect("the folder written opens");
+        let mut names: Vec<String> = archive
+            .what_it_holds()
+            .iter()
+            .map(|entry| entry.named.to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn test_a_folder_written_as_message_files_comes_back_through_the_folder_import() {
+        // Work holds two messages sharing a subject and a day, and a third
+        // called CON with no date at all; a folder inside it holds a fourth.
+        // What this writes, Import a Folder of Messages reads back as the same
+        // two folders and the same four messages, with two names for the two
+        // that would otherwise be one file and no file named as a device.
+        let store = a_store();
+        let work = a_folder(&store, "Work");
+        let invoices = a_folder(&store, "Work/Invoices");
+        a_downloaded_message(&store, work, 1, "Agenda", 1, "Ten o'clock.\r\n");
+        a_downloaded_message(&store, work, 2, "Agenda", 1, "Eleven, now.\r\n");
+        a_downloaded_message_dated(&store, work, 3, "CON", "", "The console.\r\n");
+        a_downloaded_message(&store, invoices, 1, "March invoice", 4, "Paid.\r\n");
+        let place = tempfile::tempdir().expect("a folder to write into");
+
+        let said = one_folder_as_message_files(&store, "acct", "Work", place.path(), &|_| {});
+
+        assert_eq!(
+            every_file_under(place.path()),
+            vec![
+                "Work/2026-07-01 Agenda (2).eml".to_string(),
+                "Work/2026-07-01 Agenda.eml".to_string(),
+                "Work/Invoices/2026-07-04 March invoice.eml".to_string(),
+                "Work/file-CON.eml".to_string(),
+            ],
+            "{said}"
+        );
+        let archive = mailbox_archive::opened(place.path()).expect("the folder written opens");
+        let landed = import_tree::where_the_folders_land(&archive.what_it_holds());
+        let folders: Vec<(String, usize)> = landed
+            .folders
+            .iter()
+            .map(|folder| (folder.path.clone(), folder.entries.len()))
+            .collect();
+        let under = import_tree::where_imported_folders_go();
+        assert_eq!(
+            folders,
+            vec![
+                (format!("{under}/Work"), 3),
+                (format!("{under}/Work/Invoices"), 1),
+            ],
+            "{said}"
+        );
+        assert_eq!(landed.counted.held_no_mail, 0, "{said}");
+        assert_eq!(landed.counted.names_refused, 0, "{said}");
+        assert_eq!(said, "Exported 4 messages as message files in 2 folders");
+    }
+
+    #[test]
+    fn test_a_message_file_already_in_the_folder_is_never_written_over() {
+        // A folder somebody already keeps saved messages in, holding a file
+        // under the name the export would give. It keeps its bytes, the
+        // message goes under the next number, and the sentence says so.
+        let store = a_store();
+        let work = a_folder(&store, "Work");
+        a_downloaded_message(&store, work, 1, "Agenda", 1, "Ten o'clock.\r\n");
+        let place = tempfile::tempdir().expect("a folder to write into");
+        let already = place.path().join("Work");
+        std::fs::create_dir(&already).expect("the folder already there");
+        std::fs::write(already.join("2026-07-01 Agenda.eml"), b"somebody's own")
+            .expect("a file already there");
+
+        let said = one_folder_as_message_files(&store, "acct", "Work", place.path(), &|_| {});
+
+        assert_eq!(
+            std::fs::read(already.join("2026-07-01 Agenda.eml")).expect("the file already there"),
+            b"somebody's own"
+        );
+        assert!(already.join("2026-07-01 Agenda (2).eml").exists(), "{said}");
+        assert_eq!(
+            said,
+            "Exported 1 message as a message file in 1 folder. 1 message was saved under \
+             a numbered name, because a file with that name was already in its folder."
         );
     }
 }

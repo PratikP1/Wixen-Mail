@@ -2088,7 +2088,7 @@ type a message gives its own attachment is written by whoever sent it.
 
 ## Import and Export
 
-Four commands on the File menu move mail in and out of Wixen Mail. None of
+Five commands on the File menu move mail in and out of Wixen Mail. None of
 them has a shortcut key, because each is done once in a while, when you move
 in, move out or keep a copy, and a key nobody presses twice would sit in the
 way of one somebody presses every day. Press `Alt+F` to open the File menu and
@@ -2100,6 +2100,7 @@ arrow to them.
 | Import a Folder of Messages | A folder you choose, holding saved messages and mailbox files, with folders inside it | The same, one folder here for each folder there |
 | Export Mailbox | The folder you are looking at, and everything inside it | One zip of mailbox files, one per folder, with the folder names kept |
 | Export Folder as a Mailbox File | The mail of the folder you are looking at, without the folders inside it | One mailbox file (`.mbox`), under the name you choose; the folder's own name is offered |
+| Export Folder as Message Files | The mail of the folder you are looking at, and of every folder inside it | One saved message per file (`.eml`) in a folder you choose, with a folder for each folder inside |
 
 Export Folder as a Mailbox File writes one folder only. When it finishes, the
 sentence says how many folders inside it were left out; to write a folder
@@ -2109,6 +2110,16 @@ downloaded yet, no file is written and a file you already had under that name
 is left as it was. Nobody has yet opened a file it writes in another mail
 program, so check that one opens where you take it before you delete the mail
 here.
+
+Export Folder as Message Files names each file by the day the message was
+written and then its subject, so a message sent on 24 September 2026 called
+Hello becomes `2026-09-24 Hello.eml`, and the folder lists your mail in the
+order it came. A message with no date is named by its subject alone, and a
+file already in the folder you chose is never replaced: the new one takes the
+next number, such as `2026-09-24 Hello (2).eml`, and the sentence at the end
+says how many did. Import a Folder of Messages reads what this writes back as
+the same folders and messages. As with the mailbox file, nobody has yet opened
+these files in another mail program.
 
 Imported mail lands on this computer, under a folder called Imported, and
 never in one of your provider's folders. That is deliberate. Mail read out of

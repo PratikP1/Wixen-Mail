@@ -156,6 +156,9 @@ menu_ids!(
     // One folder, without the folders inside it, as one mailbox file (#53,
     // point 4; 13-45).
     ID_EXPORT_A_FOLDER_AS_A_MAILBOX_FILE,
+    // One folder, with the folders inside it, as one saved message per file
+    // (#53, point 4; 13-46).
+    ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES,
     // The PGP key manager (#49, 13-17), where File, Import PGP Private Key was
     // and on its letter, K (Pratik, 2026-09-24). Beside Import Mailbox, where
     // bringing something in from a file already lives, and with no shortcut
@@ -5370,6 +5373,16 @@ impl WxMailApp {
                                 &a11y,
                             );
                         }
+                        _ if id == ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES => {
+                            export_a_folder_as_message_files(
+                                &state,
+                                &message_cache,
+                                &frame,
+                                &ui_tx,
+                                &runtime,
+                                &a11y,
+                            );
+                        }
                         _ if id == ID_NEW_MESSAGE => {
                             open_compose(app, &frame, &message_cache, &a11y, ComposeMode::New)
                         }
@@ -6979,6 +6992,15 @@ impl WxMailApp {
                 ID_EXPORT_A_FOLDER_AS_A_MAILBOX_FILE,
                 "Export Folder as a Mailbox &File...",
                 "Write this folder's mail, without the folders inside it, into one mailbox file",
+            )
+            // X, the letter Windows programs give Export, free on File once
+            // E went to Export Mailbox (13-46, decision 6 of phase 13). No
+            // shortcut, for the reason the item above gives.
+            .append_item(
+                ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES,
+                "E&xport Folder as Message Files...",
+                "Write this folder's mail as one saved message per file, with a folder for \
+                 each folder inside it",
             )
             // Beside the mailbox import, because both are reading something in
             // from a file, and with the same reasoning about shortcuts. The
@@ -17358,6 +17380,75 @@ fn export_a_folder_as_a_mailbox_file(
     send_status(ui_tx, runtime, starting);
     let _ = a11y.announce(starting, Priority::Normal);
 
+    a_folder_written_out_on_a_worker(ui_tx, runtime, move |cache, so_far| {
+        exporting_mail::one_folder_as_a_mailbox_file(
+            cache,
+            &account,
+            &folder,
+            std::path::Path::new(&chosen),
+            so_far,
+        )
+    });
+}
+
+/// Write the folder being looked at, and every folder inside it, as one saved
+/// message per file into a folder somebody chooses (#53, point 4).
+///
+/// The same question the other exports ask first, then a folder to write
+/// into, then a worker for Export Mailbox's reason. A folder picker asks
+/// nothing about writing over a file, and nothing needs it to: the writer
+/// never replaces a file already there.
+fn export_a_folder_as_message_files(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::exporting_mail;
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let Some((account, folder)) = a_folder_to_write_out(state, cache, ui_tx, runtime, a11y) else {
+        return;
+    };
+    let picker =
+        DirDialog::builder(frame, "Choose the folder the message files go into", "").build();
+    if picker.show_modal() != ID_OK {
+        return;
+    }
+    let Some(chosen) = picker.get_path() else {
+        send_refusal(ui_tx, runtime, "No folder was chosen.");
+        return;
+    };
+
+    let starting = "Writing this folder's mail as message files.";
+    send_status(ui_tx, runtime, starting);
+    let _ = a11y.announce(starting, Priority::Normal);
+
+    a_folder_written_out_on_a_worker(ui_tx, runtime, move |cache, so_far| {
+        exporting_mail::one_folder_as_message_files(
+            cache,
+            &account,
+            &folder,
+            std::path::Path::new(&chosen),
+            so_far,
+        )
+    });
+}
+
+/// Write a folder out on a worker, saying how far it has got and what it did
+/// on the status line.
+///
+/// The worker opens the mail store for itself, as the import's does, so the
+/// window's own helper never waits on a folder of forty thousand messages.
+/// `write` hears the store and how to say how many messages have gone out,
+/// and answers the sentence said at the end.
+fn a_folder_written_out_on_a_worker(
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    write: impl FnOnce(&MessageCache, &dyn Fn(usize)) -> String + Send + 'static,
+) {
     let tx = ui_tx.clone();
     let handle = runtime.handle().clone();
     runtime.spawn_blocking(move || {
@@ -17386,13 +17477,7 @@ fn export_a_folder_as_a_mailbox_file(
                 many => format!("{many} messages written out so far."),
             })
         };
-        say(exporting_mail::one_folder_as_a_mailbox_file(
-            &cache,
-            &account,
-            &folder,
-            std::path::Path::new(&chosen),
-            &so_far,
-        ));
+        say(write(&cache, &so_far));
     });
 }
 

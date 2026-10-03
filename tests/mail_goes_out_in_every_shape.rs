@@ -2,8 +2,10 @@
 //! asks before it writes anything.
 //!
 //! File, Export Mailbox writes a folder with the folders inside it into a zip,
-//! and File, Export Folder as a Mailbox File writes one folder alone into one
-//! mailbox file (#53, point 4; 13-45). Both take the row the cursor is on, and
+//! File, Export Folder as a Mailbox File writes one folder alone into one
+//! mailbox file (#53, point 4; 13-45), and File, Export Folder as Message Files
+//! writes a folder and the folders inside it as one saved message per file
+//! (#53, point 4; 13-46). All three take the row the cursor is on, and
 //! a row in the folder tree is not always a folder: a saved search, a label or
 //! a branch holds no mail of its own, and written out as one it is an empty
 //! file or a claim about mail from somewhere that does not exist.
@@ -49,13 +51,32 @@ const IS_A_FOLDER: &str = "WhichRow::Folder";
 /// The writer the handler hands the folder to.
 const THE_WRITER: &str = "one_folder_as_a_mailbox_file(";
 
+/// The message files item's identifier (13-46).
+const THE_FILES_ID: &str = "ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES";
+
+/// The message files item's label, with its letter and no shortcut.
+const THE_FILES_LABEL: &str = "E&xport Folder as Message Files...";
+
+/// The arm the message files item's identifier reaches.
+const THE_FILES_ARM: &str = "_ if id == ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES => {";
+
+/// The message files handler, with its bracket so a comment naming it is not
+/// a call.
+const THE_FILES_HANDLER: &str = "export_a_folder_as_message_files(";
+
+/// What the message files handler asks for the folder to write into.
+const A_FOLDER_PICKER: &str = "DirDialog::builder(";
+
+/// The writer the message files handler hands the folder to.
+const THE_FILES_WRITER: &str = "one_folder_as_message_files(";
+
 /// How every export handler's name begins.
 const AN_EXPORT_HANDLER: &str = "fn export_a";
 
-/// The fewest export handlers the window has: Export Mailbox and Export
-/// Folder as a Mailbox File, as of 2026-10-03. Fewer means the census read
-/// less than the window holds.
-const AT_LEAST_THIS_MANY_EXPORTS: usize = 2;
+/// The fewest export handlers the window has: Export Mailbox, Export Folder
+/// as a Mailbox File and Export Folder as Message Files, as of 2026-10-03.
+/// Fewer means the census read less than the window holds.
+const AT_LEAST_THIS_MANY_EXPORTS: usize = 3;
 
 /// What a release build compiles of the main window.
 fn the_window() -> String {
@@ -81,10 +102,16 @@ fn the_file_menu(window: &str) -> &str {
 
 /// The item's arm, up to the next arm, or nothing when it is not written.
 fn the_arm(window: &str) -> &str {
-    let Some(at) = window.find(THE_ARM) else {
+    the_arm_opening(window, THE_ARM)
+}
+
+/// The arm that opens with `opening`, up to the next arm, or nothing when it
+/// is not written.
+fn the_arm_opening<'a>(window: &'a str, opening: &str) -> &'a str {
+    let Some(at) = window.find(opening) else {
         return "";
     };
-    let rest = &window[at + THE_ARM.len()..];
+    let rest = &window[at + opening.len()..];
     &rest[..rest.find("_ if id ==").unwrap_or(rest.len())]
 }
 
@@ -162,6 +189,63 @@ fn test_export_folder_as_a_mailbox_file_reaches_its_writer() {
     assert!(
         handler.contains(THE_WRITER),
         "the handler does not hand the folder to {THE_WRITER}"
+    );
+}
+
+#[test]
+fn test_export_folder_as_message_files_is_on_the_file_menu_with_no_shortcut() {
+    let window = the_window();
+    let file = the_file_menu(&window);
+
+    assert!(
+        file.contains(&format!("{THE_FILES_ID},")),
+        "the File menu has no item for {THE_FILES_ID}"
+    );
+    let label = the_text_after(file, &format!("{THE_FILES_ID},"));
+    assert_eq!(
+        label,
+        Some(THE_FILES_LABEL),
+        "the item's label is not {THE_FILES_LABEL:?}, or carries a shortcut after a tab"
+    );
+}
+
+#[test]
+fn test_export_folder_as_message_files_reaches_its_writer() {
+    // The folder question first, then a folder to write into from the
+    // picker, then the writer, in that order: a writer reached before the
+    // picker has answered writes wherever the program happens to be.
+    let window = the_window();
+    let arm = the_arm_opening(&window, THE_FILES_ARM);
+    assert!(
+        arm.contains(THE_FILES_HANDLER),
+        "the item's arm does not call {THE_FILES_HANDLER}"
+    );
+    let handler = the_item_at(&window, &format!("fn {THE_FILES_HANDLER}"))
+        .expect("the handler is written in the main window");
+    let question = handler.find(THE_QUESTION);
+    let picker = handler.find(A_FOLDER_PICKER);
+    let writer = handler.find(THE_FILES_WRITER);
+    assert!(
+        question.is_some(),
+        "the handler does not ask {THE_QUESTION}"
+    );
+    assert!(
+        picker.is_some(),
+        "the handler does not ask for a folder through {A_FOLDER_PICKER}"
+    );
+    assert!(
+        writer.is_some(),
+        "the handler does not hand the folder to {THE_FILES_WRITER}"
+    );
+    assert!(
+        question < picker && picker < writer,
+        "the handler asks its questions out of order: the folder question at {question:?}, \
+         the picker at {picker:?}, the writer at {writer:?}"
+    );
+    let after_the_picker = &handler[picker.unwrap_or_default()..];
+    assert!(
+        after_the_picker.contains("picker.get_path()"),
+        "the handler does not write where the picker said"
     );
 }
 

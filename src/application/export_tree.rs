@@ -68,7 +68,9 @@
 //! filed in it, so it exports as a folder with nothing in it however much is
 //! waiting there.
 
-use crate::application::importing_messages::{MessagesExported, WritingOut};
+use crate::application::importing_messages::{
+    MessagesExported, WritingOut, a_subject_as_a_file_stem,
+};
 use crate::application::message_files::{self, FileOnTheMessage};
 use crate::application::summing_up::SummingUp;
 use crate::common::types::EmailAddress;
@@ -287,6 +289,16 @@ pub fn added_to_the_archive(
             );
         }
     }
+    written_out_carrying(&carried, arrived_as)
+}
+
+/// What became of a message that was written, from the files it carried and
+/// the form it arrived in.
+///
+/// One answer for every shape an export takes, so a missing file or a lost
+/// signature is counted the same way in a zip, a mailbox file and a folder of
+/// message files.
+fn written_out_carrying(carried: &TheFilesOnIt, arrived_as: &SignedOriginal) -> WhatBecameOfIt {
     WhatBecameOfIt::WrittenOut {
         files_left_out: match arrived_as {
             // Written as it arrived carries its own files, so none of them was
@@ -316,8 +328,27 @@ pub fn one_message_written_out(
     files: &[AttachmentWithContent],
     arrived_as: &SignedOriginal,
 ) -> Option<Vec<u8>> {
-    let text = text.filter(|text| is_really_there(text))?;
-    Some(match arrived_as {
+    one_message_written_out_and_counted(stored, text, files, arrived_as).1
+}
+
+/// One stored message as the file a mail program saves a single message in,
+/// with what became of it for the count an export says at the end.
+///
+/// What [`one_message_written_out`] writes, and the answer
+/// [`added_to_the_archive`] gives about the same message, from one walk over
+/// its files, so a folder written as message files counts what it left behind
+/// the way the other two exports do.
+pub fn one_message_written_out_and_counted(
+    stored: &MessageListRow,
+    text: Option<&MessageBody>,
+    files: &[AttachmentWithContent],
+    arrived_as: &SignedOriginal,
+) -> (WhatBecameOfIt, Option<Vec<u8>>) {
+    let Some(text) = text.filter(|text| is_really_there(text)) else {
+        return (WhatBecameOfIt::LeftOutUntilItIsDownloaded, None);
+    };
+    let carried = what_can_be_written_of(files);
+    let bytes = match arrived_as {
         SignedOriginal::Kept(raw) | SignedOriginal::KeptPgpMime(raw) => raw.clone(),
         // Not through `ending_where_a_line_ends`: that is what a trip through
         // an archive changes, and a message written out on its own keeps its
@@ -325,10 +356,11 @@ pub fn one_message_written_out(
         SignedOriginal::NotSigned | SignedOriginal::NotKept => {
             message_files::written_as_one_message(
                 &rebuilt_from_what_is_stored(stored, text),
-                &what_can_be_written_of(files).to_write,
+                &carried.to_write,
             )
         }
-    })
+    };
+    (written_out_carrying(&carried, arrived_as), Some(bytes))
 }
 
 /// What an export can write of one message's files, and what it cannot.
@@ -611,7 +643,10 @@ fn carries_anything_a_name_can_keep(part: &str) -> bool {
 ///
 /// Terminates: each attempt is a different name, and a run of folders is
 /// finite, so there are always names left.
-fn one_nothing_else_has_taken(wanted: &str, taken: &mut HashSet<String>) -> String {
+///
+/// The message files written into one folder are told apart here too, for the
+/// same reason, before anything touches the disk.
+pub(crate) fn one_nothing_else_has_taken(wanted: &str, taken: &mut HashSet<String>) -> String {
     let mut attempt = 1;
     loop {
         let named = numbered(wanted, attempt);
@@ -632,6 +667,51 @@ fn numbered(wanted: &str, attempt: usize) -> String {
     }
     format!("{wanted} ({attempt})")
 }
+
+// ── Naming a message written out as a file of its own ──────────────────────
+
+/// What one message's file is called, without its ending: the day it was
+/// written and then its subject, `2026-09-24 Hello`.
+///
+/// The day first, so a folder listing reads in the order the mail came
+/// (decision 4 of phase 13). It is the day the message's own date gives, in
+/// the offset that date was written with, so the name is the same whichever
+/// time zone the computer writing it is in. A message whose date does not read
+/// is named by its subject alone, rather than by today, which it is not.
+///
+/// The subject is cleaned by the rule Save As uses, and the whole name again,
+/// so a long subject is shortened behind the day rather than the day lost.
+pub fn a_message_file_named(date: &str, subject: &str) -> String {
+    let stem = a_subject_as_a_file_stem(subject);
+    match the_day_it_was_written(date) {
+        Some(day) => a_subject_as_a_file_stem(&format!("{day} {stem}")),
+        None => stem,
+    }
+}
+
+/// The calendar day of a stored date, in the offset it was written with.
+fn the_day_it_was_written(date: &str) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(date)
+        .ok()
+        .map(|when| when.format("%Y-%m-%d").to_string())
+}
+
+/// Every name a message file may be written under, the first one first: the
+/// name itself, then the same name numbered, the number before the ending.
+///
+/// Endless, because whether a name is free is a question only the folder on
+/// disk can answer, and whatever writes the file stops at the first it can
+/// have.
+pub fn numbered_names(stem: &str) -> impl Iterator<Item = String> {
+    let stem = stem.to_string();
+    (1..).map(move |attempt| format!("{}{A_SAVED_MESSAGE_ENDS_WITH}", numbered(&stem, attempt)))
+}
+
+/// What a message written out on its own is named to end with.
+///
+/// Taken from the export of one message, so a file in a folder of message
+/// files is named the way Save As names one.
+const A_SAVED_MESSAGE_ENDS_WITH: &str = WritingOut::OneMessage.the_file_ends_with();
 
 // ── Saying what the export did ──────────────────────────────────────────────
 
@@ -791,6 +871,81 @@ pub fn a_mailbox_file_that_broke_off(why: &crate::common::Error) -> String {
         "The folder could not be written out all the way through, so no file was \
          written and a file already at that name is as it was. {why}"
     )
+}
+
+/// What writing a folder out as message files did, in the words somebody
+/// hears.
+///
+/// What was left behind is said through the one function every export uses.
+/// After it, how many messages went under a numbered name because a file
+/// already in the folder had the name they would have had: somebody looking
+/// for `Hello.eml` in a folder they keep mail in finds their own file there,
+/// and is told why the export's is beside it.
+pub fn what_the_message_files_export_did(
+    written: &FoldersExported,
+    numbered_because_taken: usize,
+) -> String {
+    let mut said = SummingUp::opening(how_many_message_files_went_out(written));
+    what_was_left_behind(written, &mut said);
+    if numbered_because_taken > 0 {
+        said.sentence(match numbered_because_taken {
+            1 => "1 message was saved under a numbered name, because a file with that \
+                  name was already in its folder"
+                .to_string(),
+            many => format!(
+                "{many} messages were saved under a numbered name, because a file with \
+                 that name was already in the folder"
+            ),
+        });
+    }
+    said.spoken()
+}
+
+/// The opening line of the message files export: how many messages went out
+/// and into how many folders, or that the folders made for them are empty.
+fn how_many_message_files_went_out(written: &FoldersExported) -> String {
+    let folders = match written.folders {
+        1 => "1 folder".to_string(),
+        many => format!("{many} folders"),
+    };
+    match written.messages.written {
+        0 => match written.folders {
+            0 => message_files::what_the_export_did(0),
+            1 => "No messages were exported, so the folder made for them is empty".to_string(),
+            many => {
+                format!("No messages were exported, so the {many} folders made for them are empty")
+            }
+        },
+        1 => format!(
+            "{} as a message file in {folders}",
+            message_files::what_the_export_did(1)
+        ),
+        many => format!(
+            "{} as message files in {folders}",
+            message_files::what_the_export_did(many)
+        ),
+    }
+}
+
+/// What to say when writing message files stopped partway through.
+///
+/// Unlike a mailbox file, what went out before it stopped stays: each file is
+/// a whole message, and taking them away would lose them as well. So the
+/// sentence says how many are in the folder chosen.
+pub fn message_files_that_broke_off(written: usize, why: &crate::common::Error) -> String {
+    match written {
+        0 => format!(
+            "The folder's mail could not be written out, so no message file was written. {why}"
+        ),
+        1 => format!(
+            "The folder's mail could not all be written out. 1 message file was written \
+             before it stopped, and it is in the folder chosen. {why}"
+        ),
+        many => format!(
+            "The folder's mail could not all be written out. {many} message files were \
+             written before it stopped, and they are in the folder chosen. {why}"
+        ),
+    }
 }
 
 /// The opening line: how many messages, and how many folders they came from.
@@ -1601,6 +1756,43 @@ mod tests {
             a_mailbox_file_that_broke_off(&crate::common::Error::InPlainWords(
                 "The disk is full.".to_string(),
             )),
+            what_the_message_files_export_did(
+                &FoldersExported {
+                    folders: 2,
+                    messages: MessagesExported {
+                        written: 4,
+                        not_on_this_computer: 2,
+                    },
+                    files_not_on_this_computer: 3,
+                    signatures_that_could_not_be_kept: 2,
+                },
+                2,
+            ),
+            what_the_message_files_export_did(
+                &FoldersExported {
+                    folders: 1,
+                    messages: MessagesExported {
+                        written: 1,
+                        not_on_this_computer: 1,
+                    },
+                    files_not_on_this_computer: 1,
+                    signatures_that_could_not_be_kept: 1,
+                },
+                1,
+            ),
+            what_the_message_files_export_did(&one_folder_counted(0, 1), 0),
+            message_files_that_broke_off(
+                0,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
+            message_files_that_broke_off(
+                1,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
+            message_files_that_broke_off(
+                7,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
         ];
 
         for said in &everything {
@@ -2080,6 +2272,176 @@ mod tests {
             )),
             "The folder could not be written out all the way through, so no file was \
              written and a file already at that name is as it was. The disk is full."
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_is_named_by_its_day_and_then_its_subject() {
+        // So a folder listing reads in the order the mail came (decision 4).
+        assert_eq!(
+            a_message_file_named("2026-09-24T10:00:00+00:00", "Hello"),
+            "2026-09-24 Hello"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_takes_the_day_the_message_was_written_in_its_own_offset() {
+        // Half past eleven at night in New York is the next day in London.
+        // The name says the day the sender's own clock said, so it does not
+        // move with the time zone of the computer that writes it.
+        assert_eq!(
+            a_message_file_named("2026-09-24T23:30:00-05:00", "Late"),
+            "2026-09-24 Late"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_whose_date_does_not_read_is_named_by_its_subject_alone() {
+        assert_eq!(a_message_file_named("", "Hello"), "Hello");
+        assert_eq!(a_message_file_named("last Tuesday", "Hello"), "Hello");
+    }
+
+    #[test]
+    fn test_a_message_file_with_no_subject_is_called_message() {
+        assert_eq!(a_message_file_named("", ""), "message");
+        assert_eq!(
+            a_message_file_named("2026-09-24T10:00:00+00:00", "   "),
+            "2026-09-24 message"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_whose_subject_is_a_device_is_not_named_as_one() {
+        // CON with nothing in front of it opens the console on Windows, not a
+        // file, whatever ending follows.
+        let named = a_message_file_named("", "CON");
+        assert_ne!(named.to_ascii_uppercase(), "CON");
+        assert_eq!(named, "file-CON");
+    }
+
+    #[test]
+    fn test_a_message_file_whose_subject_holds_a_slash_keeps_one_name() {
+        // One subject, not a folder and a file.
+        assert_eq!(
+            a_message_file_named("2026-03-01T09:00:00+00:00", "Invoices/March"),
+            "2026-03-01 Invoices_March"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_with_a_long_subject_keeps_its_day_and_stays_within_the_limit() {
+        let named = a_message_file_named("2026-09-24T10:00:00+00:00", &"a".repeat(200));
+        assert!(named.starts_with("2026-09-24 a"), "{named}");
+        assert!(
+            named.chars().count() <= 120,
+            "{} long",
+            named.chars().count()
+        );
+    }
+
+    #[test]
+    fn test_two_message_files_whose_subjects_differ_only_in_case_get_two_names() {
+        // Windows holds Hello.eml and hello.eml as one file.
+        let mut taken = HashSet::new();
+        let first = one_nothing_else_has_taken(&a_message_file_named("", "Hello"), &mut taken);
+        let second = one_nothing_else_has_taken(&a_message_file_named("", "hello"), &mut taken);
+
+        assert_eq!(first, "Hello");
+        assert_eq!(second, "hello (2)");
+    }
+
+    #[test]
+    fn test_a_message_file_is_offered_its_name_and_then_numbered_ones() {
+        // The number goes before the ending, so the file still opens as a
+        // saved message and still sorts beside the one it was told apart from.
+        let names: Vec<String> = numbered_names("2026-09-24 Hello").take(3).collect();
+        assert_eq!(
+            names,
+            vec![
+                "2026-09-24 Hello.eml".to_string(),
+                "2026-09-24 Hello (2).eml".to_string(),
+                "2026-09-24 Hello (3).eml".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_message_files_export_says_how_many_went_out_and_how_many_were_numbered() {
+        let counted = FoldersExported {
+            folders: 2,
+            messages: MessagesExported {
+                written: 4,
+                not_on_this_computer: 1,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&counted, 2),
+            "Exported 4 messages as message files in 2 folders. 1 message was left out, \
+             because it has not been downloaded to this computer: open it once, then \
+             export again. 2 messages were saved under a numbered name, because a file \
+             with that name was already in the folder."
+        );
+        let one = FoldersExported {
+            folders: 1,
+            messages: MessagesExported {
+                written: 1,
+                not_on_this_computer: 0,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&one, 1),
+            "Exported 1 message as a message file in 1 folder. 1 message was saved under \
+             a numbered name, because a file with that name was already in its folder."
+        );
+        assert_eq!(
+            what_the_message_files_export_did(&one, 0),
+            "Exported 1 message as a message file in 1 folder"
+        );
+    }
+
+    #[test]
+    fn test_a_message_files_export_that_wrote_nothing_says_the_folders_are_empty() {
+        let nothing = FoldersExported {
+            folders: 3,
+            messages: MessagesExported {
+                written: 0,
+                not_on_this_computer: 2,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&nothing, 0),
+            "No messages were exported, so the 3 folders made for them are empty. 2 \
+             messages were left out, because they have not been downloaded to this \
+             computer: open each one once, then export again."
+        );
+    }
+
+    #[test]
+    fn test_message_files_that_broke_off_say_how_many_are_already_in_the_folder() {
+        // Unlike a mailbox file, what went out is many files and stays: each
+        // one is a whole message, and taking them away would lose them too.
+        let full = crate::common::Error::InPlainWords("The disk is full.".to_string());
+        assert_eq!(
+            message_files_that_broke_off(0, &full),
+            "The folder's mail could not be written out, so no message file was \
+             written. The disk is full."
+        );
+        assert_eq!(
+            message_files_that_broke_off(1, &full),
+            "The folder's mail could not all be written out. 1 message file was \
+             written before it stopped, and it is in the folder chosen. The disk is full."
+        );
+        assert_eq!(
+            message_files_that_broke_off(7, &full),
+            "The folder's mail could not all be written out. 7 message files were \
+             written before it stopped, and they are in the folder chosen. The disk is \
+             full."
         );
     }
 
