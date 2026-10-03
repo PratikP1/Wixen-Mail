@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 607 records have arrived since and have not been through it.
+# 610 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37255,9 +37255,13 @@ red = [
     # Added the same day by --remeasure: a kept subject is indexed again,
     # so the file holds it after the index lets go.
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+    # Added 2026-10-03 by 13-44.9's --remeasure: a kept subject is a word
+    # of mail taken off that the file still holds after the next check.
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
 ]
 
 # The POP identifier left off what a message taken off this computer keeps,
@@ -37301,11 +37305,15 @@ red = [
     "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_none_of_what_it_emptied_said",
     "application::local_delete::tests::test_a_message_deleted_outright_keeps_its_number_and_loses_its_words",
     "application::pop_sync::tests::test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day",
+    # Added 2026-10-03 by 13-44.9's --remeasure: a message only marked
+    # deleted keeps its words in the file after the next check.
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
 ]
 
 # Secure delete left off for the removal, so the bytes it frees keep the
@@ -37321,9 +37329,13 @@ red = [
     # Added the same day by --remeasure: the compaction switches secure
     # delete on through the same piece, so the merged pages keep the words.
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+    # Added 2026-10-03 by 13-44.9's --remeasure: the file keeps the words
+    # of mail taken off where its finding says it keeps none.
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
 ]
 
 # The written-back row left with no search entry, so the index holds fewer
@@ -37371,9 +37383,13 @@ after = '''            if true {'''
 red = [
     "data::message_cache::taken_off_this_computer::tests::test_a_compaction_stopped_at_its_limit_stays_owed_and_the_next_one_finishes",
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+    # Added 2026-10-03 by 13-44.9's --remeasure: the index's pages keep
+    # words of mail taken off where its finding says the file keeps none.
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
 ]
 
 # The settle removes the record whatever its count, so a message taken off
@@ -37409,4 +37425,65 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 3 },
+]
+
+# The file reading searches only the first page of the bytes it is handed,
+# so it cannot see a word anywhere else in the mail file (13-44.9, D42).
+# Written 2026-10-03 by 13-44.9, taken by hand against the whole library
+# first.
+[[guard]]
+name = "the file reading finds the words of a message still here"
+file = "src/data/message_cache/what_forgetting_costs.rs"
+before = '''    bytes
+        .windows(needle.len())
+        .enumerate()
+        .filter(|(_, window)| *window == needle)'''
+after = '''    bytes[..bytes.len().min(4096)]
+        .windows(needle.len())
+        .enumerate()
+        .filter(|(_, window)| *window == needle)'''
+red = [
+    "data::message_cache::what_forgetting_costs::tests::test_the_reading_finds_the_words_of_a_message_still_here",
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+]
+
+# Taking a message off this computer no longer switches secure delete on, so
+# the file keeps words of mail taken off beyond what the finding allows: at
+# most 10 of 300 messages, and only in unused space on pages of `messages`
+# (13-44.9, D42). Taken by hand against the whole library on 2026-10-03 by
+# 13-44.9: 21 of the 300 planted messages left 39 copies, 27 on pages of
+# `messages` and 12 on pages of `message_bodies`, after the next check.
+[[guard]]
+name = "the file holds what the finding says of mail taken off"
+file = "src/data/message_cache/taken_off_this_computer.rs"
+before = '''    pub fn take_off_this_computer(&self, message_id: i64) -> Result<()> {
+        let _overwriting = OverwritingWhatIsFreed::switched_on(&self.conn)?;'''
+after = '''    pub fn take_off_this_computer(&self, message_id: i64) -> Result<()> {'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
+    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
+    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+]
+
+# The forgetting rows written without their commit cell, so a figure on the
+# measurements page could not say which tree it was taken at (13-44.9, D38,
+# T-13-44.9-04). Written 2026-10-03 by 13-44.9, taken by hand against the
+# whole library first.
+[[guard]]
+name = "every forgetting row carries its commit"
+file = "src/data/message_cache/what_forgetting_costs.rs"
+before = '''            the_row(&[&m.what, &m.value, THE_COMMAND, &date, &commit, &conditions])'''
+after = '''            the_row(&[&m.what, &m.value, THE_COMMAND, &date, &conditions])'''
+red = [
+    "data::message_cache::what_forgetting_costs::tests::test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
 ]
