@@ -633,6 +633,18 @@ fn numbered(wanted: &str, attempt: usize) -> String {
     format!("{wanted} ({attempt})")
 }
 
+// ── Naming a message written out as a file of its own ──────────────────────
+
+/// What one message's file is called, without its ending.
+pub fn a_message_file_named(_date: &str, _subject: &str) -> String {
+    String::new()
+}
+
+/// Every name a message file may be written under, the first one first.
+pub fn numbered_names(_stem: &str) -> impl Iterator<Item = String> {
+    std::iter::empty()
+}
+
 // ── Saying what the export did ──────────────────────────────────────────────
 
 /// What writing a mailbox out, folders and all, did.
@@ -791,6 +803,20 @@ pub fn a_mailbox_file_that_broke_off(why: &crate::common::Error) -> String {
         "The folder could not be written out all the way through, so no file was \
          written and a file already at that name is as it was. {why}"
     )
+}
+
+/// What writing a folder out as message files did, in the words somebody
+/// hears.
+pub fn what_the_message_files_export_did(
+    _written: &FoldersExported,
+    _numbered_because_taken: usize,
+) -> String {
+    String::new()
+}
+
+/// What to say when writing message files stopped partway through.
+pub fn message_files_that_broke_off(_written: usize, _why: &crate::common::Error) -> String {
+    String::new()
 }
 
 /// The opening line: how many messages, and how many folders they came from.
@@ -1601,6 +1627,43 @@ mod tests {
             a_mailbox_file_that_broke_off(&crate::common::Error::InPlainWords(
                 "The disk is full.".to_string(),
             )),
+            what_the_message_files_export_did(
+                &FoldersExported {
+                    folders: 2,
+                    messages: MessagesExported {
+                        written: 4,
+                        not_on_this_computer: 2,
+                    },
+                    files_not_on_this_computer: 3,
+                    signatures_that_could_not_be_kept: 2,
+                },
+                2,
+            ),
+            what_the_message_files_export_did(
+                &FoldersExported {
+                    folders: 1,
+                    messages: MessagesExported {
+                        written: 1,
+                        not_on_this_computer: 1,
+                    },
+                    files_not_on_this_computer: 1,
+                    signatures_that_could_not_be_kept: 1,
+                },
+                1,
+            ),
+            what_the_message_files_export_did(&one_folder_counted(0, 1), 0),
+            message_files_that_broke_off(
+                0,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
+            message_files_that_broke_off(
+                1,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
+            message_files_that_broke_off(
+                7,
+                &crate::common::Error::InPlainWords("The disk is full.".to_string()),
+            ),
         ];
 
         for said in &everything {
@@ -2080,6 +2143,176 @@ mod tests {
             )),
             "The folder could not be written out all the way through, so no file was \
              written and a file already at that name is as it was. The disk is full."
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_is_named_by_its_day_and_then_its_subject() {
+        // So a folder listing reads in the order the mail came (decision 4).
+        assert_eq!(
+            a_message_file_named("2026-09-24T10:00:00+00:00", "Hello"),
+            "2026-09-24 Hello"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_takes_the_day_the_message_was_written_in_its_own_offset() {
+        // Half past eleven at night in New York is the next day in London.
+        // The name says the day the sender's own clock said, so it does not
+        // move with the time zone of the computer that writes it.
+        assert_eq!(
+            a_message_file_named("2026-09-24T23:30:00-05:00", "Late"),
+            "2026-09-24 Late"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_whose_date_does_not_read_is_named_by_its_subject_alone() {
+        assert_eq!(a_message_file_named("", "Hello"), "Hello");
+        assert_eq!(a_message_file_named("last Tuesday", "Hello"), "Hello");
+    }
+
+    #[test]
+    fn test_a_message_file_with_no_subject_is_called_message() {
+        assert_eq!(a_message_file_named("", ""), "message");
+        assert_eq!(
+            a_message_file_named("2026-09-24T10:00:00+00:00", "   "),
+            "2026-09-24 message"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_whose_subject_is_a_device_is_not_named_as_one() {
+        // CON with nothing in front of it opens the console on Windows, not a
+        // file, whatever ending follows.
+        let named = a_message_file_named("", "CON");
+        assert_ne!(named.to_ascii_uppercase(), "CON");
+        assert_eq!(named, "file-CON");
+    }
+
+    #[test]
+    fn test_a_message_file_whose_subject_holds_a_slash_keeps_one_name() {
+        // One subject, not a folder and a file.
+        assert_eq!(
+            a_message_file_named("2026-03-01T09:00:00+00:00", "Invoices/March"),
+            "2026-03-01 Invoices_March"
+        );
+    }
+
+    #[test]
+    fn test_a_message_file_with_a_long_subject_keeps_its_day_and_stays_within_the_limit() {
+        let named = a_message_file_named("2026-09-24T10:00:00+00:00", &"a".repeat(200));
+        assert!(named.starts_with("2026-09-24 a"), "{named}");
+        assert!(
+            named.chars().count() <= 120,
+            "{} long",
+            named.chars().count()
+        );
+    }
+
+    #[test]
+    fn test_two_message_files_whose_subjects_differ_only_in_case_get_two_names() {
+        // Windows holds Hello.eml and hello.eml as one file.
+        let mut taken = HashSet::new();
+        let first = one_nothing_else_has_taken(&a_message_file_named("", "Hello"), &mut taken);
+        let second = one_nothing_else_has_taken(&a_message_file_named("", "hello"), &mut taken);
+
+        assert_eq!(first, "Hello");
+        assert_eq!(second, "hello (2)");
+    }
+
+    #[test]
+    fn test_a_message_file_is_offered_its_name_and_then_numbered_ones() {
+        // The number goes before the ending, so the file still opens as a
+        // saved message and still sorts beside the one it was told apart from.
+        let names: Vec<String> = numbered_names("2026-09-24 Hello").take(3).collect();
+        assert_eq!(
+            names,
+            vec![
+                "2026-09-24 Hello.eml".to_string(),
+                "2026-09-24 Hello (2).eml".to_string(),
+                "2026-09-24 Hello (3).eml".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_message_files_export_says_how_many_went_out_and_how_many_were_numbered() {
+        let counted = FoldersExported {
+            folders: 2,
+            messages: MessagesExported {
+                written: 4,
+                not_on_this_computer: 1,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&counted, 2),
+            "Exported 4 messages as message files in 2 folders. 1 message was left out, \
+             because it has not been downloaded to this computer: open it once, then \
+             export again. 2 messages were saved under a numbered name, because a file \
+             with that name was already in the folder."
+        );
+        let one = FoldersExported {
+            folders: 1,
+            messages: MessagesExported {
+                written: 1,
+                not_on_this_computer: 0,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&one, 1),
+            "Exported 1 message as a message file in 1 folder. 1 message was saved under \
+             a numbered name, because a file with that name was already in its folder."
+        );
+        assert_eq!(
+            what_the_message_files_export_did(&one, 0),
+            "Exported 1 message as a message file in 1 folder"
+        );
+    }
+
+    #[test]
+    fn test_a_message_files_export_that_wrote_nothing_says_the_folders_are_empty() {
+        let nothing = FoldersExported {
+            folders: 3,
+            messages: MessagesExported {
+                written: 0,
+                not_on_this_computer: 2,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        };
+        assert_eq!(
+            what_the_message_files_export_did(&nothing, 0),
+            "No messages were exported, so the 3 folders made for them are empty. 2 \
+             messages were left out, because they have not been downloaded to this \
+             computer: open each one once, then export again."
+        );
+    }
+
+    #[test]
+    fn test_message_files_that_broke_off_say_how_many_are_already_in_the_folder() {
+        // Unlike a mailbox file, what went out is many files and stays: each
+        // one is a whole message, and taking them away would lose them too.
+        let full = crate::common::Error::InPlainWords("The disk is full.".to_string());
+        assert_eq!(
+            message_files_that_broke_off(0, &full),
+            "The folder's mail could not be written out, so no message file was \
+             written. The disk is full."
+        );
+        assert_eq!(
+            message_files_that_broke_off(1, &full),
+            "The folder's mail could not all be written out. 1 message file was \
+             written before it stopped, and it is in the folder chosen. The disk is full."
+        );
+        assert_eq!(
+            message_files_that_broke_off(7, &full),
+            "The folder's mail could not all be written out. 7 message files were \
+             written before it stopped, and they are in the folder chosen. The disk is \
+             full."
         );
     }
 

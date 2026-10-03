@@ -159,6 +159,18 @@ pub fn one_folder_as_a_mailbox_file(
     export_tree::what_the_mailbox_file_export_did(&counted, folders_inside)
 }
 
+/// Write one folder's mail, and every folder inside it, as one saved message
+/// per file under `root`, and say what was done.
+pub fn one_folder_as_message_files(
+    _cache: &MessageCache,
+    _account: &str,
+    _folder: &str,
+    _root: &Path,
+    _progress: &dyn Fn(usize),
+) -> String {
+    String::new()
+}
+
 /// The messages filed in one folder, and how many folders lie inside it, or
 /// nothing when this computer does not have the folder.
 ///
@@ -186,6 +198,7 @@ fn what_the_folder_holds(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::application::import_tree;
     use crate::application::message_files::each_message_read_piece_by_piece;
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, IncomingMessage};
@@ -215,6 +228,24 @@ mod tests {
 
     /// A message filed in a folder, its text not yet downloaded.
     fn a_message(store: &MessageCache, folder_id: i64, uid: u32, subject: &str, day: u32) -> i64 {
+        a_message_dated(
+            store,
+            folder_id,
+            uid,
+            subject,
+            &format!("2026-07-{day:02}T10:00:00+00:00"),
+        )
+    }
+
+    /// A message filed in a folder under the date given, as the store keeps
+    /// one, its text not yet downloaded.
+    fn a_message_dated(
+        store: &MessageCache,
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+        date: &str,
+    ) -> i64 {
         store
             .upsert_message(&IncomingMessage {
                 folder_id,
@@ -225,7 +256,7 @@ mod tests {
                 to_addr: "me@example.com".to_string(),
                 cc: None,
                 reply_to: None,
-                date: format!("2026-07-{day:02}T10:00:00+00:00"),
+                date: date.to_string(),
                 internal_date: None,
                 size_bytes: Some(512),
                 refs_header: None,
@@ -256,6 +287,21 @@ mod tests {
         text: &str,
     ) {
         let id = a_message(store, folder_id, uid, subject, day);
+        store
+            .save_message_body(id, Some(text), None)
+            .expect("the text is kept");
+    }
+
+    /// A message filed under the date given, with its text downloaded.
+    fn a_downloaded_message_dated(
+        store: &MessageCache,
+        folder_id: i64,
+        uid: u32,
+        subject: &str,
+        date: &str,
+        text: &str,
+    ) {
+        let id = a_message_dated(store, folder_id, uid, subject, date);
         store
             .save_message_body(id, Some(text), None)
             .expect("the text is kept");
@@ -422,6 +468,96 @@ mod tests {
             "No messages were exported, so no file was written. 1 message was left out, \
              because it has not been downloaded to this computer: open it once, then \
              export again."
+        );
+    }
+
+    /// The name of every file under `root`, its folders and all, in the order
+    /// the names sort.
+    fn every_file_under(root: &Path) -> Vec<String> {
+        let archive = mailbox_archive::opened(root).expect("the folder written opens");
+        let mut names: Vec<String> = archive
+            .what_it_holds()
+            .iter()
+            .map(|entry| entry.named.to_string())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn test_a_folder_written_as_message_files_comes_back_through_the_folder_import() {
+        // Work holds two messages sharing a subject and a day, and a third
+        // called CON with no date at all; a folder inside it holds a fourth.
+        // What this writes, Import a Folder of Messages reads back as the same
+        // two folders and the same four messages, with two names for the two
+        // that would otherwise be one file and no file named as a device.
+        let store = a_store();
+        let work = a_folder(&store, "Work");
+        let invoices = a_folder(&store, "Work/Invoices");
+        a_downloaded_message(&store, work, 1, "Agenda", 1, "Ten o'clock.\r\n");
+        a_downloaded_message(&store, work, 2, "Agenda", 1, "Eleven, now.\r\n");
+        a_downloaded_message_dated(&store, work, 3, "CON", "", "The console.\r\n");
+        a_downloaded_message(&store, invoices, 1, "March invoice", 4, "Paid.\r\n");
+        let place = tempfile::tempdir().expect("a folder to write into");
+
+        let said = one_folder_as_message_files(&store, "acct", "Work", place.path(), &|_| {});
+
+        assert_eq!(
+            every_file_under(place.path()),
+            vec![
+                "Work/2026-07-01 Agenda (2).eml".to_string(),
+                "Work/2026-07-01 Agenda.eml".to_string(),
+                "Work/Invoices/2026-07-04 March invoice.eml".to_string(),
+                "Work/file-CON.eml".to_string(),
+            ],
+            "{said}"
+        );
+        let archive = mailbox_archive::opened(place.path()).expect("the folder written opens");
+        let landed = import_tree::where_the_folders_land(&archive.what_it_holds());
+        let folders: Vec<(String, usize)> = landed
+            .folders
+            .iter()
+            .map(|folder| (folder.path.clone(), folder.entries.len()))
+            .collect();
+        let under = import_tree::where_imported_folders_go();
+        assert_eq!(
+            folders,
+            vec![
+                (format!("{under}/Work"), 3),
+                (format!("{under}/Work/Invoices"), 1),
+            ],
+            "{said}"
+        );
+        assert_eq!(landed.counted.held_no_mail, 0, "{said}");
+        assert_eq!(landed.counted.names_refused, 0, "{said}");
+        assert_eq!(said, "Exported 4 messages as message files in 2 folders");
+    }
+
+    #[test]
+    fn test_a_message_file_already_in_the_folder_is_never_written_over() {
+        // A folder somebody already keeps saved messages in, holding a file
+        // under the name the export would give. It keeps its bytes, the
+        // message goes under the next number, and the sentence says so.
+        let store = a_store();
+        let work = a_folder(&store, "Work");
+        a_downloaded_message(&store, work, 1, "Agenda", 1, "Ten o'clock.\r\n");
+        let place = tempfile::tempdir().expect("a folder to write into");
+        let already = place.path().join("Work");
+        std::fs::create_dir(&already).expect("the folder already there");
+        std::fs::write(already.join("2026-07-01 Agenda.eml"), b"somebody's own")
+            .expect("a file already there");
+
+        let said = one_folder_as_message_files(&store, "acct", "Work", place.path(), &|_| {});
+
+        assert_eq!(
+            std::fs::read(already.join("2026-07-01 Agenda.eml")).expect("the file already there"),
+            b"somebody's own"
+        );
+        assert!(already.join("2026-07-01 Agenda (2).eml").exists(), "{said}");
+        assert_eq!(
+            said,
+            "Exported 1 message as a message file in 1 folder. 1 message was saved under \
+             a numbered name, because a file with that name was already in its folder."
         );
     }
 }
