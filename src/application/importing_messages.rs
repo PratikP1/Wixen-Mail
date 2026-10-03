@@ -588,16 +588,30 @@ pub enum SavingAs {
 
 /// What Save As does with the message under the cursor, from its subject.
 ///
-/// The name offered in the save dialog is the subject with everything a path
-/// could be made of taken out. A subject is a stranger's words, and a file
-/// dialog handed something that looks like a path will use it as one, so a
-/// slash or a backslash becomes an underscore before the name goes anywhere
-/// near a folder somebody chose. The rest of what Windows will not take in a
-/// name goes the same way, through the one function that already knows.
+/// The name offered in the save dialog is the subject made into a file name
+/// by [`a_subject_as_a_file_stem`], with the ending a saved message has.
 pub fn saving_as(the_subject_under_the_cursor: Option<&str>) -> SavingAs {
     let Some(subject) = the_subject_under_the_cursor else {
         return SavingAs::Refused(CHOOSE_THE_MESSAGE_TO_SAVE);
     };
+    SavingAs::AsAFile {
+        named: format!(
+            "{}{A_SAVED_MESSAGE_ENDS_WITH}",
+            a_subject_as_a_file_stem(subject)
+        ),
+    }
+}
+
+/// A message's subject made into a file name, without its ending.
+///
+/// Everything a path could be made of is taken out. A subject is a stranger's
+/// words, and a file dialog or a folder handed something that looks like a
+/// path will use it as one, so a slash or a backslash becomes an underscore
+/// before the name goes anywhere near a folder somebody chose. The rest of
+/// what Windows will not take in a name goes the same way, through the one
+/// function that already knows. Save As and the export of a folder as message
+/// files both name a file here, so a stranger's subject is cleaned one way.
+pub fn a_subject_as_a_file_stem(subject: &str) -> String {
     // Separators first, because the one function that knows what a name may
     // hold keeps only the last segment of anything that looks like a path,
     // and "Invoices/March" is one subject rather than a folder and a file.
@@ -608,14 +622,10 @@ pub fn saving_as(the_subject_under_the_cursor: Option<&str>) -> SavingAs {
             other => other,
         })
         .collect();
-    let stem = if kept_whole.trim().is_empty() {
-        A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED.to_string()
-    } else {
-        crate::service::attachment_name::safe_file_name(&kept_whole)
-    };
-    SavingAs::AsAFile {
-        named: format!("{stem}{A_SAVED_MESSAGE_ENDS_WITH}"),
+    if kept_whole.trim().is_empty() {
+        return A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED.to_string();
     }
+    crate::service::attachment_name::safe_file_name(&kept_whole)
 }
 
 /// What to call a saved message whose subject is nothing.

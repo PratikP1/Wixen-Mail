@@ -9,9 +9,12 @@
 use crate::application::export_tree::{self, FoldersExported, WhatBecameOfIt};
 use crate::application::message_files;
 use crate::common::Result;
+use crate::data::message_cache::attachment_content::AttachmentWithContent;
+use crate::data::message_cache::bodies::MessageBody;
 use crate::data::message_cache::signed_original::SignedOriginal;
 use crate::data::message_cache::{MessageCache, MessageListRow};
 use crate::service::mailbox_archive;
+use std::collections::HashSet;
 use std::path::Path;
 
 /// How many messages go in between two words about how far the export has got.
@@ -78,23 +81,47 @@ fn built_from_the_store(
     message: &MessageListRow,
     into: &mut Vec<u8>,
 ) -> WhatBecameOfIt {
-    let text = cache.get_message_body(message.id).ok().flatten();
-    // The files this computer kept when the message was read. An attachment it
-    // does not have comes back described and empty, which is what the count of
-    // files left out is made of.
-    let files = cache
-        .attachments_with_content(message.id)
-        .unwrap_or_default();
-    // The form a signed message arrived in, where this computer kept it.
-    // Written as it arrived, its signature survives the trip; put back together
-    // from the columns, it does not, and importing the export again says
-    // nothing about a signature at all. A store that cannot be read answers the
-    // way a message that never claimed a signature does, which writes the
-    // message and says nothing false.
-    let arrived_as = cache
-        .signed_original(message.id)
-        .unwrap_or(SignedOriginal::NotSigned);
-    export_tree::added_to_the_archive(into, message, text.as_ref(), &files, &arrived_as)
+    let held = WhatTheStoreHolds::of(cache, message);
+    export_tree::added_to_the_archive(
+        into,
+        message,
+        held.text.as_ref(),
+        &held.files,
+        &held.arrived_as,
+    )
+}
+
+/// What the store holds of one message beyond its row: everything an export
+/// writes it from.
+struct WhatTheStoreHolds {
+    text: Option<MessageBody>,
+    files: Vec<AttachmentWithContent>,
+    arrived_as: SignedOriginal,
+}
+
+impl WhatTheStoreHolds {
+    /// Read once for every shape an export takes, so none of them can come to
+    /// build one message from a different reading.
+    fn of(cache: &MessageCache, message: &MessageListRow) -> Self {
+        Self {
+            text: cache.get_message_body(message.id).ok().flatten(),
+            // The files this computer kept when the message was read. An
+            // attachment it does not have comes back described and empty,
+            // which is what the count of files left out is made of.
+            files: cache
+                .attachments_with_content(message.id)
+                .unwrap_or_default(),
+            // The form a signed message arrived in, where this computer kept
+            // it. Written as it arrived, its signature survives the trip; put
+            // back together from the columns, it does not, and importing the
+            // export again says nothing about a signature at all. A store that
+            // cannot be read answers the way a message that never claimed a
+            // signature does, which writes the message and says nothing false.
+            arrived_as: cache
+                .signed_original(message.id)
+                .unwrap_or(SignedOriginal::NotSigned),
+        }
+    }
 }
 
 /// Write one folder's mail, and not the folders inside it, into one mailbox
@@ -161,14 +188,123 @@ pub fn one_folder_as_a_mailbox_file(
 
 /// Write one folder's mail, and every folder inside it, as one saved message
 /// per file under `root`, and say what was done.
+///
+/// Each folder becomes a folder under `root`, laid out and named as Export
+/// Mailbox lays its folders out, so Import a Folder of Messages reads back the
+/// same shape. A folder no message went into is still made, as the zip keeps
+/// an empty folder. Each message is the file Save As writes, named by its day
+/// and its subject, told apart from every other name in its folder, and never
+/// written over a file already there. `progress` hears how many messages have
+/// gone out, every hundred and at the end.
+///
+/// What went out before a failure stays, and the sentence says how much.
 pub fn one_folder_as_message_files(
-    _cache: &MessageCache,
-    _account: &str,
-    _folder: &str,
-    _root: &Path,
-    _progress: &dyn Fn(usize),
+    cache: &MessageCache,
+    account: &str,
+    folder: &str,
+    root: &Path,
+    progress: &dyn Fn(usize),
 ) -> String {
-    String::new()
+    let folders = match the_folder_and_every_folder_inside(cache, account, folder) {
+        Ok(folders) if folders.is_empty() => {
+            return "That folder is not on this computer, so nothing was written out.".to_string();
+        }
+        Ok(folders) => folders,
+        Err(why) => {
+            return format!(
+                "The mail in that folder could not be read, so nothing was written out. {why}"
+            );
+        }
+    };
+    let writing = match mailbox_archive::message_files_written_under(root) {
+        Ok(writing) => writing,
+        Err(why) => return why.to_string(),
+    };
+    let mut counted = FoldersExported::default();
+    let mut numbered_because_taken = 0;
+    for place in export_tree::where_each_folder_goes(&folders) {
+        match one_folder_written(cache, account, &place, &writing, &mut counted, progress) {
+            Ok(numbered) => numbered_because_taken += numbered,
+            Err(why) => {
+                return export_tree::message_files_that_broke_off(counted.messages.written, &why);
+            }
+        }
+        counted.folders += 1;
+    }
+    progress(counted.messages.written);
+    export_tree::what_the_message_files_export_did(&counted, numbered_because_taken)
+}
+
+/// One folder's messages written into the folder it goes to, counted into
+/// `counted`, answering how many went under a numbered name because a file
+/// already had the one they would have had.
+fn one_folder_written(
+    cache: &MessageCache,
+    account: &str,
+    place: &export_tree::FolderInTheFile,
+    writing: &mailbox_archive::MessageFilesBeingWritten,
+    counted: &mut FoldersExported,
+    progress: &dyn Fn(usize),
+) -> Result<usize> {
+    let into = writing.a_folder(&place.named)?;
+    let Some(row) = cache.get_folder(account, &place.stored_at)? else {
+        return Ok(0);
+    };
+    let mut taken = HashSet::new();
+    let mut numbered_because_taken = 0;
+    for message in cache.get_message_list(row.id, account)? {
+        let held = WhatTheStoreHolds::of(cache, &message);
+        let (became, bytes) = export_tree::one_message_written_out_and_counted(
+            &message,
+            held.text.as_ref(),
+            &held.files,
+            &held.arrived_as,
+        );
+        let Some(bytes) = bytes else {
+            became.counted_in(counted);
+            continue;
+        };
+        let named = export_tree::one_nothing_else_has_taken(
+            &export_tree::a_message_file_named(&message.date, &message.subject),
+            &mut taken,
+        );
+        let went = writing.a_message_file(&into, export_tree::numbered_names(&named), &bytes)?;
+        became.counted_in(counted);
+        numbered_because_taken += usize::from(!went.took_the_first_name);
+        if counted
+            .messages
+            .written
+            .is_multiple_of(MESSAGES_BETWEEN_PROGRESS)
+        {
+            progress(counted.messages.written);
+        }
+    }
+    Ok(numbered_because_taken)
+}
+
+/// The paths of a folder and every folder inside it, or none when this
+/// computer does not have the folder.
+///
+/// Inside means a path that starts with the folder's own and then the mark
+/// between a folder and the folder inside it, as for the mailbox file.
+fn the_folder_and_every_folder_inside(
+    cache: &MessageCache,
+    account: &str,
+    folder: &str,
+) -> Result<Vec<String>> {
+    if cache.get_folder(account, folder)?.is_none() {
+        return Ok(Vec::new());
+    }
+    let inside = format!("{folder}/");
+    let mut folders = vec![folder.to_string()];
+    folders.extend(
+        cache
+            .get_folders_for_account(account)?
+            .into_iter()
+            .map(|other| other.path)
+            .filter(|path| path.starts_with(&inside)),
+    );
+    Ok(folders)
 }
 
 /// The messages filed in one folder, and how many folders lie inside it, or

@@ -1141,6 +1141,17 @@ fn taken_away(on_the_way: &Path) -> Result<()> {
 // ── Writing a folder of message files ───────────────────────────────────────
 
 /// A folder somebody chose, being filled with one saved message per file.
+///
+/// The folder is often one they already keep files in, and a folder picker
+/// asks nothing about writing over them. So every file is opened only if no
+/// file has its name, in the same call that makes it, and a name already
+/// there is passed over for the next one offered. Asking first and writing
+/// after would leave a moment between the two for a file to arrive in.
+///
+/// Nothing here decides what anything is called. The names come from whoever
+/// asks, already made safe; a name that would climb out of the folder chosen
+/// is still refused here, because this is the last place a mistake there could
+/// be caught before something is written somewhere else.
 pub struct MessageFilesBeingWritten {
     /// The folder chosen, which everything written goes under.
     root: PathBuf,
@@ -1157,27 +1168,101 @@ pub struct WhereItWent {
 }
 
 /// Start writing message files under the folder chosen.
+///
+/// Refused when what was chosen is not a folder, before anything is written,
+/// so nobody waits through a long export to hear it went nowhere.
 pub fn message_files_written_under(root: &Path) -> Result<MessageFilesBeingWritten> {
+    if !root.is_dir() {
+        return Err(Error::InPlainWords(format!(
+            "{} is not a folder, so nothing was written. Choose a folder to write the \
+             messages into.",
+            root.display()
+        )));
+    }
     Ok(MessageFilesBeingWritten {
         root: root.to_path_buf(),
     })
 }
 
 impl MessageFilesBeingWritten {
-    /// The folder a name gives, made under the folder chosen.
-    pub fn a_folder(&self, _named: &str) -> Result<PathBuf> {
-        Ok(self.root.clone())
+    /// The folder a name gives, made under the folder chosen with every
+    /// folder above it, and where it is.
+    ///
+    /// The name's parts are separated by `/`, the way an export names its
+    /// folders. A folder already there is used as it is.
+    pub fn a_folder(&self, named: &str) -> Result<PathBuf> {
+        let mut folder = self.root.clone();
+        for part in named.split('/') {
+            folder.push(one_step_down(part)?);
+        }
+        std::fs::create_dir_all(&folder).map_err(|why| could_not_be_written(&folder, &why))?;
+        Ok(folder)
     }
 
     /// One message written into `folder` under the first of `names` no file
-    /// there already has.
+    /// there already has, and which name that was.
+    ///
+    /// Each name is opened only if nothing has it, so a file already in the
+    /// folder is never written over. The bytes are on the disk before this
+    /// answers, because a folder of messages somebody is about to copy to
+    /// another computer has to be there.
     pub fn a_message_file(
         &self,
-        _folder: &Path,
-        _names: impl Iterator<Item = String>,
-        _bytes: &[u8],
+        folder: &Path,
+        names: impl Iterator<Item = String>,
+        bytes: &[u8],
     ) -> Result<WhereItWent> {
-        Err(Error::InPlainWords(String::new()))
+        for (which, named) in names.enumerate() {
+            let at = folder.join(one_step_down(&named)?);
+            let opened = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&at);
+            let mut file = match opened {
+                Ok(file) => file,
+                Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(why) => return Err(could_not_be_written(&at, &why)),
+            };
+            let written =
+                std::io::Write::write_all(&mut file, bytes).and_then(|()| file.sync_data());
+            drop(file);
+            if let Err(why) = written {
+                // Half a message is not a message anybody should keep, and
+                // this file was made by this call, so it is this call's to
+                // take away.
+                return Err(match taken_away(&at) {
+                    Ok(()) => could_not_be_written(&at, &why),
+                    Err(also) => {
+                        Error::InPlainWords(format!("{} {also}", could_not_be_written(&at, &why)))
+                    }
+                });
+            }
+            return Ok(WhereItWent {
+                named,
+                took_the_first_name: which == 0,
+            });
+        }
+        Err(Error::InPlainWords(format!(
+            "No name was free in {}, so a message was not written.",
+            folder.display()
+        )))
+    }
+}
+
+/// One name, as one step down from a folder, or a refusal when it is not.
+///
+/// A name that is empty, names the folder itself or the one above it, starts
+/// from a drive, or carries a separator would put a file somewhere other than
+/// inside the folder it was meant for.
+fn one_step_down(named: &str) -> Result<&Path> {
+    let step = Path::new(named);
+    let mut parts = step.components();
+    match (parts.next(), parts.next()) {
+        (Some(std::path::Component::Normal(_)), None) => Ok(step),
+        _ => Err(Error::InPlainWords(format!(
+            "\"{named}\" is not a name a file can be given inside the folder chosen, so \
+             nothing was written under it."
+        ))),
     }
 }
 

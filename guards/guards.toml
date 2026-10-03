@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 613 records have arrived since and have not been through it.
+# 616 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9312,7 +9312,7 @@ red = [
     "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
-    { file = "src/application/export_tree.rs", tests = 43 },
+    { file = "src/application/export_tree.rs", tests = 55 },
     { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
@@ -25228,9 +25228,11 @@ file = "src/application/importing_messages.rs"
 before = """            '/' | '\\\\' => '_',"""
 after = """            '/' | '\\\\' => letter,"""
 red = [
+    "application::export_tree::tests::test_a_message_file_whose_subject_holds_a_slash_keeps_one_name",
     "application::importing_messages::tests::test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name",
 ]
 tests_last_seen = [
+    { file = "src/application/export_tree.rs", tests = 55 },
     { file = "src/application/importing_messages.rs", tests = 36 },
 ]
 
@@ -37510,25 +37512,28 @@ red = [
     "service::mailbox_archive::tests::test_a_mailbox_file_nothing_went_into_leaves_the_file_already_there_as_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/exporting_mail.rs", tests = 4 },
-    { file = "src/service/mailbox_archive.rs", tests = 36 },
+    { file = "src/application/exporting_mail.rs", tests = 6 },
+    { file = "src/service/mailbox_archive.rs", tests = 41 },
 ]
 
 # The folders inside counted without the mark between a folder and the one
 # inside it, so the folder itself, and a sibling sharing the start of its
 # name, are said to be left out (13-45, T-13-45-02). Written 2026-10-02 by
-# 13-45.
+# 13-45. Anchored on the line above as well from 2026-10-03, because 13-46's
+# message files export spells the same line.
 [[guard]]
 name = "a mailbox file of one folder counts only the folders inside it as left out"
 file = "src/application/exporting_mail.rs"
-before = '''    let inside = format!("{folder}/");'''
-after = '''    let inside = folder.to_string();'''
+before = '''    let messages = cache.get_message_list(row.id, account)?;
+    let inside = format!("{folder}/");'''
+after = '''    let messages = cache.get_message_list(row.id, account)?;
+    let inside = folder.to_string();'''
 red = [
     "application::exporting_mail::tests::test_a_file_already_at_the_name_chosen_keeps_its_bytes_when_no_message_went_in",
     "application::exporting_mail::tests::test_one_folder_written_as_a_mailbox_file_reads_back_as_the_same_messages",
 ]
 tests_last_seen = [
-    { file = "src/application/exporting_mail.rs", tests = 4 },
+    { file = "src/application/exporting_mail.rs", tests = 6 },
 ]
 
 # Export Folder as a Mailbox File stops asking the folder question, so a
@@ -37574,4 +37579,57 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_goes_out_in_every_shape.rs", tests = 4 },
+]
+
+# A message file opened whether or not a file already has its name, so an
+# export into a folder somebody keeps files in writes over one of theirs
+# (13-46, T-13-46-02). Written 2026-10-03 by 13-46.
+[[guard]]
+name = "a message file is never written over a file already in the folder"
+file = "src/service/mailbox_archive.rs"
+before = '''            let opened = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&at);'''
+after = '''            let opened = std::fs::File::create(&at);'''
+red = [
+    "application::exporting_mail::tests::test_a_message_file_already_in_the_folder_is_never_written_over",
+    "service::mailbox_archive::tests::test_a_message_file_already_in_the_folder_keeps_its_bytes_and_the_next_name_is_used",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 6 },
+    { file = "src/service/mailbox_archive.rs", tests = 41 },
+]
+
+# Names in one folder told apart with their capitals counted, so Hello and
+# hello are two names to this program and one file to Windows (13-46,
+# T-13-46-01). Written 2026-10-03 by 13-46.
+[[guard]]
+name = "names in one folder are told apart ignoring case"
+file = "src/application/export_tree.rs"
+before = '''        if taken.insert(named.to_lowercase()) {'''
+after = '''        if taken.insert(named.clone()) {'''
+red = [
+    "application::export_tree::tests::test_every_name_this_gives_a_folder_is_one_a_file_can_carry",
+    "application::export_tree::tests::test_two_folders_differing_only_in_their_capitals_do_not_become_one_file",
+    "application::export_tree::tests::test_two_message_files_whose_subjects_differ_only_in_case_get_two_names",
+]
+tests_last_seen = [
+    { file = "src/application/export_tree.rs", tests = 55 },
+]
+
+# Every message file named by its subject alone, so the day is lost from the
+# front of the name and a listing no longer reads in the order the mail came
+# (13-46, decision 4). Written 2026-10-03 by 13-46.
+[[guard]]
+name = "a message file is named by its day and then its subject"
+file = "src/application/exporting_mail.rs"
+before = '''            &export_tree::a_message_file_named(&message.date, &message.subject),'''
+after = '''            &crate::application::importing_messages::a_subject_as_a_file_stem(&message.subject),'''
+red = [
+    "application::exporting_mail::tests::test_a_folder_written_as_message_files_comes_back_through_the_folder_import",
+    "application::exporting_mail::tests::test_a_message_file_already_in_the_folder_is_never_written_over",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 6 },
 ]
