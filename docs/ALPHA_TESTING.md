@@ -86,6 +86,34 @@ back to the window that shows a conversation as headings puts the keyboard in
 the message. Each of these was proved by tests on a built window, and the list
 further down says what only your ear, your account or a mailbox can settle.
 
+**Between 2026-09-24 and 2026-10-03 most of what the Outlook comparison found
+missing arrived, and none of it has been heard or has met a real account.**
+File, Print (`Ctrl+P`) prints the message or item you are on through Windows'
+own print dialog. Edit opens with Undo and Redo (`Ctrl+Z`, `Ctrl+Y`), which
+take back several steps in any box you type in, and in a list take back your
+last mark, star, label, move, delete or copy, naming the message or item; Undo
+Send is third, on `N`. File, PGP Keys (`K`) lists your PGP keys, imports,
+exports and removes them, and asks for a key's passphrase when a message first
+needs it. A message carrying a meeting says so before its body, with Accept,
+Tentative and Decline buttons, and an organiser's update or cancellation
+reaches your calendar. Encrypted mail opens, S/MIME and PGP, a PGP signature is
+checked and said, and the composer has Sign and Encrypt boxes. Action, Report
+as Junk (`Ctrl+Shift+J`) tells the provider where it listens, and blocking a
+sender (`Ctrl+Shift+B`) offers to move the mail already here. Typing an address
+can look people up in your organisation's directory and, on a Microsoft
+account, in Microsoft's people search. Finding when everyone is free asks
+every place the account keeps a calendar, Google included, and says a time on
+a colleague's own clock. Saved searches can be put in order, run with `Alt+4`
+to `Alt+9` and made from nothing. An account can send from other addresses,
+offered in the From list. Quick Steps run several actions on a key, and a rule
+can be run over a folder when you ask. An account's Trash can be emptied after
+15 or 30 days or when Wixen Mail closes. A folder goes out as a mailbox file or
+as message files, a message Outlook saved comes in through both imports, and
+an imported message keeps its files. Each was proved by tests on a built
+window, a fixture or a stand-in server; anything that writes is experimental
+and says so where you meet it, and the list further down says what only your
+ear, your account or your Outlook can settle.
+
 **Everything that writes is experimental.** Sending a message, deleting one,
 moving or copying one to another folder, marking one read on the server, filing
 a copy of what you send in Sent, changing which folders you are subscribed to,
@@ -241,6 +269,24 @@ In rough order of how useful it is to know.
    `Down` on the start's minutes, then `Left` and `Right`, and say what was
    spoken after each key and whether you could tell the end had moved with
    the start.
+19. **A message printed.** Press `Ctrl+P` on a message, work Windows' print
+   dialog by keyboard, and print to paper or to Microsoft Print to PDF. Say
+   whether the dialog's lists and boxes were read, where the keyboard was
+   when it closed, which sentence you heard after, and, if somebody sighted
+   can look, whether the page shows the header lines and the words.
+20. **An undo heard naming the item.** Move a message to another folder,
+   press `Ctrl+Z` in the message list, and say whether Edit, Undo named the
+   move and the message, what was said after the key, and where the cursor
+   landed. Then the same after deleting a task in Tasks.
+21. **An invitation answered.** When a meeting invitation arrives, say
+   whether the meeting was heard before the message's words, whether Accept,
+   Tentative and Decline were reached with `Alt+C`, `Alt+T` and `Alt+D`, and
+   whether the organiser received your answer and your calendar shows the
+   meeting once.
+22. **A `.msg` from your own Outlook imported.** Save two or three messages
+   from Outlook, one with an attached file, bring them in with File, Import
+   Mailbox, and say whether the subject, sender, date, words and file match
+   what Outlook shows, and whether the closing sentence's counts were right.
 
 ## What is already known to be missing or unproven
 
@@ -629,6 +675,67 @@ Written down so you do not spend time reporting things already on the list.
 - **Labels.** The Label submenu's items with their keys, Edit Labels at its
   end, the Label Manager's Key column, a move said as "Later, 2 of 5." and
   "There is no label 6" have not been heard.
+- **Nothing phase 13 added between 2026-09-24 and 2026-10-03 has been heard,
+  and none of it has met a real account.** Each of the following was proved by
+  a test on a built window, a fixture or a stand-in server, the new windows by
+  the accessibility scan of the running program as well, and by nobody's ear.
+  The entries near the top of this list already cover Report as Junk and
+  blocking, Quick Steps, a rule run over a folder, rules on arriving mail, the
+  directory, sending from another address, Microsoft's people search, free
+  and busy, opening S/MIME mail, the key manager, PGP signatures, sending signed
+  and encrypted mail, accounts on their own domains and emptying the Trash.
+  The listening page, [items 96 to 181](manual-accessibility-pass.md), has the
+  walk for each.
+- **Printing.** `Ctrl+P` and File, Print open Windows' own print dialog on
+  every surface that shows a message or an item. A test draws every page and
+  reads each line back, and a job has been sent to Microsoft Print to PDF; no
+  page has been printed on paper and looked at, and nobody has worked the
+  dialog by ear.
+- **Undo and Redo.** Several steps in every box you type in, and the last
+  mark, star, label, move, delete or copy in the message list and the last
+  action in the other modules, each named on the Edit menu. None of it has
+  been heard. Undoing a change at the server is experimental and has never
+  reached a real one, and the Undo item's help says so. A Quick Step or a rule
+  run that does several things is taken back one thing at a time: Undo takes
+  back the last thing it did.
+- **Meeting invitations.** The meeting said before the body, the Accept,
+  Tentative and Decline buttons, an organiser's update moving the meeting, a
+  cancellation's Remove from Calendar, one day of a repeating meeting, and an
+  invitation from another time zone said at your hour, have been read only
+  from invitations written for the tests. No real organiser's invitation,
+  update or cancellation from Outlook, Google Calendar or a calendar server
+  has been through it. A repeating meeting's invitation on a Microsoft account
+  is said to be new even when the meeting is already on your calendar, because
+  Microsoft gives each day of a series its own identifier.
+- **PGP/MIME mail from a real correspondent.** Every PGP/MIME message opened
+  here was made with GnuPG for the tests and laid out by hand the way
+  Thunderbird lays one out. A message from Thunderbird, Proton Mail or any
+  other program has not been opened.
+- **Edit Event at 200 percent text.** The event window now scrolls so every
+  field can be reached on a small screen. A test reads the smallest window
+  size; nobody has opened it with Windows' text size at 200 percent.
+- **Saved searches.** Moving one with `Alt+Shift+Up` and `Alt+Shift+Down`,
+  `Alt+4` to `Alt+9`, the Saved Searches submenu and New Saved Search have not
+  been heard.
+- **Export and import.** A folder written out with Export Folder as a Mailbox
+  File or Export Folder as Message Files has been read back only by Wixen
+  Mail's own import, never opened in another mail program, and whether
+  classic Outlook takes the message files dragged into one of its folders is
+  untried. A message Outlook saved (`.msg`) has come in only from files built
+  for the tests and four samples read by hand, not from your Outlook. An
+  imported message now keeps its files, and that has been tried only on files
+  the tests built.
+- **Four decisions phase 13 waited on, and how they were answered.** All four
+  were answered on 2026-09-24. Reading `.msg` files uses the `cfb` library,
+  which was approved. Printing uses three more parts of the `windows` library
+  already in the build, and signing with OpenPGP uses an older version of the
+  `rand` library already in the build under its own name, both approved.
+  Microsoft people search and Microsoft task changes ask for two more
+  Microsoft permissions, People.Read and Tasks.ReadWrite, approved, which is
+  why an Outlook account signed in before then is asked to sign in again. The
+  fault that stops the toolkit's own printing from starting a job on Windows is
+  written down and, by decision, not reported to the toolkit's authors; Wixen
+  Mail prints through Windows directly instead.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
