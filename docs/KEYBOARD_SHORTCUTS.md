@@ -847,7 +847,9 @@ anything.
 | Report as Junk | `Ctrl+Shift+J` | Mail. Every selected message goes to its account's junk folder, and one sentence per account says what the provider was told: on a server that keeps a junk mark the mark is set first, on Gmail the move into Spam is the report, and Microsoft is not told, because it offers a mail program no way to. A POP account, an account with no junk folder, and one whose mail changes are off each say why nothing was reported. A conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list takes off a junk mark the report set, puts the not-junk mark on, and then moves them back; `Ctrl+Y` reports them again. Experimental |
 | Block This Sender | `Ctrl+Shift+B` | Mail. On the Block submenu. Mail from the sender of the message the cursor is on goes to the junk folder of the account that message is in from now on, which in All Inboxes may not be the account you have open. When messages from them are already here, it asks once, with the count, whether to move those to the junk folder too: Enter answers Yes, and No leaves them where they are. More than 5,000 are never moved; it says how many there are and to search for the sender and use Move to. Messages in Junk, Trash, Sent, Drafts and the Outbox are left alone. Blocking tells the mail provider nothing; Report as Junk does that. Experimental |
 
-Eight submenus hold the rest:
+Nine submenus hold the rest. Until 2026-10-03 this line said eight and the
+table left out Answer Invitation, which has been on the Action menu since
+2026-08-28; the closing read of phase 13 found it while counting the letters.
 
 | Submenu | What is on it |
 |--------|----------|
@@ -859,6 +861,7 @@ Eight submenus hold the rest:
 | Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
 | Quick Steps | `Q` on the Action menu. The Quick Steps of the account you are in, in the order the Quick Step Manager keeps them, the first three with their keys (`Ctrl+Shift+7` to `Ctrl+Shift+9`); choosing one runs it over every selected message. Then Manage Quick Steps (`M` on the submenu), which opens the Quick Step Manager, where a Quick Step is named, made, changed, put in order and removed. See Quick Steps, below. Experimental (#60) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
+| Answer Invitation | `W` on the Action menu. Accept (`A`), Tentative (`T`) and Decline (`D`) for the meeting invitation the message carries, the same as the buttons in the reader windows. None has a key here |
 
 ### Account Management
 

@@ -98,12 +98,13 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-Ninety-five items. Walk them in order; the first ones are the ground the rest
-stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57 the same day,
-for what phase 10 built; this line said forty-one until then. Items 58 to 83
-were added on 2026-09-20 for what phase 11 built; this line said fifty-seven
-until then. Items 84 to 95 were added on 2026-09-24 for what phase 12 built;
-this line said eighty-three until then.
+One hundred and eighty-one items. Walk them in order; the first ones are the
+ground the rest stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57
+the same day, for what phase 10 built; this line said forty-one until then.
+Items 58 to 83 were added on 2026-09-20 for what phase 11 built; this line said
+fifty-seven until then. Items 84 to 95 were added on 2026-09-24 for what phase
+12 built; this line said eighty-three until then. Items 96 to 181 were added on
+2026-10-03 for what phase 13 built; this line said ninety-five until then.
 
 ### The main window
 
@@ -706,6 +707,481 @@ been heard, and nothing in it has sent mail or met a real address book.
     move said as, for example, "Later, 2 of 5." after `Alt+Shift+Up`, with the
     cursor staying on the moved row; and `Ctrl+6` with five labels saying
     "There is no label 6" from the message list. **NVDA.** [ledger 607]
+
+### New features, most from the Outlook gap audit
+
+Added 2026-10-03 for what phase 13 built, one item for each ledger entry its
+plans opened for an ear, a reader on paper, an account or a mailbox.
+Everything in this group has been proved by readings of the code, by tests on
+a built window, a fixture or a stand-in server and, for the new windows, by
+the accessibility scan of the running program on a pull request. None of it
+has been heard, and none of it has met a real account. The items marked **A
+person, with an account** are also the proofs phase 14 owes; walking one here
+answers it there too.
+
+#### Printing and undo
+
+96. **Press `Ctrl+P` in the message list, then open File and find Print on
+    `P`.** Windows' print dialog worked by keyboard: the printer list,
+    Preferences, the page range and the copies heard; focus back on the
+    message list when it closes; one sentence after a job, after a cancel
+    and after a failure. Then a sighted reader looks at the printed page.
+    **Both, and a sighted reader with the paper.** [ledger 613]
+97. **Print from the reader window (`P` on its File menu, and `Ctrl+P`), from
+    the formatted message window with `Ctrl+P`, and from Contacts, Calendar,
+    Tasks, Notes and Reminders.** Focus back on the tab's text or on the page
+    when the dialog closes; the one sentence after a job, a cancel and a
+    failure in each; the refusal when nothing is chosen; and a conversation's
+    pages and an item's page looked at by a sighted reader. **Both, and a
+    sighted reader with the paper.** [ledger 617]
+98. **Open the Edit menu in the main window.** Undo and Redo first, on `U`
+    and `R` with `Ctrl+Z` and `Ctrl+Y`; Undo Send third, on `N`; Undo and Redo
+    read as unavailable while greyed with nothing to do; "Undone", "Redone"
+    and the two nothing-to-do sentences after `Ctrl+Z` and `Ctrl+Y` in a note
+    and in the contacts search; and the sentences in the preview and in a
+    list, where there is no box to undo in. **NVDA.** [ledger 610]
+99. **Type three words into a note's title, a note's body and the contacts
+    search, then press `Ctrl+Z` three times and `Ctrl+Y` three times.** Each
+    step heard as the words of one step coming back, with the caret where the
+    step began and a removed word heard as selected; the contacts list heard
+    changing as the search runs again; and choosing another note leaving
+    nothing to undo. **Both.** [ledger 619]
+100. **Do the same in the composer's To, Cc, Bcc and Subject lines, the
+    account editor's boxes and the contact editor's Prefix and Suffix.** A
+    reply's Subject and an account's server stopping at what the dialog
+    opened with; and `Ctrl+Z` and `Ctrl+Y` with nothing left to do saying so
+    in the Edit menu's words. **Both.** [ledger 620]
+101. **Mark a message read, star it and put a label on it, then open Edit with
+    the message list focused.** Undo heard naming the action and the message,
+    such as "Undo Mark as Read: Quarterly report", or the count for a set, and
+    greyed when nothing is kept; its help saying it is experimental; `Ctrl+Z`
+    saying "Undid Mark as Read on Quarterly report." and the rows heard as
+    they were; `Ctrl+Y` doing it again; and "There is nothing to undo in this
+    list yet." with nothing kept. **Both.** [ledger 622]
+102. **Undo a mark, a star and a label on a real account with mail changes
+    allowed.** The flag or keyword put back at the server, read from another
+    mail program or your phone, on Gmail and on a server with ordinary
+    folders; and a refusal putting the row back as the action's refusal does.
+    **A person, with an account.** [ledger 623]
+103. **Move a message to Archive, delete one and copy one, then undo each with
+    the message list focused.** Edit heard as "Undo Move to Archive: Invoice"
+    or "Undo Delete: 3 messages"; "Undid Move to Archive on Invoice." after
+    `Ctrl+Z` and the cursor landing on the message back when its folder is on
+    screen; a refusal naming the message and what to do, such as for a move
+    to another account; and `Ctrl+Y` doing the move again. **Both.**
+    [ledger 624]
+104. **Undo a move, a delete and a copy on a real account, once before the
+    server has heard of it and once after.** The message back where it was at
+    the server, the copy in the Trash there, and nothing sent when the change
+    had not gone yet. **A person, with an account.** [ledger 625]
+105. **In each of Contacts, Calendar, Reminders, Tasks and Notes, delete an
+    item, mark one done or pin one, and move one, then undo each.** Edit heard
+    as "Undo Delete: Dentist", "Undo Mark as Done: Dentist" or "Undo Move to
+    Work: Quarterly plan"; "Undid Delete on Dentist." with the cursor on the
+    item that came back; an item the account had already deleted said as made
+    again; the question before a copy is taken away heard in full; "The last
+    thing you did was in Tasks. Switch to Tasks to undo it." in another list;
+    and a delete's question ending "Undo brings it back until your next
+    action." **Both.** [ledger 627]
+106. **Undo a delete, a move and a copy of a contact, an event, a task and a
+    note on Google, Microsoft and a calendar server.** Once before the sync
+    sent the change, when nothing should go, and once after, when the item
+    should come back as new at the account. **A person, with an account.**
+    [ledger 628]
+
+#### Invitations, meetings and times
+
+107. **Open an invitation in the text reader, the formatted window and the
+    preview.** The meeting's sentence heard as the message opens and once
+    more at the top of the message, and whether that is too much; the date in
+    your own date settings; the calendar part's row heard as meeting
+    invitation, meeting cancellation, reply to your meeting or calendar file;
+    and on a signed invitation, the meeting before the signature's verdict.
+    **Both.** [ledger 630]
+108. **Receive an invitation, a cancellation and an answer from Outlook,
+    Google Calendar and a calendar server.** Each found and said, with the
+    title, place, organiser and hours right, and "already on your calendar"
+    said for an invitation Google filed itself. **A person, with an
+    account.** [ledger 631]
+109. **Answer an invitation from its buttons in both reader windows.** Each
+    button's name and its description, what pressing it does and who is told;
+    `Alt+C`, `Alt+T` and `Alt+D` pressing them from inside the message; the
+    reason heard for an invitation that cannot be answered; Accept, Tentative
+    and Decline on the message list's context menu on `I`, `E` and `L`; the
+    one sentence after answering; and where the keyboard lands after `Alt+C`
+    in the text reader. **Both.** [ledger 634]
+110. **Accept an invitation on a Google account and on a Microsoft account, and
+    let the calendar check run.** Whether the meeting each provider files is
+    found as the one you answered rather than shown twice, which depends on
+    the provider's own identifier matching the invitation's. **A person, with
+    an account.** [ledger 635]
+111. **Open an organiser's update and a cancellation in both reader windows.**
+    "Moved on your calendar from ... to ..." heard after the meeting's
+    sentence; each reason a change was not applied; Remove from Calendar's
+    name and description; `Alt+R` from inside the message; "Removed from your
+    calendar." said once; and where the keyboard lands after `Alt+R`.
+    **Both.** [ledger 636]
+112. **Receive a real update and a real cancellation from an organiser, and
+    one from somebody who is not the organiser.** The organiser's update
+    moving the meeting and the other not; Remove from Calendar offered for
+    the cancellation; and Google or Microsoft not refusing or doubling a
+    change it had already made itself. **A person, with an account.**
+    [ledger 637]
+113. **Open an invitation written in another time zone.** It said at this
+    computer's hour, the other clock said once ("which is 05/03/2026 at 09:00
+    to 10:00 Tokyo Standard Time"), and the sentence for a zone this computer
+    cannot place. **NVDA.** [ledger 662]
+114. **Receive invitations from organisers in other time zones, from Outlook
+    and from Google.** Each said at the right hour here. **A person, with an
+    account.** [ledger 663]
+115. **Find an Outlook meeting in the calendar.** Its list row, `Space`, the
+    full reading with the other clock said once, its alert in the due window
+    and the event editor's boxes, all at this computer's hour. **NVDA.**
+    [ledger 668]
+116. **Let a real Outlook account's events sync, then move a meeting in the
+    event editor.** The events at the right hour here, and the moved meeting
+    at the hour typed in Outlook and in Google. **A person, with an
+    account.** [ledger 669]
+117. **Land on a message with a meeting that was downloaded before the build
+    of 2026-09-26.** The row heard once, with no second reading when the
+    preview loads again with the meeting; the attachment tone once; and the
+    meeting heard on `Enter`. **Both.** [ledger 673]
+118. **Do the same on a real IMAP account, and in All Inboxes with a second
+    account.** The message's parts fetched once from its own account. **A
+    person, with an account.** [ledger 674]
+119. **Open an organiser's change to one day of a repeating meeting, and a
+    cancellation of one day.** "Moved one day of this repeating meeting on
+    your calendar, from ... to ...", the cancellation's sentence, the
+    meeting's own sentence naming one day, Remove from Calendar's description
+    for one day, and "that one day is taken off. The other days are
+    unchanged." after `Alt+R`. **Both.** [ledger 728]
+120. **Receive a change to one day of a repeating meeting from Outlook, Google
+    and a calendar server.** That day placed right and changed, and no third
+    entry made. **A person, with an account.** [ledger 729]
+121. **Answer one day of a repeating meeting.** The one-day buttons, such as
+    "Accept one day of Weekly sync, 12/03/2026 at 09:00 to 10:00. Ada
+    Lovelace will be told."; "Declined one day of Weekly sync." after it; the
+    sentence when the calendar is left as it was; and the refusal of a change
+    from one day onwards. **NVDA.** [ledger 733]
+122. **Send an answer to one day to an organiser on Outlook, Google Calendar
+    and a calendar server.** Each reading it as an answer to that day only,
+    and a series answered on a calendar server still repeating after the next
+    push. **A person, with an account.** [ledger 734]
+
+#### Encrypted and signed mail, and PGP keys
+
+123. **Open S/MIME mail encrypted to a key that asks for a PIN or lives on a
+    smart card.** Whether Windows' prompt comes to the front, how often one
+    opening asks, and what a cancelled prompt says. **A person, with an
+    account and a certificate.** [ledger 639]
+124. **Open a PGP/MIME message from Thunderbird, Proton Mail and another
+    program, including one that holds only files.** Each opening, and the one
+    holding only files saying "This message was encrypted with PGP and was
+    opened here. It holds files and no words." **A person, with an account
+    and a key.** [ledger 641]
+125. **Open File, PGP Keys on `K`.** Each row read as the person first and the
+    fingerprint after; the question before a removal read in full with its
+    fingerprint; and the window's letters landing where the shortcuts page
+    says. **NVDA.** [ledger 646]
+126. **Open a message sent to a key locked with a passphrase.** Unlock a PGP
+    Key's sentence naming the key read on opening; "That passphrase did not
+    open the key. Try again." heard first when it asks again; focus landing
+    in a field named Passphrase; and a paste from your password manager
+    landing in it. **NVDA.** [ledger 650]
+127. **Import a locked key exported by Thunderbird, Kleopatra or GnuPG, and
+    open a real correspondent's message to it.** The key kept locked, its
+    passphrase asked once, and the message opening. **A person, with an
+    account and a key.** [ledger 651]
+128. **Receive signed mail from Thunderbird, Proton Mail and Mutt, an inline
+    signature in a character set other than UTF-8, a mailing list's signed
+    message with a footer, and a lone signature file.** Each verdict matching
+    what the sender's own program says. **A person, with an account and a
+    key.** [ledger 652]
+129. **Send a message signed and one encrypted with S/MIME to Outlook,
+    Thunderbird and Apple Mail.** Each read as signed and unchanged, each
+    encrypted one opening, and a reply sealed to a correspondent's kept
+    certificate opening for them. **A person, with an account and a
+    certificate.** [ledger 655]
+130. **Send a message signed and one encrypted with OpenPGP to Thunderbird and
+    Proton Mail.** Each read as signed and unchanged, and each encrypted one
+    opening. **A person, with an account and a key.** [ledger 657]
+131. **Write a message and Tab to Sign and Encrypt.** Their names and
+    descriptions on arrival; `Alt+G` and `Alt+Y` pressed inside the message
+    saying "Sign on" or "Encrypt off" there; the refusal at Send read and
+    shown; the passphrase asked at Send; and the sentence after a protected
+    message goes. **NVDA.** [ledger 658]
+132. **Open a PGP/MIME message holding only files, then the key list, then
+    signed mail from before this build and a signature file after it.** The
+    files-only sentence in the text reader, the formatted window and the
+    preview; Created and Expires heard as the Reading tab's choice; and the
+    stored-before sentence and "This message carries a signature in a form
+    Wixen Mail does not check." told apart, the first time this build opens
+    your own mail database. **Both.** [ledger 724]
+
+#### Junk, blocks, rules and runs
+
+133. **Report a message as junk on a Gmail account and on an IMAP server whose
+    folders keep keywords.** In another mail program: the message in the junk
+    folder, and the keyword on it where one was set. **A person, with an
+    account.** [ledger 675]
+134. **Open the Action menu and find Report as Junk.** Read with its letter
+    `J`, `Ctrl+Shift+J` and its description; the one word "Report" at the key;
+    the sentence for your account's kind, heard once for a set and not beside
+    a move's; and a refusal for a POP account or one whose changes are off,
+    heard once. **Both.** [ledger 676]
+135. **Check mail on an account with a rule that adds a label.** The label
+    heard in the row's Labels column and its reading; and for a label the
+    account does not have, the count and the one sentence naming it heard
+    once after the check. **Both.** [ledger 679]
+136. **On Gmail and on a server with ordinary folders, let rules mark, flag,
+    label and delete arriving mail.** Each change at the server and still
+    there after the next check; a change kept while mail changes are off
+    going at the first check after they are allowed; and a deleted message
+    in the Trash there, not back in the inbox. **A person, with an
+    account.** [ledger 680]
+137. **Mark as Read, Star, put a label on, Move to, Copy to, Report as Junk
+    and Delete a message by hand.** Each heard as it was before 2026-09-28,
+    when the seven were split into halves and nothing heard was meant to
+    change. **NVDA.** [ledger 684]
+138. **Mark a set read, label it and move it in one run on a real IMAP
+    account.** The server's record of the commands, the flags on the messages
+    where they landed, and the next check keeping them. **A person, with an
+    account.** [ledger 686]
+139. **Block a sender with messages in the inbox and in a folder of their own
+    on IMAP and on Gmail, and answer Yes.** In another mail program, the
+    messages in the junk folder, and still there after the next check. **A
+    person, with an account.** [ledger 689]
+140. **Block a sender with `Ctrl+Shift+B`.** The question read on opening with
+    its count, sender and folder; `Enter` answering Yes and `Escape` closing
+    it, which leaves the mail; the sentence before, the question and the
+    sentence after heard as one clear sequence; and the closing sentence
+    heard once, not twice. **Both.** [ledger 690]
+141. **Run a rule that moves and one that deletes over a folder of thousands,
+    on Gmail and on a server with ordinary folders.** From the server's side,
+    every message counted changed and nothing else; and whether the provider
+    takes thousands of changes arriving together. **A person, with an
+    account.** [ledger 750]
+142. **Run a rule over a folder from Action, This Folder, Run a Rule on This
+    Folder (`L`), and from Run on a Folder in the Filter Manager.** The
+    chooser and its list, the counting line, the question read on opening
+    with `Enter` answering No before a delete, the sentence after a run, and
+    the refusals: no rules yet, a saved search, an account whose changes are
+    off, and another account opened while counting. **Both.** [ledger 751]
+143. **Report a message as junk and undo it, then block a second account's
+    sender from All Inboxes.** Edit reading "Undo Report as Junk: ..."; the
+    one word "Undo" at `Ctrl+Z` and "Redo" at `Ctrl+Y`; "Undid Report as Junk
+    on ... The server was told it is not junk.", or the reason the mark could
+    not come off; and the block naming that account's junk folder. **Both.**
+    [ledger 755]
+144. **Undo a report on an IMAP server that keeps keywords, then redo it, and
+    block from All Inboxes on a second account.** In another program, $Junk
+    gone and $NotJunk on after the undo and $Junk back after the redo; the
+    block in the second account's rules and its mail moved at its own server.
+    **A person, with an account.** [ledger 756]
+145. **Under Say every step, check mail while a rule's change has to wait.**
+    "2 changes from your rules kept here until changing mail is allowed",
+    "kept here until the mail server can be reached", "put back because the
+    mail server said no", and the sentence for a message left where it
+    arrived, each told apart from "left alone because changing mail is not
+    allowed"; and whether the line grows too long on a check of hundreds.
+    **NVDA.** [ledger 762]
+146. **Add a Google Workspace account and a Microsoft 365 account on their own
+    domains, servers typed by hand, with the browser sign-in on.** The
+    sign-in kept and the first check reading the Inbox; Report as Junk on one
+    message, moved to Spam on Workspace and the sentence saying Microsoft was
+    not told on Microsoft 365; and the folder chooser's All Mail sentence on
+    Workspace. **A person, with an account.** [ledger 768]
+147. **Set an account at example.com to the browser sign-in and check its
+    mail, then open the account editor for an address at outlook.com with the
+    browser sign-in off.** The check's sentence saying neither the server nor
+    the address belongs to Google or Microsoft; the app password advice read
+    as the password box's description and said by Get an app password in your
+    browser; and the advice changing when `imap.gmail.com` is typed. **NVDA.**
+    [ledger 769]
+
+#### People, free time and the event window
+
+148. **Look a colleague up in a real directory over `ldaps://` with a sign-in,
+    and try the same over `ldap://`.** People found over `ldaps://`; the
+    `ldap://` sign-in refused in a sentence with nothing sent; an Active
+    Directory domain root still finding people; and no wixen-mail-directory
+    entry left in Credential Manager after the account is removed. **A
+    person, with an account and a directory.** [ledger 695]
+149. **Press `Alt+L` on the Account Manager.** Look People Up at Work
+    announced with the button's name; the window read in order, the untried
+    line first and then the four boxes by name; the password box saying a
+    password is saved when one is; and a sign-in name saved with an empty
+    password heard as refused, with focus in the password box. **NVDA.**
+    [ledger 697]
+150. **Save a directory sign-in, look a colleague up from To, reopen the
+    window, then clear the name and save.** "A password is saved" heard on
+    reopening, and the credential entry gone from Credential Manager after
+    the clear. **A person, with an account and a directory.** [ledger 698]
+151. **Type three letters of a colleague's name into To on an Outlook account
+    signed in through the browser.** A row read as the name, the address and
+    "from Microsoft"; the sentence asking you to sign in again heard once for
+    an account signed in before People.Read, not flooding while you type; and
+    Microsoft's refusal after "Nobody found". **NVDA.** [ledger 701]
+152. **Sign an Outlook account in again and search for people, then tick off a
+    task.** The browser's list naming reading your relevant people; a
+    personal account granted it without an administrator; colleagues found;
+    and the task ticked off in Microsoft To Do. **A person, with an
+    account.** [ledger 702]
+153. **On a Google account, find when a colleague in your Workspace and a
+    guest outside it are free.** The colleague's busy times right, the guest
+    said as not shared, and the offered times matching their calendars. **A
+    person, with an account.** [ledger 704]
+154. **Ask when everyone is free with a guest whose calendar is not shared.**
+    "Bob could not be checked, because their calendar is not shared with
+    you." told apart from "the server would not say", and the waiting
+    sentence read plainly. **NVDA.** [ledger 705]
+155. **On an account with calendars in two places, ask when everyone is
+    free.** Every place asked, a guest one place knows answered, busy time
+    from both shown as busy, and one slow place costing only its own
+    answers. **A person, with an account.** [ledger 707]
+156. **On an Outlook or Office 365 work account, invite a colleague in another
+    time zone.** Their zone placed, their clock beside each time at the
+    right hour, and a time outside their Outlook working hours said as
+    outside their working day. **A person, with an account.** [ledger 709]
+157. **Hear the offered times with a guest's clock beside them.** "03/03/2026
+    at 10:00, which is 15:00 for Ada; or 03/03/2026 at 10:30, which is 15:30
+    for Ada" read first and in What came back; whether three clocks on three
+    times is too long; and whether the semicolons are heard as breaks.
+    **NVDA.** [ledger 710]
+158. **Set Windows' text size to 200 percent and open File, New, Event.** Tab
+    to Show as, Category, Description and Times offered: each scrolled into
+    sight as focus reaches it, Save and Cancel staying on screen, the window
+    opening wholly on the screen, and anything new said as focus moves into
+    the scrolled page. **NVDA, Tool and Eyes.** [ledger 712]
+159. **Type an `ldap://` address and a sign-in name in Look People Up at Work
+    and press OK.** The refusal said once and focus heard landing in
+    Directory address; and with the credential store failing, the save
+    naming the account rather than a code. **Both.** [ledger 760]
+160. **Ask when everyone is free for a Saturday with a colleague whose Outlook
+    hours exclude it.** "Saturday at 10 is outside Ada's working day"
+    understood as Ada's own day without the guide. **NVDA.** [ledger 767]
+
+#### Sending from another address
+
+161. **Press `Alt+O` on a saved account in the Account Manager.** Other
+    Addresses to Send From's title, the line saying a provider may refuse an
+    address and the Other addresses list read; Add with an address that is
+    not one, the sentence heard and focus back in Address; Move Down saying
+    where the address went; and `Alt+O` on an account added in the same
+    visit saying to close and reopen. **NVDA.** [ledger 715]
+162. **Send from an address set up under Gmail's Send mail as and one not set
+    up, and from Microsoft 365 with an address you may send as and one you
+    may not.** Each sent or refused, what the recipient sees in From, and the
+    sentence said when a provider refuses. **A person, with an account.**
+    [ledger 718]
+163. **Open the From list while writing.** Read as From with the entry; an
+    other address heard as "help@example.com, another address on Work";
+    "Signature changed to" and its name when From moves to another account's
+    address, and nothing when it moves between one account's own addresses.
+    **Both.** [ledger 719]
+164. **Reply, reply to all and forward a message sent to your other
+    address.** From read as that address; your own address heard when the
+    mail was sent to it; and Reply All leaving your other address out of Cc.
+    **NVDA.** [ledger 722]
+
+#### Saved searches and Quick Steps
+
+165. **Move a saved search with `Alt+Shift+Up` and `Alt+Shift+Down`.**
+    "Invoices, 2 of 4." and "Invoices is already first of 4."; the cursor
+    staying on the moved row; the refusal on a row that cannot move; and
+    Move this search up and down on a saved search's own menu. **NVDA.**
+    [ledger 738]
+166. **Open Action, Saved Searches (`H`), then press `Alt+4` and a key past
+    the last search.** Each item with its key, "Invoices, Alt+4"; "Alt+7 runs
+    saved search 4, and this account has 3."; and the cursor landing on the
+    row a key ran, then the search's result. **NVDA.** [ledger 739]
+167. **Choose New Saved Search, then the conditions window.** The name box
+    and Look in by their names, Look in offering "Everywhere in" the account
+    and then its folders; the conditions window opening empty with "Find
+    messages that match" after the list; the refusal of a search with no
+    conditions; "Invoices saved. It is in the folder tree under Saved
+    Searches."; and an existing search changed from any to every condition
+    with Edit Conditions. **NVDA.** [ledger 740]
+168. **Open Action, Quick Steps (`Q`), then Manage Quick Steps (`M`).** Its
+    experimental description; the manager's Name, Key and What it does
+    columns; the step editor's seven questions in order; and the refusal when
+    OK is pressed on a step that cannot be kept, with the window left open.
+    **Both.** [ledger 743]
+169. **Run a Quick Step that marks, flags, labels and moves on a real IMAP
+    account and on Gmail.** The server's record of the marks first and then
+    the move, the flags and label where the messages landed, and the next
+    check keeping them. **A person, with an account.** [ledger 745]
+170. **Run a Quick Step with `Ctrl+Shift+7` and from Action, Quick Steps.**
+    Each step heard with its key; one act with one sentence, such as
+    "Archive and read: 3 messages marked read and moved to Archive", and one
+    Confirmed; a key past the last step; and each refusal: another account's
+    message, a folder or label the account lost, a step a newer version
+    wrote, nothing selected, more than 5,000 selected. **NVDA.** [ledger 746]
+
+#### Emptying the Trash
+
+171. **Open an IMAP account's connection page in the account editor and press
+    `Alt+Y`.** Empty the Trash (experimental) with its description; the line
+    in its place on a Gmail or Microsoft account; the line when the Trash is
+    not recognised; the once-a-day sentence, such as "Emptied 12 messages
+    from Trash in Work that had been there more than 30 days."; and the
+    sentence when Allow Changes is closed. **NVDA.** [ledger 770]
+172. **Set an IMAP account to After 15 days or After 30 days, on a server with
+    UIDPLUS and one without.** The first check of the day emptying what came
+    due, a refused or dropped delete sent by the next check, and the rows
+    forgotten here at the next read of the Trash. **A person, with an
+    account.** [ledger 771]
+173. **Close Wixen Mail with an account set to When Wixen Mail closes, and with
+    none.** The window going at once with nothing said after it; a POP
+    account's Empty the Trash on `Alt+Y` with its four answers; "Emptied 1
+    message of Old ISP's from the Trash on this computer that had been there
+    more than 30 days."; and the once-a-day sentences saying the close will
+    not empty an account's Trash and why. **NVDA.** [ledger 783]
+174. **Set a real IMAP account and a real POP account to When Wixen Mail
+    closes, and close it.** The IMAP Trash emptied at the server within five
+    seconds, a slow server's delete sent at the next start, and the POP
+    account's emptied messages not downloaded again. **A person, with an
+    account.** [ledger 784]
+175. **Take a POP message off this computer, then check the account.** With
+    Leave mail on the server on, not downloaded again; with removal after a
+    number of days, still leaving the server on its day. **A person, with an
+    account.** [ledger 787]
+
+#### Export and import
+
+176. **Export a folder with File, Export Folder as a Mailbox File (`F`), and
+    open the file in Thunderbird and in your own mail program.** Every message
+    with its date, sender and attachments; and the item, its description, the
+    opening sentence, the progress lines and the closing sentence naming the
+    folders inside that were left out. **NVDA, and a person with a second
+    mail program.** [ledger 789]
+177. **Export a folder with folders inside it with File, Export Folder as
+    Message Files (`X`), open the files elsewhere, then bring them back with
+    Import a Folder of Messages (`O`).** Every message intact elsewhere, the
+    folders and messages matching after the import, and the item, the folder
+    picker's title, the progress lines and the closing sentence about
+    numbered names heard. **NVDA, and a person with a second mail program.**
+    [ledger 792]
+178. **Save two or three messages from your own Outlook, one with a file and
+    one from a work address, and import them.** One with File, Import Mailbox
+    and the folder with Import a Folder of Messages; the subject, sender,
+    recipients, date, words and files compared with Outlook, and the closing
+    sentence's counts. **A person, with Outlook.** [ledger 795]
+179. **Choose File, Import Mailbox and open the file picker.** The
+    description naming a message Outlook saved, the file type line,
+    Mailboxes, saved messages and Outlook files, the refusal of an
+    appointment saved as a `.msg` file, and the closing sentence with its
+    counts and its last line saying this reading is new. **NVDA.**
+    [ledger 796]
+180. **Drag two or three `.eml` files Wixen Mail exported into a folder in
+    classic Outlook.** Each arriving as a message with its sender, date,
+    words and files, as an attachment, or not at all. **A person, with
+    Outlook.** [ledger 799]
+181. **Import a mailbox file or a zip from another mail program holding
+    messages with files, and open a file from one of them.** The file opening
+    from the reader, and the closing sentence, including the sentence for a
+    file over 25 MB if one is there. **NVDA, and a person with a mailbox
+    file.** [ledger 801]
 
 ## B. Low vision and colour
 

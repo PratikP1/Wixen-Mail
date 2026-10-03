@@ -768,7 +768,12 @@ A run goes through the same steps as marking, flagging, labelling, moving
 or deleting messages by hand. It changes your mail at your provider only
 when Allowed Changes lets Wixen Mail change your mail in that account; if
 it does not, you are told so instead of being asked. Edit, Undo takes back
-a run the way it takes back the same change made by hand.
+a run the way it takes back the same change made by hand. For a rule that
+does more than one thing, such as marking messages read and moving them,
+Undo takes back the last of them, the move, and leaves the messages marked
+read, as it does after a Quick Step. Added 2026-10-03, when the closing read
+of this work found the run goes through the same steps as a Quick Step; until
+then this paragraph ended at "made by hand".
 
 ### Meeting invitations
 

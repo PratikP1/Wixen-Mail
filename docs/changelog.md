@@ -591,7 +591,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   smart card has not been tried; a picture sent inside an encrypted message is not shown yet.
   Sending signed or encrypted mail is not built. (Since 2026-09-27 S/MIME signing and
   encrypting are built underneath and not yet offered; see the entry on keeping a
-  correspondent's certificate.)
+  correspondent's certificate.) Corrected 2026-10-03: later on 2026-09-27 both were offered,
+  as the composer's Sign and Encrypt boxes (see that entry), so sending signed or encrypted
+  mail is built, experimental and untried with another program; the two sentences before
+  this one are kept as they were written.
 - **An organiser's update moves the meeting, and a cancellation can be taken off the
   calendar.** The audit of 2026-09-15 (#50 points 2, 3 and 9) found that a cancellation was
   said and did nothing to the calendar, that an update moved the meeting only if it was
