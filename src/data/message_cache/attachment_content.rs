@@ -159,7 +159,10 @@ fn digest_of(file: &[u8]) -> String {
 ///
 /// A length that will not fit an `i64` cannot be under the limit either, so it
 /// answers no rather than reaching for a number it cannot represent.
-fn is_small_enough_to_keep(byte_count: usize) -> bool {
+///
+/// Shared with the import, which counts the files it could not keep by this
+/// same rule, so what it says and what was kept cannot disagree.
+pub(crate) fn is_small_enough_to_keep(byte_count: usize) -> bool {
     i64::try_from(byte_count).is_ok_and(|size| size <= LARGEST_ATTACHMENT_KEPT_BYTES)
 }
 

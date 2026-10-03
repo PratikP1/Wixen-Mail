@@ -54,7 +54,8 @@
 //! lets each entry go again.
 
 use crate::application::importing_messages::{
-    MessagesImported, ReadAs, WhatSavedOutlookMessagesLeft, what_saved_outlook_messages_left,
+    MessagesImported, ReadAs, WhatSavedOutlookMessagesLeft, what_files_too_large_to_keep_left,
+    what_saved_outlook_messages_left,
 };
 use crate::application::local_folders::LOCAL_PREFIX;
 use crate::application::message_files::{self, FileHolds};
@@ -364,7 +365,15 @@ pub struct FoldersImported {
 
 impl FoldersImported {
     /// Take on what filling the folders counted about their mail.
-    pub fn carry_the_mail_counts(&mut self, _mail: &MessagesImported) {}
+    ///
+    /// The folders are counted when the archive is looked over and the mail
+    /// as each folder fills, so this is the one place the second is carried
+    /// onto the first. A count left behind here is counted and never said.
+    pub fn carry_the_mail_counts(&mut self, mail: &MessagesImported) {
+        self.messages = mail.brought_in;
+        self.files_too_large_to_keep = mail.files_too_large_to_keep;
+        self.from_saved_outlook_messages = mail.from_saved_outlook_messages;
+    }
 }
 
 /// The folders an archive turns into, and what to say about the rest of it.
@@ -514,6 +523,7 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
             ),
         });
     }
+    what_files_too_large_to_keep_left(&mut said, imported.files_too_large_to_keep);
     // An archive nothing at all was found in. "No folders were imported" on its
     // own is what a broken import says too, and somebody who cannot tell those
     // apart goes looking for a broken program rather than at their file.

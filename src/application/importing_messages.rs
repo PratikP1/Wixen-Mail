@@ -384,8 +384,13 @@ fn a_saved_outlook_message_read_from<R: std::io::Read + std::io::Seek>(
 /// nobody can decide to when nothing said so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhetherItWasWrittenDown {
-    /// It is in the folder.
-    ItIsInTheFolder,
+    /// It is in the folder, with every file it carried but those larger than
+    /// this computer keeps, which are listed and counted here.
+    ItIsInTheFolder {
+        /// Its files over the store's limit, taken by the rule the store
+        /// keeps by.
+        files_too_large_to_keep: usize,
+    },
     /// It is not, and somebody is told how many were not.
     ItCouldNotBeSavedHere,
 }
@@ -465,7 +470,17 @@ pub fn file_one_imported_message(
     if let Err(e) = cache.replace_attachments_with_content(stored, &files) {
         tracing::warn!("Could not store the files of an imported message: {e}");
     }
-    WhetherItWasWrittenDown::ItIsInTheFolder
+    WhetherItWasWrittenDown::ItIsInTheFolder {
+        files_too_large_to_keep: read
+            .files
+            .iter()
+            .filter(|file| {
+                !crate::data::message_cache::attachment_content::is_small_enough_to_keep(
+                    file.bytes.len(),
+                )
+            })
+            .count(),
+    }
 }
 
 /// The folder imported mail lands in, made if it is not there yet.
@@ -583,13 +598,19 @@ impl MessagesImported {
 
     /// Count what became of one message the import tried to write down.
     ///
-    /// Nothing moves when it arrived, which is nearly always. The count and the
+    /// Nothing moves when it arrived whole, which is nearly always. The count and the
     /// sentence for it were both written before anything filled it in, so a
     /// message this program read perfectly well and then failed to save went
     /// missing while the closing count said everything had arrived.
+    ///
+    /// The files it arrived with that were too large to keep are counted here
+    /// too, from what the filing kept.
     pub fn count_one_written(&mut self, whether: WhetherItWasWrittenDown) {
-        if whether == WhetherItWasWrittenDown::ItCouldNotBeSavedHere {
-            self.not_written_down += 1;
+        match whether {
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep,
+            } => self.files_too_large_to_keep += files_too_large_to_keep,
+            WhetherItWasWrittenDown::ItCouldNotBeSavedHere => self.not_written_down += 1,
         }
     }
 
@@ -702,6 +723,28 @@ pub fn what_saved_outlook_messages_left(said: &mut SummingUp, left: &WhatSavedOu
     }
 }
 
+/// The sentence about files too large to keep, said by both imports.
+///
+/// One function, so the import of a file and the import of a folder or zip
+/// cannot come to word one fact two ways. It says what happened, why, and
+/// where the file still is, with the limit taken from the store's own
+/// constant rather than typed.
+pub fn what_files_too_large_to_keep_left(said: &mut SummingUp, how_many: usize) {
+    let limit = crate::data::message_cache::attachment_content::LARGEST_ATTACHMENT_KEPT_BYTES
+        / (1024 * 1024);
+    match how_many {
+        0 => {}
+        1 => said.sentence(format!(
+            "1 file was over {limit} MB, the most Wixen Mail keeps of one file, so it is \
+             listed on its message and stays only in the file you imported from"
+        )),
+        many => said.sentence(format!(
+            "{many} files were over {limit} MB, the most Wixen Mail keeps of one file, so \
+             they are listed on their messages and stay only where you imported them from"
+        )),
+    }
+}
+
 /// What an import did, in the words somebody hears.
 ///
 /// The counts that are not zero are the ones worth saying. Each one that is
@@ -748,6 +791,7 @@ pub fn what_the_mail_import_did(read: &MessagesImported) -> String {
             ),
         });
     }
+    what_files_too_large_to_keep_left(&mut said, read.files_too_large_to_keep);
     // Only when something really went in. Importing the same archive a second
     // time files nothing, and a sentence about where the imported mail stays
     // would be about no mail at all.
@@ -1918,7 +1962,12 @@ mod end_to_end {
 
         let written = file_one_imported_message(&cache, &read, archive);
 
-        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        assert_eq!(
+            written,
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep: 0
+            }
+        );
         // The server hands out the number it was about to hand out.
         cache
             .upsert_message(&from_the_server(archive, 11, "The real eleventh"))
@@ -1982,7 +2031,12 @@ mod end_to_end {
 
         let written = file_one_imported_message(&cache, &read, folder_id);
 
-        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        assert_eq!(
+            written,
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep: 0
+            }
+        );
         let check = opening(&cache, the_row_in(&cache, folder_id));
         let SignatureCheck::Checked(report) = check else {
             panic!("an imported signed message says nothing about its signature: {check:?}");
