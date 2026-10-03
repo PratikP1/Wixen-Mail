@@ -101,6 +101,14 @@ const THE_SECTION: &str = "\n## Import and Export\n";
 /// How every export item's identifier begins.
 const AN_EXPORT_ID: &str = "ID_EXPORT";
 
+/// What a menu item names when it is about an Outlook data file, read in
+/// lower case with its letter's `&` taken off.
+const AN_OUTLOOK_DATA_FILE: [&str; 2] = ["outlook data file", ".pst"];
+
+/// The words that say a menu item writes something out, whole words only, so
+/// Import Mailbox's "a message Outlook saved" is not one.
+const WRITING_OUT: [&str; 6] = ["export", "exports", "write", "writes", "save", "saves"];
+
 /// What a release build compiles of the main window.
 fn the_window() -> String {
     what_ships(&fs::read_to_string(THE_WINDOW).expect("the main window"))
@@ -219,8 +227,13 @@ fn the_items_in(menu: &str) -> Vec<String> {
 
 /// Whether a menu item's label or help names an Outlook data file together
 /// with a word for writing one out.
-fn offers_to_write_an_outlook_data_file(_item: &str) -> bool {
-    false
+fn offers_to_write_an_outlook_data_file(item: &str) -> bool {
+    let read = item.replace('&', "").to_lowercase();
+    let names_the_file = AN_OUTLOOK_DATA_FILE.iter().any(|name| read.contains(name));
+    let writes_out = read
+        .split(|letter: char| !letter.is_alphanumeric())
+        .any(|word| WRITING_OUT.contains(&word));
+    names_the_file && writes_out
 }
 
 /// How much a reading of menus read.
@@ -285,7 +298,19 @@ fn the_section(page: &str, heading: &str) -> Option<String> {
 
 /// How many export labels `section` names, when it names every one;
 /// otherwise the ones it leaves out.
-fn every_export_is_named_in(labels: &[String], _section: &str) -> Result<usize, String> {
+fn every_export_is_named_in(labels: &[String], section: &str) -> Result<usize, String> {
+    let left_out: Vec<&String> = labels
+        .iter()
+        .filter(|label| !section.contains(label.as_str()))
+        .collect();
+    if !left_out.is_empty() {
+        return Err(format!(
+            "the guide's Import and Export section names {} of the File menu's {} export items \
+             and leaves out {left_out:?}",
+            labels.len() - left_out.len(),
+            labels.len()
+        ));
+    }
     Ok(labels.len())
 }
 
