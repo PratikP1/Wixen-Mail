@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 688
+open_count: 694
 waived_count: 0
 fixed_count: 104
-total_count: 792
-last_updated: 2026-10-03T12:00:00.000Z
+total_count: 798
+last_updated: 2026-10-03T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -807,8 +807,12 @@ last_updated: 2026-10-03T12:00:00.000Z
 | 790 | 13 | deviation | src/presentation/wx_app.rs |  | 13-45: Export Mailbox wrote every message of a folder after the first without the empty line in front of its separator, from 1fbe263b (2026-08-29), which built each message in a fresh buffer, until 51fbc763, so this program's own import read a folder back as its first message with the rest inside its body. Found by 13-45's round trip through the step the zip export shares; fixed by exporting_mail::one_stored_message_added asking where the message lands, and held by test_messages_built_a_buffer_at_a_time_read_back_as_as_many_messages. A zip exported in that time still holds every message's text, and exporting again gives one that reads back whole | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 | 791 | 13 | deviation | tests/mail_taken_off_leaves_no_words_behind.rs |  | 13-45: test_nothing_else_compacts_the_search_index was red on main from 13-44.9's merge (3b90bed8) until 51fbc763, because it read what_forgetting_costs.rs, compiled only for tests through the #[cfg(test)] on its mod line, as a second caller that ships. 13-44.9's merge did not run the target. The census now skips a module its parent declares under #[cfg(test)], with a case telling the two apart, and its record is remeasured | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 | 792 | 13 | unrun-verify | src/application/exporting_mail.rs |  | 13-46, for the tester: no file that File, Export Folder as Message Files wrote has been opened in another mail program. Export a folder with folders inside it, open its files in Thunderbird and in the mail program you use, and say whether every message arrives with its date, sender and attachments; then bring the same folder back with Import a Folder of Messages on your machine and say whether the folders and messages match. Not yet heard under NVDA either: the item and its letter X on the File menu, its description, the folder picker's title, the opening sentence, the progress lines and the closing sentence, including the one about numbered names. Held today by this program's own folder import reading the files back (application::exporting_mail's round trip) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T12:00:00.000Z |  |
-| 793 | 13 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup | open |  | 2026-10-03T18:00:00.000Z |  |
+| 793 | 13 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup. 13-48 on 2026-10-03: the count reaches both imports' closing sentences, which say how many messages arrived as their words alone; the formatting is still not read | open |  | 2026-10-03T18:00:00.000Z |  |
 | 794 | 13 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13-47, a question for Pratik: a saved Outlook message that was encrypted (class IPM.Note.SMIME) is read as mail by the data file's own rule and arrives with no words, carrying its encrypted part as a file, and nothing counts it. Recommended: count it beside the signature in LeftInTheFile and have 13-48's closing sentence say how many arrived encrypted, rather than refusing them, so the encrypted part is kept. Not checked against a real encrypted .msg; how Outlook stores one is assumed from the class name | open |  | 2026-10-03T18:00:00.000Z |  |
+| 795 | 13 | unrun-verify | src/application/importing_messages.rs |  | 13-48, for Pratik (RESEARCH-5's question 8): no message saved by his own Outlook has been through the import. Save two or three messages from Outlook, one with an attached file and one from a work address, import one with File, Import Mailbox and the folder holding them with Import a Folder of Messages, and compare what arrived with Outlook: subject, sender, recipients, date, words and attached files, and whether the closing sentence's counts match what stayed behind. Held today by application::importing_messages::end_to_end::test_a_saved_outlook_message_is_filed_under_imported_with_its_subject_and_text over a file the tests build, and by 13-47's reading of four real samples by hand. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T20:00:00.000Z |  |
+| 796 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-48, for the tester: not yet heard under a screen reader: Import Mailbox's description naming a message Outlook saved, the picker's file type line, Mailboxes, saved messages and Outlook files, the refusal of an appointment saved as a .msg file, and the closing sentence with its counts of what stayed in a saved message and its last line saying this reading is new. Held today by the sentence cases in application::importing_messages and application::import_tree. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T20:00:00.000Z |  |
+| 797 | 13 | todo | src/presentation/wx_app.rs |  | 13-48: a folder or zip holding a file that begins the way a saved Outlook message does and is something else, such as an old Word or Excel document, has its folder made under Imported before the reader refuses the file, so a folder of old Office documents arrives as an empty folder counted among the folders imported, while the file is counted as not mail. The first look at an entry reads only its opening bytes, which cannot tell the two apart. Recommended: make a folder only when the first message for it is filed, which needs fill_folders_from to make folders when first used and the folder count to come from folders really made | open |  | 2026-10-03T20:00:00.000Z |  |
+| 798 | 13 | todo | src/presentation/wx_app.rs |  | 13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words | open |  | 2026-10-03T20:00:00.000Z |  |
 
 ````json
 [
@@ -10322,7 +10326,7 @@ last_updated: 2026-10-03T12:00:00.000Z
     "phase": "13",
     "file": "src/service/outlook_data_file/one_saved_message.rs",
     "line": null,
-    "description": "13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup",
+    "description": "13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup. 13-48 on 2026-10-03: the count reaches both imports' closing sentences, which say how many messages arrived as their words alone; the formatting is still not read",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T18:00:00.000Z",
@@ -10338,6 +10342,54 @@ last_updated: 2026-10-03T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 795,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/importing_messages.rs",
+    "line": null,
+    "description": "13-48, for Pratik (RESEARCH-5's question 8): no message saved by his own Outlook has been through the import. Save two or three messages from Outlook, one with an attached file and one from a work address, import one with File, Import Mailbox and the folder holding them with Import a Folder of Messages, and compare what arrived with Outlook: subject, sender, recipients, date, words and attached files, and whether the closing sentence's counts match what stayed behind. Held today by application::importing_messages::end_to_end::test_a_saved_outlook_message_is_filed_under_imported_with_its_subject_and_text over a file the tests build, and by 13-47's reading of four real samples by hand. Nothing here touches a server, so nothing goes to phase 14",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 796,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-48, for the tester: not yet heard under a screen reader: Import Mailbox's description naming a message Outlook saved, the picker's file type line, Mailboxes, saved messages and Outlook files, the refusal of an appointment saved as a .msg file, and the closing sentence with its counts of what stayed in a saved message and its last line saying this reading is new. Held today by the sentence cases in application::importing_messages and application::import_tree. Nothing here touches a server, so nothing goes to phase 14",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 797,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-48: a folder or zip holding a file that begins the way a saved Outlook message does and is something else, such as an old Word or Excel document, has its folder made under Imported before the reader refuses the file, so a folder of old Office documents arrives as an empty folder counted among the folders imported, while the file is counted as not mail. The first look at an entry reads only its opening bytes, which cannot tell the two apart. Recommended: make a folder only when the first message for it is filed, which needs fill_folders_from to make folders when first used and the folder count to come from folders really made",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 798,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T20:00:00.000Z",
     "resolved_at": null
   }
 ]

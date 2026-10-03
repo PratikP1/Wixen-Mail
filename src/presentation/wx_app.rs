@@ -6963,8 +6963,8 @@ impl WxMailApp {
             .append_item(
                 ID_IMPORT_MESSAGES,
                 "&Import Mailbox...",
-                "Read mail in from a file, an archive or an Outlook data file, keeping the \
-                 folders it was in",
+                "Read mail in from a file, an archive, an Outlook data file or a message \
+                 Outlook saved, keeping the folders it was in",
             )
             // Alt+O rather than Alt+F, which Fetch Missing Message Text had on
             // this menu until 2026-09-17. Found by reading the menu; the
@@ -16497,8 +16497,8 @@ fn import_a_mailbox(
     let picker = FileDialog::builder(frame)
         .with_message("Import a mailbox from a file")
         .with_wildcard(
-            "Mailboxes and Outlook data files (*.zip;*.eml;*.mbox;*.pst)|\
-             *.zip;*.eml;*.mbox;*.pst|All files (*.*)|*.*",
+            "Mailboxes, saved messages and Outlook files (*.zip;*.eml;*.mbox;*.msg;*.pst)|\
+             *.zip;*.eml;*.mbox;*.msg;*.pst|All files (*.*)|*.*",
         )
         .with_style(FileDialogStyle::Open | FileDialogStyle::FileMustExist)
         .build();
@@ -16677,13 +16677,15 @@ fn fill_folders_from(
 ) -> String {
     use crate::application::import_tree;
     use crate::application::importing_messages::{
-        MessagesImported, WhatToDoWithIt, file_one_imported_message,
+        MessagesImported, ReadAs, WhatToDoWithIt, file_one_imported_message,
+        one_saved_outlook_message_filed, one_saved_outlook_message_in,
     };
+    use crate::service::outlook_data_file::one_saved_message::WhyItWasNotRead;
 
-    // One saved message, a whole archive and an Outlook data file are three
-    // different readers, and each refuses what the others take. Which one
-    // this is comes from how the file begins rather than from what it is
-    // called.
+    // One saved message, a whole archive, an Outlook data file and a message
+    // Outlook saved are four different readers, and each refuses what the
+    // others take. Which one this is comes from how the file begins rather
+    // than from what it is called.
     let opens_with = a_look_at_the_start_of(at);
     match import_tree::what_was_chosen(at.is_dir(), &opens_with) {
         import_tree::WhatWasChosen::MailInOneFile => {
@@ -16695,6 +16697,11 @@ fn fill_folders_from(
                 account,
                 at,
                 &|so_far| say(UIUpdate::StatusUpdated(so_far.to_string())),
+            );
+        }
+        import_tree::WhatWasChosen::AnOutlookMessage => {
+            return crate::application::importing_messages::a_saved_outlook_message_brought_in(
+                cache, account, at,
             );
         }
         import_tree::WhatWasChosen::AnArchive => {}
@@ -16718,6 +16725,29 @@ fn fill_folders_from(
         };
         let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
         for entry in &folder.entries {
+            // A message Outlook saved is read whole, because its reader moves
+            // about inside it, and under the archive's own bound on one entry.
+            // One that is not a message at all is a file that held no mail.
+            if entry.read == ReadAs::OneSavedOutlookMessage {
+                let saved = match archive.one_entry_read_through(&entry.named) {
+                    Ok(bytes) => one_saved_outlook_message_in(&bytes),
+                    // Counted with the damaged and the too large, which is
+                    // the one sentence those share.
+                    Err(_) => WhyItWasNotRead::TooLarge.into(),
+                };
+                if saved.is_not_an_outlook_message() {
+                    counted.held_no_mail += 1;
+                } else {
+                    one_saved_outlook_message_filed(
+                        cache,
+                        &saved,
+                        folder_id,
+                        &already_here,
+                        &mut brought_in,
+                    );
+                }
+                continue;
+            }
             // A piece at a time, never the whole entry. A mailbox somebody has
             // kept for twenty years is one entry, and reading it whole is what
             // used to refuse it: the limit was never about how much mail
@@ -16748,6 +16778,7 @@ fn fill_folders_from(
         )));
     }
     counted.messages = brought_in.brought_in;
+    counted.from_saved_outlook_messages = brought_in.from_saved_outlook_messages;
     import_tree::what_the_folder_import_did(&counted)
 }
 
@@ -17624,14 +17655,13 @@ fn one_file_of_mail_brought_in(
     use crate::application::{import_tree, message_files};
 
     let Ok(bytes) = std::fs::read(at) else {
-        return "That file could not be read, so nothing was imported.".to_string();
+        return crate::application::importing_messages::THAT_FILE_COULD_NOT_BE_READ.to_string();
     };
     let path = import_tree::where_imported_folders_go();
     let Some(folder_id) =
         crate::application::importing_messages::a_folder_for_imported_mail(cache, account, &path)
     else {
-        return "The folder imported mail goes into could not be made, so nothing \
-                was imported."
+        return crate::application::importing_messages::THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE
             .to_string();
     };
     let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
