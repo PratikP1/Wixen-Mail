@@ -459,13 +459,36 @@ fn the_window_stations_name() -> Result<String, String> {
     Ok(String::from_utf16_lossy(&buffer[..end]))
 }
 
+/// The variable WebView2 reads for arguments to hand the browser it starts.
+const THE_BROWSERS_ARGUMENTS: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+
+/// The browser's switch for staying at the elevation it was started with.
+///
+/// On GitHub's runner every process is elevated, and the child's browser was
+/// found started by another process and with no window on the child's
+/// desktop, its creation failing with "Invalid window handle" (ledger 785,
+/// CI run 37151597179). The candidate cause: an elevated browser relaunching
+/// itself unelevated through the shell, which would put it on the shell's
+/// desktop. This asks it not to; a process that is not elevated has nothing
+/// to stay at, so here it changes nothing.
+const STAY_AS_ELEVATED_AS_THE_CHILD: &str = "--do-not-de-elevate";
+
 /// This process's environment with `ON_A_DESKTOP_OF_THEIR_OWN` set to
-/// `desktop`, as the block `CreateProcessW` takes.
+/// `desktop` and the browser asked to stay as elevated as the child, as the
+/// block `CreateProcessW` takes.
 fn the_childs_environment(desktop: &str) -> Vec<u16> {
     let mut block = Vec::new();
-    let ours = OsStr::new(ON_A_DESKTOP_OF_THEIR_OWN);
-    let theirs = std::env::vars_os().filter(|(key, _)| key.as_os_str() != ours);
-    for (key, value) in theirs.chain(std::iter::once((ours.into(), desktop.into()))) {
+    let ours = [
+        (OsStr::new(ON_A_DESKTOP_OF_THEIR_OWN), OsStr::new(desktop)),
+        (
+            OsStr::new(THE_BROWSERS_ARGUMENTS),
+            OsStr::new(STAY_AS_ELEVATED_AS_THE_CHILD),
+        ),
+    ];
+    let theirs =
+        std::env::vars_os().filter(|(key, _)| ours.iter().all(|(it, _)| key.as_os_str() != *it));
+    let set = ours.map(|(key, value)| (key.to_os_string(), value.to_os_string()));
+    for (key, value) in theirs.chain(set) {
         block.extend(key.encode_wide());
         block.push(u16::from(b'='));
         block.extend(value.encode_wide());
@@ -807,7 +830,11 @@ unsafe extern "system" {
 /// its session, its helpers, and how many top-level windows it and its
 /// helpers have on this thread's desktop.
 fn what_the_child_sees() -> String {
-    let processes = the_browser_processes();
+    let every = every_process();
+    let processes: Vec<&AProcess> = every
+        .iter()
+        .filter(|it| it.name.eq_ignore_ascii_case("msedgewebview2.exe"))
+        .collect();
     let windows_here = the_top_level_windows_here();
     let is_a_browser = |id: u32| processes.iter().any(|it| it.id == id);
     let browsers: Vec<String> = processes
@@ -826,7 +853,7 @@ fn what_the_child_sees() -> String {
             let started_by = if browser.parent == std::process::id() {
                 "this child".to_string()
             } else {
-                format!("process {}", browser.parent)
+                the_line_of(&every, browser.parent)
             };
             format!(
                 "{} started by {started_by} in session {}, {} helper(s), {windows} top-level window(s) on this desktop",
@@ -837,8 +864,9 @@ fn what_the_child_sees() -> String {
         })
         .collect();
     format!(
-        "{WHAT_THE_CHILD_SEES} process {} in session {}, token {}; {} WebView2 browser(s){}",
+        "{WHAT_THE_CHILD_SEES} process {} started by {} in session {}, token {}; {} WebView2 browser(s){}",
         std::process::id(),
+        the_line_of(&every, the_parent_of(&every, std::process::id())),
         the_session_of(std::process::id()),
         this_processs_token(),
         browsers.len(),
@@ -940,15 +968,40 @@ fn integrity_level(token: isize) -> String {
     }
 }
 
-/// A WebView2 browser process: its id and the id of the process that
-/// started it.
-struct BrowserProcess {
+/// A process: its id, the id of the process that started it, and the name
+/// of its executable.
+struct AProcess {
     id: u32,
     parent: u32,
+    name: String,
 }
 
-/// Every process named `msedgewebview2.exe` on the machine.
-fn the_browser_processes() -> Vec<BrowserProcess> {
+/// The process that started `id`, or 0 where the snapshot does not hold it.
+fn the_parent_of(every: &[AProcess], id: u32) -> u32 {
+    every
+        .iter()
+        .find(|it| it.id == id)
+        .map_or(0, |it| it.parent)
+}
+
+/// A process named by its id and executable, and the process that started
+/// it named the same way, so a broker that launched a browser is seen.
+fn the_line_of(every: &[AProcess], id: u32) -> String {
+    let named = |id: u32| {
+        every.iter().find(|it| it.id == id).map_or_else(
+            || format!("process {id} (no longer running)"),
+            |it| format!("process {id} ({})", it.name),
+        )
+    };
+    format!(
+        "{}, itself started by {}",
+        named(id),
+        named(the_parent_of(every, id))
+    )
+}
+
+/// Every process on the machine.
+fn every_process() -> Vec<AProcess> {
     // SAFETY: a snapshot of every process, closed once below.
     let snapshot = unsafe { CreateToolhelp32Snapshot(SNAPSHOT_THE_PROCESSES, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
@@ -975,13 +1028,11 @@ fn the_browser_processes() -> Vec<BrowserProcess> {
             .iter()
             .position(|&unit| unit == 0)
             .unwrap_or(260);
-        let name = String::from_utf16_lossy(&entry.exe_file[..end]);
-        if name.eq_ignore_ascii_case("msedgewebview2.exe") {
-            found.push(BrowserProcess {
-                id: entry.process_id,
-                parent: entry.parent_process_id,
-            });
-        }
+        found.push(AProcess {
+            id: entry.process_id,
+            parent: entry.parent_process_id,
+            name: String::from_utf16_lossy(&entry.exe_file[..end]),
+        });
         // SAFETY: as above.
         more = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
     }
