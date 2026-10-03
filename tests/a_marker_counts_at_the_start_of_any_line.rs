@@ -459,36 +459,13 @@ fn the_window_stations_name() -> Result<String, String> {
     Ok(String::from_utf16_lossy(&buffer[..end]))
 }
 
-/// The variable WebView2 reads for arguments to hand the browser it starts.
-const THE_BROWSERS_ARGUMENTS: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
-
-/// The browser's switch for staying at the elevation it was started with.
-///
-/// On GitHub's runner every process is elevated, and the child's browser was
-/// found started by another process and with no window on the child's
-/// desktop, its creation failing with "Invalid window handle" (ledger 785,
-/// CI run 37151597179). The candidate cause: an elevated browser relaunching
-/// itself unelevated through the shell, which would put it on the shell's
-/// desktop. This asks it not to; a process that is not elevated has nothing
-/// to stay at, so here it changes nothing.
-const STAY_AS_ELEVATED_AS_THE_CHILD: &str = "--do-not-de-elevate";
-
 /// This process's environment with `ON_A_DESKTOP_OF_THEIR_OWN` set to
-/// `desktop` and the browser asked to stay as elevated as the child, as the
-/// block `CreateProcessW` takes.
+/// `desktop`, as the block `CreateProcessW` takes.
 fn the_childs_environment(desktop: &str) -> Vec<u16> {
     let mut block = Vec::new();
-    let ours = [
-        (OsStr::new(ON_A_DESKTOP_OF_THEIR_OWN), OsStr::new(desktop)),
-        (
-            OsStr::new(THE_BROWSERS_ARGUMENTS),
-            OsStr::new(STAY_AS_ELEVATED_AS_THE_CHILD),
-        ),
-    ];
-    let theirs =
-        std::env::vars_os().filter(|(key, _)| ours.iter().all(|(it, _)| key.as_os_str() != *it));
-    let set = ours.map(|(key, value)| (key.to_os_string(), value.to_os_string()));
-    for (key, value) in theirs.chain(set) {
+    let ours = OsStr::new(ON_A_DESKTOP_OF_THEIR_OWN);
+    let theirs = std::env::vars_os().filter(|(key, _)| key.as_os_str() != ours);
+    for (key, value) in theirs.chain(std::iter::once((ours.into(), desktop.into()))) {
         block.extend(key.encode_wide());
         block.push(u16::from(b'='));
         block.extend(value.encode_wide());
@@ -509,16 +486,10 @@ fn the_child_run(short: &str) -> ChildRun {
     let (end, output) = desktop
         .and_then(|desktop| run_in_the_one_turn(&desktop))
         .unwrap_or_else(|why| (ChildEnd::NeverStarted(why), String::new()));
-    say_past_the_capture(&format!(
+    say(&format!(
         "the child ran on {full_name} for {} s and {end}",
         started.elapsed().as_secs()
     ));
-    if let Some(seen) = output
-        .lines()
-        .find(|line| line.starts_with(WHAT_THE_CHILD_SEES))
-    {
-        say_past_the_capture(seen);
-    }
     ChildRun {
         desktop: full_name,
         end,
@@ -750,319 +721,6 @@ fn the_end_of_the_output(output: &str) -> String {
     }
     let from = lines.len().saturating_sub(LINES_QUOTED_FROM_THE_END);
     lines[from..].join("\n")
-}
-
-// ── What the child says about the browser it asked for ───────────────────
-//
-// On GitHub's runner this child's browser fails to be made with
-// "'WebView2::WebViewCreated' failed with error 0x80070578 (Invalid window
-// handle.)" and the page never comes, while here it comes in a quarter of a
-// second (ledger 785). The meeting and invitation children on the same
-// runner waited out their half minute for the browser's windows and passed
-// because their cases do not need the page. So the child says, once its
-// browser has reported, what it is and where the browser went, and the parent
-// passes that line on whatever the verdict.
-
-/// The start of the line the child writes about itself and its browser.
-const WHAT_THE_CHILD_SEES: &str = "the child sees:";
-
-/// winnt.h: `TokenElevationType`, `TokenElevation` and `TokenIntegrityLevel`.
-const TOKEN_ELEVATION_TYPE: u32 = 18;
-const TOKEN_ELEVATION: u32 = 20;
-const TOKEN_INTEGRITY_LEVEL: u32 = 25;
-const TOKEN_QUERY: u32 = 0x0008;
-/// tlhelp32.h: `TH32CS_SNAPPROCESS`.
-const SNAPSHOT_THE_PROCESSES: u32 = 0x0000_0002;
-const INVALID_HANDLE_VALUE: isize = -1;
-
-/// tlhelp32.h: `PROCESSENTRY32W`.
-#[repr(C)]
-struct ProcessEntry {
-    size: u32,
-    usage: u32,
-    process_id: u32,
-    default_heap_id: usize,
-    module_id: u32,
-    threads: u32,
-    parent_process_id: u32,
-    base_priority: i32,
-    flags: u32,
-    exe_file: [u16; 260],
-}
-
-#[link(name = "advapi32")]
-unsafe extern "system" {
-    fn OpenProcessToken(process: isize, access: u32, token: *mut isize) -> i32;
-    fn GetTokenInformation(
-        token: isize,
-        class: u32,
-        info: *mut c_void,
-        length: u32,
-        needed: *mut u32,
-    ) -> i32;
-    fn GetSidSubAuthorityCount(sid: *const c_void) -> *const u8;
-    fn GetSidSubAuthority(sid: *const c_void, index: u32) -> *const u32;
-}
-
-#[link(name = "kernel32")]
-unsafe extern "system" {
-    fn GetCurrentProcess() -> isize;
-    fn GetCurrentThreadId() -> u32;
-    fn ProcessIdToSessionId(process_id: u32, session: *mut u32) -> i32;
-    fn CreateToolhelp32Snapshot(flags: u32, process_id: u32) -> isize;
-    fn Process32FirstW(snapshot: isize, entry: *mut ProcessEntry) -> i32;
-    fn Process32NextW(snapshot: isize, entry: *mut ProcessEntry) -> i32;
-}
-
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn GetThreadDesktop(thread_id: u32) -> isize;
-    fn EnumDesktopWindows(
-        desktop: isize,
-        callback: extern "system" fn(isize, isize) -> i32,
-        lparam: isize,
-    ) -> i32;
-    fn GetWindowThreadProcessId(hwnd: isize, process_id: *mut u32) -> u32;
-}
-
-/// One line saying what this process's token is, which session it is in,
-/// and every WebView2 browser on the machine: the process that started it,
-/// its session, its helpers, and how many top-level windows it and its
-/// helpers have on this thread's desktop.
-fn what_the_child_sees() -> String {
-    let every = every_process();
-    let processes: Vec<&AProcess> = every
-        .iter()
-        .filter(|it| it.name.eq_ignore_ascii_case("msedgewebview2.exe"))
-        .collect();
-    let windows_here = the_top_level_windows_here();
-    let is_a_browser = |id: u32| processes.iter().any(|it| it.id == id);
-    let browsers: Vec<String> = processes
-        .iter()
-        .filter(|it| !is_a_browser(it.parent))
-        .map(|browser| {
-            let helpers: Vec<u32> = processes
-                .iter()
-                .filter(|it| it.parent == browser.id)
-                .map(|it| it.id)
-                .collect();
-            let windows = windows_here
-                .iter()
-                .filter(|&&owner| owner == browser.id || helpers.contains(&owner))
-                .count();
-            let started_by = if browser.parent == std::process::id() {
-                "this child".to_string()
-            } else {
-                the_line_of(&every, browser.parent)
-            };
-            format!(
-                "{} started by {started_by} in session {}, {} helper(s), {windows} top-level window(s) on this desktop",
-                browser.id,
-                the_session_of(browser.id),
-                helpers.len(),
-            )
-        })
-        .collect();
-    format!(
-        "{WHAT_THE_CHILD_SEES} process {} started by {} in session {}, token {}; {} WebView2 browser(s){}",
-        std::process::id(),
-        the_line_of(&every, the_parent_of(&every, std::process::id())),
-        the_session_of(std::process::id()),
-        this_processs_token(),
-        browsers.len(),
-        if browsers.is_empty() {
-            String::new()
-        } else {
-            format!(": {}", browsers.join("; "))
-        }
-    )
-}
-
-/// Write `line` to standard error itself, past libtest's capture, so it
-/// reaches the parent even from a run that is later stopped at its bound.
-fn say_past_the_capture(line: &str) {
-    use std::io::Write;
-    let mut stderr = std::io::stderr().lock();
-    // A line that cannot be written is a diagnostic lost, not a failure.
-    let _ = writeln!(stderr, "{line}");
-    let _ = stderr.flush();
-}
-
-fn the_session_of(process_id: u32) -> String {
-    let mut session = 0u32;
-    // SAFETY: Windows writes one u32.
-    match unsafe { ProcessIdToSessionId(process_id, &mut session) } {
-        0 => format!("unknown ({})", failed("ProcessIdToSessionId")),
-        _ => session.to_string(),
-    }
-}
-
-/// This process's elevation, elevation type and integrity level, as its token
-/// says them.
-fn this_processs_token() -> String {
-    let mut token = 0isize;
-    // SAFETY: the current process's pseudo handle, and Windows writes the token.
-    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) } == 0 {
-        return failed("OpenProcessToken");
-    }
-    let elevated =
-        token_u32(token, TOKEN_ELEVATION).map_or_else(|why| why, |it| (it != 0).to_string());
-    let kind = token_u32(token, TOKEN_ELEVATION_TYPE).map_or_else(
-        |why| why,
-        |it| match it {
-            1 => "default".to_string(),
-            2 => "full".to_string(),
-            3 => "limited".to_string(),
-            other => other.to_string(),
-        },
-    );
-    let level = integrity_level(token);
-    // SAFETY: the token opened above, closed once.
-    unsafe { CloseHandle(token) };
-    format!("elevated {elevated}, elevation type {kind}, integrity level {level}")
-}
-
-fn token_u32(token: isize, class: u32) -> Result<u32, String> {
-    let mut value = 0u32;
-    let mut needed = 0u32;
-    // SAFETY: four bytes for a class whose answer is one u32.
-    let read = unsafe {
-        GetTokenInformation(
-            token,
-            class,
-            (&mut value as *mut u32).cast(),
-            4,
-            &mut needed,
-        )
-    };
-    if read == 0 {
-        return Err(failed("GetTokenInformation"));
-    }
-    Ok(value)
-}
-
-/// The token's integrity level as its relative identifier in hexadecimal:
-/// 0x2000 medium, 0x3000 high, 0x4000 system.
-fn integrity_level(token: isize) -> String {
-    let mut buffer = [0u64; 16];
-    let mut needed = 0u32;
-    // SAFETY: a 128-byte buffer, aligned for the pointer it starts with.
-    let read = unsafe {
-        GetTokenInformation(
-            token,
-            TOKEN_INTEGRITY_LEVEL,
-            buffer.as_mut_ptr().cast(),
-            std::mem::size_of_val(&buffer) as u32,
-            &mut needed,
-        )
-    };
-    if read == 0 {
-        return failed("GetTokenInformation for the integrity level");
-    }
-    // SAFETY: the answer starts with a pointer to its SID, inside the buffer.
-    unsafe {
-        let sid = *(buffer.as_ptr() as *const *const c_void);
-        let count = *GetSidSubAuthorityCount(sid);
-        let rid = *GetSidSubAuthority(sid, u32::from(count).saturating_sub(1));
-        format!("{rid:#x}")
-    }
-}
-
-/// A process: its id, the id of the process that started it, and the name
-/// of its executable.
-struct AProcess {
-    id: u32,
-    parent: u32,
-    name: String,
-}
-
-/// The process that started `id`, or 0 where the snapshot does not hold it.
-fn the_parent_of(every: &[AProcess], id: u32) -> u32 {
-    every
-        .iter()
-        .find(|it| it.id == id)
-        .map_or(0, |it| it.parent)
-}
-
-/// A process named by its id and executable, and the process that started
-/// it named the same way, so a broker that launched a browser is seen.
-fn the_line_of(every: &[AProcess], id: u32) -> String {
-    let named = |id: u32| {
-        every.iter().find(|it| it.id == id).map_or_else(
-            || format!("process {id} (no longer running)"),
-            |it| format!("process {id} ({})", it.name),
-        )
-    };
-    format!(
-        "{}, itself started by {}",
-        named(id),
-        named(the_parent_of(every, id))
-    )
-}
-
-/// Every process on the machine.
-fn every_process() -> Vec<AProcess> {
-    // SAFETY: a snapshot of every process, closed once below.
-    let snapshot = unsafe { CreateToolhelp32Snapshot(SNAPSHOT_THE_PROCESSES, 0) };
-    if snapshot == INVALID_HANDLE_VALUE {
-        return Vec::new();
-    }
-    let mut found = Vec::new();
-    let mut entry = ProcessEntry {
-        size: std::mem::size_of::<ProcessEntry>() as u32,
-        usage: 0,
-        process_id: 0,
-        default_heap_id: 0,
-        module_id: 0,
-        threads: 0,
-        parent_process_id: 0,
-        base_priority: 0,
-        flags: 0,
-        exe_file: [0; 260],
-    };
-    // SAFETY: the entry's size is set, and Windows writes each entry in turn.
-    let mut more = unsafe { Process32FirstW(snapshot, &mut entry) } != 0;
-    while more {
-        let end = entry
-            .exe_file
-            .iter()
-            .position(|&unit| unit == 0)
-            .unwrap_or(260);
-        found.push(AProcess {
-            id: entry.process_id,
-            parent: entry.parent_process_id,
-            name: String::from_utf16_lossy(&entry.exe_file[..end]),
-        });
-        // SAFETY: as above.
-        more = unsafe { Process32NextW(snapshot, &mut entry) } != 0;
-    }
-    // SAFETY: the snapshot made above, closed once.
-    unsafe { CloseHandle(snapshot) };
-    found
-}
-
-thread_local! {
-    static OWNERS: RefCell<Vec<u32>> = const { RefCell::new(Vec::new()) };
-}
-
-extern "system" fn note_the_owner(hwnd: isize, _lparam: isize) -> i32 {
-    let mut process_id = 0u32;
-    // SAFETY: Windows writes one u32 for a window handle it handed us.
-    unsafe { GetWindowThreadProcessId(hwnd, &mut process_id) };
-    OWNERS.with(|owners| owners.borrow_mut().push(process_id));
-    1
-}
-
-/// The owning process of every top-level window on this thread's desktop,
-/// one entry per window.
-fn the_top_level_windows_here() -> Vec<u32> {
-    OWNERS.with(|owners| owners.borrow_mut().clear());
-    // SAFETY: this thread's own desktop, which is not closed; the callback
-    // only pushes to this thread's local.
-    unsafe {
-        EnumDesktopWindows(GetThreadDesktop(GetCurrentThreadId()), note_the_owner, 0);
-    }
-    OWNERS.with(|owners| owners.borrow().clone())
 }
 
 thread_local! {
@@ -1639,7 +1297,6 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                     let next = match phase {
                         Phase::WaitingForBrowser => {
                             if browser.is_ready() {
-                                say_past_the_capture(&what_the_child_sees());
                                 Phase::Acting
                             } else {
                                 phase
