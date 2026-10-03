@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 687
+open_count: 688
 waived_count: 0
 fixed_count: 104
-total_count: 791
-last_updated: 2026-10-03T06:00:00.000Z
+total_count: 792
+last_updated: 2026-10-03T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -806,6 +806,7 @@ last_updated: 2026-10-03T06:00:00.000Z
 | 789 | 13 | unrun-verify | src/application/exporting_mail.rs |  | 13-45, for the tester: no mailbox file that File, Export Folder as a Mailbox File wrote has been opened in another mail program. Open one in Thunderbird (Thunderbird Daily is installed on this machine, RESEARCH-5) and in the mail program you use, and say whether every message arrives with its date, sender and attachments. Not yet heard under NVDA either: the item and its letter F on the File menu, its description, the opening sentence, the progress lines and the closing sentence naming the folders inside that were left out. Held today by this program's own reader reading the file back (application::exporting_mail's tests) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T04:50:00.000Z |  |
 | 790 | 13 | deviation | src/presentation/wx_app.rs |  | 13-45: Export Mailbox wrote every message of a folder after the first without the empty line in front of its separator, from 1fbe263b (2026-08-29), which built each message in a fresh buffer, until 51fbc763, so this program's own import read a folder back as its first message with the rest inside its body. Found by 13-45's round trip through the step the zip export shares; fixed by exporting_mail::one_stored_message_added asking where the message lands, and held by test_messages_built_a_buffer_at_a_time_read_back_as_as_many_messages. A zip exported in that time still holds every message's text, and exporting again gives one that reads back whole | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 | 791 | 13 | deviation | tests/mail_taken_off_leaves_no_words_behind.rs |  | 13-45: test_nothing_else_compacts_the_search_index was red on main from 13-44.9's merge (3b90bed8) until 51fbc763, because it read what_forgetting_costs.rs, compiled only for tests through the #[cfg(test)] on its mod line, as a second caller that ships. 13-44.9's merge did not run the target. The census now skips a module its parent declares under #[cfg(test)], with a case telling the two apart, and its record is remeasured | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
+| 792 | 13 | unrun-verify | src/application/exporting_mail.rs |  | 13-46, for the tester: no file that File, Export Folder as Message Files wrote has been opened in another mail program. Export a folder with folders inside it, open its files in Thunderbird and in the mail program you use, and say whether every message arrives with its date, sender and attachments; then bring the same folder back with Import a Folder of Messages on your machine and say whether the folders and messages match. Not yet heard under NVDA either: the item and its letter X on the File menu, its description, the folder picker's title, the opening sentence, the progress lines and the closing sentence, including the one about numbered names. Held today by this program's own folder import reading the files back (application::exporting_mail's round trip) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T12:00:00.000Z |  |
 
 ````json
 [
@@ -10300,6 +10301,18 @@ last_updated: 2026-10-03T06:00:00.000Z
     "reason": "",
     "recorded_at": "2026-10-03T04:50:00.000Z",
     "resolved_at": "2026-10-03T04:50:00.000Z"
+  },
+  {
+    "id": 792,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/exporting_mail.rs",
+    "line": null,
+    "description": "13-46, for the tester: no file that File, Export Folder as Message Files wrote has been opened in another mail program. Export a folder with folders inside it, open its files in Thunderbird and in the mail program you use, and say whether every message arrives with its date, sender and attachments; then bring the same folder back with Import a Folder of Messages on your machine and say whether the folders and messages match. Not yet heard under NVDA either: the item and its letter X on the File menu, its description, the folder picker's title, the opening sentence, the progress lines and the closing sentence, including the one about numbered names. Held today by this program's own folder import reading the files back (application::exporting_mail's round trip) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T12:00:00.000Z",
+    "resolved_at": null
   }
 ]
 ````
