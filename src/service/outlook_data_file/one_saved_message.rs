@@ -31,9 +31,9 @@
 use super::{
     DISPLAY_NAME, EMAIL_ADDRESS, EMAIL_ADDRESS_KIND, HowMuchToAllow, MESSAGE_CLASS, SMTP_ADDRESS,
     TheItem, WhatItSaid, WhatKind, WhatTheItemSaid, WhatTheNamesAreHere, a_message_from, text_in,
-    the_kind_of, went_to_from, what_is_worth_reading, which_alphabet,
+    the_kind_of, the_markup_of, went_to_from, what_is_worth_reading, which_alphabet,
 };
-use crate::application::message_files;
+use crate::application::message_files::{self, FileOnTheMessage};
 use std::io::{Read, Seek, SeekFrom};
 
 /// How a saved Outlook message begins: the eight bytes every Compound File
@@ -50,14 +50,16 @@ pub const HOW_A_SAVED_MESSAGE_BEGINS: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0x
 const THE_PROPERTIES: &str = "__properties_version1.0";
 /// How each recipient's storage is named, before its number.
 const A_RECIPIENT: &str = "__recip_version1.0_#";
+/// How each file's storage is named, before its number.
+const AN_ATTACHMENT: &str = "__attach_version1.0_#";
 /// How the stream holding one long value is named, before its tag.
 const A_VALUE_OF_ITS_OWN: &str = "__substg1.0_";
 
 /// The property stream's header at the top of a saved message, MS-OXMSG
 /// 2.4.1.1: eight reserved bytes, four counts of four, eight reserved.
 const HEADER_AT_THE_TOP: usize = 32;
-/// The property stream's header in a recipient's storage, MS-OXMSG 2.4.1.3:
-/// eight reserved bytes.
+/// The property stream's header in a recipient's or a file's storage,
+/// MS-OXMSG 2.4.1.3: eight reserved bytes.
 const HEADER_BESIDE_THE_MESSAGE: usize = 8;
 /// One property's entry, MS-OXMSG 2.4.2.1 and 2.4.2.2.
 const ONE_ENTRY: usize = 16;
@@ -80,6 +82,39 @@ const WHAT_A_RECIPIENT_IS_READ_FOR: [u16; 4] = [
     EMAIL_ADDRESS_KIND,
     SMTP_ADDRESS,
 ];
+
+// A file on the message, by the numbers MS-OXPROPS gives each property, read
+// on learn.microsoft.com on 2026-10-03, section by section.
+/// How the file is held: PidTagAttachMethod, 2.601.
+const HOW_THE_FILE_IS_HELD: u16 = 0x3705;
+/// The file's name in full: PidTagAttachLongFilename, 2.595.
+const ITS_FULL_NAME: u16 = 0x3707;
+/// The short name written beside it: PidTagAttachFilename, 2.593.
+const ITS_SHORT_NAME: u16 = 0x3704;
+/// What kind of file it is: PidTagAttachMimeTag, 2.602.
+const ITS_TYPE: u16 = 0x370E;
+/// The file itself: PidTagAttachDataBinary, 2.589.
+const THE_FILE_ITSELF: u16 = 0x3701;
+/// The message's markup in Outlook's own compressed format:
+/// PidTagRtfCompressed, 2.943.
+const MARKUP_IN_OUTLOOKS_OWN_FORMAT: u16 = 0x1009;
+
+/// How a file whose bytes are on the message is held: `afByValue`, MS-OXCMSG
+/// 2.2.2.9. Every other way is a message inside this one (5), an object only
+/// the program that made it reads (6), or a pointer to somewhere else (2, 4
+/// and 7), and none of them is a file to bring.
+const HELD_ON_THE_MESSAGE: i64 = 1;
+
+/// The type of a file Outlook kept no type for: bytes nobody has described.
+const A_FILE_OF_NO_STATED_TYPE: &str = "application/octet-stream";
+
+/// What a file is read for. Its bytes are read only for a file held on the
+/// message, after how it is held has been read out of its entry.
+const WHAT_A_FILE_IS_READ_FOR: [u16; 4] =
+    [ITS_FULL_NAME, ITS_SHORT_NAME, ITS_TYPE, THE_FILE_ITSELF];
+
+/// What Outlook calls a signed message, compared without regard to capitals.
+const A_SIGNED_MESSAGE: &str = "ipm.note.smime.multipartsigned";
 
 /// One saved message, read.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -187,11 +222,29 @@ pub fn read<R: Read + Seek>(
     )?;
 
     let went_to = went_to_from(container.recipients(alphabet)?.into_iter());
-    let message = a_message_from(&TheItem::of(&said, &names), &went_to);
+    let (files, files_not_brought) = container.the_files(alphabet)?;
+    let item = TheItem::of(&said, &names);
+    let left_in_the_file = LeftInTheFile {
+        files_not_brought,
+        blind_copies: went_to.left_off,
+        markup_only_in_outlooks_own_format: entries
+            .iter()
+            .any(|entry| entry.id == MARKUP_IN_OUTLOOKS_OWN_FORMAT)
+            && the_markup_of(&item).is_none(),
+        signature_not_kept: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.to_ascii_lowercase().starts_with(A_SIGNED_MESSAGE)),
+    };
     Ok(SavedOutlookMessage {
-        mail: message_files::written_as_one_message(&message, &[]),
-        left_in_the_file: LeftInTheFile::default(),
+        mail: message_files::written_as_one_message(&a_message_from(&item, &went_to), &files),
+        left_in_the_file,
     })
+}
+
+/// One file on a message: brought with it, or counted as staying in the file.
+enum OnTheMessage {
+    Brought(FileOnTheMessage),
+    NotBrought,
 }
 
 /// Whether a file begins the way a saved message does, read and then put
@@ -426,6 +479,61 @@ impl<R: Read + Seek> TheContainer<R> {
                 Ok(said)
             })
             .collect()
+    }
+
+    /// The files on the message that come with it, in their order, and how
+    /// many stay in the file.
+    fn the_files(
+        &mut self,
+        alphabet: Option<u16>,
+    ) -> Result<(Vec<FileOnTheMessage>, usize), WhyItWasNotRead> {
+        let mut brought = Vec::new();
+        let mut not_brought = 0;
+        for storage in self.storages_named(AN_ATTACHMENT) {
+            match self.one_file(&storage, alphabet)? {
+                OnTheMessage::Brought(file) => brought.push(file),
+                OnTheMessage::NotBrought => not_brought += 1,
+            }
+        }
+        Ok((brought, not_brought))
+    }
+
+    /// One file's storage: a file whose bytes are on the message, by its
+    /// name and type, or one counted instead, whose bytes are never read.
+    fn one_file(
+        &mut self,
+        storage: &str,
+        alphabet: Option<u16>,
+    ) -> Result<OnTheMessage, WhyItWasNotRead> {
+        let names = WhatTheNamesAreHere::default();
+        let entries = self.entries_in(storage, HEADER_BESIDE_THE_MESSAGE)?;
+        let mut said = fixed_values(&entries);
+        if TheItem::of(&said, &names).whole(HOW_THE_FILE_IS_HELD) != Some(HELD_ON_THE_MESSAGE) {
+            return Ok(OnTheMessage::NotBrought);
+        }
+        self.read_into(
+            &mut said,
+            storage,
+            &entries,
+            &WHAT_A_FILE_IS_READ_FOR,
+            alphabet,
+        )?;
+        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
+            Some(WhatItSaid::Bytes(bytes)) => bytes,
+            _ => Vec::new(),
+        };
+        let file = TheItem::of(&said, &names);
+        Ok(OnTheMessage::Brought(FileOnTheMessage {
+            named: file
+                .words(ITS_FULL_NAME)
+                .or_else(|| file.words(ITS_SHORT_NAME))
+                .map(str::to_string),
+            kind: file
+                .words(ITS_TYPE)
+                .unwrap_or(A_FILE_OF_NO_STATED_TYPE)
+                .to_string(),
+            bytes,
+        }))
     }
 }
 
