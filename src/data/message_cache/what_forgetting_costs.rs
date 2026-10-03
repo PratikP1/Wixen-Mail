@@ -1193,13 +1193,37 @@ fn the_row(cells: &[&str]) -> String {
 /// The date, the commit and the version, for the rows.
 fn today_commit_and_version() -> (String, String, String) {
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
-    let commit = std::process::Command::new("git")
-        .args(["rev-parse", "--short=8", "HEAD"])
-        .output()
-        .ok()
-        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let commit = the_commit_asking(ask_git).unwrap_or_default();
     (date, commit, env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// What a row's commit cell says where git finds no repository to read a
+/// commit from, as in the copy `cargo mutants` builds, which holds no `.git`
+/// (ledger 458, 13.1-01).
+const NO_HISTORY_HERE: &str = "no commit: this copy holds no git history to read one from";
+
+/// What git printed for one question, or why it refused, in its own words.
+type GitsAnswer = std::result::Result<String, String>;
+
+/// Ask the git on this machine.
+fn ask_git(args: &[&str]) -> GitsAnswer {
+    let output = std::process::Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| format!("git could not be run: {e}"))?;
+    let said = |bytes: &[u8]| String::from_utf8_lossy(bytes).trim().to_string();
+    if output.status.success() {
+        Ok(said(&output.stdout))
+    } else {
+        Err(said(&output.stderr))
+    }
+}
+
+/// The commit a row carries, asked of `git`.
+fn the_commit_asking(git: impl Fn(&[&str]) -> GitsAnswer) -> std::result::Result<String, String> {
+    // Today's reading, kept until the decision is written: the exit status
+    // is not read, so a copy with no history gives an empty cell.
+    Ok(git(&["rev-parse", "--short=8", "HEAD"]).unwrap_or_default())
 }
 
 /// The processor, its logical core count and the memory, as Windows reports
@@ -1488,5 +1512,56 @@ mod tests {
             assert!(is_a_date(cells[3]), "the row carries no date: {row}");
             assert!(is_a_commit(cells[4]), "the row carries no commit: {row}");
         }
+    }
+
+    /// Git's words where it finds no repository, as it says them outside one.
+    const NOT_A_REPOSITORY: &str =
+        "fatal: not a git repository (or any of the parent directories): .git";
+
+    /// A git answering `--git-dir` with `repository` and `HEAD`'s commit with
+    /// `commit`, and refusing anything else.
+    fn a_git(repository: GitsAnswer, commit: GitsAnswer) -> impl Fn(&[&str]) -> GitsAnswer {
+        move |args| match args {
+            ["rev-parse", "--git-dir"] => repository.clone(),
+            ["rev-parse", "--short=8", "HEAD"] => commit.clone(),
+            other => Err(format!("this git was not asked {other:?}")),
+        }
+    }
+
+    #[test]
+    fn test_where_git_finds_no_repository_the_commit_cell_says_so() {
+        let git = a_git(
+            Err(NOT_A_REPOSITORY.to_string()),
+            Err(NOT_A_REPOSITORY.to_string()),
+        );
+        assert_eq!(the_commit_asking(git), Ok(NO_HISTORY_HERE.to_string()));
+    }
+
+    #[test]
+    fn test_where_a_repository_answers_the_commit_cell_is_its_commit() {
+        let git = a_git(Ok(".git".to_string()), Ok("ce526701".to_string()));
+        assert_eq!(the_commit_asking(git), Ok("ce526701".to_string()));
+    }
+
+    #[test]
+    fn test_a_repository_that_will_not_name_its_commit_fails_quoting_git() {
+        let refused = "fatal: ambiguous argument 'HEAD': unknown revision";
+        let git = a_git(Ok(".git".to_string()), Err(refused.to_string()));
+        let answer = the_commit_asking(git);
+        assert!(
+            matches!(&answer, Err(why) if why.contains(refused)),
+            "not a failure quoting git: {answer:?}"
+        );
+    }
+
+    #[test]
+    fn test_git_refusing_for_another_reason_is_a_failure_quoting_git() {
+        let refused = "fatal: bad config line 1 in file .git/config";
+        let git = a_git(Err(refused.to_string()), Err(refused.to_string()));
+        let answer = the_commit_asking(git);
+        assert!(
+            matches!(&answer, Err(why) if why.contains(refused)),
+            "not a failure quoting git: {answer:?}"
+        );
     }
 }
