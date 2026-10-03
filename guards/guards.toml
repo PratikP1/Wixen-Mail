@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 632 records have arrived since and have not been through it.
+# 634 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -29495,7 +29495,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The first character typed after a closing inline delimiter is plain. The
@@ -29522,7 +29522,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 88 },
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The browser is the first thing in the formatted message window that takes
@@ -30589,7 +30589,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── The Signature Manager lists every account's signatures (#43) ──────────
@@ -30611,7 +30611,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── A box ticked in a signature's editor is the account's (#43, T-12-44) ──
@@ -30632,7 +30632,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "tests/a_signature_follows_the_from_account.rs", tests = 17 },
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
 # ── An account's labels are read in the order it keeps (#48, T-12-34) ──────
@@ -37238,7 +37238,7 @@ red = [
     "test_a_child_that_never_reported_the_test_says_so",
 ]
 tests_last_seen = [
-    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 5 },
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
 # The browser rule stops asking for the one turn, so a target typing into a
@@ -37990,4 +37990,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/every_number_carries_its_command_and_its_date.rs", tests = 29 },
+]
+
+# The marker reading's window test sent to a child on GitHub's runner too,
+# where an elevated child's browser opens on the shell's desktop and the
+# page never comes, so every pull request's Test Suite is red again
+# (13.1-01, D-01, ledger 785). Written 2026-10-03 by 13.1-01, measured
+# against the suite.
+[[guard]]
+name = "the marker reading runs its window test on the runner's own desktop where CI is set"
+file = "tests/a_marker_counts_at_the_start_of_any_line.rs"
+suite = "a_marker_counts_at_the_start_of_any_line"
+before = '''        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,'''
+after = '''        Some(_) => WhereTheBodyRuns::InAChild,'''
+red = [
+    "test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set",
+]
+tests_last_seen = [
+    { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
+]
+
+# The signature reading's window tests sent to a child on GitHub's runner
+# too, for the same reason (13.1-01, D-01, ledger 785). Written 2026-10-03 by
+# 13.1-01, measured against the suite.
+[[guard]]
+name = "the signature reading runs its window tests on the runner's own desktop where CI is set"
+file = "tests/a_signature_follows_the_from_account.rs"
+suite = "a_signature_follows_the_from_account"
+before = '''        Some(_) => WhereTheBodyRuns::OnTheRunnersOwnDesktop,'''
+after = '''        Some(_) => WhereTheBodyRuns::InAChild,'''
+red = [
+    "test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set",
+]
+tests_last_seen = [
+    { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
