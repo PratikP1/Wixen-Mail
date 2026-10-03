@@ -46,16 +46,23 @@
 //!   is found as its first part and cannot be told apart from another.
 
 use super::MessageCache;
+use crate::application::destinations::Deleting;
+use crate::application::local_delete;
 use crate::application::local_folders::{self, LOCAL_PREFIX};
-use crate::common::types::Protocol;
+use crate::application::mail_sync::INITIAL_FETCH_LIMIT;
+use crate::common::types::{FolderType, Protocol};
 use crate::common::{Error, Result};
 use crate::data::account::Account;
 use crate::data::message_cache::{CachedFolder, IncomingMessage};
 use crate::service::safety::Verdict;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ops::Range;
+use std::path::Path;
 
 /// The database file the store keeps its mail in.
 const THE_FILE: &str = "message_cache.db";
+/// The write log beside it.
+const THE_WRITE_LOG: &str = "message_cache.db-wal";
 
 /// The letters every planted word begins with. No other word written here
 /// contains them.
@@ -68,6 +75,27 @@ fn the_word_of(n: usize) -> String {
     format!("{PLANTED}{n:0ITS_NUMBER_DIGITS$}x")
 }
 
+/// Which planted message a copy found at `at` belongs to, read from the
+/// digits after the planted letters, or `None` when they are not there whole.
+fn whose_copy(bytes: &[u8], at: usize) -> Option<usize> {
+    let from = at + PLANTED.len();
+    let digits = bytes.get(from..from + ITS_NUMBER_DIGITS)?;
+    if bytes.get(from + ITS_NUMBER_DIGITS) != Some(&b'x') {
+        return None;
+    }
+    std::str::from_utf8(digits).ok()?.parse().ok()
+}
+
+/// Every copy in `bytes` of a planted word belonging to one of `these`, as
+/// its offset and whose it is.
+fn copies_belonging_to(these: &BTreeSet<usize>, bytes: &[u8]) -> Vec<(usize, usize)> {
+    copies_of(PLANTED, bytes)
+        .into_iter()
+        .filter_map(|at| whose_copy(bytes, at).map(|n| (at, n)))
+        .filter(|(_, n)| these.contains(n))
+        .collect()
+}
+
 // ── The reading ─────────────────────────────────────────────────────────────
 
 /// Where one copy of a word lies.
@@ -77,6 +105,58 @@ enum Place {
     Page(String),
     /// In the file, on a page `dbstat` does not list: the free list.
     Free,
+    /// In the write log, not yet copied into the file.
+    WriteLog,
+}
+
+/// What the file and its write log hold of the words of some messages.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Left {
+    /// How many of the messages left at least one copy.
+    messages_with_a_copy: usize,
+    /// How many copies lie in each place.
+    by_place: BTreeMap<Place, usize>,
+}
+
+/// What the store's file and its write log hold, as they are now, of the
+/// planted words of `these` messages. Nothing is checkpointed first: the
+/// write log is read for what it holds rather than emptied into the file.
+fn what_is_left_of(cache: &MessageCache, home: &Path, these: &BTreeSet<usize>) -> Result<Left> {
+    let file = the_bytes_of(&home.join(THE_FILE))?;
+    let in_the_file = copies_belonging_to(these, &file);
+    let offsets: Vec<usize> = in_the_file.iter().map(|(at, _)| *at).collect();
+    let places = where_each_lies(cache, &offsets)?;
+
+    let log = the_bytes_of(&home.join(THE_WRITE_LOG))?;
+    let in_the_log = copies_belonging_to(these, &log);
+
+    let mut left = Left::default();
+    let placed = places
+        .into_iter()
+        .chain(std::iter::repeat_n(Place::WriteLog, in_the_log.len()));
+    for place in placed {
+        *left.by_place.entry(place).or_default() += 1;
+    }
+    let whose: BTreeSet<usize> = in_the_file
+        .iter()
+        .chain(&in_the_log)
+        .map(|(_, n)| *n)
+        .collect();
+    left.messages_with_a_copy = whose.len();
+    Ok(left)
+}
+
+/// A file's bytes, or none when it is not there: a write log is removed when
+/// the last connection closes, and truncated to nothing by a checkpoint.
+fn the_bytes_of(path: &Path) -> Result<Vec<u8>> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(e) => Err(Error::Other(format!(
+            "{} could not be read: {e}",
+            path.display()
+        ))),
+    }
 }
 
 /// Every offset in `bytes` where `word` starts.
@@ -157,13 +237,17 @@ fn a_pop_account() -> Account {
     account
 }
 
-/// The folders the planted mail arrives in.
+/// The account the rest of the mail belongs to, kept on a server.
+const THE_IMAP_ACCOUNT: &str = "imap";
+
+/// The folders the planted mail and the rest arrive in.
 struct Folders {
     pop_inbox: i64,
+    imap_inbox: i64,
 }
 
 /// The POP account's folders on this computer, each stored under whoever
-/// owns it as the program stores them.
+/// owns it as the program stores them, and an IMAP account's inbox.
 fn the_folders(cache: &MessageCache) -> Result<Folders> {
     let account = a_pop_account();
     for folder in local_folders::used_by(account.protocol()) {
@@ -182,7 +266,180 @@ fn the_folders(cache: &MessageCache) -> Result<Folders> {
         .get_folder(&account.id, &format!("{LOCAL_PREFIX}/Inbox"))?
         .ok_or_else(|| Error::Other("the POP account has no Inbox".to_string()))?
         .id;
-    Ok(Folders { pop_inbox })
+    let imap_inbox = cache.save_folder(&CachedFolder {
+        id: 0,
+        account_id: THE_IMAP_ACCOUNT.to_string(),
+        name: "INBOX".to_string(),
+        path: "INBOX".to_string(),
+        folder_type: FolderType::Inbox.as_str().to_string(),
+        unread_count: 0,
+        total_count: 0,
+    })?;
+    Ok(Folders {
+        pop_inbox,
+        imap_inbox,
+    })
+}
+
+/// The words the rest of the mail is written in. None holds the planted
+/// letters.
+const THE_REST_IS_WRITTEN_IN: [&str; 48] = [
+    "account",
+    "agenda",
+    "answer",
+    "budget",
+    "calendar",
+    "change",
+    "client",
+    "copy",
+    "date",
+    "draft",
+    "estimate",
+    "figures",
+    "follow",
+    "invoice",
+    "issue",
+    "letter",
+    "meeting",
+    "minutes",
+    "monday",
+    "notes",
+    "office",
+    "order",
+    "payment",
+    "plan",
+    "please",
+    "project",
+    "quarter",
+    "question",
+    "receipt",
+    "report",
+    "review",
+    "schedule",
+    "send",
+    "shipment",
+    "signed",
+    "summary",
+    "supplier",
+    "team",
+    "thanks",
+    "ticket",
+    "today",
+    "travel",
+    "update",
+    "version",
+    "visit",
+    "week",
+    "work",
+    "yesterday",
+];
+
+/// `count` words of the rest of the mail, chosen from `n` so each message's
+/// differ.
+fn words_for(n: usize, count: usize) -> String {
+    let mut chosen = n.wrapping_mul(2_654_435_761) | 1;
+    (0..count)
+        .map(|_| {
+            chosen = chosen
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
+            THE_REST_IS_WRITTEN_IN[(chosen >> 33) % THE_REST_IS_WRITTEN_IN.len()]
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// A message of the rest, as an IMAP check's headers arrive.
+fn one_of_the_rest(folders: &Folders, n: usize) -> IncomingMessage {
+    IncomingMessage {
+        folder_id: folders.imap_inbox,
+        uid: n as u32 + 1,
+        message_id: format!("<kept-{n}@example.com>"),
+        subject: words_for(n, 6),
+        from_addr: "Bea <bea@example.com>".to_string(),
+        to_addr: "me@example.com".to_string(),
+        cc: None,
+        reply_to: None,
+        date: a_date(n),
+        internal_date: Some(a_date(n)),
+        size_bytes: Some(4_096),
+        refs_header: None,
+        read: n.is_multiple_of(3),
+        starred: false,
+        answered: false,
+        draft: false,
+        deleted: false,
+        has_attachments: false,
+        safety: Verdict::ordinary(),
+        gmail_message_id: None,
+        server_thread_id: None,
+        labels: None,
+        receipt_to: None,
+        list_unsubscribe: None,
+        pop_uidl: None,
+    }
+}
+
+/// The rest of the mail, `numbers`, written the way an IMAP check writes
+/// it: the headers in batches of [`INITIAL_FETCH_LIMIT`], one transaction
+/// each, then each message's text.
+fn the_rest(cache: &MessageCache, folders: &Folders, numbers: Range<usize>) -> Result<()> {
+    let numbers: Vec<usize> = numbers.collect();
+    for batch in numbers.chunks(INITIAL_FETCH_LIMIT) {
+        let arriving: Vec<IncomingMessage> =
+            batch.iter().map(|n| one_of_the_rest(folders, *n)).collect();
+        let rows = cache.upsert_messages(&arriving)?;
+        for (row, n) in rows.iter().zip(batch) {
+            cache.save_message_body(*row, Some(&words_for(*n, 160)), None)?;
+        }
+    }
+    Ok(())
+}
+
+/// The planted messages `numbers`, each written the POP way, then marked
+/// read, then deleted into the shared Trash the way Delete deletes it, in
+/// that order across all of them, as a check, a reading and a tidying
+/// would. Answers their rows.
+fn the_planted(cache: &MessageCache, folders: &Folders, numbers: Range<usize>) -> Result<Vec<i64>> {
+    let rows = numbers
+        .map(|n| a_planted_message(cache, folders, n))
+        .collect::<Result<Vec<i64>>>()?;
+    for row in &rows {
+        cache.update_message_flags(*row, true, false)?;
+    }
+    for row in &rows {
+        delete_here(cache, *row)?;
+    }
+    Ok(rows)
+}
+
+/// Delete a message the POP account keeps on this computer, through the
+/// program's own delete: into the shared Trash, or, from the Trash, off
+/// this computer through 13-44.8's path.
+fn delete_here(cache: &MessageCache, row: i64) -> Result<()> {
+    let outcome = local_delete::perform(cache, &a_pop_account(), row, Deleting::ToTrash)?
+        .ok_or_else(|| Error::Other(format!("message {row} is not kept on this computer")))?;
+    if outcome.message_left_the_folder {
+        Ok(())
+    } else {
+        Err(Error::Other(format!(
+            "message {row} was not deleted: {}",
+            outcome.said
+        )))
+    }
+}
+
+/// Empty the Trash of `rows`, each through the program's delete, which
+/// takes a message in the Trash off this computer.
+fn taken_off(cache: &MessageCache, rows: &[i64]) -> Result<()> {
+    rows.iter().try_for_each(|row| delete_here(cache, *row))
+}
+
+/// What the next check does after the mail is taken off: the search index
+/// lets go of its words and the write log is emptied into the file.
+fn the_next_check(cache: &MessageCache) -> Result<()> {
+    cache.let_the_search_index_forget_what_was_taken_off()?;
+    Ok(())
 }
 
 /// A message downloaded over POP carrying the planted word of `n`, written
@@ -260,6 +517,47 @@ mod tests {
             )),
             "the word of a message still here was not found on a page of its row or its \
              text, so the reading cannot see a copy: {places:?}"
+        );
+    }
+
+    /// How many messages of the rest the finding writes around the planted
+    /// ones: enough that the pages holding them split and are reused.
+    const THE_REST_AT_A_SMALL_SIZE: usize = 3_000;
+    /// How many planted messages the finding takes off.
+    const PLANTED_AT_A_SMALL_SIZE: usize = 300;
+
+    /// D42: what the file and its write log keep of mail taken off through
+    /// 13-44.8's path, after the next check, pinned as today's behaviour.
+    /// Read on 2026-10-03 at this size: before the taking off, all 300
+    /// messages had copies in the file and the write log; after it and the
+    /// next check, none had a copy in either. Building secure delete on every
+    /// write or a command that compacts the file changes nothing here;
+    /// taking secure delete out of the removal does.
+    #[test]
+    fn test_what_the_file_keeps_of_mail_taken_off_after_the_next_check() {
+        let home = tempfile::tempdir().expect("a folder to leave nothing in");
+        let cache = MessageCache::new(home.path().to_path_buf(), None).expect("a store");
+        let folders = the_folders(&cache).expect("the folders");
+        the_rest(&cache, &folders, 0..THE_REST_AT_A_SMALL_SIZE).expect("the rest");
+        let planted = 1..PLANTED_AT_A_SMALL_SIZE + 1;
+        let rows = the_planted(&cache, &folders, planted.clone()).expect("the planted mail");
+        let these: BTreeSet<usize> = planted.collect();
+        assert_eq!(
+            what_is_left_of(&cache, home.path(), &these)
+                .expect("the files read")
+                .messages_with_a_copy,
+            PLANTED_AT_A_SMALL_SIZE,
+            "a planted message had no copy before it was taken off, so this case cannot \
+             see one stay"
+        );
+
+        taken_off(&cache, &rows).expect("the Trash emptied");
+        the_next_check(&cache).expect("the next check");
+
+        assert_eq!(
+            what_is_left_of(&cache, home.path(), &these).expect("the files read"),
+            Left::default(),
+            "the file or its write log keeps words of mail taken off this computer"
         );
     }
 }
