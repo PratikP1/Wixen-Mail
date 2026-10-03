@@ -696,4 +696,60 @@ mod tests {
              a numbered name, because a file with that name was already in its folder."
         );
     }
+
+    /// A saved message carrying one small file, the way a mail program saves
+    /// one.
+    const A_SAVED_MESSAGE_CARRYING_A_FILE: &str = "From: Ada Lovelace <ada@example.com>\r\n\
+To: me@example.com\r\n\
+Subject: The figures\r\n\
+Date: Mon, 20 Jul 2026 10:00:00 +0000\r\n\
+Message-ID: <figures@example.com>\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"between\"\r\n\
+\r\n\
+--between\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+The figures are attached.\r\n\
+--between\r\n\
+Content-Type: application/pdf; name=\"figures.pdf\"\r\n\
+Content-Disposition: attachment; filename=\"figures.pdf\"\r\n\
+Content-Transfer-Encoding: base64\r\n\
+\r\n\
+JVBERi0xLjQgdGhlIGZpZ3VyZXM=\r\n\
+--between--\r\n";
+
+    #[test]
+    fn test_an_imported_message_goes_out_again_with_its_files() {
+        // Imported mail has no server to fetch a file from again, so the copy
+        // the import kept is the only one this computer can write back out.
+        let store = a_store();
+        let imported = a_folder(&store, "Imported");
+        let read = message_files::read_one_message_as_it_arrived(
+            A_SAVED_MESSAGE_CARRYING_A_FILE.as_bytes(),
+        )
+        .expect("a saved message");
+        crate::application::importing_messages::file_one_imported_message(&store, &read, imported);
+        let place = tempfile::tempdir().expect("a folder to write into");
+
+        let said = one_folder_as_message_files(&store, "acct", "Imported", place.path(), &|_| {});
+
+        let written = every_file_under(place.path());
+        assert_eq!(written.len(), 1, "{said}: {written:?}");
+        let went_out = std::fs::read(place.path().join(&written[0])).expect("the message file");
+        let carried: Vec<(Option<String>, Vec<u8>)> =
+            crate::service::mime::attachments_with_bytes(&went_out)
+                .expect("a message this program can read")
+                .into_iter()
+                .map(|file| (file.described.filename, file.bytes))
+                .collect();
+        assert_eq!(
+            carried,
+            vec![(
+                Some("figures.pdf".to_string()),
+                b"%PDF-1.4 the figures".to_vec()
+            )],
+            "{said}"
+        );
+    }
 }

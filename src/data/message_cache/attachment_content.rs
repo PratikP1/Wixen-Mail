@@ -120,6 +120,16 @@ impl AttachmentWithContent {
             content: file,
         }
     }
+
+    /// The rows for every attachment a parse listed, each with its file from
+    /// the walk of the same message.
+    pub fn all_from_a_parse(
+        _message_id: i64,
+        _parsed: &[crate::service::mime::AttachmentInfo],
+        _files: &[crate::service::mime::AttachmentWithBytes],
+    ) -> Vec<Self> {
+        Vec::new()
+    }
 }
 
 /// What names one file in the store.
@@ -920,6 +930,84 @@ mod tests {
         );
         assert_eq!(record.described.content_id.as_deref(), Some("pic"));
         assert_eq!(record.content.as_deref(), Some(&b"JFIF"[..]));
+    }
+
+    /// A message carrying two small files, the second after the first.
+    const CARRYING_TWO_FILES: &str = "From: Ada Lovelace <ada@example.com>\r\n\
+To: me@example.com\r\n\
+Subject: The figures\r\n\
+MIME-Version: 1.0\r\n\
+Content-Type: multipart/mixed; boundary=\"between\"\r\n\
+\r\n\
+--between\r\n\
+Content-Type: text/plain\r\n\
+\r\n\
+Both are attached.\r\n\
+--between\r\n\
+Content-Type: text/plain; name=\"first.txt\"\r\n\
+Content-Disposition: attachment; filename=\"first.txt\"\r\n\
+\r\n\
+the first file\r\n\
+--between\r\n\
+Content-Type: text/csv; name=\"second.csv\"\r\n\
+Content-Disposition: attachment; filename=\"second.csv\"\r\n\
+\r\n\
+the second file\r\n\
+--between--\r\n";
+
+    #[test]
+    fn test_the_reader_and_the_import_build_the_same_records() {
+        // The reader keeping a message it fetched and the import filing a
+        // message read out of a file both turn one parse and its walk into
+        // rows through this one function, by position. Each row has to carry
+        // its own file: the nth file with the nth name, or somebody's invoice
+        // opens under the name of their holiday photograph.
+        let raw = CARRYING_TWO_FILES.as_bytes();
+        let parsed = crate::service::mime::parse(raw)
+            .expect("a message")
+            .attachments;
+        let files = crate::service::mime::attachments_with_bytes(raw).expect("its files");
+
+        let records = AttachmentWithContent::all_from_a_parse(9, &parsed, &files);
+
+        let paired: Vec<(i64, &str, &str, Option<&[u8]>)> = records
+            .iter()
+            .map(|record| {
+                (
+                    record.described.message_id,
+                    record.described.filename.as_str(),
+                    record.described.mime_type.as_str(),
+                    record.content.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            paired,
+            vec![
+                (9, "first.txt", "text/plain", Some(&b"the first file"[..])),
+                (9, "second.csv", "text/csv", Some(&b"the second file"[..])),
+            ]
+        );
+
+        // A walk that came back shorter than the parse leaves the row past its
+        // end listed and without a file, never borrowing another row's.
+        let short = AttachmentWithContent::all_from_a_parse(9, &parsed, &files[..1]);
+        let described_only: Vec<(&str, Option<&[u8]>)> = short
+            .iter()
+            .map(|record| {
+                (
+                    record.described.filename.as_str(),
+                    record.content.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            described_only,
+            vec![
+                ("first.txt", Some(&b"the first file"[..])),
+                ("second.csv", None),
+            ]
+        );
     }
 
     // ── A stored copy that cannot be trusted ────────────────────────────

@@ -1774,7 +1774,7 @@ mod end_to_end {
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, MessageCache};
     use crate::service::outlook_data_file::one_saved_message::for_tests::{
-        a_saved_message, an_appointment,
+        a_saved_message, a_saved_message_carrying_two_files, an_appointment,
     };
 
     /// An empty cache with one folder in it, the way an import finds one.
@@ -2120,6 +2120,178 @@ mod end_to_end {
                 .get_message_list(imported, "acct")
                 .expect("the folder listing")
                 .is_empty()
+        );
+    }
+
+    // ── The files an imported message carried ───────────────────────────
+
+    /// A few bytes shaped like the start of a PDF, which is what mail carries
+    /// more than anything.
+    const A_SMALL_PDF: &[u8] = b"%PDF-1.4 the figures for March";
+
+    /// A message carrying these files, each named, typed and sent in base64
+    /// the way a mail program sends one.
+    fn a_message_carrying(files: &[(&str, &str, &[u8])]) -> Vec<u8> {
+        use base64::Engine as _;
+        let mut message = String::from(
+            "From: Ada Lovelace <ada@example.com>\r\n\
+             To: me@example.com\r\n\
+             Subject: The figures\r\n\
+             Date: Mon, 20 Jul 2026 10:00:00 +0000\r\n\
+             Message-ID: <figures@example.com>\r\n\
+             MIME-Version: 1.0\r\n\
+             Content-Type: multipart/mixed; boundary=\"between\"\r\n\
+             \r\n\
+             --between\r\n\
+             Content-Type: text/plain\r\n\
+             \r\n\
+             The figures are attached.\r\n",
+        );
+        for (name, kind, bytes) in files {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            message.push_str(&format!(
+                "--between\r\n\
+                 Content-Type: {kind}; name=\"{name}\"\r\n\
+                 Content-Disposition: attachment; filename=\"{name}\"\r\n\
+                 Content-Transfer-Encoding: base64\r\n\
+                 \r\n\
+                 {encoded}\r\n"
+            ));
+        }
+        message.push_str("--between--\r\n");
+        message.into_bytes()
+    }
+
+    /// Every file stored for one message: its name, its type and its bytes.
+    fn the_files_kept_for(
+        cache: &MessageCache,
+        row: i64,
+    ) -> Vec<(String, String, Option<Vec<u8>>)> {
+        cache
+            .attachments_with_content(row)
+            .expect("the files stored for the message")
+            .into_iter()
+            .map(|file| {
+                (
+                    file.described.filename,
+                    file.described.mime_type,
+                    file.content,
+                )
+            })
+            .collect()
+    }
+
+    /// The one small PDF, as it should be stored.
+    fn the_small_pdf_kept() -> Vec<(String, String, Option<Vec<u8>>)> {
+        vec![(
+            "figures.pdf".to_string(),
+            "application/pdf".to_string(),
+            Some(A_SMALL_PDF.to_vec()),
+        )]
+    }
+
+    #[test]
+    fn test_a_message_imported_from_a_file_keeps_the_files_it_carried() {
+        // RESEARCH-5's finding beside GAP-13. The row said the message had
+        // files, and the files themselves were never stored, so opening one
+        // asked a server that never held the message and an export wrote the
+        // message without them. Nothing said so.
+        let (cache, folder_id) = a_cache();
+        let saved = a_message_carrying(&[("figures.pdf", "application/pdf", A_SMALL_PDF)]);
+
+        for read in each_message_in(&saved, ReadAs::OneMessage) {
+            file_one_imported_message(&cache, &read.expect("a message"), folder_id);
+        }
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            the_small_pdf_kept()
+        );
+    }
+
+    #[test]
+    fn test_a_message_in_a_mailbox_file_keeps_the_files_it_carried() {
+        // The same through the archive's reading, a message at a time, which
+        // is how a mailbox file, a zip and a folder are all read.
+        let (cache, folder_id) = a_cache();
+        let mut mailbox = b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n".to_vec();
+        mailbox.extend(a_message_carrying(&[(
+            "figures.pdf",
+            "application/pdf",
+            A_SMALL_PDF,
+        )]));
+
+        for read in each_message_in(&mailbox, ReadAs::OneAtATimeFromAnArchive) {
+            file_one_imported_message(&cache, &read.expect("a message"), folder_id);
+        }
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            the_small_pdf_kept()
+        );
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_keeps_the_files_it_carried() {
+        // 13-47 put a saved message's files inside the message it hands on,
+        // so they come in the way any imported message's files do.
+        let (cache, imported) = a_cache();
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let at = saved_in(&folder, &a_saved_message_carrying_two_files());
+
+        a_saved_outlook_message_brought_in(&cache, "acct", &at);
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, imported)),
+            vec![
+                (
+                    "invoice.pdf".to_string(),
+                    "application/pdf".to_string(),
+                    Some(b"%PDF-1.4 the invoice".to_vec())
+                ),
+                (
+                    "notes.txt".to_string(),
+                    "text/plain".to_string(),
+                    Some(b"plain notes".to_vec())
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_imported_from_a_file_keeps_its_signed_form_and_its_files() {
+        // Both, and neither in place of the other: the bytes the signature is
+        // over, and every file the message lists.
+        let (cache, folder_id) = a_cache();
+        let signed = a_signed_file();
+        let read =
+            message_files::read_one_message_as_it_arrived(&signed).expect("a signed message");
+        let listed: Vec<(String, String, Option<Vec<u8>>)> =
+            crate::service::mime::attachments_with_bytes(&signed)
+                .expect("the signed message's files")
+                .into_iter()
+                .map(|file| {
+                    (
+                        file.described.display_name(),
+                        file.described.mime_type,
+                        Some(file.bytes),
+                    )
+                })
+                .collect();
+        assert!(
+            !listed.is_empty(),
+            "the signed message lists no file, so this case asks nothing"
+        );
+
+        file_one_imported_message(&cache, &read, folder_id);
+
+        assert!(
+            cache.kept_signed_original_bytes().expect("the total") > 0,
+            "the form the signature is over was not recorded"
+        );
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            listed
         );
     }
 }
