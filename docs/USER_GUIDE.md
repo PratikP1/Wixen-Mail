@@ -2121,6 +2121,28 @@ says how many did. Import a Folder of Messages reads what this writes back as
 the same folders and messages. As with the mailbox file, nobody has yet opened
 these files in another mail program.
 
+### What goes out, and what does not
+
+A folder goes out in one of three shapes:
+
+- With the folders inside it, as one zip of mailbox files: Export Mailbox.
+- Without them, as one mailbox file: Export Folder as a Mailbox File.
+- With them, as one saved message per file and a folder for each folder:
+  Export Folder as Message Files.
+
+A message Outlook saved (`.msg`) is read and not written. Import Mailbox and
+Import a Folder of Messages take one, and nothing writes one, because writing
+was not part of what was asked for. Save As and Export Folder as Message Files
+write saved messages as `.eml` files instead.
+
+Wixen Mail does not write Outlook data files (`.pst`), and no menu offers to.
+Only Outlook can check one, and the one library that writes them is too new to
+trust with your mail. To take mail to Outlook, export a folder as message files
+and drag them into one of Outlook's folders, which has not yet been tried with
+files Wixen Mail wrote, or let Outlook download the same account. Reading an
+Outlook data file in is a different matter: Import Mailbox does that, as the
+table above says.
+
 Imported mail lands on this computer, under a folder called Imported, and
 never in one of your provider's folders. That is deliberate. Mail read out of
 a file has never been on your provider's server, and a folder that belongs to

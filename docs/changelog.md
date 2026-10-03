@@ -2358,14 +2358,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   arriving one level away from the folder they belong to, under the `.sbd` name. Nothing has
   read a Thunderbird profile this way yet; the folder walk is proven against folders of saved
   messages and mailbox files made by this program's tests.
-  What issue 53 asked for that this build does not do, gathered here from its three entries
-  above so the whole is in one place: export writes one zip of mailbox files and never a bare
-  `.mbox` or loose `.eml` files, so one folder for Thunderbird means unzipping by hand (point 4);
-  nothing reads or writes `.msg`, Outlook's single-message file (point 5); and nothing writes a
-  `.pst`, by the decision recorded beside the reader's library in `Cargo.toml`, that only reading
-  is needed and reading is the whole of the risk (point 6). Those three are later work and the
-  issue stays open for them. And, from the two entries above, no real Outlook data file has been
-  through the import and nobody has opened a file Save As wrote in another mail program.
+  What became of the rest of issue 53, gathered here on 2026-10-03 so the whole is in one place.
+  Point 4, a bare `.mbox` or loose `.eml` files: built, as File, Export Folder as a Mailbox File
+  and File, Export Folder as Message Files (both under Added in Unreleased). Point 5, `.msg`:
+  read through both imports and not written, because what was asked for was reading (under
+  Added in Unreleased). Point 6, `.pst` export: refused, and on no menu. Only Outlook can check
+  an Outlook data file, and the one library that writes them, a fork a few weeks old with one
+  author, is too new to trust with somebody's mail; the decision beside the reader's library in
+  `Cargo.toml` had already chosen the reader over that kind of writer. The guide says what to
+  do instead: export a folder as message files and drag them into one of Outlook's folders,
+  which nobody has tried with files Wixen Mail wrote, or let Outlook download the same account.
+  What nobody has tried yet: a real Outlook data file through the import, a file Save As or any
+  export wrote opened in another mail program, and any `.msg` beyond the four real ones read by
+  hand on 2026-10-03.
+  Written on 2026-09-17, this paragraph read: "What issue 53 asked for that this build does not
+  do, gathered here from its three entries above so the whole is in one place: export writes
+  one zip of mailbox files and never a bare `.mbox` or loose `.eml` files, so one folder for
+  Thunderbird means unzipping by hand (point 4); nothing reads or writes `.msg`, Outlook's
+  single-message file (point 5); and nothing writes a `.pst`, by the decision recorded beside
+  the reader's library in `Cargo.toml`, that only reading is needed and reading is the whole of
+  the risk (point 6). Those three are later work and the issue stays open for them. And, from
+  the two entries above, no real Outlook data file has been through the import and nobody has
+  opened a file Save As wrote in another mail program."
   On 2026-10-03 the first half of point 4 landed: File, Export Folder as a Mailbox File writes a
   bare mailbox file of one folder (see Added under Unreleased). The second half landed the same
   day: File, Export Folder as Message Files writes a folder as loose `.eml` files (see Added

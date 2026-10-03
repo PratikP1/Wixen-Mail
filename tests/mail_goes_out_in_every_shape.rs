@@ -15,12 +15,21 @@
 //! not at all, is what the census below refuses, and its companion plants one
 //! to prove the reading can see it.
 //!
+//! Two more readings hold what the pages promise about those shapes (13-49).
+//! No menu anywhere in the program offers to write an Outlook data file
+//! (`.pst`), which Wixen Mail does not write by decision 49 of phase 13 and the
+//! recorded decision beside the reader in `Cargo.toml`. And every export item
+//! on the File menu is named in the guide's Import and Export section, so the
+//! page cannot lose a command the menu holds. Each has a companion that plants
+//! a violation and requires a refusal.
+//!
 //! What this cannot see. It reads source, so it says the menu item, the arm,
 //! the handler and the question are written and joined, and not that a person
 //! choosing the item hears what the handler says; the accessibility scan and
 //! the tester's ear answer that.
 
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use wixen_mail::common::what_ships::what_ships;
 
@@ -73,10 +82,32 @@ const THE_FILES_WRITER: &str = "one_folder_as_message_files(";
 /// How every export handler's name begins.
 const AN_EXPORT_HANDLER: &str = "fn export_a";
 
-/// The fewest export handlers the window has: Export Mailbox, Export Folder
-/// as a Mailbox File and Export Folder as Message Files, as of 2026-10-03.
-/// Fewer means the census read less than the window holds.
+/// The fewest exports the window has, as handlers and as File menu items:
+/// Export Mailbox, Export Folder as a Mailbox File and Export Folder as
+/// Message Files, as of 2026-10-03. Fewer means a reading read less than the
+/// window holds.
 const AT_LEAST_THIS_MANY_EXPORTS: usize = 3;
+
+/// Where every menu the program builds is written.
+const THE_PRESENTATION: &str = "src/presentation";
+
+/// The guide every export command is named in.
+const THE_GUIDE: &str = "docs/USER_GUIDE.md";
+
+/// The heading of the guide's section on moving mail in and out, on a line of
+/// its own so a deeper heading of the same words is not it.
+const THE_SECTION: &str = "\n## Import and Export\n";
+
+/// How every export item's identifier begins.
+const AN_EXPORT_ID: &str = "ID_EXPORT";
+
+/// What a menu item names when it is about an Outlook data file, read in
+/// lower case with its letter's `&` taken off.
+const AN_OUTLOOK_DATA_FILE: [&str; 2] = ["outlook data file", ".pst"];
+
+/// The words that say a menu item writes something out, whole words only, so
+/// Import Mailbox's "a message Outlook saved" is not one.
+const WRITING_OUT: [&str; 6] = ["export", "exports", "write", "writes", "save", "saves"];
 
 /// What a release build compiles of the main window.
 fn the_window() -> String {
@@ -153,6 +184,134 @@ fn every_export_asks_the_folder_question(source: &str) -> Result<usize, String> 
         ));
     }
     Ok(handlers.len())
+}
+
+/// Every Rust source under `folder`, in a fixed order.
+fn every_source_under(folder: &Path) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in fs::read_dir(folder).expect("a folder of sources").flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(every_source_under(&path));
+        } else if path.extension().is_some_and(|ending| ending == "rs") {
+            found.push(path);
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Each menu builder in `source`, from `Menu::builder()` to the call that
+/// builds it, or to the end of the source when no call does, so a builder is
+/// read too far rather than not at all.
+fn the_menus_in(source: &str) -> Vec<&str> {
+    source
+        .match_indices("Menu::builder()")
+        .map(|(at, _)| {
+            let rest = &source[at..];
+            rest.find(".build()").map_or(rest, |end| &rest[..end])
+        })
+        .collect()
+}
+
+/// Each call a menu builder makes, with its comment lines left out, so a
+/// comment saying what the menu does not offer is not an item offering it.
+fn the_items_in(menu: &str) -> Vec<String> {
+    let code = menu
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    code.split(".append").skip(1).map(str::to_owned).collect()
+}
+
+/// Whether a menu item's label or help names an Outlook data file together
+/// with a word for writing one out.
+fn offers_to_write_an_outlook_data_file(item: &str) -> bool {
+    let read = item.replace('&', "").to_lowercase();
+    let names_the_file = AN_OUTLOOK_DATA_FILE.iter().any(|name| read.contains(name));
+    let writes_out = read
+        .split(|letter: char| !letter.is_alphanumeric())
+        .any(|word| WRITING_OUT.contains(&word));
+    names_the_file && writes_out
+}
+
+/// How much a reading of menus read.
+#[derive(Debug, Default, PartialEq)]
+struct MenusRead {
+    menus: usize,
+    items: usize,
+}
+
+/// What `source`'s menus hold, when no item offers to write an Outlook data
+/// file; otherwise every item that does.
+fn no_menu_offers_to_write_an_outlook_data_file(source: &str) -> Result<MenusRead, String> {
+    let menus = the_menus_in(source);
+    let items: Vec<String> = menus.iter().flat_map(|menu| the_items_in(menu)).collect();
+    let offering: Vec<&str> = items
+        .iter()
+        .filter(|item| offers_to_write_an_outlook_data_file(item))
+        .map(|item| item.trim())
+        .collect();
+    if !offering.is_empty() {
+        return Err(format!(
+            "these menu items offer to write an Outlook data file, which Wixen Mail does not \
+             write (decision 49 of phase 13, and the decision beside the reader in Cargo.toml): \
+             {offering:?}"
+        ));
+    }
+    Ok(MenusRead {
+        menus: menus.len(),
+        items: items.len(),
+    })
+}
+
+/// The label of every File menu item whose identifier begins `ID_EXPORT`, as
+/// written.
+fn the_export_labels(file_menu: &str) -> Vec<&str> {
+    file_menu
+        .match_indices(AN_EXPORT_ID)
+        .filter_map(|(at, _)| {
+            let rest = &file_menu[at..];
+            let id = &rest[..rest.find(',')?];
+            the_text_after(rest, &format!("{id},"))
+        })
+        .collect()
+}
+
+/// A label as a person reads it: no `&`, no shortcut after a tab, no
+/// ellipsis.
+fn a_label_as_read(label: &str) -> String {
+    let shown = label.split('\t').next().unwrap_or(label);
+    shown.trim_end_matches("...").replace('&', "")
+}
+
+/// The section of `page` under `heading`, up to the next heading of its rank,
+/// with its lines joined, since prose wraps.
+fn the_section(page: &str, heading: &str) -> Option<String> {
+    let rest = &page[page.find(heading)? + 1..];
+    let end = rest[heading.len()..]
+        .find("\n## ")
+        .map_or(rest.len(), |at| at + heading.len());
+    Some(rest[..end].split_whitespace().collect::<Vec<_>>().join(" "))
+}
+
+/// How many export labels `section` names, when it names every one;
+/// otherwise the ones it leaves out.
+fn every_export_is_named_in(labels: &[String], section: &str) -> Result<usize, String> {
+    let left_out: Vec<&String> = labels
+        .iter()
+        .filter(|label| !section.contains(label.as_str()))
+        .collect();
+    if !left_out.is_empty() {
+        return Err(format!(
+            "the guide's Import and Export section names {} of the File menu's {} export items \
+             and leaves out {left_out:?}",
+            labels.len() - left_out.len(),
+            labels.len()
+        ));
+    }
+    Ok(labels.len())
 }
 
 #[test]
@@ -276,5 +435,114 @@ fn test_the_folder_question_reading_refuses_an_export_that_skips_it() {
             .as_ref()
             .is_err_and(|why| why.contains("fn export_a_thing(")),
         "an export that never asks the folder question was read as asking it: {refused:?}"
+    );
+}
+
+#[test]
+fn test_no_menu_offers_to_write_an_outlook_data_file() {
+    let sources = every_source_under(Path::new(THE_PRESENTATION));
+    let mut read = MenusRead::default();
+    for path in &sources {
+        let source = what_ships(&fs::read_to_string(path).expect("a presentation source"));
+        let counted = no_menu_offers_to_write_an_outlook_data_file(&source);
+        let Ok(here) = counted else {
+            panic!("{}: {}", path.display(), counted.err().unwrap_or_default());
+        };
+        read.menus += here.menus;
+        read.items += here.items;
+    }
+    println!(
+        "read {} menus holding {} items in {} sources under {THE_PRESENTATION}",
+        read.menus,
+        read.items,
+        sources.len()
+    );
+
+    // The File menu is one of the menus read: a reading that reached none of
+    // its export items read less than the program builds.
+    let window = the_window();
+    let the_file_menu_was_read = the_menus_in(&window)
+        .iter()
+        .any(|menu| the_export_labels(menu).len() >= AT_LEAST_THIS_MANY_EXPORTS);
+    assert!(
+        the_file_menu_was_read,
+        "the reading read {} menus holding {} items in {} sources and none of them held the \
+         File menu's {AT_LEAST_THIS_MANY_EXPORTS} export items, so it read less than the \
+         program builds",
+        read.menus,
+        read.items,
+        sources.len()
+    );
+}
+
+#[test]
+fn test_every_export_on_the_file_menu_is_named_in_the_guide() {
+    let window = the_window();
+    let labels: Vec<String> = the_export_labels(the_file_menu(&window))
+        .into_iter()
+        .map(a_label_as_read)
+        .collect();
+    let guide = fs::read_to_string(THE_GUIDE).expect("the guide");
+    let section = the_section(&guide, THE_SECTION).expect("the guide has its Import and Export");
+    assert!(
+        labels.len() >= AT_LEAST_THIS_MANY_EXPORTS,
+        "the reading found {} export items on the File menu, {labels:?}, and the menu has at \
+         least {AT_LEAST_THIS_MANY_EXPORTS}, so it read less than the menu holds",
+        labels.len()
+    );
+
+    let named = every_export_is_named_in(&labels, &section);
+
+    let Ok(exports) = named else {
+        panic!("{}", named.err().unwrap_or_default());
+    };
+    println!("the guide's Import and Export section names all {exports} export items: {labels:?}");
+}
+
+#[test]
+fn test_the_outlook_data_file_reading_refuses_a_planted_export_item() {
+    let planted = "let file = Menu::builder()\n\
+                   \x20   .append_item(ID_EXPORT_MESSAGES, \"&Export Mailbox...\", \"Write it out\")\n\
+                   \x20   .append_item(\n\
+                   \x20       ID_EXPORT_AN_OUTLOOK_DATA_FILE,\n\
+                   \x20       \"Export as an Outlook &Data File (.pst)...\",\n\
+                   \x20       \"Write this folder's mail into a file Outlook opens\",\n\
+                   \x20   )\n\
+                   \x20   .build();\n";
+
+    let refused = no_menu_offers_to_write_an_outlook_data_file(planted);
+
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|why| why.contains("Export as an Outlook &Data File (.pst)...")),
+        "a menu item offering to write an Outlook data file was read as offering nothing of \
+         the kind: {refused:?}"
+    );
+}
+
+#[test]
+fn test_the_guide_reading_refuses_a_section_missing_an_export() {
+    let window = the_window();
+    let labels: Vec<String> = the_export_labels(the_file_menu(&window))
+        .into_iter()
+        .map(a_label_as_read)
+        .collect();
+    let [first, second, third, ..] = labels.as_slice() else {
+        panic!("the File menu holds fewer than three export items: {labels:?}");
+    };
+    let planted = format!(
+        "## Import and Export | {first} | One zip of mailbox files | | {second} | One mailbox \
+         file |"
+    );
+
+    let refused = every_export_is_named_in(&labels, &planted);
+
+    assert!(
+        refused
+            .as_ref()
+            .is_err_and(|why| why.contains(third.as_str())),
+        "a section naming {first:?} and {second:?} and not {third:?} was read as naming every \
+         export: {refused:?}"
     );
 }

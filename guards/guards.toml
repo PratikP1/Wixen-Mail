@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 625 records have arrived since and have not been through it.
+# 626 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37579,7 +37579,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 6 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 10 },
 ]
 
 # A message file opened whether or not a file already has its name, so an
@@ -37652,7 +37652,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 6 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 10 },
 ]
 
 # A saved Outlook message's one-byte text read as Western European whatever
@@ -37796,4 +37796,28 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/wired.rs", tests = 77 },
+]
+
+# An export item renamed on the File menu and not in the guide, so the page
+# names a command the menu no longer holds and the new name nowhere (13-49).
+# The plan put this break on the guide's row, and removing the row alone
+# reddens nothing: the guide names the command again in the paragraph under
+# the table, so the reading still finds it. The menu moving and the page not
+# following is the way the two drift apart, so the break is there. Written
+# 2026-10-03 by 13-49.
+[[guard]]
+name = "every export on the File menu is named in the guide"
+file = "src/presentation/wx_app.rs"
+suite = "mail_goes_out_in_every_shape"
+before = '''                ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES,
+                "E&xport Folder as Message Files...",'''
+after = '''                ID_EXPORT_A_FOLDER_AS_MESSAGE_FILES,
+                "E&xport Folder as Separate Messages...",'''
+red = [
+    "test_every_export_on_the_file_menu_is_named_in_the_guide",
+    "test_export_folder_as_message_files_is_on_the_file_menu_with_no_shortcut",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 10 },
 ]
