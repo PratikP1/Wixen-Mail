@@ -3327,8 +3327,10 @@ fn test_nothing_treats_a_saved_search_as_a_folder_on_a_server() {
 
     for (what, body) in [
         (
+            // The question every export asks, in one place since 13-45;
+            // tests/mail_goes_out_in_every_shape.rs holds every export to it.
             "writing a mailbox out to a file",
-            body_of(&ship, "fn export_a_mailbox("),
+            body_of(&ship, "fn a_folder_to_write_out("),
         ),
         (
             "carrying on the download with this folder first",

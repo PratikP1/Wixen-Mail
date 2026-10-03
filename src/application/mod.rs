@@ -47,6 +47,7 @@ pub mod emptying_the_trash;
 pub mod encrypted_mail;
 pub mod event_alerts;
 pub mod export_tree;
+pub mod exporting_mail;
 pub mod favourites;
 pub mod feedback_report;
 pub mod filing;

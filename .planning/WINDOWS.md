@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 686
+open_count: 687
 waived_count: 0
-fixed_count: 102
-total_count: 788
+fixed_count: 104
+total_count: 791
 last_updated: 2026-10-03T06:00:00.000Z
 ---
 
@@ -803,6 +803,9 @@ last_updated: 2026-10-03T06:00:00.000Z
 | 786 | 13 | todo | src/application/emptying.rs | 252 | 13-44.8 (its D35), found by its planner and not fixed, for Pratik: Empty Folder's question on the Trash every POP account shares says "They will be taken off this computer for good, and there is no other copy." With Leave mail on the server on, its default, the POP server may still hold those messages, so "there is no other copy" overstates what is lost; the words they said are gone from this computer since 13-44.8 either way. Recommendation: say "and Wixen Mail keeps no other copy", which is true whatever the server holds, and leave the rest of the sentence. The sentence is spoken, so changing it is a pull request with the NVDA run | open |  | 2026-10-02T23:30:00.000Z |  |
 | 787 | 13 | todo | src/data/message_cache/taken_off_this_computer.rs |  | 13-44.8, for phase 14 under REAL-02's delete line: a POP message taken off this computer (Delete in the Trash, Delete Permanently, Empty Folder or the Empty the Trash setting), then the account checked against a real POP server: with Leave mail on the server on, the message is not downloaded again; with Then remove it after this many days set, it still leaves the server on the day counted from its first download; and after that check the mail database and its write log hold none of its words. Held today only by application::pop_sync's test_a_message_taken_off_this_computer_is_not_downloaded_again_and_still_leaves_on_its_day against a scripted server and by the byte readings of data::message_cache::taken_off_this_computer | open |  | 2026-10-02T23:30:00.000Z |  |
 | 788 | 13 | todo | src/data/message_cache/mod.rs |  | 13-44.9, for Pratik. The question as he was asked it on 2026-09-30, by 13-44.8's planner: the privacy page says what taking a message off cannot reach, the copies earlier changes left in unused space in the file among them; should every write in the mail database overwrite what it frees, or should a command compact the database? His answer that day: "Yes to the measuring as well." The measurement is on docs/development/measurements.md, the 56 rows beginning Forgetting at 12,872 messages and Forgetting at 200,000 messages, taken 2026-10-02 at 61a1636b in a release build. The choices: secure delete off (today), fast or on for every write; a command, VACUUM or incremental vacuum, and when it would run; both; or neither. The recommendation, by the rule 13-44.9's D41 wrote before the run. Step 1, what reaches every copy the reading found: nothing does. After the next check at 200,000, off left words of 9 of 1,000 messages, on 1, fast 1 (the rows ending secure delete off, on and fast: what the file and its write log keep); at 12,872, on left 1. VACUUM, read straight after with nothing checkpointed, left 9 at 200,000, on free pages and in the write log (Forgetting at 200,000 messages, VACUUM: what the file and its write log keep); incremental vacuum left 4 at 12,872 and 7 at 200,000. So nothing passes the first two steps, and the rule names what the cheapest cannot do: the cheapest is neither, today, which leaves words of about 9 messages in 1,000 at 200,000 in unused space on pages of messages, the copies earlier changes left. Beyond the rule, as figures and not a choice: on and fast are level with each other (1 of 1,000 each) and cost nothing the runs could separate from off (a check's writes, the emptying and the compaction within 8%), so if a smaller remainder is worth having they are the step the figures support, and the rule does not choose between them; VACUUM needs about twice the file in extra disk at once (349.0 MB temporary and 352.0 MB of write log for a 358.6 MB file) and a write arriving as it starts at 200,000 would wait about 4.5 s, derived, against the store's 5 s limit. Each figure is one run and runs vary: the small-size finding left copies in 8 of 15 runs. Not measured: VACUUM followed by a truncating checkpoint, and a setting and a command together; either is the next measurement if a guarantee is wanted. A figure that contradicts a sentence on the privacy page: under Mail taken off this computer keeps nothing it said, the sentence after that the mail database and its write log hold none of the message's words, and the heading itself, read alone, say none stays; 9 of 1,000 did at 200,000. The bullet below them, Copies that earlier changes to the message left in unused space elsewhere in the mail database, covers them, so the page is not wrong taken whole, and the choice above decides whether that bullet stays. If either choice is built, data::message_cache::what_forgetting_costs's test_what_the_file_keeps_of_mail_taken_off_after_the_next_check turns round in the same commit (D42) | open |  | 2026-10-03T06:00:00.000Z |  |
+| 789 | 13 | unrun-verify | src/application/exporting_mail.rs |  | 13-45, for the tester: no mailbox file that File, Export Folder as a Mailbox File wrote has been opened in another mail program. Open one in Thunderbird (Thunderbird Daily is installed on this machine, RESEARCH-5) and in the mail program you use, and say whether every message arrives with its date, sender and attachments. Not yet heard under NVDA either: the item and its letter F on the File menu, its description, the opening sentence, the progress lines and the closing sentence naming the folders inside that were left out. Held today by this program's own reader reading the file back (application::exporting_mail's tests) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T04:50:00.000Z |  |
+| 790 | 13 | deviation | src/presentation/wx_app.rs |  | 13-45: Export Mailbox wrote every message of a folder after the first without the empty line in front of its separator, from 1fbe263b (2026-08-29), which built each message in a fresh buffer, until 51fbc763, so this program's own import read a folder back as its first message with the rest inside its body. Found by 13-45's round trip through the step the zip export shares; fixed by exporting_mail::one_stored_message_added asking where the message lands, and held by test_messages_built_a_buffer_at_a_time_read_back_as_as_many_messages. A zip exported in that time still holds every message's text, and exporting again gives one that reads back whole | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
+| 791 | 13 | deviation | tests/mail_taken_off_leaves_no_words_behind.rs |  | 13-45: test_nothing_else_compacts_the_search_index was red on main from 13-44.9's merge (3b90bed8) until 51fbc763, because it read what_forgetting_costs.rs, compiled only for tests through the #[cfg(test)] on its mod line, as a second caller that ships. 13-44.9's merge did not run the target. The census now skips a module its parent declares under #[cfg(test)], with a case telling the two apart, and its record is remeasured | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 
 ````json
 [
@@ -10261,6 +10264,42 @@ last_updated: 2026-10-03T06:00:00.000Z
     "reason": "",
     "recorded_at": "2026-10-03T06:00:00.000Z",
     "resolved_at": null
+  },
+  {
+    "id": 789,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/exporting_mail.rs",
+    "line": null,
+    "description": "13-45, for the tester: no mailbox file that File, Export Folder as a Mailbox File wrote has been opened in another mail program. Open one in Thunderbird (Thunderbird Daily is installed on this machine, RESEARCH-5) and in the mail program you use, and say whether every message arrives with its date, sender and attachments. Not yet heard under NVDA either: the item and its letter F on the File menu, its description, the opening sentence, the progress lines and the closing sentence naming the folders inside that were left out. Held today by this program's own reader reading the file back (application::exporting_mail's tests) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T04:50:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 790,
+    "kind": "deviation",
+    "phase": "13",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13-45: Export Mailbox wrote every message of a folder after the first without the empty line in front of its separator, from 1fbe263b (2026-08-29), which built each message in a fresh buffer, until 51fbc763, so this program's own import read a folder back as its first message with the rest inside its body. Found by 13-45's round trip through the step the zip export shares; fixed by exporting_mail::one_stored_message_added asking where the message lands, and held by test_messages_built_a_buffer_at_a_time_read_back_as_as_many_messages. A zip exported in that time still holds every message's text, and exporting again gives one that reads back whole",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-03T04:50:00.000Z",
+    "resolved_at": "2026-10-03T04:50:00.000Z"
+  },
+  {
+    "id": 791,
+    "kind": "deviation",
+    "phase": "13",
+    "file": "tests/mail_taken_off_leaves_no_words_behind.rs",
+    "line": null,
+    "description": "13-45: test_nothing_else_compacts_the_search_index was red on main from 13-44.9's merge (3b90bed8) until 51fbc763, because it read what_forgetting_costs.rs, compiled only for tests through the #[cfg(test)] on its mod line, as a second caller that ships. 13-44.9's merge did not run the target. The census now skips a module its parent declares under #[cfg(test)], with a case telling the two apart, and its record is remeasured",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-03T04:50:00.000Z",
+    "resolved_at": "2026-10-03T04:50:00.000Z"
   }
 ]
 ````

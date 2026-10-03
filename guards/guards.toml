@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 610 records have arrived since and have not been through it.
+# 613 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3805,7 +3805,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
@@ -9312,7 +9312,7 @@ red = [
     "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
-    { file = "src/application/export_tree.rs", tests = 39 },
+    { file = "src/application/export_tree.rs", tests = 43 },
     { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
@@ -12753,7 +12753,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
@@ -12795,7 +12795,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
@@ -16052,16 +16052,22 @@ red = [
     "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
+    "data::message_cache::in_the_trash::tests::test_what_has_been_in_the_trash_leaves_out_deleted_filed_here_and_waiting_rows",
     "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
+# Re-measured 2026-10-03 by 13-45, when removing five tests from
+# importing_messages.rs named it: the break also reddened a test 13-44.6
+# added in in_the_trash.rs, a file the record did not name, so the count
+# check could not have seen it fall behind.
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
 # test added to `messages.rs`: six short, none of them that plan's, all
 # 11-07.1's and 11-07.2's of 2026-09-19 in `moves_waiting` on both layers,
@@ -25225,7 +25231,7 @@ red = [
     "application::importing_messages::tests::test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
 ]
 
 # File, Save As reaches a handler that writes, held by a reading of the main
@@ -37424,7 +37430,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 3 },
+    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 4 },
 ]
 
 # The file reading searches only the first page of the bytes it is handed,
@@ -37486,4 +37492,86 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+]
+
+# A mailbox file nothing went into put in place anyway, so a backup already
+# at the name chosen is replaced by an empty file (13-45, T-13-45-01).
+# Written 2026-10-02 by 13-45.
+[[guard]]
+name = "a mailbox file nothing went into leaves the name chosen as it was"
+file = "src/service/mailbox_archive.rs"
+before = '''        if !anything_went_in {
+            drop(writing);'''
+after = '''        if false {
+            drop(writing);'''
+red = [
+    "application::exporting_mail::tests::test_a_file_already_at_the_name_chosen_keeps_its_bytes_when_no_message_went_in",
+    "application::exporting_mail::tests::test_a_folder_where_no_message_went_in_writes_no_file",
+    "service::mailbox_archive::tests::test_a_mailbox_file_nothing_went_into_leaves_the_file_already_there_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 4 },
+    { file = "src/service/mailbox_archive.rs", tests = 36 },
+]
+
+# The folders inside counted without the mark between a folder and the one
+# inside it, so the folder itself, and a sibling sharing the start of its
+# name, are said to be left out (13-45, T-13-45-02). Written 2026-10-02 by
+# 13-45.
+[[guard]]
+name = "a mailbox file of one folder counts only the folders inside it as left out"
+file = "src/application/exporting_mail.rs"
+before = '''    let inside = format!("{folder}/");'''
+after = '''    let inside = folder.to_string();'''
+red = [
+    "application::exporting_mail::tests::test_a_file_already_at_the_name_chosen_keeps_its_bytes_when_no_message_went_in",
+    "application::exporting_mail::tests::test_one_folder_written_as_a_mailbox_file_reads_back_as_the_same_messages",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 4 },
+]
+
+# Export Folder as a Mailbox File stops asking the folder question, so a
+# saved search or a label is written out as though it were a folder (13-45,
+# T-13-45-03). Anchored on the handler's signature down to the call, because
+# the call line alone is in Export Mailbox too. Written 2026-10-03 by 13-45.
+[[guard]]
+name = "Export Folder as a Mailbox File asks whether what is chosen is a folder"
+file = "src/presentation/wx_app.rs"
+suite = "mail_goes_out_in_every_shape"
+before = '''fn export_a_folder_as_a_mailbox_file(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::{export_tree, exporting_mail};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let Some((account, folder)) = a_folder_to_write_out(state, cache, ui_tx, runtime, a11y) else {
+        return;
+    };'''
+after = '''fn export_a_folder_as_a_mailbox_file(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::{export_tree, exporting_mail};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let (Some(account), Some(folder)) = (Some(String::new()), Some(String::new())) else {
+        return;
+    };'''
+red = [
+    "test_every_export_asks_whether_what_is_chosen_is_a_folder",
+    "test_export_folder_as_a_mailbox_file_reaches_its_writer",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 4 },
 ]

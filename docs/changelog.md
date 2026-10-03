@@ -8,6 +8,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Export Folder as a Mailbox File, on the File menu (#53, point 4; GAP-13).** Issue 53
+  said: "Export only as a zip of `.mbox`; never a bare `.mbox` or loose `.eml`, so one folder
+  for Thunderbird means unzipping by hand." File, Export Folder as a Mailbox File (`Alt+F`, then
+  `F`, no shortcut key) writes the mail of the folder you are on into one mailbox file, under
+  the name you choose in a Save dialog that offers the folder's own name. The folders inside
+  it are not in the file: the sentence at the end says how many were left out, and that Export
+  Mailbox writes a folder together with the folders inside it. A message whose text was never
+  downloaded, a file this computer does not have and a signature whose proof was not kept are
+  each counted and said in the words Export Mailbox uses. The file is written under another
+  name and put in place only at the end, so a folder where no message went in, or an export
+  that stops partway, leaves a file already at that name exactly as it was, and says why. A
+  saved search, a label or a branch is refused with the sentence Export Mailbox says. The
+  version does not move: no build has been cut since 1.0.0-alpha.1. Known limitations: no
+  file this writes has been opened in another mail program, only read back by
+  this program's own import; and nobody has heard the item, its description or its sentences
+  with a screen reader.
 - **Empty the Trash when Wixen Mail closes, and on POP accounts (GAP-14).** The second half
   of Pratik's request of 2026-09-29: "delete deleted mail upon the close of the app", and
   "pop/smtp accounts". "Empty the Trash (experimental)" (`Alt+Y`) now offers
@@ -1259,6 +1275,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Export Mailbox keeps every message of a folder apart again.** Since 2026-08-29 each
+  message went into a folder's mailbox file without the empty line in front of the line that
+  starts the next message, so this program's own Import Mailbox read a folder of many messages
+  back as its first message, with every other message inside that one's body. Found on
+  2026-10-02 while writing the export of one folder as a mailbox file, which builds each
+  message the same way. A file exported before this version still holds every message's
+  text, and exporting the folder again gives one that reads back whole.
 - **A POP message deleted here is no longer downloaded again by the next check (GAP-14).**
   With "Leave mail on the server after downloading it" on, which is the default, a POP
   message moved to the Trash came straight back to the Inbox at the next check, because the
@@ -2302,6 +2325,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   is needed and reading is the whole of the risk (point 6). Those three are later work and the
   issue stays open for them. And, from the two entries above, no real Outlook data file has been
   through the import and nobody has opened a file Save As wrote in another mail program.
+  On 2026-10-03 the first half of point 4 landed: File, Export Folder as a Mailbox File writes a
+  bare mailbox file of one folder (see Added under Unreleased).
 
 - **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
   build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."

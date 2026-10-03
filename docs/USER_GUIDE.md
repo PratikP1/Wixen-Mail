@@ -2088,16 +2088,27 @@ type a message gives its own attachment is written by whoever sent it.
 
 ## Import and Export
 
-Three commands on the File menu move mail in and out of Wixen Mail. None of
-them has a shortcut key, because each is done once, when you move in or move
-out, and a key nobody presses twice would sit in the way of one somebody
-presses every day. Press `Alt+F` to open the File menu and arrow to them.
+Four commands on the File menu move mail in and out of Wixen Mail. None of
+them has a shortcut key, because each is done once in a while, when you move
+in, move out or keep a copy, and a key nobody presses twice would sit in the
+way of one somebody presses every day. Press `Alt+F` to open the File menu and
+arrow to them.
 
 | Command | What it takes | What it leaves |
 | --- | --- | --- |
 | Import Mailbox | One file: a zip of mailbox files, a single saved message (`.eml`), a mailbox file (`.mbox`), or an Outlook data file (`.pst`) | Folders under Imported, in the shape the mail was in |
 | Import a Folder of Messages | A folder you choose, holding saved messages and mailbox files, with folders inside it | The same, one folder here for each folder there |
 | Export Mailbox | The folder you are looking at, and everything inside it | One zip of mailbox files, one per folder, with the folder names kept |
+| Export Folder as a Mailbox File | The mail of the folder you are looking at, without the folders inside it | One mailbox file (`.mbox`), under the name you choose; the folder's own name is offered |
+
+Export Folder as a Mailbox File writes one folder only. When it finishes, the
+sentence says how many folders inside it were left out; to write a folder
+together with the folders inside it, use Export Mailbox. If no message went
+into the file, for example because none of the folder's messages has been
+downloaded yet, no file is written and a file you already had under that name
+is left as it was. Nobody has yet opened a file it writes in another mail
+program, so check that one opens where you take it before you delete the mail
+here.
 
 Imported mail lands on this computer, under a folder called Imported, and
 never in one of your provider's folders. That is deliberate. Mail read out of
