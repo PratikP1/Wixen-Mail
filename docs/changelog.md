@@ -1316,6 +1316,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Imported messages keep their files (GAP-13).** Until this build a message imported from
+  a saved message, a mailbox file, a zip or a folder arrived with its words and a mark saying
+  it had files, and without the files: opening one asked a mail server that had never held
+  the message, and exporting the folder wrote the message without them. Nothing said so.
+  Found on 2026-09-24 while researching phase 13. Imported messages now bring their files,
+  messages Outlook saved included, and exporting the folder writes them out again. A file
+  larger than 25 MB is listed on its message and not kept, and the sentence at the end of the
+  import counts those and says they stay only in what you imported from. The version does not
+  move for this: no build has been cut since 1.0.0-alpha.1. Known limitations: messages read
+  out of an Outlook data file (`.pst`) still arrive without their files, which stay in the
+  data file, as that import's sentence says; nobody has yet imported a real mailbox file with
+  attachments and opened one of its files.
 - **Export Mailbox keeps every message of a folder apart again.** Since 2026-08-29 each
   message went into a folder's mailbox file without the empty line in front of the line that
   starts the next message, so this program's own Import Mailbox read a folder of many messages

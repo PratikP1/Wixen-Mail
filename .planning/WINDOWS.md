@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 695
+open_count: 696
 waived_count: 0
-fixed_count: 104
-total_count: 799
-last_updated: 2026-10-03T22:00:00.000Z
+fixed_count: 105
+total_count: 801
+last_updated: 2026-10-03T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -812,8 +812,10 @@ last_updated: 2026-10-03T22:00:00.000Z
 | 795 | 13 | unrun-verify | src/application/importing_messages.rs |  | 13-48, for Pratik (RESEARCH-5's question 8): no message saved by his own Outlook has been through the import. Save two or three messages from Outlook, one with an attached file and one from a work address, import one with File, Import Mailbox and the folder holding them with Import a Folder of Messages, and compare what arrived with Outlook: subject, sender, recipients, date, words and attached files, and whether the closing sentence's counts match what stayed behind. Held today by application::importing_messages::end_to_end::test_a_saved_outlook_message_is_filed_under_imported_with_its_subject_and_text over a file the tests build, and by 13-47's reading of four real samples by hand. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T20:00:00.000Z |  |
 | 796 | 13 | unrun-verify | src/presentation/wx_app.rs |  | 13-48, for the tester: not yet heard under a screen reader: Import Mailbox's description naming a message Outlook saved, the picker's file type line, Mailboxes, saved messages and Outlook files, the refusal of an appointment saved as a .msg file, and the closing sentence with its counts of what stayed in a saved message and its last line saying this reading is new. Held today by the sentence cases in application::importing_messages and application::import_tree. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T20:00:00.000Z |  |
 | 797 | 13 | todo | src/presentation/wx_app.rs |  | 13-48: a folder or zip holding a file that begins the way a saved Outlook message does and is something else, such as an old Word or Excel document, has its folder made under Imported before the reader refuses the file, so a folder of old Office documents arrives as an empty folder counted among the folders imported, while the file is counted as not mail. The first look at an entry reads only its opening bytes, which cannot tell the two apart. Recommended: make a folder only when the first message for it is filed, which needs fill_folders_from to make folders when first used and the folder count to come from folders really made | open |  | 2026-10-03T20:00:00.000Z |  |
-| 798 | 13 | todo | src/presentation/wx_app.rs |  | 13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words | open |  | 2026-10-03T20:00:00.000Z |  |
+| 798 | 13 | todo | src/presentation/wx_app.rs |  | 13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words. Since 13-50 on 2026-10-03 the carrying is one function, FoldersImported::carry_the_mail_counts in application::import_tree, which carries the count of files too large to keep as well; the three named here are still not carried, and that function is where they would go | open |  | 2026-10-03T20:00:00.000Z |  |
 | 799 | 13 | unrun-verify | docs/USER_GUIDE.md |  | 13-49, for Pratik (RESEARCH-5's A6): whether his Outlook takes message files dragged into one of its folders. Export a folder with File, Export Folder as Message Files, drag two or three of the .eml files into a folder in classic Outlook, and say whether each arrives as a message with its sender, date, words and attached files, or as an attachment, or not at all. Until he answers, the guide's What goes out, and what does not offers this as the way to take mail to Outlook and says it has not yet been tried with files Wixen Mail wrote; if Outlook refuses them, that advice comes out and letting Outlook download the same account is the one left. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T22:00:00.000Z |  |
+| 800 | 13 | unmet-truth | src/application/importing_messages.rs |  | RESEARCH-5's finding beside GAP-13, recorded so the gap's history stays visible: until 13-50 a message imported from a saved message, a mailbox file, a zip or a folder was filed with its row, its text and its signed form and without the files it carried, while the row said it had files, so opening one asked a server that never held the message and exporting the folder wrote it without them, and no page, changelog line or ledger entry said so. Measured red by 13-50's first case (left: [], no file stored) before the fix. Fixed in 13-50's 13f0f0a0: file_one_imported_message stores the files through AttachmentWithContent::all_from_a_parse, which the reader's keeping of a fetched message shares, saved Outlook messages included, and 673ce623 counts and says a file over the 25 MB the store keeps. The .pst import still leaves files in the data file and says so | fixed |  | 2026-10-03T23:30:00.000Z | 2026-10-03T23:30:00.000Z |
+| 801 | 13 | unrun-verify | src/application/importing_messages.rs |  | 13-50, for the tester: no real mailbox file with attachments has been imported and a file opened from the imported message. Import a mailbox file or a zip exported by another mail program that holds messages with attachments, open one of those messages, open its attached file from the reader, and listen to the closing sentence, including the sentence for a file over 25 MB if one is there. Held today by application::importing_messages::end_to_end's kept-files cases and test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said over files the tests build. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T23:30:00.000Z |  |
 
 ````json
 [
@@ -10387,7 +10389,7 @@ last_updated: 2026-10-03T22:00:00.000Z
     "phase": "13",
     "file": "src/presentation/wx_app.rs",
     "line": null,
-    "description": "13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words",
+    "description": "13-48, found reading fill_folders_from: the folder import counts messages that could not be read, messages that could not be saved on this computer and messages already in the folder on MessagesImported, then carries only the count brought in onto FoldersImported, so its closing sentence says none of the three while the single-file import says all three. Present before 13-48; the saved-message counts added here are carried. Recommended: carry the three onto FoldersImported and say them in the single-file import's words. Since 13-50 on 2026-10-03 the carrying is one function, FoldersImported::carry_the_mail_counts in application::import_tree, which carries the count of files too large to keep as well; the three named here are still not carried, and that function is where they would go",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T20:00:00.000Z",
@@ -10403,6 +10405,30 @@ last_updated: 2026-10-03T22:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 800,
+    "kind": "unmet-truth",
+    "phase": "13",
+    "file": "src/application/importing_messages.rs",
+    "line": null,
+    "description": "RESEARCH-5's finding beside GAP-13, recorded so the gap's history stays visible: until 13-50 a message imported from a saved message, a mailbox file, a zip or a folder was filed with its row, its text and its signed form and without the files it carried, while the row said it had files, so opening one asked a server that never held the message and exporting the folder wrote it without them, and no page, changelog line or ledger entry said so. Measured red by 13-50's first case (left: [], no file stored) before the fix. Fixed in 13-50's 13f0f0a0: file_one_imported_message stores the files through AttachmentWithContent::all_from_a_parse, which the reader's keeping of a fetched message shares, saved Outlook messages included, and 673ce623 counts and says a file over the 25 MB the store keeps. The .pst import still leaves files in the data file and says so",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-03T23:30:00.000Z",
+    "resolved_at": "2026-10-03T23:30:00.000Z"
+  },
+  {
+    "id": 801,
+    "kind": "unrun-verify",
+    "phase": "13",
+    "file": "src/application/importing_messages.rs",
+    "line": null,
+    "description": "13-50, for the tester: no real mailbox file with attachments has been imported and a file opened from the imported message. Import a mailbox file or a zip exported by another mail program that holds messages with attachments, open one of those messages, open its attached file from the reader, and listen to the closing sentence, including the sentence for a file over 25 MB if one is there. Held today by application::importing_messages::end_to_end's kept-files cases and test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said over files the tests build. Nothing here touches a server, so nothing goes to phase 14",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T23:30:00.000Z",
     "resolved_at": null
   }
 ]
