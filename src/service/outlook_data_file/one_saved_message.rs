@@ -87,6 +87,21 @@ pub struct SavedOutlookMessage {
     /// The message, as the bytes of one message, which this program's own
     /// reader reads like any other.
     pub mail: Vec<u8>,
+    /// What stayed in the file, counted so it can be said.
+    pub left_in_the_file: LeftInTheFile,
+}
+
+/// What reading a saved message did not bring, by cause.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LeftInTheFile {
+    /// Files on the message that were not brought.
+    pub files_not_brought: usize,
+    /// Recipients copied in blind, or of a kind with no line on a message.
+    pub blind_copies: usize,
+    /// Whether the message's markup is kept only in Outlook's own format.
+    pub markup_only_in_outlooks_own_format: bool,
+    /// Whether the message was signed, and the signature could not be kept.
+    pub signature_not_kept: bool,
 }
 
 /// Why a saved message was not read, each with its own sentence.
@@ -175,6 +190,7 @@ pub fn read<R: Read + Seek>(
     let message = a_message_from(&TheItem::of(&said, &names), &went_to);
     Ok(SavedOutlookMessage {
         mail: message_files::written_as_one_message(&message, &[]),
+        left_in_the_file: LeftInTheFile::default(),
     })
 }
 
@@ -445,6 +461,10 @@ mod tests {
         Whole(i32),
         /// A moment, in Outlook's own count.
         Moment(i64),
+        /// Bytes.
+        Bytes(Vec<u8>),
+        /// A message inside this one, in a storage of its own.
+        AMessage(Properties),
     }
 
     type Properties = Vec<(u16, Held)>;
@@ -454,6 +474,7 @@ mod tests {
     struct ASavedMessage {
         top: Properties,
         recipients: Vec<Properties>,
+        attachments: Vec<Properties>,
     }
 
     /// The type numbers MS-OXCDATA 2.11.1 gives each kind of value.
@@ -461,6 +482,23 @@ mod tests {
     const EIGHT_BIT: u16 = 0x001E;
     const WHOLE: u16 = 0x0003;
     const MOMENT: u16 = 0x0040;
+    const BINARY: u16 = 0x0102;
+    const AN_OBJECT: u16 = 0x000D;
+
+    // The properties of a file on a message and of the markup Outlook keeps
+    // in its own format, by the numbers MS-OXPROPS gives them, read on
+    // learn.microsoft.com on 2026-10-03. Written out here rather than taken
+    // from the reader, so a wrong number there is a failing case here.
+    const ATTACH_METHOD: u16 = 0x3705;
+    const ATTACH_LONG_FILENAME: u16 = 0x3707;
+    const ATTACH_FILENAME: u16 = 0x3704;
+    const ATTACH_MIME_TAG: u16 = 0x370E;
+    const ATTACH_DATA: u16 = 0x3701;
+    const RTF_COMPRESSED: u16 = 0x1009;
+    /// MS-OXCMSG 2.2.2.9: the file's bytes are on the message.
+    const BY_VALUE: i32 = 1;
+    /// MS-OXCMSG 2.2.2.9: the file is a message of its own.
+    const AN_EMBEDDED_MESSAGE: i32 = 5;
 
     /// A saved message written into a container in memory, by the writer the
     /// same package carries.
@@ -468,11 +506,12 @@ mod tests {
         let mut file =
             cfb::CompoundFile::create(Cursor::new(Vec::new())).expect("a container in memory");
         let recipients = u32::try_from(saved.recipients.len()).expect("a few recipients");
+        let attachments = u32::try_from(saved.attachments.len()).expect("a few files");
         let mut header = vec![0u8; 8];
         header.extend_from_slice(&recipients.to_le_bytes());
-        header.extend_from_slice(&0u32.to_le_bytes());
+        header.extend_from_slice(&attachments.to_le_bytes());
         header.extend_from_slice(&recipients.to_le_bytes());
-        header.extend_from_slice(&0u32.to_le_bytes());
+        header.extend_from_slice(&attachments.to_le_bytes());
         header.extend_from_slice(&[0u8; 8]);
         properties_written(&mut file, "", header, &saved.top);
         for (number, recipient) in saved.recipients.iter().enumerate() {
@@ -480,6 +519,11 @@ mod tests {
             file.create_storage(&storage)
                 .expect("a recipient's storage");
             properties_written(&mut file, &storage, vec![0u8; 8], recipient);
+        }
+        for (number, attachment) in saved.attachments.iter().enumerate() {
+            let storage = format!("/__attach_version1.0_#{number:08X}");
+            file.create_storage(&storage).expect("a file's storage");
+            properties_written(&mut file, &storage, vec![0u8; 8], attachment);
         }
         file.flush().expect("the container written");
         file.into_inner().into_inner()
@@ -503,6 +547,8 @@ mod tests {
                     Streamed(text.encode_utf16().flat_map(u16::to_le_bytes).collect(), 2),
                 ),
                 Held::EightBit(bytes) => (EIGHT_BIT, Streamed(bytes.to_vec(), 1)),
+                Held::Bytes(bytes) => (BINARY, Streamed(bytes.clone(), 0)),
+                Held::AMessage(inside) => (AN_OBJECT, OfItsOwn(inside)),
             };
             let tag = (u32::from(*id) << 16) | u32::from(kind);
             stream.extend_from_slice(&tag.to_le_bytes());
@@ -518,6 +564,15 @@ mod tests {
                         .write_all(&bytes)
                         .expect("a value written");
                 }
+                OfItsOwn(inside) => {
+                    // MS-OXMSG 2.4.2.2: the size of an embedded message is
+                    // all ones, and 2.4.1.2: its own header is 24 bytes.
+                    stream.extend_from_slice(&u32::MAX.to_le_bytes());
+                    stream.extend_from_slice(&1u32.to_le_bytes());
+                    let embedded = format!("{storage}/__substg1.0_{tag:08X}");
+                    file.create_storage(&embedded).expect("a message's storage");
+                    properties_written(file, &embedded, vec![0u8; 24], inside);
+                }
             }
         }
         file.create_stream(format!("{storage}/__properties_version1.0"))
@@ -528,11 +583,12 @@ mod tests {
 
     /// Where a value goes: in its entry, or in a stream of its own with how
     /// much its stated size adds for the terminator MS-OXMSG counts.
-    enum WhereItGoes {
+    enum WhereItGoes<'a> {
         Fixed([u8; 8]),
         Streamed(Vec<u8>, u32),
+        OfItsOwn(&'a Properties),
     }
-    use WhereItGoes::{Fixed, Streamed};
+    use WhereItGoes::{Fixed, OfItsOwn, Streamed};
 
     /// The way Outlook counts to a moment: hundred-nanosecond steps from the
     /// first of January 1601.
@@ -594,6 +650,7 @@ mod tests {
                     (RECIPIENT_KIND, Held::Whole(2)),
                 ],
             ],
+            ..ASavedMessage::default()
         };
 
         let message = read_back(&saved);
@@ -640,6 +697,7 @@ mod tests {
                 (EMAIL_ADDRESS, Held::EightBit(b"ivan@example.com")),
                 (RECIPIENT_KIND, Held::Whole(1)),
             ]],
+            ..ASavedMessage::default()
         };
 
         let message = read_back(&saved);
@@ -666,7 +724,7 @@ mod tests {
                 ),
                 (SENDER_ADDRESS_KIND, Held::Unicode("EX")),
             ],
-            recipients: Vec::new(),
+            ..ASavedMessage::default()
         };
 
         let message = read_back(&saved);
@@ -731,7 +789,7 @@ mod tests {
                 (SUBJECT, Held::Unicode("A long one")),
                 (BODY, Held::Unicode(Box::leak(words.into_boxed_str()))),
             ],
-            recipients: Vec::new(),
+            ..ASavedMessage::default()
         };
         let mut bytes = written(&saved);
         bytes.truncate(bytes.len() / 2);
@@ -780,7 +838,7 @@ mod tests {
                 (SUBJECT, Held::Unicode("Too much")),
                 (BODY, Held::Unicode(Box::leak(body.into_boxed_str()))),
             ],
-            recipients: Vec::new(),
+            ..ASavedMessage::default()
         };
         let bytes = written(&saved);
         let taken = Rc::new(Cell::new(0));
@@ -827,7 +885,7 @@ mod tests {
                     (MESSAGE_CLASS, Held::Unicode(class)),
                     (SUBJECT, Held::Unicode("Lunch")),
                 ],
-                recipients: Vec::new(),
+                ..ASavedMessage::default()
             };
             assert_eq!(
                 read_all_of(written(&saved)),
@@ -849,7 +907,7 @@ mod tests {
         for class in ["IPM.Schedule.Meeting.Request", "REPORT.IPM.Note.NDR"] {
             let saved = ASavedMessage {
                 top: vec![(MESSAGE_CLASS, Held::Unicode(class))],
-                recipients: Vec::new(),
+                ..ASavedMessage::default()
             };
             let refused = read_all_of(written(&saved));
             assert_eq!(
@@ -887,5 +945,237 @@ mod tests {
             }
             assert_eq!(crate::common::Error::from(why).to_string(), said);
         }
+    }
+
+    // ── What comes with it, and what stays in the file ──────────────────────
+
+    /// What reading a saved message left in the file.
+    fn left_by(saved: &ASavedMessage) -> LeftInTheFile {
+        read_all_of(written(saved))
+            .expect("the saved message was read")
+            .left_in_the_file
+    }
+
+    /// A message saved with nothing on it but a subject and some words.
+    fn a_plain_message() -> Properties {
+        vec![
+            mail(),
+            (SUBJECT, Held::Unicode("The figures")),
+            (BODY, Held::Unicode("Attached, as promised.")),
+        ]
+    }
+
+    #[test]
+    fn test_a_file_on_the_message_goes_with_it_by_name_type_and_bytes() {
+        // The invoice somebody saved the message for. It goes into the bytes
+        // the message becomes, named and typed as Outlook kept it, in the
+        // order Outlook kept the files. The second has only the short name
+        // Outlook writes beside a long one, and no type, so it is named by
+        // the short one and typed as bytes nobody has described.
+        let saved = ASavedMessage {
+            top: a_plain_message(),
+            attachments: vec![
+                vec![
+                    (ATTACH_METHOD, Held::Whole(BY_VALUE)),
+                    (ATTACH_LONG_FILENAME, Held::Unicode("invoice for March.pdf")),
+                    (ATTACH_FILENAME, Held::Unicode("INVOIC~1.PDF")),
+                    (ATTACH_MIME_TAG, Held::Unicode("application/pdf")),
+                    (ATTACH_DATA, Held::Bytes(b"%PDF-1.4 the invoice".to_vec())),
+                ],
+                vec![
+                    (ATTACH_METHOD, Held::Whole(BY_VALUE)),
+                    (ATTACH_FILENAME, Held::Unicode("NOTES.TXT")),
+                    (ATTACH_DATA, Held::Bytes(b"plain notes".to_vec())),
+                ],
+            ],
+            ..ASavedMessage::default()
+        };
+
+        let read = read_all_of(written(&saved)).expect("the saved message was read");
+        let files = crate::service::mime::attachments_with_bytes(&read.mail)
+            .expect("what came out is a message");
+
+        let described: Vec<(Option<&str>, &str, &[u8])> = files
+            .iter()
+            .map(|file| {
+                (
+                    file.described.filename.as_deref(),
+                    file.described.mime_type.as_str(),
+                    file.bytes.as_slice(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            described,
+            vec![
+                (
+                    Some("invoice for March.pdf"),
+                    "application/pdf",
+                    b"%PDF-1.4 the invoice".as_slice()
+                ),
+                (
+                    Some("NOTES.TXT"),
+                    "application/octet-stream",
+                    b"plain notes".as_slice()
+                ),
+            ]
+        );
+        assert_eq!(read.left_in_the_file, LeftInTheFile::default());
+    }
+
+    #[test]
+    fn test_a_message_inside_the_message_is_counted_as_a_file_not_brought() {
+        // A message forwarded as an attachment is a message of its own, in a
+        // storage of its own, and this reads one message. It is counted, so
+        // whatever brings the message in can say one of its files stayed in
+        // the file it came from.
+        let saved = ASavedMessage {
+            top: a_plain_message(),
+            attachments: vec![vec![
+                (ATTACH_METHOD, Held::Whole(AN_EMBEDDED_MESSAGE)),
+                (ATTACH_LONG_FILENAME, Held::Unicode("The original.msg")),
+                (
+                    ATTACH_DATA,
+                    Held::AMessage(vec![mail(), (SUBJECT, Held::Unicode("The original"))]),
+                ),
+            ]],
+            ..ASavedMessage::default()
+        };
+
+        let read = read_all_of(written(&saved)).expect("the saved message was read");
+
+        assert_eq!(read.left_in_the_file.files_not_brought, 1);
+        assert!(
+            crate::service::mime::attachments_with_bytes(&read.mail)
+                .expect("what came out is a message")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_a_blind_copy_is_counted_and_not_written_on_the_message() {
+        // A saved copy of a message somebody sent keeps who they copied in
+        // blind. Written onto the message, it would tell everybody who reads
+        // it afterwards what the sender chose not to say; dropped without a
+        // count, somebody's record of who they wrote to shrinks in silence.
+        let saved = ASavedMessage {
+            top: a_plain_message(),
+            recipients: vec![
+                vec![
+                    (DISPLAY_NAME, Held::Unicode("Charles Babbage")),
+                    (SMTP_ADDRESS, Held::Unicode("charles@example.com")),
+                    (RECIPIENT_KIND, Held::Whole(1)),
+                ],
+                vec![
+                    (DISPLAY_NAME, Held::Unicode("Augustus De Morgan")),
+                    (SMTP_ADDRESS, Held::Unicode("augustus@example.com")),
+                    (RECIPIENT_KIND, Held::Whole(3)),
+                ],
+            ],
+            ..ASavedMessage::default()
+        };
+
+        let read = read_all_of(written(&saved)).expect("the saved message was read");
+        let message = crate::service::mime::parse(&read.mail).expect("what came out is a message");
+
+        assert_eq!(read.left_in_the_file.blind_copies, 1);
+        assert_eq!(
+            message.to,
+            vec![person("charles@example.com", "Charles Babbage")]
+        );
+        assert!(message.cc.is_empty(), "{:?}", message.cc);
+        assert!(
+            !String::from_utf8_lossy(&read.mail).contains("augustus@example.com"),
+            "the blind copy was written onto the message"
+        );
+    }
+
+    #[test]
+    fn test_markup_kept_only_in_outlooks_own_format_is_counted_and_the_words_read() {
+        // Outlook keeps a message's formatting in a compressed format of its
+        // own, and often only there. Nothing here reads that format, so the
+        // words come in and the formatting is counted as staying behind. A
+        // message that also carries its markup as a web page loses nothing,
+        // and is not counted.
+        let mut words_and_outlooks_markup = a_plain_message();
+        words_and_outlooks_markup.push((RTF_COMPRESSED, Held::Bytes(b"LZFu compressed".to_vec())));
+        let mut with_a_web_page_too = a_plain_message();
+        with_a_web_page_too.push((RTF_COMPRESSED, Held::Bytes(b"LZFu compressed".to_vec())));
+        with_a_web_page_too.push((
+            super::super::HTML_BODY,
+            Held::Bytes(b"<p>Attached, as promised.</p>".to_vec()),
+        ));
+
+        let only_outlooks = ASavedMessage {
+            top: words_and_outlooks_markup,
+            ..ASavedMessage::default()
+        };
+        let both = ASavedMessage {
+            top: with_a_web_page_too,
+            ..ASavedMessage::default()
+        };
+
+        assert!(left_by(&only_outlooks).markup_only_in_outlooks_own_format);
+        assert_eq!(
+            read_back(&only_outlooks).body_plain.as_deref(),
+            Some("Attached, as promised.")
+        );
+        assert!(!left_by(&both).markup_only_in_outlooks_own_format);
+    }
+
+    #[test]
+    fn test_a_signed_saved_message_is_read_and_its_signature_counted_as_not_kept() {
+        // A signature is over the exact bytes a message was sent as, and a
+        // saved message holds properties rather than those bytes, so a
+        // message put back together from them cannot carry it. Its words
+        // still come in, and the lost signature is counted rather than the
+        // message arriving looking as though it was never signed.
+        let mut signed = a_plain_message();
+        signed[0] = (
+            MESSAGE_CLASS,
+            Held::Unicode("IPM.Note.SMIME.MultipartSigned"),
+        );
+        let saved = ASavedMessage {
+            top: signed,
+            ..ASavedMessage::default()
+        };
+
+        assert!(left_by(&saved).signature_not_kept);
+        assert_eq!(
+            read_back(&saved).body_plain.as_deref(),
+            Some("Attached, as promised.")
+        );
+        assert!(
+            !left_by(&ASavedMessage {
+                top: a_plain_message(),
+                ..ASavedMessage::default()
+            })
+            .signature_not_kept
+        );
+    }
+
+    #[test]
+    fn test_a_file_past_the_limit_refuses_the_message_rather_than_bringing_part_of_it() {
+        // The files count against the same limit as the words. A message
+        // brought without the file that made it too large would arrive
+        // looking whole, so the whole message is left where it is instead.
+        let saved = ASavedMessage {
+            top: a_plain_message(),
+            attachments: vec![vec![
+                (ATTACH_METHOD, Held::Whole(BY_VALUE)),
+                (ATTACH_LONG_FILENAME, Held::Unicode("holiday.jpg")),
+                (ATTACH_DATA, Held::Bytes(vec![0xFF; 200 * 1024])),
+            ]],
+            ..ASavedMessage::default()
+        };
+        let allowed = HowMuchToAllow {
+            most_one_item_comes_to: 64 * 1024,
+            ..HowMuchToAllow::default()
+        };
+
+        assert_eq!(
+            read(Cursor::new(written(&saved)), allowed),
+            Err(WhyItWasNotRead::TooLarge)
+        );
     }
 }
