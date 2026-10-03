@@ -994,6 +994,65 @@ impl ArchiveBeingWritten {
     }
 }
 
+// ── Writing one plain mailbox file ──────────────────────────────────────────
+
+/// One folder's mail being written into a plain mailbox file.
+///
+/// Written under another name beside the one chosen and put in place only at
+/// the end. The chosen name is often a file somebody already has, a backup of
+/// the same folder from last month, and an export that broke off halfway or
+/// found nothing to write must leave that file exactly as it was rather than
+/// as an empty or half-written one.
+pub struct MailboxFileBeingWritten {
+    /// The name the person chose.
+    at: PathBuf,
+}
+
+/// What finishing a mailbox file came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailboxFileOutcome {
+    /// The file is at the name chosen.
+    Written,
+    /// Nothing went in, so no file was written and whatever was at the name
+    /// chosen is as it was.
+    NothingWentIn,
+}
+
+/// Start writing a mailbox file that will be put at the name chosen.
+pub fn one_mailbox_file_written_to(at: &Path) -> Result<MailboxFileBeingWritten> {
+    Err(Error::InPlainWords(format!(
+        "{} is not written yet.",
+        at.display()
+    )))
+}
+
+impl MailboxFileBeingWritten {
+    /// Write the next message into the file.
+    pub fn write_into_it(&mut self, bytes: &[u8]) -> Result<()> {
+        Err(Error::InPlainWords(format!(
+            "{} bytes for {} are not written yet.",
+            bytes.len(),
+            self.at.display()
+        )))
+    }
+
+    /// Put the file in place, if anything went into it.
+    pub fn finish(self) -> Result<MailboxFileOutcome> {
+        Err(Error::InPlainWords(format!(
+            "{} is not finished yet.",
+            self.at.display()
+        )))
+    }
+
+    /// Stop, leaving the name chosen as it was.
+    pub fn abandon(self) -> Result<()> {
+        Err(Error::InPlainWords(format!(
+            "{} is not abandoned yet.",
+            self.at.display()
+        )))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1888,6 +1947,118 @@ mod tests {
             .expect("mail with nowhere to go is refused");
 
         assert!(refused.contains("no file"), "{refused}");
+    }
+
+    /// Everything a folder holds, by name, in the order the names sort.
+    fn what_is_in(place: &tempfile::TempDir) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(place.path())
+            .expect("list the folder")
+            .filter_map(|found| Some(found.ok()?.file_name().to_str()?.to_string()))
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn test_a_mailbox_file_lands_at_the_name_chosen_and_leaves_nothing_beside_it() {
+        // The file somebody named is the one they will copy to another
+        // computer. Nothing else is left beside it: the name it was written
+        // under on the way is gone once it is in place.
+        let place = a_place_to_work();
+        let at = place.path().join("Work.mbox");
+
+        let mut writing = one_mailbox_file_written_to(&at).expect("a mailbox file can be started");
+        writing
+            .write_into_it(a_folder_of_mail())
+            .expect("the mail goes in");
+        let finished = writing.finish().expect("the file can be finished");
+
+        assert_eq!(finished, MailboxFileOutcome::Written);
+        assert_eq!(
+            std::fs::read(&at).expect("the file is there"),
+            a_folder_of_mail()
+        );
+        assert_eq!(what_is_in(&place), vec!["Work.mbox".to_string()]);
+    }
+
+    #[test]
+    fn test_a_mailbox_file_nothing_went_into_leaves_the_file_already_there_as_it_was() {
+        // Last month's backup of the same folder, under the name offered
+        // again. A folder whose every message was left out writes nothing, and
+        // replacing that backup with an empty file would lose it for nothing.
+        let place = a_place_to_work();
+        let at = place.path().join("Work.mbox");
+        std::fs::write(&at, b"last month's backup").expect("a file already there");
+
+        let writing = one_mailbox_file_written_to(&at).expect("a mailbox file can be started");
+        let finished = writing.finish().expect("the file can be finished");
+
+        assert_eq!(finished, MailboxFileOutcome::NothingWentIn);
+        assert_eq!(
+            std::fs::read(&at).expect("the file already there"),
+            b"last month's backup"
+        );
+        assert_eq!(what_is_in(&place), vec!["Work.mbox".to_string()]);
+    }
+
+    #[test]
+    fn test_an_abandoned_mailbox_file_leaves_the_file_already_there_as_it_was() {
+        // An export that broke off halfway. What it wrote is half a folder, and
+        // put in place it would read as a backup somebody could trust.
+        let place = a_place_to_work();
+        let at = place.path().join("Work.mbox");
+        std::fs::write(&at, b"last month's backup").expect("a file already there");
+
+        let mut writing = one_mailbox_file_written_to(&at).expect("a mailbox file can be started");
+        writing
+            .write_into_it(a_folder_of_mail())
+            .expect("the mail goes in");
+        writing
+            .abandon()
+            .expect("the half-written file is taken away");
+
+        assert_eq!(
+            std::fs::read(&at).expect("the file already there"),
+            b"last month's backup"
+        );
+        assert_eq!(what_is_in(&place), vec!["Work.mbox".to_string()]);
+    }
+
+    #[test]
+    fn test_a_file_already_under_the_name_written_on_the_way_is_refused_and_left_as_it_was() {
+        // Somebody's own file that happens to carry the name this writes
+        // under on the way. Not this program's to write over, so the export
+        // is refused at the start and says which file is in the way.
+        let place = a_place_to_work();
+        let at = place.path().join("Work.mbox");
+        let in_the_way = place.path().join("Work.mbox.partial");
+        std::fs::write(&in_the_way, b"somebody's own file").expect("a file in the way");
+
+        let refused = one_mailbox_file_written_to(&at)
+            .err()
+            .map(|why| why.to_string())
+            .expect("a file in the way is refused");
+
+        assert!(refused.contains("Work.mbox.partial"), "{refused}");
+        assert_eq!(
+            std::fs::read(&in_the_way).expect("the file in the way"),
+            b"somebody's own file"
+        );
+    }
+
+    #[test]
+    fn test_a_mailbox_file_in_a_folder_that_is_not_there_is_refused_at_the_opening() {
+        // Found when the export is started rather than when the last message
+        // goes in, so nobody waits through a long export to hear it failed.
+        let place = a_place_to_work();
+        let nowhere = place.path().join("no-such-folder").join("Work.mbox");
+
+        let refused = one_mailbox_file_written_to(&nowhere)
+            .err()
+            .map(|why| why.to_string())
+            .expect("a file nothing can write is refused");
+
+        assert!(refused.contains("could not be written"), "{refused}");
     }
 
     #[test]

@@ -736,6 +736,23 @@ pub fn what_the_folder_export_did(written: &FoldersExported) -> String {
     said.spoken()
 }
 
+/// What writing one folder out as one mailbox file did, in the words somebody
+/// hears.
+pub fn what_the_mailbox_file_export_did(
+    written: &FoldersExported,
+    folders_inside_not_included: usize,
+) -> String {
+    format!(
+        "{} {folders_inside_not_included}",
+        what_the_folder_export_did(written)
+    )
+}
+
+/// What to say when a mailbox file stopped partway through.
+pub fn a_mailbox_file_that_broke_off(why: &crate::common::Error) -> String {
+    why.to_string()
+}
+
 /// The opening line: how many messages, and how many folders they came from.
 ///
 /// The count of messages comes from the export that writes one archive, rather
@@ -1531,6 +1548,22 @@ mod tests {
                 files_not_on_this_computer: 5,
                 signatures_that_could_not_be_kept: 4,
             }),
+            what_the_mailbox_file_export_did(
+                &FoldersExported {
+                    folders: 0,
+                    messages: MessagesExported {
+                        written: 3,
+                        not_on_this_computer: 2,
+                    },
+                    files_not_on_this_computer: 2,
+                    signatures_that_could_not_be_kept: 1,
+                },
+                2,
+            ),
+            what_the_mailbox_file_export_did(&one_folder_counted(0, 1), 1),
+            a_mailbox_file_that_broke_off(&crate::common::Error::InPlainWords(
+                "The disk is full.".to_string(),
+            )),
         ];
 
         for said in &everything {
@@ -1922,6 +1955,94 @@ mod tests {
         assert_eq!(
             what_the_folder_export_did(&FoldersExported::default()),
             message_files::what_the_export_did(0)
+        );
+    }
+
+    /// What one folder's export counted, with nothing about folders in it.
+    fn one_folder_counted(written: usize, left_out: usize) -> FoldersExported {
+        FoldersExported {
+            folders: 0,
+            messages: MessagesExported {
+                written,
+                not_on_this_computer: left_out,
+            },
+            files_not_on_this_computer: 0,
+            signatures_that_could_not_be_kept: 0,
+        }
+    }
+
+    #[test]
+    fn test_a_mailbox_file_export_says_what_went_in_and_which_folders_did_not() {
+        // One folder, without the folders inside it. Somebody who wanted
+        // those too has to hear that they are not in the file, and which
+        // command writes them, or the file reads as the whole of Work.
+        assert_eq!(
+            what_the_mailbox_file_export_did(&one_folder_counted(2, 1), 1),
+            "Exported 2 messages into one mailbox file. 1 message was left out, because \
+             it has not been downloaded to this computer: open it once, then export \
+             again. 1 folder inside it was not included. Export Mailbox writes a folder \
+             together with the folders inside it."
+        );
+        assert_eq!(
+            what_the_mailbox_file_export_did(&one_folder_counted(1, 0), 3),
+            "Exported 1 message into one mailbox file. 3 folders inside it were not \
+             included. Export Mailbox writes a folder together with the folders inside it."
+        );
+        assert_eq!(
+            what_the_mailbox_file_export_did(&one_folder_counted(4, 0), 0),
+            "Exported 4 messages into one mailbox file"
+        );
+    }
+
+    #[test]
+    fn test_a_mailbox_file_export_that_wrote_nothing_says_no_file_was_written_and_why() {
+        // Nothing went in, so nothing was put at the name chosen. Saying so is
+        // what tells somebody the backup they already had there is untouched.
+        assert_eq!(
+            what_the_mailbox_file_export_did(&one_folder_counted(0, 1), 0),
+            "No messages were exported, so no file was written. 1 message was left out, \
+             because it has not been downloaded to this computer: open it once, then \
+             export again."
+        );
+    }
+
+    #[test]
+    fn test_files_and_signatures_left_behind_are_said_in_the_words_the_folder_export_uses() {
+        // The same facts about the same mail, whichever shape it went out in.
+        // Taken from the folder export as this runs rather than copied, so a
+        // rewording of one is a rewording of both.
+        for (files, signatures) in [(1, 0), (0, 1), (6, 3)] {
+            let counted = FoldersExported {
+                folders: 1,
+                messages: MessagesExported {
+                    written: 4,
+                    not_on_this_computer: 0,
+                },
+                files_not_on_this_computer: files,
+                signatures_that_could_not_be_kept: signatures,
+            };
+            let by_the_folder_export = what_the_folder_export_did(&counted);
+            let clause = by_the_folder_export
+                .strip_prefix("Exported 4 messages from 1 folder. ")
+                .expect("the folder export opens with a count and then explains");
+
+            assert_eq!(
+                what_the_mailbox_file_export_did(&counted, 0),
+                format!("Exported 4 messages into one mailbox file. {clause}")
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_mailbox_file_that_broke_off_says_nothing_was_put_in_place() {
+        // The half that was written is taken away, so the sentence says no
+        // file was written rather than that an unfinished one was.
+        assert_eq!(
+            a_mailbox_file_that_broke_off(&crate::common::Error::InPlainWords(
+                "The disk is full.".to_string()
+            )),
+            "The folder could not be written out all the way through, so no file was \
+             written and a file already at that name is as it was. The disk is full."
         );
     }
 
