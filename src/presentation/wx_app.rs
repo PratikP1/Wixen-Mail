@@ -16777,8 +16777,7 @@ fn fill_folders_from(
             brought_in.brought_in
         )));
     }
-    counted.messages = brought_in.brought_in;
-    counted.from_saved_outlook_messages = brought_in.from_saved_outlook_messages;
+    counted.carry_the_mail_counts(&brought_in);
     import_tree::what_the_folder_import_did(&counted)
 }
 

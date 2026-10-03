@@ -384,8 +384,13 @@ fn a_saved_outlook_message_read_from<R: std::io::Read + std::io::Seek>(
 /// nobody can decide to when nothing said so.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhetherItWasWrittenDown {
-    /// It is in the folder.
-    ItIsInTheFolder,
+    /// It is in the folder, with every file it carried but those larger than
+    /// this computer keeps, which are listed and counted here.
+    ItIsInTheFolder {
+        /// Its files over the store's limit, taken by the rule the store
+        /// keeps by.
+        files_too_large_to_keep: usize,
+    },
     /// It is not, and somebody is told how many were not.
     ItCouldNotBeSavedHere,
 }
@@ -395,12 +400,14 @@ pub enum WhetherItWasWrittenDown {
 /// The one place that files an imported message, so the single messages and
 /// the messages inside an archive cannot come to be written down differently.
 ///
-/// Three things go in and all three have to. The row, without which there is no
+/// Four things go in and all four have to. The row, without which there is no
 /// message. Its text, without which the message is in the list and opening it
-/// asks a server that has never held it. And, where the message says it is
-/// signed, the bytes it arrived as: a signature is arithmetic over exactly
-/// those, so a signed message filed without them reads afterwards as though it
-/// had never claimed a signature at all.
+/// asks a server that has never held it. Where the message says it is signed,
+/// the bytes it arrived as: a signature is arithmetic over exactly those, so a
+/// signed message filed without them reads afterwards as though it had never
+/// claimed a signature at all. And the files it carried, which have no server
+/// to be fetched from either: until 13-50 the row said the message had files
+/// and none were kept, so opening one asked a server that never held it.
 pub fn file_one_imported_message(
     cache: &crate::data::message_cache::MessageCache,
     read: &message_files::MessageFromAFile,
@@ -452,7 +459,28 @@ pub fn file_one_imported_message(
     {
         tracing::warn!("Could not record the form an imported message arrived in: {e}");
     }
-    WhetherItWasWrittenDown::ItIsInTheFolder
+    // The files it carried, through the pairing the reader uses. Logged and
+    // not fatal for the reason the text is: the row is in the folder.
+    let files =
+        crate::data::message_cache::attachment_content::AttachmentWithContent::all_from_a_parse(
+            stored,
+            &read.message.attachments,
+            &read.files,
+        );
+    if let Err(e) = cache.replace_attachments_with_content(stored, &files) {
+        tracing::warn!("Could not store the files of an imported message: {e}");
+    }
+    WhetherItWasWrittenDown::ItIsInTheFolder {
+        files_too_large_to_keep: read
+            .files
+            .iter()
+            .filter(|file| {
+                !crate::data::message_cache::attachment_content::is_small_enough_to_keep(
+                    file.bytes.len(),
+                )
+            })
+            .count(),
+    }
 }
 
 /// The folder imported mail lands in, made if it is not there yet.
@@ -510,6 +538,10 @@ pub struct MessagesImported {
     /// Separate from the count above because it is a different thing to act on:
     /// there is nothing wrong with the file, and trying again may well work.
     pub not_written_down: usize,
+    /// Files on the messages brought in that were larger than this computer
+    /// keeps, so each is listed on its message and stays only in what was
+    /// imported.
+    pub files_too_large_to_keep: usize,
     /// Whether the folder it was filed in is one the account's server also
     /// fills.
     ///
@@ -566,13 +598,19 @@ impl MessagesImported {
 
     /// Count what became of one message the import tried to write down.
     ///
-    /// Nothing moves when it arrived, which is nearly always. The count and the
+    /// Nothing moves when it arrived whole, which is nearly always. The count and the
     /// sentence for it were both written before anything filled it in, so a
     /// message this program read perfectly well and then failed to save went
     /// missing while the closing count said everything had arrived.
+    ///
+    /// The files it arrived with that were too large to keep are counted here
+    /// too, from what the filing kept.
     pub fn count_one_written(&mut self, whether: WhetherItWasWrittenDown) {
-        if whether == WhetherItWasWrittenDown::ItCouldNotBeSavedHere {
-            self.not_written_down += 1;
+        match whether {
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep,
+            } => self.files_too_large_to_keep += files_too_large_to_keep,
+            WhetherItWasWrittenDown::ItCouldNotBeSavedHere => self.not_written_down += 1,
         }
     }
 
@@ -685,6 +723,28 @@ pub fn what_saved_outlook_messages_left(said: &mut SummingUp, left: &WhatSavedOu
     }
 }
 
+/// The sentence about files too large to keep, said by both imports.
+///
+/// One function, so the import of a file and the import of a folder or zip
+/// cannot come to word one fact two ways. It says what happened, why, and
+/// where the file still is, with the limit taken from the store's own
+/// constant rather than typed.
+pub fn what_files_too_large_to_keep_left(said: &mut SummingUp, how_many: usize) {
+    let limit = crate::data::message_cache::attachment_content::LARGEST_ATTACHMENT_KEPT_BYTES
+        / (1024 * 1024);
+    match how_many {
+        0 => {}
+        1 => said.sentence(format!(
+            "1 file was over {limit} MB, the most Wixen Mail keeps of one file, so it is \
+             listed on its message and stays only in the file you imported from"
+        )),
+        many => said.sentence(format!(
+            "{many} files were over {limit} MB, the most Wixen Mail keeps of one file, so \
+             they are listed on their messages and stay only where you imported them from"
+        )),
+    }
+}
+
 /// What an import did, in the words somebody hears.
 ///
 /// The counts that are not zero are the ones worth saying. Each one that is
@@ -731,6 +791,7 @@ pub fn what_the_mail_import_did(read: &MessagesImported) -> String {
             ),
         });
     }
+    what_files_too_large_to_keep_left(&mut said, read.files_too_large_to_keep);
     // Only when something really went in. Importing the same archive a second
     // time files nothing, and a sentence about where the imported mail stays
     // would be about no mail at all.
@@ -1531,6 +1592,7 @@ mod tests {
                 already_here: 2,
                 could_not_be_read: 2,
                 not_written_down: 2,
+                files_too_large_to_keep: 2,
                 the_server_also_fills_this_folder: true,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
@@ -1539,6 +1601,7 @@ mod tests {
                 already_here: 1,
                 could_not_be_read: 1,
                 not_written_down: 1,
+                files_too_large_to_keep: 1,
                 the_server_also_fills_this_folder: true,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
@@ -1727,6 +1790,32 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_files_too_large_to_keep_are_said_with_where_they_still_are() {
+        // What happened, why, and where the file still is, singular and plural
+        // written out because several words have to agree.
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 1,
+                files_too_large_to_keep: 1,
+                ..MessagesImported::default()
+            }),
+            "Imported 1 message. 1 file was over 25 MB, the most Wixen Mail keeps of one \
+             file, so it is listed on its message and stays only in the file you imported \
+             from."
+        );
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 3,
+                files_too_large_to_keep: 2,
+                ..MessagesImported::default()
+            }),
+            "Imported 3 messages. 2 files were over 25 MB, the most Wixen Mail keeps of one \
+             file, so they are listed on their messages and stay only where you imported \
+             them from."
+        );
+    }
+
     /// One ordinary message, as a file saved from a mail program holds it.
     pub(super) fn one_message() -> &'static str {
         concat!(
@@ -1774,7 +1863,7 @@ mod end_to_end {
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, MessageCache};
     use crate::service::outlook_data_file::one_saved_message::for_tests::{
-        a_saved_message, an_appointment,
+        a_saved_message, a_saved_message_carrying_two_files, an_appointment,
     };
 
     /// An empty cache with one folder in it, the way an import finds one.
@@ -1873,7 +1962,12 @@ mod end_to_end {
 
         let written = file_one_imported_message(&cache, &read, archive);
 
-        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        assert_eq!(
+            written,
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep: 0
+            }
+        );
         // The server hands out the number it was about to hand out.
         cache
             .upsert_message(&from_the_server(archive, 11, "The real eleventh"))
@@ -1937,7 +2031,12 @@ mod end_to_end {
 
         let written = file_one_imported_message(&cache, &read, folder_id);
 
-        assert_eq!(written, WhetherItWasWrittenDown::ItIsInTheFolder);
+        assert_eq!(
+            written,
+            WhetherItWasWrittenDown::ItIsInTheFolder {
+                files_too_large_to_keep: 0
+            }
+        );
         let check = opening(&cache, the_row_in(&cache, folder_id));
         let SignatureCheck::Checked(report) = check else {
             panic!("an imported signed message says nothing about its signature: {check:?}");
@@ -2120,6 +2219,229 @@ mod end_to_end {
                 .get_message_list(imported, "acct")
                 .expect("the folder listing")
                 .is_empty()
+        );
+    }
+
+    // ── The files an imported message carried ───────────────────────────
+
+    /// A few bytes shaped like the start of a PDF, which is what mail carries
+    /// more than anything.
+    const A_SMALL_PDF: &[u8] = b"%PDF-1.4 the figures for March";
+
+    /// A message carrying these files, each named, typed and sent in base64
+    /// the way a mail program sends one.
+    fn a_message_carrying(files: &[(&str, &str, &[u8])]) -> Vec<u8> {
+        use base64::Engine as _;
+        let mut message = String::from(
+            "From: Ada Lovelace <ada@example.com>\r\n\
+             To: me@example.com\r\n\
+             Subject: The figures\r\n\
+             Date: Mon, 20 Jul 2026 10:00:00 +0000\r\n\
+             Message-ID: <figures@example.com>\r\n\
+             MIME-Version: 1.0\r\n\
+             Content-Type: multipart/mixed; boundary=\"between\"\r\n\
+             \r\n\
+             --between\r\n\
+             Content-Type: text/plain\r\n\
+             \r\n\
+             The figures are attached.\r\n",
+        );
+        for (name, kind, bytes) in files {
+            let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+            message.push_str(&format!(
+                "--between\r\n\
+                 Content-Type: {kind}; name=\"{name}\"\r\n\
+                 Content-Disposition: attachment; filename=\"{name}\"\r\n\
+                 Content-Transfer-Encoding: base64\r\n\
+                 \r\n\
+                 {encoded}\r\n"
+            ));
+        }
+        message.push_str("--between--\r\n");
+        message.into_bytes()
+    }
+
+    /// Every file stored for one message: its name, its type and its bytes.
+    fn the_files_kept_for(
+        cache: &MessageCache,
+        row: i64,
+    ) -> Vec<(String, String, Option<Vec<u8>>)> {
+        cache
+            .attachments_with_content(row)
+            .expect("the files stored for the message")
+            .into_iter()
+            .map(|file| {
+                (
+                    file.described.filename,
+                    file.described.mime_type,
+                    file.content,
+                )
+            })
+            .collect()
+    }
+
+    /// The one small PDF, as it should be stored.
+    fn the_small_pdf_kept() -> Vec<(String, String, Option<Vec<u8>>)> {
+        vec![(
+            "figures.pdf".to_string(),
+            "application/pdf".to_string(),
+            Some(A_SMALL_PDF.to_vec()),
+        )]
+    }
+
+    #[test]
+    fn test_a_message_imported_from_a_file_keeps_the_files_it_carried() {
+        // RESEARCH-5's finding beside GAP-13. The row said the message had
+        // files, and the files themselves were never stored, so opening one
+        // asked a server that never held the message and an export wrote the
+        // message without them. Nothing said so.
+        let (cache, folder_id) = a_cache();
+        let saved = a_message_carrying(&[("figures.pdf", "application/pdf", A_SMALL_PDF)]);
+
+        for read in each_message_in(&saved, ReadAs::OneMessage) {
+            file_one_imported_message(&cache, &read.expect("a message"), folder_id);
+        }
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            the_small_pdf_kept()
+        );
+    }
+
+    #[test]
+    fn test_a_message_in_a_mailbox_file_keeps_the_files_it_carried() {
+        // The same through the archive's reading, a message at a time, which
+        // is how a mailbox file, a zip and a folder are all read.
+        let (cache, folder_id) = a_cache();
+        let mut mailbox = b"From ada@example.com Mon Jul 20 10:00:00 2026\r\n".to_vec();
+        mailbox.extend(a_message_carrying(&[(
+            "figures.pdf",
+            "application/pdf",
+            A_SMALL_PDF,
+        )]));
+
+        for read in each_message_in(&mailbox, ReadAs::OneAtATimeFromAnArchive) {
+            file_one_imported_message(&cache, &read.expect("a message"), folder_id);
+        }
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            the_small_pdf_kept()
+        );
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_keeps_the_files_it_carried() {
+        // 13-47 put a saved message's files inside the message it hands on,
+        // so they come in the way any imported message's files do.
+        let (cache, imported) = a_cache();
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let at = saved_in(&folder, &a_saved_message_carrying_two_files());
+
+        a_saved_outlook_message_brought_in(&cache, "acct", &at);
+
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, imported)),
+            vec![
+                (
+                    "invoice.pdf".to_string(),
+                    "application/pdf".to_string(),
+                    Some(b"%PDF-1.4 the invoice".to_vec())
+                ),
+                (
+                    "notes.txt".to_string(),
+                    "text/plain".to_string(),
+                    Some(b"plain notes".to_vec())
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_a_signed_message_imported_from_a_file_keeps_its_signed_form_and_its_files() {
+        // Both, and neither in place of the other: the bytes the signature is
+        // over, and every file the message lists.
+        let (cache, folder_id) = a_cache();
+        let signed = a_signed_file();
+        let read =
+            message_files::read_one_message_as_it_arrived(&signed).expect("a signed message");
+        let listed: Vec<(String, String, Option<Vec<u8>>)> =
+            crate::service::mime::attachments_with_bytes(&signed)
+                .expect("the signed message's files")
+                .into_iter()
+                .map(|file| {
+                    (
+                        file.described.display_name(),
+                        file.described.mime_type,
+                        Some(file.bytes),
+                    )
+                })
+                .collect();
+        assert!(
+            !listed.is_empty(),
+            "the signed message lists no file, so this case asks nothing"
+        );
+
+        file_one_imported_message(&cache, &read, folder_id);
+
+        assert!(
+            cache.kept_signed_original_bytes().expect("the total") > 0,
+            "the form the signature is over was not recorded"
+        );
+        assert_eq!(
+            the_files_kept_for(&cache, the_row_in(&cache, folder_id)),
+            listed
+        );
+    }
+
+    #[test]
+    fn test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said() {
+        // One byte over the limit. The store lists it without keeping it, as
+        // it does for a message read from a server, and the count is taken by
+        // the same rule the store keeps by, so the two cannot disagree.
+        use crate::data::message_cache::attachment_content::LARGEST_ATTACHMENT_KEPT_BYTES;
+        let (cache, folder_id) = a_cache();
+        let one_byte_over = usize::try_from(LARGEST_ATTACHMENT_KEPT_BYTES).expect("a size") + 1;
+        let saved =
+            a_message_carrying(&[("recording.wav", "audio/wav", &vec![b'a'; one_byte_over])]);
+
+        let mut counted = MessagesImported::default();
+        for read in each_message_in(&saved, ReadAs::OneMessage) {
+            counted.count_one(WhatToDoWithIt::BringItIn);
+            counted.count_one_written(file_one_imported_message(
+                &cache,
+                &read.expect("a message"),
+                folder_id,
+            ));
+        }
+
+        let kept = cache
+            .attachments_with_content(the_row_in(&cache, folder_id))
+            .expect("the files stored for the message");
+        let listed: Vec<(&str, i64, Option<&[u8]>)> = kept
+            .iter()
+            .map(|file| {
+                (
+                    file.described.filename.as_str(),
+                    file.described.size,
+                    file.content.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            listed,
+            vec![(
+                "recording.wav",
+                i64::try_from(one_byte_over).expect("a size"),
+                None
+            )]
+        );
+        assert_eq!(counted.files_too_large_to_keep, 1);
+        assert_eq!(
+            what_the_mail_import_did(&counted),
+            "Imported 1 message. 1 file was over 25 MB, the most Wixen Mail keeps of one \
+             file, so it is listed on its message and stays only in the file you imported \
+             from."
         );
     }
 }

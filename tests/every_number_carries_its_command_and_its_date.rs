@@ -1566,9 +1566,12 @@ struct Restated {
 
 const THE_PRIVACY_PAGE: &str = "docs/privacy.md";
 const THE_EARCON_PLAN: &str = "docs/plans/20260823-earcon-sound-schemes.md";
+const THE_USER_GUIDE: &str = "docs/USER_GUIDE.md";
 
-/// Every figure on a page that restates a constant, twelve on 2026-09-14.
-const THE_FIGURES_THAT_RESTATE_A_CONSTANT: [Restated; 12] = [
+/// Every figure on a page that restates a constant, twelve on 2026-09-14 and
+/// thirteen from 2026-10-03, when 13-50 put the largest file kept in the
+/// guide's Import and Export.
+const THE_FIGURES_THAT_RESTATE_A_CONSTANT: [Restated; 13] = [
     Restated {
         page: THE_PRIVACY_PAGE,
         before: "A single file is kept up to ",
@@ -1652,6 +1655,13 @@ const THE_FIGURES_THAT_RESTATE_A_CONSTANT: [Restated; 12] = [
         unit: Unit::Mebibytes,
         constant: LIMIT_BYTES,
         name: "attaching::LIMIT_BYTES",
+    },
+    Restated {
+        page: THE_USER_GUIDE,
+        before: "without the original. A file larger than ",
+        unit: Unit::Mebibytes,
+        constant: LARGEST_ATTACHMENT_KEPT_BYTES as u64,
+        name: "LARGEST_ATTACHMENT_KEPT_BYTES",
     },
 ];
 

@@ -597,14 +597,14 @@ mod tests {
     // in its own format, by the numbers MS-OXPROPS gives them, read on
     // learn.microsoft.com on 2026-10-03. Written out here rather than taken
     // from the reader, so a wrong number there is a failing case here.
-    const ATTACH_METHOD: u16 = 0x3705;
-    const ATTACH_LONG_FILENAME: u16 = 0x3707;
+    pub(super) const ATTACH_METHOD: u16 = 0x3705;
+    pub(super) const ATTACH_LONG_FILENAME: u16 = 0x3707;
     const ATTACH_FILENAME: u16 = 0x3704;
-    const ATTACH_MIME_TAG: u16 = 0x370E;
-    const ATTACH_DATA: u16 = 0x3701;
+    pub(super) const ATTACH_MIME_TAG: u16 = 0x370E;
+    pub(super) const ATTACH_DATA: u16 = 0x3701;
     const RTF_COMPRESSED: u16 = 0x1009;
     /// MS-OXCMSG 2.2.2.9: the file's bytes are on the message.
-    const BY_VALUE: i32 = 1;
+    pub(super) const BY_VALUE: i32 = 1;
     /// MS-OXCMSG 2.2.2.9: the file is a message of its own.
     const AN_EMBEDDED_MESSAGE: i32 = 5;
 
@@ -1297,12 +1297,43 @@ pub(crate) mod for_tests {
         BODY, DISPLAY_NAME, MESSAGE_CLASS, RECIPIENT_KIND, SENDER_NAME, SENDER_SMTP_ADDRESS,
         SMTP_ADDRESS, SUBJECT,
     };
-    use super::tests::{ASavedMessage, Held, written};
+    use super::tests::{
+        ASavedMessage, ATTACH_DATA, ATTACH_LONG_FILENAME, ATTACH_METHOD, ATTACH_MIME_TAG, BY_VALUE,
+        Held, Properties, written,
+    };
 
     /// A message Ada sent Charles, saved by Outlook, with this subject and
     /// these words.
     pub(crate) fn a_saved_message(subject: &'static str, words: &'static str) -> Vec<u8> {
-        written(&ASavedMessage {
+        written(&from_ada_to_charles(subject, words, Vec::new()))
+    }
+
+    /// The same, carrying two files by value: an invoice and a page of notes.
+    pub(crate) fn a_saved_message_carrying_two_files() -> Vec<u8> {
+        let by_value = |name: &'static str, kind: &'static str, bytes: &[u8]| {
+            vec![
+                (ATTACH_METHOD, Held::Whole(BY_VALUE)),
+                (ATTACH_LONG_FILENAME, Held::Unicode(name)),
+                (ATTACH_MIME_TAG, Held::Unicode(kind)),
+                (ATTACH_DATA, Held::Bytes(bytes.to_vec())),
+            ]
+        };
+        written(&from_ada_to_charles(
+            "The invoice",
+            "Both are attached.",
+            vec![
+                by_value("invoice.pdf", "application/pdf", b"%PDF-1.4 the invoice"),
+                by_value("notes.txt", "text/plain", b"plain notes"),
+            ],
+        ))
+    }
+
+    fn from_ada_to_charles(
+        subject: &'static str,
+        words: &'static str,
+        attachments: Vec<Properties>,
+    ) -> ASavedMessage {
+        ASavedMessage {
             top: vec![
                 (MESSAGE_CLASS, Held::Unicode("IPM.Note")),
                 (SUBJECT, Held::Unicode(subject)),
@@ -1315,8 +1346,8 @@ pub(crate) mod for_tests {
                 (SMTP_ADDRESS, Held::Unicode("charles@example.com")),
                 (RECIPIENT_KIND, Held::Whole(1)),
             ]],
-            ..ASavedMessage::default()
-        })
+            attachments,
+        }
     }
 
     /// An appointment Outlook saved as a file of its own.

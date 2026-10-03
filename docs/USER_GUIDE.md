@@ -2168,6 +2168,15 @@ not bring: an attached file Outlook kept as another message or a link, a blind
 copy recipient, formatting Outlook kept only in its own format (the words
 arrive without it), and a signature.
 
+Imported messages bring the files they carried, whether they came from a
+saved message, a mailbox file, a zip, a folder or a message Outlook saved, so
+you can open an attachment or export the message again without the original.
+A file larger than 25 MB is listed on its message and not kept, so it stays
+only in the file you imported from, and the sentence at the end of the import
+says how many did. Messages read out of an Outlook data file still arrive
+without their files, which stay in the data file, and that import's sentence
+counts them.
+
 Three things to know before you rely on this:
 
 - **No real Outlook data file has been through the `.pst` import yet.** The
