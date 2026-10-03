@@ -50,6 +50,8 @@ pub mod taken_off_this_computer;
 pub mod taking_back;
 pub mod tasks;
 pub mod waiting_flag_changes;
+#[cfg(test)]
+mod what_forgetting_costs;
 
 use crate::common::{Error, Result};
 use crate::service::security::SecurityService;
