@@ -44,6 +44,36 @@
 //!   longer body's freed bytes go to the same places, deflated.
 //! - A word split across a page and the overflow page it continues on, which
 //!   is found as its first part and cannot be told apart from another.
+//!
+//! # The measurement
+//!
+//! At 12,872 messages, the tester's folder, and at 200,000, PERF-03's size,
+//! each of SQLite's three secure delete settings, off, fast and on, is set on
+//! a fresh store's connection before its mail is written. In each, all but
+//! 1,000 messages are written the way an IMAP check writes them, and 1,000
+//! the POP way, marked read and deleted into the shared Trash; the 1,000 are
+//! then taken off through 13-44.8's path and the next check's compaction
+//! runs. The writes, the emptying and the compaction are timed, and the
+//! reading above says what the files keep (D38, D39).
+//!
+//! On the store written with secure delete off, which is the program today,
+//! VACUUM runs, then auto vacuum is switched to incremental, which takes a
+//! VACUUM of its own, a second 1,000 are planted and taken off, and an
+//! incremental vacuum runs. Each is timed while the temporary folder and the
+//! write log are sampled, and while a second store on the same file, on
+//! another thread, reads the Inbox and writes one message (D40). SQLite on
+//! Windows takes its temporary folder from `TMP` and `TEMP`, so the two
+//! measurement cases point both at a folder inside their run's directory,
+//! and that folder is the one sampled.
+//!
+//! ```text
+//! cargo test --release --lib data::message_cache::what_forgetting_costs:: -- --ignored --nocapture --test-threads=1
+//! ```
+//!
+//! On a machine doing nothing else: check `tasklist` for `cargo.exe` and
+//! `rustc.exe` first. A debug build is refused. One test thread, because the
+//! cases change the process's environment and the 200,000 case reads the
+//! space the tester's size needed.
 
 use super::MessageCache;
 use crate::application::destinations::Deleting;
@@ -58,6 +88,9 @@ use crate::service::safety::Verdict;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Barrier;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 /// The database file the store keeps its mail in.
 const THE_FILE: &str = "message_cache.db";
@@ -349,10 +382,10 @@ fn words_for(n: usize, count: usize) -> String {
         .join(" ")
 }
 
-/// A message of the rest, as an IMAP check's headers arrive.
-fn one_of_the_rest(folders: &Folders, n: usize) -> IncomingMessage {
+/// A message of the rest, as an IMAP check's headers arrive in `inbox`.
+fn one_of_the_rest(inbox: i64, n: usize) -> IncomingMessage {
     IncomingMessage {
-        folder_id: folders.imap_inbox,
+        folder_id: inbox,
         uid: n as u32 + 1,
         message_id: format!("<kept-{n}@example.com>"),
         subject: words_for(n, 6),
@@ -386,8 +419,10 @@ fn one_of_the_rest(folders: &Folders, n: usize) -> IncomingMessage {
 fn the_rest(cache: &MessageCache, folders: &Folders, numbers: Range<usize>) -> Result<()> {
     let numbers: Vec<usize> = numbers.collect();
     for batch in numbers.chunks(INITIAL_FETCH_LIMIT) {
-        let arriving: Vec<IncomingMessage> =
-            batch.iter().map(|n| one_of_the_rest(folders, *n)).collect();
+        let arriving: Vec<IncomingMessage> = batch
+            .iter()
+            .map(|n| one_of_the_rest(folders.imap_inbox, *n))
+            .collect();
         let rows = cache.upsert_messages(&arriving)?;
         for (row, n) in rows.iter().zip(batch) {
             cache.save_message_body(*row, Some(&words_for(*n, 160)), None)?;
@@ -525,15 +560,584 @@ struct Measured {
     bytes: Option<u64>,
 }
 
+impl Shape {
+    /// The numbers of the rest of the mail.
+    fn the_rest(self) -> Range<usize> {
+        0..self.messages - self.taken_off
+    }
+
+    /// The numbers of the `nth` batch of planted messages, counted from 0.
+    fn planted(self, nth: usize) -> Range<usize> {
+        1 + nth * self.taken_off..1 + (nth + 1) * self.taken_off
+    }
+}
+
+impl Measured {
+    fn new(what: String, value: String, detail: String) -> Self {
+        Self {
+            what,
+            value,
+            detail,
+            bytes: None,
+        }
+    }
+
+    fn a_size(what: String, bytes: u64, detail: String) -> Self {
+        Self {
+            what,
+            value: megabytes(bytes),
+            detail,
+            bytes: Some(bytes),
+        }
+    }
+}
+
+/// The words of an error, for a measurement that answers in sentences.
+fn said(e: impl std::fmt::Display) -> String {
+    e.to_string()
+}
+
+/// SQLite's three answers to what a write does with the space it frees.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SecureDelete {
+    Off,
+    Fast,
+    On,
+}
+
+impl SecureDelete {
+    /// The order the measurement takes them in. Off comes last, because its
+    /// store is the program's own today and stays open for the commands.
+    const IN_TURN: [Self; 3] = [Self::On, Self::Fast, Self::Off];
+
+    /// The word the pragma takes, and the one a row uses.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Fast => "fast",
+            Self::On => "on",
+        }
+    }
+
+    /// What `PRAGMA secure_delete` answers once this is set.
+    fn read_back(self) -> i64 {
+        match self {
+            Self::Off => 0,
+            Self::On => 1,
+            Self::Fast => 2,
+        }
+    }
+}
+
 /// Every figure over stores of `shape` written under `into`, in the order
-/// the page lists them.
-fn measure(shape: Shape, _into: &Path) -> std::result::Result<Vec<Measured>, String> {
-    Ok(vec![Measured {
-        what: the_size(shape),
-        value: String::new(),
-        detail: String::new(),
-        bytes: None,
-    }])
+/// the page lists them: each secure delete setting in turn, each on a fresh
+/// store, then the two commands on the store written with it off.
+fn measure(shape: Shape, into: &Path) -> std::result::Result<Vec<Measured>, String> {
+    let temporary = into.join(TEMPORARY);
+    std::fs::create_dir_all(&temporary).map_err(said)?;
+    let mut measured = Vec::new();
+    for setting in SecureDelete::IN_TURN {
+        let home = into.join(setting.name());
+        let (written, figures) = under_a_setting(shape, setting, &home)?;
+        measured.extend(figures);
+        if setting == SecureDelete::Off {
+            measured.extend(the_commands(shape, &written, &home, &temporary)?);
+        }
+        drop(written);
+        std::fs::remove_dir_all(&home).map_err(said)?;
+    }
+    Ok(measured)
+}
+
+/// A store and the folders its mail is in.
+struct Written {
+    cache: MessageCache,
+    folders: Folders,
+}
+
+/// Time `work`, and answer how long it took with what it answered.
+fn timed<T>(work: impl FnOnce() -> Result<T>) -> std::result::Result<(Duration, T), String> {
+    let started = Instant::now();
+    let answer = work().map_err(said)?;
+    Ok((started.elapsed(), answer))
+}
+
+/// A store at `home` with `setting` set on its connection before the first
+/// planted write, its mail written, the planted mail taken off and the next
+/// check's compaction run, each timed, and what the files keep after.
+fn under_a_setting(
+    shape: Shape,
+    setting: SecureDelete,
+    home: &Path,
+) -> std::result::Result<(Written, Vec<Measured>), String> {
+    let cache = MessageCache::new(home.to_path_buf(), None).map_err(said)?;
+    cache
+        .conn
+        .pragma_update(None, "secure_delete", setting.name())
+        .map_err(said)?;
+    let read_back = a_pragma(&cache, "secure_delete")?;
+    if read_back != setting.read_back() {
+        return Err(format!(
+            "secure delete was set {} and reads back as {read_back}",
+            setting.name()
+        ));
+    }
+    let folders = the_folders(&cache).map_err(said)?;
+
+    let (writing, rows) = timed(|| {
+        the_rest(&cache, &folders, shape.the_rest())?;
+        the_planted(&cache, &folders, shape.planted(0))
+    })?;
+    let written = the_size_of_the_files(home);
+    let (emptying, ()) = timed(|| taken_off(&cache, &rows))?;
+    let (compacting, ()) = timed(|| the_next_check(&cache))?;
+    let left = what_is_left_of(&cache, home, &shape.planted(0).collect()).map_err(said)?;
+
+    let named = format!("{}, secure delete {}", the_size(shape), setting.name());
+    let set = format!(
+        "Secure delete set {} and read back as {read_back}.",
+        setting.name()
+    );
+    let taken_off = with_commas(shape.taken_off);
+    let figures = vec![
+        Measured::new(
+            format!("{named}: writing the mail, as a rate"),
+            format!(
+                "{:.0} messages a second",
+                shape.messages as f64 / writing.as_secs_f64()
+            ),
+            format!(
+                "{set} {} messages written and their text saved in {}; {taken_off} of them \
+                 POP mail marked read and deleted into the Trash, inside the time.",
+                with_commas(shape.messages),
+                a_duration(writing)
+            ),
+        ),
+        Measured::a_size(
+            format!("{named}: the file and its write log once written"),
+            written.together(),
+            format!("{set} {}.", written),
+        ),
+        Measured::new(
+            format!("{named}: emptying {taken_off} from the Trash"),
+            a_duration(emptying),
+            format!(
+                "{set} Each message taken off through `local_delete::perform` and 13-44.8's \
+                 `take_off_this_computer`, which switches secure delete on for itself."
+            ),
+        ),
+        Measured::new(
+            format!("{named}: the next check's compaction"),
+            a_duration(compacting),
+            format!(
+                "{set} `let_the_search_index_forget_what_was_taken_off`: FTS5 merge steps under \
+                 secure delete and a truncating checkpoint."
+            ),
+        ),
+        Measured::new(
+            format!("{named}: what the file and its write log keep"),
+            format!(
+                "{} of {taken_off} messages left a copy",
+                with_commas(left.messages_with_a_copy)
+            ),
+            format!("{set} Read after the next check. {}", left.where_it_lies()),
+        ),
+    ];
+    Ok((Written { cache, folders }, figures))
+}
+
+impl Left {
+    /// Where the copies lie, in words.
+    fn where_it_lies(&self) -> String {
+        if self.by_place.is_empty() {
+            return "No copy in the file or its write log.".to_string();
+        }
+        let places: Vec<String> = self
+            .by_place
+            .iter()
+            .map(|(place, copies)| format!("{copies} {}", place.in_words()))
+            .collect();
+        format!("Copies: {}.", places.join(", "))
+    }
+}
+
+impl Place {
+    fn in_words(&self) -> String {
+        match self {
+            Self::Page(owner) => format!("on pages of `{owner}`"),
+            Self::Free => "on free pages".to_string(),
+            Self::WriteLog => "in the write log".to_string(),
+        }
+    }
+}
+
+/// What a pragma answers on the store's connection.
+fn a_pragma(cache: &MessageCache, name: &str) -> std::result::Result<i64, String> {
+    cache
+        .conn
+        .pragma_query_value(None, name, |value| value.get(0))
+        .map_err(said)
+}
+
+/// How big the store's file and its write log are.
+struct Sizes {
+    file: u64,
+    write_log: u64,
+}
+
+impl Sizes {
+    fn together(&self) -> u64 {
+        self.file + self.write_log
+    }
+}
+
+impl std::fmt::Display for Sizes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "The file {} and its write log {}",
+            megabytes(self.file),
+            megabytes(self.write_log)
+        )
+    }
+}
+
+/// The size of a file, or nothing when it is not there.
+fn the_length_of(path: &Path) -> u64 {
+    std::fs::metadata(path).map_or(0, |found| found.len())
+}
+
+fn the_size_of_the_files(home: &Path) -> Sizes {
+    Sizes {
+        file: the_length_of(&home.join(THE_FILE)),
+        write_log: the_length_of(&home.join(THE_WRITE_LOG)),
+    }
+}
+
+fn megabytes(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_000_000.0)
+}
+
+fn a_duration(took: Duration) -> String {
+    if took < Duration::from_secs(1) {
+        format!("{:.1} ms", took.as_secs_f64() * 1000.0)
+    } else {
+        format!("{:.2} s", took.as_secs_f64())
+    }
+}
+
+// ── The two commands ────────────────────────────────────────────────────────
+
+/// How often the temporary folder and the write log are sampled while a
+/// command runs.
+const SAMPLE_EVERY: Duration = Duration::from_millis(2);
+/// How long the second connection waits after the command is let go, so
+/// the command has begun before it asks. Short, because an incremental
+/// vacuum can be over in a few milliseconds.
+const LET_IT_BEGIN: Duration = Duration::from_millis(1);
+
+/// The largest the temporary folder and the write log came to.
+#[derive(Debug, Default, Clone, Copy)]
+struct Peaks {
+    temporary: u64,
+    write_log: u64,
+}
+
+/// One thing the second connection asked for while a command ran.
+struct Attempt {
+    /// How long after the command was let go it began.
+    began_after: Duration,
+    took: Duration,
+    /// What it answered, or the error it met.
+    answer: std::result::Result<String, String>,
+}
+
+/// What the second connection did while a command ran.
+struct Meanwhile {
+    read: Attempt,
+    write: Attempt,
+}
+
+/// One run of a command, with what was sampled and what the second
+/// connection met.
+struct Ran {
+    took: Duration,
+    peaks: Peaks,
+    meanwhile: Meanwhile,
+}
+
+/// The total size of the files directly inside `folder`. Each file's own
+/// metadata rather than the directory's listing, which on NTFS lags behind
+/// a file that is still open.
+fn bytes_in(folder: &Path) -> u64 {
+    std::fs::read_dir(folder)
+        .map(|listing| {
+            listing
+                .flatten()
+                .map(|entry| {
+                    std::fs::metadata(entry.path())
+                        .or_else(|_| entry.metadata())
+                        .map_or(0, |found| found.len())
+                })
+                .sum()
+        })
+        .unwrap_or(0)
+}
+
+/// Sample the temporary folder and the write log until told to stop, and
+/// answer the largest each came to.
+fn sample_until(stop: &AtomicBool, temporary: &Path, write_log: &Path) -> Peaks {
+    let mut peaks = Peaks::default();
+    loop {
+        let stopping = stop.load(Ordering::Acquire);
+        peaks.temporary = peaks.temporary.max(bytes_in(temporary));
+        peaks.write_log = peaks.write_log.max(the_length_of(write_log));
+        if stopping {
+            return peaks;
+        }
+        std::thread::sleep(SAMPLE_EVERY);
+    }
+}
+
+/// Ask for something and time it, saying when it began.
+fn attempt(let_go: Instant, work: impl FnOnce() -> Result<String>) -> Attempt {
+    let began_after = let_go.elapsed();
+    let started = Instant::now();
+    let answer = work().map_err(said);
+    Attempt {
+        began_after,
+        took: started.elapsed(),
+        answer,
+    }
+}
+
+/// A second store on the same file, opened before the command and waiting
+/// for it, then reading the Inbox and writing one message, as the window
+/// would while a check runs. It meets the barrier whether or not it opened,
+/// so the command is never left waiting for it.
+fn a_second_connection(
+    home: &Path,
+    inbox: i64,
+    nth: usize,
+    ready: &Barrier,
+) -> std::result::Result<Meanwhile, String> {
+    let opened = MessageCache::new(home.to_path_buf(), None);
+    ready.wait();
+    let let_go = Instant::now();
+    let other = opened.map_err(said)?;
+    std::thread::sleep(LET_IT_BEGIN);
+    let read = attempt(let_go, || {
+        other
+            .get_messages_for_folder(inbox, THE_IMAP_ACCOUNT)
+            .map(|rows| format!("{} messages read", with_commas(rows.len())))
+    });
+    let write = attempt(let_go, || {
+        other
+            .upsert_message(&one_of_the_rest(inbox, nth))
+            .map(|_| "one message written".to_string())
+    });
+    Ok(Meanwhile { read, write })
+}
+
+/// Run `statement` on the store's connection while the temporary folder
+/// and the write log are sampled and a second connection reads and writes.
+fn while_it_runs(
+    written: &Written,
+    home: &Path,
+    temporary: &Path,
+    statement: &str,
+    nth: usize,
+) -> std::result::Result<Ran, String> {
+    let ready = Barrier::new(2);
+    let stop = AtomicBool::new(false);
+    let write_log = home.join(THE_WRITE_LOG);
+    let inbox = written.folders.imap_inbox;
+    std::thread::scope(|scope| {
+        let other = scope.spawn(|| a_second_connection(home, inbox, nth, &ready));
+        let sampler = scope.spawn(|| sample_until(&stop, temporary, &write_log));
+        ready.wait();
+        let started = Instant::now();
+        let ran = written.cache.conn.execute_batch(statement);
+        let took = started.elapsed();
+        stop.store(true, Ordering::Release);
+        let peaks = sampler
+            .join()
+            .map_err(|_| "the sampler stopped early".to_string())?;
+        let meanwhile = other
+            .join()
+            .map_err(|_| "the second connection stopped early".to_string())??;
+        ran.map_err(|e| format!("{statement} refused: {e}"))?;
+        Ok(Ran {
+            took,
+            peaks,
+            meanwhile,
+        })
+    })
+}
+
+/// VACUUM, then auto vacuum switched to incremental and a second batch
+/// taken off and incrementally vacuumed, on the store written with secure
+/// delete off, each with its samples, what the second connection met and
+/// what the files keep after.
+fn the_commands(
+    shape: Shape,
+    written: &Written,
+    home: &Path,
+    temporary: &Path,
+) -> std::result::Result<Vec<Measured>, String> {
+    let tmp_pointed_there = std::env::temp_dir() == temporary;
+    let mut figures = Vec::new();
+
+    let auto_vacuum = a_pragma(&written.cache, "auto_vacuum")?;
+    let before = the_size_of_the_files(home);
+    let vacuumed = while_it_runs(written, home, temporary, "VACUUM", 9_000_001)?;
+    let left = what_is_left_of(&written.cache, home, &shape.planted(0).collect()).map_err(said)?;
+    figures.extend(the_figures_of_a_command(
+        &format!("{}, VACUUM", the_size(shape)),
+        &vacuumed,
+        (&left, shape.taken_off),
+        &format!("`auto_vacuum` read back as {auto_vacuum}. {before} before."),
+        tmp_pointed_there,
+    ));
+
+    written
+        .cache
+        .conn
+        .execute_batch("PRAGMA auto_vacuum = INCREMENTAL")
+        .map_err(said)?;
+    let before = the_size_of_the_files(home);
+    let switched = while_it_runs(written, home, temporary, "VACUUM", 9_000_002)?;
+    let auto_vacuum = a_pragma(&written.cache, "auto_vacuum")?;
+    figures.push(Measured::new(
+        format!(
+            "{}, the VACUUM that switches auto vacuum to incremental",
+            the_size(shape)
+        ),
+        a_duration(switched.took),
+        format!(
+            "`PRAGMA auto_vacuum = INCREMENTAL` then VACUUM; `auto_vacuum` read back as \
+             {auto_vacuum} after. {before} before. Peak temporary disk {}, peak write log {}. \
+             {} {}",
+            megabytes(switched.peaks.temporary),
+            megabytes(switched.peaks.write_log),
+            what_the_second_connection_met("read", &switched.meanwhile.read, switched.took),
+            what_the_second_connection_met("write", &switched.meanwhile.write, switched.took),
+        ),
+    ));
+
+    let rows = the_planted(&written.cache, &written.folders, shape.planted(1)).map_err(said)?;
+    taken_off(&written.cache, &rows).map_err(said)?;
+    the_next_check(&written.cache).map_err(said)?;
+    let before = the_size_of_the_files(home);
+    let incremental = while_it_runs(
+        written,
+        home,
+        temporary,
+        "PRAGMA incremental_vacuum",
+        9_000_003,
+    )?;
+    let left = what_is_left_of(&written.cache, home, &shape.planted(1).collect()).map_err(said)?;
+    figures.extend(the_figures_of_a_command(
+        &format!("{}, incremental vacuum", the_size(shape)),
+        &incremental,
+        (&left, shape.taken_off),
+        &format!(
+            "A second {} planted, marked read, deleted, taken off and compacted after the \
+             switch, then `PRAGMA incremental_vacuum`. {before} before.",
+            with_commas(shape.taken_off)
+        ),
+        tmp_pointed_there,
+    ));
+    Ok(figures)
+}
+
+/// The six figures of one command: its time, its two peaks, what the files
+/// keep after it, and the second connection's read and write.
+fn the_figures_of_a_command(
+    named: &str,
+    ran: &Ran,
+    (left, asked_about): (&Left, usize),
+    before: &str,
+    tmp_pointed_there: bool,
+) -> Vec<Measured> {
+    let sampled = format!(
+        "Sampled every {} ms while it ran.",
+        SAMPLE_EVERY.as_millis()
+    );
+    let where_temporary = if tmp_pointed_there {
+        "`TMP` and `TEMP` pointed at the sampled folder."
+    } else {
+        "`TMP` and `TEMP` not pointed at the sampled folder, so this figure measures nothing."
+    };
+    vec![
+        Measured::new(
+            format!("{named}: the time it took"),
+            a_duration(ran.took),
+            before.to_string(),
+        ),
+        Measured::a_size(
+            format!("{named}: peak temporary disk"),
+            ran.peaks.temporary,
+            format!("{sampled} {where_temporary}"),
+        ),
+        Measured::a_size(
+            format!("{named}: peak write log"),
+            ran.peaks.write_log,
+            format!("{sampled} {before}"),
+        ),
+        Measured::new(
+            format!("{named}: what the file and its write log keep"),
+            format!(
+                "{} of {} messages left a copy",
+                with_commas(left.messages_with_a_copy),
+                with_commas(asked_about)
+            ),
+            format!(
+                "Read straight after it, with nothing checkpointed. {}",
+                left.where_it_lies()
+            ),
+        ),
+        Measured::new(
+            format!("{named}: a second connection reading the Inbox meanwhile"),
+            what_it_took(&ran.meanwhile.read),
+            what_the_second_connection_met("read", &ran.meanwhile.read, ran.took),
+        ),
+        Measured::new(
+            format!("{named}: a second connection writing one message meanwhile"),
+            what_it_took(&ran.meanwhile.write),
+            what_the_second_connection_met("write", &ran.meanwhile.write, ran.took),
+        ),
+    ]
+}
+
+/// The value of a second connection's row: how long it took, or that it
+/// failed and after how long.
+fn what_it_took(asked: &Attempt) -> String {
+    match asked.answer {
+        Ok(_) => a_duration(asked.took),
+        Err(_) => format!("failed after {}", a_duration(asked.took)),
+    }
+}
+
+/// What a second connection's read or write met, in a sentence that says
+/// whether it overlapped the command at all.
+fn what_the_second_connection_met(kind: &str, asked: &Attempt, command_took: Duration) -> String {
+    let overlap = if asked.began_after < command_took {
+        "while the command ran"
+    } else {
+        "after the command had finished, so it says nothing about waiting for it"
+    };
+    let answer = match &asked.answer {
+        Ok(answered) => format!("It answered: {answered}."),
+        Err(error) => format!("It failed: {error}."),
+    };
+    format!(
+        "The second connection's {kind} began {} after the command was let go, and the \
+         command ran for {}: the {kind} began {overlap}. It took {}. {answer}",
+        a_duration(asked.began_after),
+        a_duration(command_took),
+        a_duration(asked.took)
+    )
 }
 
 /// How a row names the size it was taken at.
@@ -560,15 +1164,21 @@ const THE_COMMAND: &str = "`cargo test --release --lib data::message_cache::what
 
 /// The rows the page takes, one per figure.
 fn the_rows(shape: Shape, measured: &[Measured], build: &str, machine: &str) -> Vec<String> {
-    let (date, _commit, version) = today_commit_and_version();
+    let (date, commit, version) = today_commit_and_version();
     measured
         .iter()
         .map(|m| {
             let conditions = format!(
-                "{version}, {build} build, {machine}, {} messages, {} taken off. {}",
-                shape.messages, shape.taken_off, m.detail
+                "{version} at {commit}, {build} build, {machine}, `WIXEN_TEST_THREADS` unset and \
+                 one test running. {} synthetic messages in a `tempfile` directory, {} written \
+                 the way an IMAP check writes them and {} the POP way, each carrying a planted \
+                 word in its subject and text; no real mailbox. {}",
+                with_commas(shape.messages),
+                with_commas(shape.messages - shape.taken_off),
+                with_commas(shape.taken_off),
+                m.detail
             );
-            the_row(&[&m.what, &m.value, THE_COMMAND, &date, &conditions])
+            the_row(&[&m.what, &m.value, THE_COMMAND, &date, &commit, &conditions])
         })
         .collect()
 }
@@ -740,13 +1350,27 @@ mod tests {
     /// How many planted messages the finding takes off.
     const PLANTED_AT_A_SMALL_SIZE: usize = 300;
 
+    /// The most planted messages the finding lets leave a copy. Read on
+    /// 2026-10-03 over fifteen runs of this size: seven left none and eight
+    /// left one message's copies, one or two of them. Ten is far above that
+    /// and far below what any break of the removal leaves.
+    const MOST_THAT_LEAVE_A_COPY: usize = 10;
+
     /// D42: what the file and its write log keep of mail taken off through
     /// 13-44.8's path, after the next check, pinned as today's behaviour.
-    /// Read on 2026-10-03 at this size: before the taking off, all 300
-    /// messages had copies in the file and the write log; after it and the
-    /// next check, none had a copy in either. Building secure delete on every
-    /// write or a command that compacts the file changes nothing here;
-    /// taking secure delete out of the removal does.
+    ///
+    /// Read on 2026-10-03 at this size. Before the taking off, all 300
+    /// messages had copies in the file and the write log. After it and the
+    /// next check, in about half of the runs one message left one or two
+    /// copies, and in the rest none did. Every copy was an earlier version
+    /// of the message's row, its subject and snippet as a change before the
+    /// removal wrote them, in the unused space of a page of `messages`: the
+    /// copies
+    /// the privacy page says nothing searches out. Which runs leave one
+    /// depends on the lengths of the times the store writes, so the case
+    /// pins where a copy can lie and how few there are, not whether one
+    /// does. Secure delete on every write would leave none; whoever builds
+    /// it turns this case round to say so, in the same commit.
     #[test]
     fn test_what_the_file_keeps_of_mail_taken_off_after_the_next_check() {
         let home = tempfile::tempdir().expect("a folder to leave nothing in");
@@ -768,10 +1392,18 @@ mod tests {
         taken_off(&cache, &rows).expect("the Trash emptied");
         the_next_check(&cache).expect("the next check");
 
-        assert_eq!(
-            what_is_left_of(&cache, home.path(), &these).expect("the files read"),
-            Left::default(),
-            "the file or its write log keeps words of mail taken off this computer"
+        let left = what_is_left_of(&cache, home.path(), &these).expect("the files read");
+        assert!(
+            left.by_place
+                .keys()
+                .all(|place| *place == Place::Page("messages".to_string())),
+            "a word of mail taken off lies somewhere other than unused space on a page of \
+             messages: {left:?}"
+        );
+        assert!(
+            left.messages_with_a_copy <= MOST_THAT_LEAVE_A_COPY,
+            "more of the mail taken off this computer left a copy than today's removal \
+             leaves: {left:?}"
         );
     }
 
