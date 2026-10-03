@@ -251,6 +251,18 @@ image = { version = "0.25", default-features = false, features = [
 # somebody else and a fault in a parser handling a stranger's file is reachable
 # by that stranger. Nothing here writes one.
 outlook-pst = "1.2.0"
+# Opening the container an Outlook saved message is: a .msg file is a Compound
+# File Binary file, the same kind of box Office used for its older documents,
+# and the message's properties are streams inside it. The mapping from those
+# properties to a message is the one written above for the data file; this
+# reads only the box.
+#
+# The file is a stranger's, so reading is the whole of the risk. Audited in the
+# phase 13 research of 2026-09-24 and confirmed by Pratik the same day: no
+# unsafe code, a directory that loops or a sector pointed to twice is refused,
+# MIT with its licence file shipped, and it opened four real Outlook files. It
+# also writes a container, which is what lets the tests build their own.
+cfb = "0.15.0"
 # Looking a name up in an organisation's directory while writing to somebody.
 # In a workplace most people you write to are in neither your own contacts nor
 # any message you have received, and this is the one place they are.
