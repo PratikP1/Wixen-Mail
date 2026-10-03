@@ -1327,10 +1327,21 @@ fn the_share_of_history_before_red_green() -> Result<TheShare, String> {
     the_share_asking(git)
 }
 
-/// The share, asked of `git`.
+/// Whether git's refusal says there is no repository here at all, which is
+/// what it answers in a copy with no `.git`.
+fn says_there_is_no_repository(refusal: &str) -> bool {
+    refusal.contains("not a git repository")
+}
+
+/// The share, asked of `git`. Decided by whether git finds a repository at
+/// all: none is said rather than failed, and a repository that does not hold
+/// the commit fails as a shallow checkout did on 2026-09-15.
 fn the_share_asking(git: impl Fn(&[&str]) -> Result<String, String>) -> Result<TheShare, String> {
-    // Today's reading, kept until the decision is written: a copy with no
-    // history fails the way a history without the commit does.
+    match git(&["rev-parse", "--git-dir"]) {
+        Err(why) if says_there_is_no_repository(&why) => return Ok(TheShare::NoHistoryHere),
+        Err(why) => return Err(why),
+        Ok(_) => {}
+    }
     git(&[
         "merge-base",
         "--is-ancestor",
@@ -1478,20 +1489,22 @@ fn test_a_history_without_the_commit_is_still_a_failure() {
 
 #[test]
 fn test_the_share_of_history_before_red_green_is_computed_and_printed() {
-    let TheShare::Computed { before, in_all } =
-        the_share_of_history_before_red_green().unwrap_or_else(|why| panic!("{why}"))
-    else {
-        panic!("{NO_HISTORY_HERE}");
-    };
-    let share = before as f64 * 100.0 / in_all as f64;
+    let share = the_share_of_history_before_red_green().unwrap_or_else(|why| panic!("{why}"));
     let today = chrono::Local::now().format("%Y-%m-%d");
-    println!("{before} of {in_all} commits, {share:.1}%, predate red/green as of {today}");
+    let said = match share {
+        TheShare::Computed { before, in_all } => {
+            let percent = before as f64 * 100.0 / in_all as f64;
+            format!("{before} of {in_all} commits, {percent:.1}%, predate red/green as of {today}")
+        }
+        TheShare::NoHistoryHere => NO_HISTORY_HERE.to_string(),
+    };
+    println!("{said}");
 
     let wrong = sites_that_state_the_ratio(&read_the_sites());
     assert!(
         wrong.is_empty(),
-        "the share of history before red/green is {before} of {in_all} today and moves with \
-         every commit, so no page states it as two absolutes:\n  {}",
+        "the share of history before red/green moves with every commit ({said}), so no page \
+         states it as two absolutes:\n  {}",
         wrong.join("\n  ")
     );
 }
