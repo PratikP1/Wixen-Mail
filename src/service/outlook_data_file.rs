@@ -2468,8 +2468,9 @@ fn went_to_from(rows: impl Iterator<Item = WhatTheItemSaid>) -> WhoItWentTo {
             // A blind copy, and anything else the file lists. What this program
             // reads a message as has no blind-copy line to put one on, and
             // writing one onto a message received would tell everybody who
-            // reads it afterwards something the sender chose not to say.
-            _ => {}
+            // reads it afterwards something the sender chose not to say. It is
+            // counted instead, so whatever reads the message can say so.
+            _ => went_to.left_off += 1,
         }
     }
     went_to

@@ -1,35 +1,130 @@
 //! One message Outlook saved as a file of its own: a `.msg`.
 //!
-//! Not yet written: the failing cases below come first.
+//! Somebody who drags a message out of Outlook onto their desktop gets one of
+//! these. Inside is a small container holding the same properties an Outlook
+//! data file keeps a message as, so this reads the container and decides
+//! nothing else: the kind of item, the sender, the recipients, the subject and
+//! the body all go through the mapping its parent already has for a data
+//! file's messages. A saved message and a message in a data file cannot come
+//! to be read two ways.
+//!
+//! # A stranger's file
+//!
+//! Every size, count, alphabet and class in one was written by whoever made
+//! it, so each is read as a claim. No stream is read further than what may
+//! still come out under [`HowMuchToAllow::most_one_item_comes_to`], counted
+//! across the whole message, and a stream that gives up less than it says it
+//! holds is a damaged file rather than a short value. The container is opened
+//! by the `cfb` package, which refuses a directory that loops back on itself
+//! and a sector two chains both claim, in the lenient open used here as well
+//! as in the strict one.
+//!
+//! # The layout
+//!
+//! MS-OXMSG, read on learn.microsoft.com on 2026-10-03, and four real Outlook
+//! files read the same way: in each storage a stream named
+//! `__properties_version1.0`, a header of 32 bytes at the top (section
+//! 2.4.1.1) and of 8 in a recipient's storage (section 2.4.1.3), then one
+//! 16-byte entry a property. A value of eight bytes or fewer sits in its
+//! entry; a longer one sits in a stream of its own named for its tag.
 
-use super::HowMuchToAllow;
-use std::io::{Read, Seek};
+use super::{
+    DISPLAY_NAME, EMAIL_ADDRESS, EMAIL_ADDRESS_KIND, HowMuchToAllow, MESSAGE_CLASS, SMTP_ADDRESS,
+    TheItem, WhatItSaid, WhatKind, WhatTheItemSaid, WhatTheNamesAreHere, a_message_from, text_in,
+    the_kind_of, went_to_from, what_is_worth_reading, which_alphabet,
+};
+use crate::application::message_files;
+use std::io::{Read, Seek, SeekFrom};
 
 /// How a saved Outlook message begins: the eight bytes every Compound File
-/// Binary container opens with.
+/// Binary container opens with, the same as `cfb`'s own `MAGIC_NUMBER`
+/// (`src/internal/consts.rs`), and what four real Outlook files began with.
+///
+/// Named for the saved message so it cannot be mistaken for
+/// [`super::HOW_ONE_BEGINS`], which is how a data file begins. Office's older
+/// documents begin this way too, so these bytes say a file may be a saved
+/// message and never that it is one.
 pub const HOW_A_SAVED_MESSAGE_BEGINS: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+
+/// The stream every storage in a saved message keeps its properties in.
+const THE_PROPERTIES: &str = "__properties_version1.0";
+/// How each recipient's storage is named, before its number.
+const A_RECIPIENT: &str = "__recip_version1.0_#";
+/// How the stream holding one long value is named, before its tag.
+const A_VALUE_OF_ITS_OWN: &str = "__substg1.0_";
+
+/// The property stream's header at the top of a saved message, MS-OXMSG
+/// 2.4.1.1: eight reserved bytes, four counts of four, eight reserved.
+const HEADER_AT_THE_TOP: usize = 32;
+/// The property stream's header in a recipient's storage, MS-OXMSG 2.4.1.3:
+/// eight reserved bytes.
+const HEADER_BESIDE_THE_MESSAGE: usize = 8;
+/// One property's entry, MS-OXMSG 2.4.2.1 and 2.4.2.2.
+const ONE_ENTRY: usize = 16;
+
+// The kinds of value, by the numbers MS-OXCDATA 2.11.1 gives them.
+const A_SHORT_WHOLE_NUMBER: u16 = 0x0002;
+const A_WHOLE_NUMBER: u16 = 0x0003;
+const YES_OR_NO: u16 = 0x000B;
+const A_LONG_WHOLE_NUMBER: u16 = 0x0014;
+const A_MOMENT: u16 = 0x0040;
+const EIGHT_BIT_TEXT: u16 = 0x001E;
+const UNICODE_TEXT: u16 = 0x001F;
+const BYTES: u16 = 0x0102;
+
+/// What a recipient is read for: who they are. Whether they were written to,
+/// copied in or copied in blind is a number, and sits in its entry.
+const WHAT_A_RECIPIENT_IS_READ_FOR: [u16; 4] = [
+    DISPLAY_NAME,
+    EMAIL_ADDRESS,
+    EMAIL_ADDRESS_KIND,
+    SMTP_ADDRESS,
+];
 
 /// One saved message, read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedOutlookMessage {
-    /// The message, as the bytes of one message.
+    /// The message, as the bytes of one message, which this program's own
+    /// reader reads like any other.
     pub mail: Vec<u8>,
 }
 
-/// Why a saved message was not read.
+/// Why a saved message was not read, each with its own sentence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhyItWasNotRead {
+    /// It is not a saved Outlook message at all.
     NotAnOutlookMessage,
+    /// It is one of Outlook's other kinds, named: an appointment, a contact,
+    /// a task or a note.
     AnotherKind(&'static str),
+    /// It is an Outlook item of none of the kinds this program keeps.
     NotAKindThisProgramKeeps,
+    /// It begins as a saved message and does not hold what it says it holds.
     DamagedPartway,
+    /// It comes to more than this program reads of one message.
     TooLarge,
 }
 
 impl WhyItWasNotRead {
-    /// What to say about it.
+    /// What to say about it, to somebody who chose the file.
     pub fn sentence(&self) -> String {
-        unimplemented!("13-47 task 3")
+        match self {
+            Self::NotAnOutlookMessage => "That file is not a saved Outlook message.".to_string(),
+            Self::AnotherKind(kind) => format!(
+                "That is an Outlook {kind}, not a message. Wixen Mail reads saved messages from \
+                 .msg files."
+            ),
+            Self::NotAKindThisProgramKeeps => {
+                "That is a saved Outlook item of a kind Wixen Mail does not keep.".to_string()
+            }
+            Self::DamagedPartway => {
+                "That saved Outlook message is damaged partway through, so it was not read."
+                    .to_string()
+            }
+            Self::TooLarge => "That saved Outlook message is larger than Wixen Mail will read, so \
+                               it was left where it is."
+                .to_string(),
+        }
     }
 }
 
@@ -39,12 +134,283 @@ impl From<WhyItWasNotRead> for crate::common::Error {
     }
 }
 
-/// Read one saved message.
+/// Read one saved message into the bytes of one message.
+///
+/// Mail only. One of Outlook's other kinds is refused by name, because each
+/// needs properties Outlook numbers for itself, which a reader of its own
+/// would have to find.
 pub fn read<R: Read + Seek>(
-    _from: R,
-    _allowed: HowMuchToAllow,
+    mut from: R,
+    allowed: HowMuchToAllow,
 ) -> Result<SavedOutlookMessage, WhyItWasNotRead> {
-    unimplemented!("13-47 task 3")
+    if !begins_like_a_container(&mut from)? {
+        return Err(WhyItWasNotRead::NotAnOutlookMessage);
+    }
+    let file = cfb::CompoundFile::open(from).map_err(|_| WhyItWasNotRead::DamagedPartway)?;
+    let mut container = TheContainer {
+        file,
+        may_still_come_out: allowed.most_one_item_comes_to,
+    };
+    if !container.file.is_stream(inside("", THE_PROPERTIES)) {
+        return Err(WhyItWasNotRead::NotAnOutlookMessage);
+    }
+
+    let entries = container.entries_in("", HEADER_AT_THE_TOP)?;
+    // The numbers first, because one of them is the alphabet the text is in.
+    let mut said = fixed_values(&entries);
+    let alphabet = which_alphabet(&said);
+    let names = WhatTheNamesAreHere::default();
+    // Then what it is, before anything larger is read.
+    container.read_into(&mut said, "", &entries, &[MESSAGE_CLASS], alphabet)?;
+    is_mail(&TheItem::of(&said, &names))?;
+    container.read_into(
+        &mut said,
+        "",
+        &entries,
+        &what_is_worth_reading(&names),
+        alphabet,
+    )?;
+
+    let went_to = went_to_from(container.recipients(alphabet)?.into_iter());
+    let message = a_message_from(&TheItem::of(&said, &names), &went_to);
+    Ok(SavedOutlookMessage {
+        mail: message_files::written_as_one_message(&message, &[]),
+    })
+}
+
+/// Whether a file begins the way a saved message does, read and then put
+/// back at its beginning.
+fn begins_like_a_container<R: Read + Seek>(from: &mut R) -> Result<bool, WhyItWasNotRead> {
+    let mut first = Vec::with_capacity(HOW_A_SAVED_MESSAGE_BEGINS.len());
+    from.by_ref()
+        .take(HOW_A_SAVED_MESSAGE_BEGINS.len() as u64)
+        .read_to_end(&mut first)
+        .map_err(|_| WhyItWasNotRead::DamagedPartway)?;
+    from.seek(SeekFrom::Start(0))
+        .map_err(|_| WhyItWasNotRead::DamagedPartway)?;
+    Ok(first == HOW_A_SAVED_MESSAGE_BEGINS)
+}
+
+/// Mail, or the reason it is not, by the data file's own rule for what an
+/// Outlook item is.
+fn is_mail(item: &TheItem<'_>) -> Result<(), WhyItWasNotRead> {
+    match item.words(MESSAGE_CLASS).and_then(the_kind_of) {
+        Some(WhatKind::Mail) => Ok(()),
+        Some(WhatKind::Appointment) => Err(WhyItWasNotRead::AnotherKind("appointment")),
+        Some(WhatKind::Contact) => Err(WhyItWasNotRead::AnotherKind("contact")),
+        Some(WhatKind::Task) => Err(WhyItWasNotRead::AnotherKind("task")),
+        Some(WhatKind::Note) => Err(WhyItWasNotRead::AnotherKind("note")),
+        None => Err(WhyItWasNotRead::NotAKindThisProgramKeeps),
+    }
+}
+
+/// The path of one stream or storage inside another; the top is `""`.
+fn inside(storage: &str, name: &str) -> String {
+    format!("{storage}/{name}")
+}
+
+/// One entry of a property stream: which property, what kind of value it
+/// holds, and the eight bytes that are the value when it is short enough.
+#[derive(Debug, Clone, Copy)]
+struct Entry {
+    id: u16,
+    kind: u16,
+    value: [u8; 8],
+}
+
+impl Entry {
+    /// The tag a long value's stream is named for: the property, then its kind.
+    fn tag(&self) -> u32 {
+        (u32::from(self.id) << 16) | u32::from(self.kind)
+    }
+
+    /// The value, when it sits in the entry rather than in a stream.
+    fn fixed(&self) -> Option<WhatItSaid> {
+        let [a, b, c, d, ..] = self.value;
+        Some(match self.kind {
+            A_SHORT_WHOLE_NUMBER => WhatItSaid::Whole(i64::from(i16::from_le_bytes([a, b]))),
+            A_WHOLE_NUMBER => WhatItSaid::Whole(i64::from(i32::from_le_bytes([a, b, c, d]))),
+            A_LONG_WHOLE_NUMBER => WhatItSaid::Whole(i64::from_le_bytes(self.value)),
+            YES_OR_NO => WhatItSaid::YesOrNo(a != 0),
+            A_MOMENT => WhatItSaid::When(i64::from_le_bytes(self.value)),
+            _ => return None,
+        })
+    }
+}
+
+/// The entries after a property stream's header.
+///
+/// A stream shorter than its header is damaged. Bytes after the last whole
+/// entry are not an entry and are left alone.
+fn entries_after(header: usize, stream: &[u8]) -> Result<Vec<Entry>, WhyItWasNotRead> {
+    let after = stream
+        .get(header..)
+        .ok_or(WhyItWasNotRead::DamagedPartway)?;
+    let (whole_entries, _) = after.as_chunks::<ONE_ENTRY>();
+    Ok(whole_entries
+        .iter()
+        .map(
+            |&[kind_low, kind_high, id_low, id_high, _, _, _, _, value @ ..]| Entry {
+                id: u16::from_le_bytes([id_low, id_high]),
+                kind: u16::from_le_bytes([kind_low, kind_high]),
+                value,
+            },
+        )
+        .collect())
+}
+
+/// Everything the entries hold in themselves.
+fn fixed_values(entries: &[Entry]) -> WhatTheItemSaid {
+    WhatTheItemSaid {
+        said: entries
+            .iter()
+            .filter_map(|entry| Some((entry.id, entry.fixed()?)))
+            .collect(),
+    }
+}
+
+/// One long value, out of the stream that holds it.
+///
+/// An empty stream is nothing. Text loses the nulls Outlook may write after
+/// it, which are not letters, and one-byte text is read in the alphabet the
+/// message names, through the data file's own reading.
+fn said_by_its_stream(kind: u16, bytes: Vec<u8>, alphabet: Option<u16>) -> Option<WhatItSaid> {
+    if bytes.is_empty() {
+        return None;
+    }
+    match kind {
+        UNICODE_TEXT => {
+            let (pairs, _) = bytes.as_chunks::<2>();
+            let letters: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
+            Some(WhatItSaid::Words(String::from_utf16_lossy(
+                before_the_nulls(&letters),
+            )))
+        }
+        EIGHT_BIT_TEXT => Some(WhatItSaid::Words(text_in(
+            before_the_nulls(&bytes),
+            alphabet,
+        ))),
+        BYTES => Some(WhatItSaid::Bytes(bytes)),
+        _ => None,
+    }
+}
+
+/// Text with the nulls at its end taken off.
+fn before_the_nulls<T: Copy + Default + PartialEq>(letters: &[T]) -> &[T] {
+    let end = letters
+        .iter()
+        .rposition(|letter| *letter != T::default())
+        .map_or(0, |last| last + 1);
+    &letters[..end]
+}
+
+/// An open saved message, and how much more may still come out of it.
+struct TheContainer<R> {
+    file: cfb::CompoundFile<R>,
+    may_still_come_out: u64,
+}
+
+impl<R: Read + Seek> TheContainer<R> {
+    /// The whole of one stream, or nothing when there is no such stream.
+    ///
+    /// Never read further than what may still come out, so a stream claiming
+    /// more is refused having been read only that far, whatever it claims.
+    /// One that gives up less than it claims to hold is damaged.
+    fn stream(&mut self, path: &str) -> Result<Option<Vec<u8>>, WhyItWasNotRead> {
+        if !self.file.is_stream(path) {
+            return Ok(None);
+        }
+        let opened = self
+            .file
+            .open_stream(path)
+            .map_err(|_| WhyItWasNotRead::DamagedPartway)?;
+        let claimed = opened.len();
+        let mut came_out = Vec::new();
+        opened
+            .take(self.may_still_come_out.saturating_add(1))
+            .read_to_end(&mut came_out)
+            .map_err(|_| WhyItWasNotRead::DamagedPartway)?;
+        let came = came_out.len() as u64;
+        if came > self.may_still_come_out {
+            return Err(WhyItWasNotRead::TooLarge);
+        }
+        if came < claimed {
+            return Err(WhyItWasNotRead::DamagedPartway);
+        }
+        self.may_still_come_out -= came;
+        Ok(Some(came_out))
+    }
+
+    /// The entries of one storage's property stream, which every storage
+    /// in a saved message has.
+    fn entries_in(&mut self, storage: &str, header: usize) -> Result<Vec<Entry>, WhyItWasNotRead> {
+        let stream = self
+            .stream(&inside(storage, THE_PROPERTIES))?
+            .ok_or(WhyItWasNotRead::DamagedPartway)?;
+        entries_after(header, &stream)
+    }
+
+    /// The long values asked for, out of their streams, into what was said.
+    ///
+    /// Named rather than taking whatever the file holds, so the largest
+    /// things in a saved message are never read unless they are wanted.
+    fn read_into(
+        &mut self,
+        said: &mut WhatTheItemSaid,
+        storage: &str,
+        entries: &[Entry],
+        wanted: &[u16],
+        alphabet: Option<u16>,
+    ) -> Result<(), WhyItWasNotRead> {
+        for entry in entries.iter().filter(|entry| wanted.contains(&entry.id)) {
+            if said.said.contains_key(&entry.id) {
+                continue;
+            }
+            let named = format!("{A_VALUE_OF_ITS_OWN}{:08X}", entry.tag());
+            let Some(bytes) = self.stream(&inside(storage, &named))? else {
+                continue;
+            };
+            if let Some(value) = said_by_its_stream(entry.kind, bytes, alphabet) {
+                said.said.insert(entry.id, value);
+            }
+        }
+        Ok(())
+    }
+
+    /// The storages at the top whose names begin this way, in their order.
+    fn storages_named(&self, beginning: &str) -> Vec<String> {
+        let mut named: Vec<String> = self
+            .file
+            .read_root_storage()
+            .filter(|one| one.is_storage() && one.name().starts_with(beginning))
+            .map(|one| inside("", one.name()))
+            .collect();
+        named.sort();
+        named
+    }
+
+    /// What each recipient said, in the message's alphabet, since they sit
+    /// beside it rather than on it.
+    fn recipients(
+        &mut self,
+        alphabet: Option<u16>,
+    ) -> Result<Vec<WhatTheItemSaid>, WhyItWasNotRead> {
+        self.storages_named(A_RECIPIENT)
+            .into_iter()
+            .map(|storage| {
+                let entries = self.entries_in(&storage, HEADER_BESIDE_THE_MESSAGE)?;
+                let mut said = fixed_values(&entries);
+                self.read_into(
+                    &mut said,
+                    &storage,
+                    &entries,
+                    &WHAT_A_RECIPIENT_IS_READ_FOR,
+                    alphabet,
+                )?;
+                Ok(said)
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
