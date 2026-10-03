@@ -61,9 +61,10 @@ metrics:
 
 # Phase 13 Plan 51: The pages, the listening lines and the closing read Summary
 
-**Phase 13's pages describe the program the phase built and every tick stands on a name in
-the tree; the phase's full gate runs on this branch after the documents commit.** All
-fourteen requirements stand, each with a closing line.
+**Phase 13 is closed: the full gate was green on its first run, the pages describe the
+program the phase built, and every tick stands on a name in the tree.** `scripts/check.sh
+all` at `19d3b0ae` exited 0 after 934 s with 10,549 tests passed. All fourteen of the phase's
+requirements stand, each with a closing line.
 
 ## For a person
 
@@ -165,7 +166,8 @@ the `- [x] 13-...-PLAN.md` lines, and the row reads 72/72. `STATE.md` has `curre
 `Current Plan: 72`, `Total Plans in Phase: 72`, and `completed_plans: 244` of
 `total_plans: 244`, from `ls .planning/phases/*/*-SUMMARY.md | wc -l` and the same over
 `*-PLAN.md` once this file exists. The requirement marks: a closing line under each of the
-fourteen and its traceability row. The phase line stays open until the full gate is green.
+fourteen and its traceability row. The phase line is ticked and the row's last column reads Complete
+from the second commit, after the gate.
 
 ## The ledger
 
@@ -204,8 +206,31 @@ open, 107 fixed, 802 in all, agreeing with the rows and the JSON by
 
 ## The full gate
 
-Runs after the documents commit, with `git rev-list HEAD..main --count` read first; its
-result, the measurements row and the phase line follow in the next commit.
+The clipboard target alone first, `cargo test --test a_passphrase_box_takes_a_real_paste`,
+11 passed, so the session was not locked. `git rev-list HEAD..main --count` read 0
+immediately before the run. Then, with nothing else building:
+
+```
+scripts/check.sh all > <scratchpad>/13-51-full-gate.log 2>&1; echo "exit=$?"
+exit=0
+check.sh: all passed after 934 s: start 1 s, rustfmt 4 s, clippy 47 s, the scripts that decide what runs 356 s, security advisories 12 s, tests 403 s, release build 111 s
+```
+
+At `19d3b0ae`, 17:16:08Z to 17:31:43Z on 2026-10-03, warm, NVDA running for the tester.
+Summed over its 150 `test result:` lines: 10,549 passed, 0 failed, 14 ignored, against 8,985
+on phase 12's gate. The audit: all 5 accepted advisories still reported, nothing outside
+`.cargo/audit.toml`. Green on the first run, so no red and green pair was needed. The script
+suites took 356 s against phase 12's 103 s; the row records that and does not explain it. The
+run covers five of CI's seven jobs: no debug build, no setup executable, no search handler
+checks, and no NVDA case or accessibility scan, which this plan's pull request runs and the
+push of `main` (ledger 802) would. The row is on `docs/development/measurements.md`.
+
+## Commits
+
+| Commit | What | Hook |
+|---|---|---|
+| `19d3b0ae` | docs: the pages, the listening lines, the closing read, the four marks, the ledger | docs_only, 124 s |
+| this commit | docs: the full gate's row, the phase line, this file's gate section | below |
 
 ## Deviations from Plan
 
