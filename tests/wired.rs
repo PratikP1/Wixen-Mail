@@ -3553,17 +3553,22 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
 
 /// Importing mail sends each kind of file to its own reader.
 ///
-/// Three readers refuse each other's files: a zip or a folder, one saved
-/// message, and an Outlook data file. The worker asks one question about how
-/// the file begins and dispatches on all three answers. Before #53 it asked
-/// about two, and a data file chosen through All files fell to the archive
-/// reader and was told it was not a mailbox archive, which is true and sent
-/// somebody looking for a different file.
+/// Four readers refuse each other's files: a zip or a folder, one saved
+/// message, an Outlook data file, and a message Outlook saved. The worker asks
+/// one question about how the file begins and dispatches on all four answers.
+/// Before #53 it asked about two, and a data file chosen through All files fell
+/// to the archive reader and was told it was not a mailbox archive, which is
+/// true and sent somebody looking for a different file.
 ///
-/// What this cannot see: whether the data file's mail lands, which is measured
-/// against a real database in `application::importing_an_outlook_data_file`.
-/// This only says the window hands the third kind of file to that module
-/// rather than to the archive reader.
+/// Inside a folder or zip the same holds for each entry: one the routing calls
+/// a saved Outlook message is read whole, under the archive's own bound on one
+/// entry, and handed to its own reader, never read in pieces as a mailbox file,
+/// which would find no mail in it and count it as nothing.
+///
+/// What this cannot see: whether the mail lands, which is measured against a
+/// real database in `application::importing_an_outlook_data_file` and
+/// `application::importing_messages`. This only says the window hands each kind
+/// of file to the module that reads it rather than to the archive reader.
 #[test]
 fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -3572,6 +3577,7 @@ fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
     for answer in [
         "WhatWasChosen::MailInOneFile",
         "WhatWasChosen::AnOutlookDataFile",
+        "WhatWasChosen::AnOutlookMessage",
         "WhatWasChosen::AnArchive",
     ] {
         assert!(
@@ -3584,6 +3590,33 @@ fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
         worker.contains("importing_an_outlook_data_file::brought_in("),
         "an Outlook data file is recognised and then handed to nothing that reads one"
     );
+    assert!(
+        worker.contains("importing_messages::a_saved_outlook_message_brought_in("),
+        "a message Outlook saved is recognised and then handed to nothing that reads one"
+    );
+
+    let Some(at) = worker.find("ReadAs::OneSavedOutlookMessage") else {
+        panic!(
+            "the import worker reads every entry of a folder or zip as a mailbox file, so a \
+             message Outlook saved inside one is read as one, holds no mail, and is counted as \
+             nothing"
+        );
+    };
+    let before_the_mailbox_reading = &worker[at..];
+    let before_the_mailbox_reading = &before_the_mailbox_reading[..before_the_mailbox_reading
+        .find("one_entry_read_in_pieces(")
+        .unwrap_or(before_the_mailbox_reading.len())];
+    for step in [
+        "one_entry_read_through(",
+        "one_saved_outlook_message_in(",
+        "one_saved_outlook_message_filed(",
+    ] {
+        assert!(
+            before_the_mailbox_reading.contains(step),
+            "a message Outlook saved inside a folder or zip no longer reaches {step} before the \
+             mailbox file's reading, so it is read as a mailbox file and counted as nothing"
+        );
+    }
 }
 
 /// Everything aimed at a chosen message asks which account that message is in.
