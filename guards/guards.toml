@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 622 records have arrived since and have not been through it.
+# 624 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3805,7 +3805,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 36 },
+    { file = "src/application/importing_messages.rs", tests = 42 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
@@ -12753,7 +12753,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 36 },
+    { file = "src/application/importing_messages.rs", tests = 42 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
@@ -12795,7 +12795,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 36 },
+    { file = "src/application/importing_messages.rs", tests = 42 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
@@ -16057,7 +16057,7 @@ red = [
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 36 },
+    { file = "src/application/importing_messages.rs", tests = 42 },
     { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
@@ -25207,10 +25207,11 @@ file = "src/application/import_tree.rs"
 before = """    if opens_with.starts_with(crate::service::outlook_data_file::HOW_ONE_BEGINS) {"""
 after = """    if opens_with.starts_with(b"never") {"""
 red = [
+    "application::import_tree::tests::test_a_saved_outlook_message_goes_to_its_own_reader",
     "application::import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 33 },
+    { file = "src/application/import_tree.rs", tests = 36 },
 ]
 
 # The name Save As offers is the subject with every path separator made
@@ -25233,7 +25234,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/export_tree.rs", tests = 55 },
-    { file = "src/application/importing_messages.rs", tests = 36 },
+    { file = "src/application/importing_messages.rs", tests = 42 },
 ]
 
 # File, Save As reaches a handler that writes, held by a reading of the main
@@ -37740,4 +37741,38 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+]
+
+# A saved Outlook message chosen alone asked the mail question first, which
+# it answers as not mail, so it fell to the archive reader and was told it
+# was not an archive (13-48, T-13-48-02). The break takes the container's
+# question away, which is the mail question asked before it. Written
+# 2026-10-03 by 13-48.
+[[guard]]
+name = "a saved Outlook message chosen alone is sent to its own reader"
+file = "src/application/import_tree.rs"
+before = '''    if begins_like_a_saved_outlook_message(opens_with) {
+        return WhatWasChosen::AnOutlookMessage;'''
+after = '''    if opens_with.starts_with(b"never") {
+        return WhatWasChosen::AnOutlookMessage;'''
+red = [
+    "application::import_tree::tests::test_a_saved_outlook_message_goes_to_its_own_reader",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 36 },
+]
+
+# Blind copy recipients a saved Outlook message held, left off the message
+# and then left out of the count, so the closing sentence says nothing of
+# them (13-48, T-13-48-03). Written 2026-10-03 by 13-48.
+[[guard]]
+name = "blind copies left off a saved Outlook message are counted"
+file = "src/application/importing_messages.rs"
+before = '''                left.blind_copies += in_the_file.blind_copies;'''
+after = '''                let _ = in_the_file.blind_copies;'''
+red = [
+    "application::importing_messages::tests::test_what_a_saved_outlook_message_left_is_counted_by_cause",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 42 },
 ]

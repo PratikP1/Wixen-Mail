@@ -5,8 +5,10 @@
 //! mail, where it goes, what to do about a message that is here already, and
 //! what somebody is told at the end.
 //!
-//! Nothing here opens a file or talks to a server, and one thing here writes to
-//! the database: [`file_one_imported_message`], which is the single place a
+//! Nothing here talks to a server. One thing here opens a file, a saved Outlook
+//! message somebody chose, which its reader takes out of the file a piece at a
+//! time rather than this holding it whole. And one thing here writes to the
+//! database: [`file_one_imported_message`], which is the single place a
 //! message read out of a file becomes a row in a folder. It lives here rather
 //! than in the window because getting it wrong loses somebody's mail quietly,
 //! and here it can be run against a real database in a test.
@@ -343,9 +345,32 @@ impl From<WhyItWasNotRead> for SavedOutlookMessageRead {
 }
 
 /// One saved Outlook message held whole, read into a message.
+///
+/// For an entry of a folder or a zip, which the archive has already read
+/// whole under its own bound on one entry. A file somebody chose is read
+/// through [`a_saved_outlook_message_brought_in`] instead, which never holds
+/// it whole.
 pub fn one_saved_outlook_message_in(bytes: &[u8]) -> SavedOutlookMessageRead {
-    let _ = bytes;
-    WhyItWasNotRead::NotAnOutlookMessage.into()
+    a_saved_outlook_message_read_from(std::io::Cursor::new(bytes))
+}
+
+/// One saved Outlook message read through its own reader, and the message it
+/// became read through the reader every saved message goes through, so a
+/// message saved by Outlook cannot come to be filed differently from one saved
+/// by anything else.
+fn a_saved_outlook_message_read_from<R: std::io::Read + std::io::Seek>(
+    from: R,
+) -> SavedOutlookMessageRead {
+    use crate::service::outlook_data_file::{HowMuchToAllow, one_saved_message};
+
+    match one_saved_message::read(from, HowMuchToAllow::default()) {
+        Ok(saved) => SavedOutlookMessageRead {
+            read: message_files::read_one_message_as_it_arrived(&saved.mail),
+            left_in_the_file: saved.left_in_the_file,
+            refused: None,
+        },
+        Err(why) => why.into(),
+    }
 }
 
 // ── Writing one message into a folder ───────────────────────────────────────
@@ -552,14 +577,112 @@ impl MessagesImported {
     }
 
     /// Count what reading one saved Outlook message left in its file.
+    ///
+    /// Beside the counts of messages rather than in them: whether the message
+    /// that came out is filed is the filing's to count, as it is for any
+    /// message. A file that is no saved Outlook message at all moves nothing
+    /// here, because it is a fact about the file and the caller counts it with
+    /// the files that held no mail.
     pub fn count_one_saved_outlook_message(&mut self, saved: &SavedOutlookMessageRead) {
-        let _ = saved;
+        let left = &mut self.from_saved_outlook_messages;
+        match saved.refused {
+            None => {
+                let in_the_file = saved.left_in_the_file;
+                left.read += 1;
+                left.files_not_brought += in_the_file.files_not_brought;
+                left.blind_copies += in_the_file.blind_copies;
+                left.formatting_only_in_outlooks_format +=
+                    usize::from(in_the_file.markup_only_in_outlooks_own_format);
+                left.signatures_not_kept += usize::from(in_the_file.signature_not_kept);
+            }
+            Some(WhyItWasNotRead::AnotherKind(_) | WhyItWasNotRead::NotAKindThisProgramKeeps) => {
+                left.not_messages += 1;
+            }
+            Some(WhyItWasNotRead::DamagedPartway | WhyItWasNotRead::TooLarge) => {
+                left.could_not_be_read += 1;
+            }
+            Some(WhyItWasNotRead::NotAnOutlookMessage) => {}
+        }
     }
 }
 
 /// The sentences about what saved Outlook messages left in their files.
+///
+/// One function for both imports, the single saved message and the folder or
+/// zip, so the two cannot come to word one fact two ways. A sentence for each
+/// cause that is not nought, singular and plural written out because several
+/// words have to agree, and last, when any saved message was read at all, a
+/// sentence saying how new this reading is.
 pub fn what_saved_outlook_messages_left(said: &mut SummingUp, left: &WhatSavedOutlookMessagesLeft) {
-    let _ = (said, left);
+    if left.files_not_brought > 0 {
+        said.sentence(match left.files_not_brought {
+            1 => "1 attached file stayed in its saved Outlook message, because Outlook keeps \
+                  it as another message, a link or something only Outlook opens"
+                .to_string(),
+            many => format!(
+                "{many} attached files stayed in their saved Outlook messages, because \
+                 Outlook keeps them as other messages, links or things only Outlook opens"
+            ),
+        });
+    }
+    if left.blind_copies > 0 {
+        said.sentence(match left.blind_copies {
+            1 => "1 blind copy recipient was left off, because a message here has no line \
+                  for blind copies"
+                .to_string(),
+            many => format!(
+                "{many} blind copy recipients were left off, because a message here has no \
+                 line for blind copies"
+            ),
+        });
+    }
+    if left.formatting_only_in_outlooks_format > 0 {
+        said.sentence(match left.formatting_only_in_outlooks_format {
+            1 => "1 message had formatting Outlook kept only in its own format, so it arrived \
+                  as its words alone"
+                .to_string(),
+            many => format!(
+                "{many} messages had formatting Outlook kept only in its own format, so they \
+                 arrived as their words alone"
+            ),
+        });
+    }
+    if left.signatures_not_kept > 0 {
+        said.sentence(match left.signatures_not_kept {
+            1 => "1 signed message arrived without its signature, because a saved Outlook \
+                  message does not keep one"
+                .to_string(),
+            many => format!(
+                "{many} signed messages arrived without their signatures, because a saved \
+                 Outlook message does not keep them"
+            ),
+        });
+    }
+    if left.not_messages > 0 {
+        said.sentence(match left.not_messages {
+            1 => "1 saved Outlook item was not a message and was left out".to_string(),
+            many => format!("{many} saved Outlook items were not messages and were left out"),
+        });
+    }
+    if left.could_not_be_read > 0 {
+        said.sentence(match left.could_not_be_read {
+            1 => "1 saved Outlook message could not be read, because it is damaged or larger \
+                  than Wixen Mail will read"
+                .to_string(),
+            many => format!(
+                "{many} saved Outlook messages could not be read, because they are damaged or \
+                 larger than Wixen Mail will read"
+            ),
+        });
+    }
+    // The way the Outlook data file's import says the same of its reader:
+    // once, at the end, and only when there is something to check.
+    if left.read > 0 {
+        said.sentence(
+            "Reading saved Outlook messages is new to Wixen Mail and has been tried on only a \
+             few, so check what arrived against Outlook",
+        );
+    }
 }
 
 /// What an import did, in the words somebody hears.
@@ -630,13 +753,56 @@ pub const THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE: &str =
     "The folder imported mail goes into could not be made, so nothing was imported.";
 
 /// Bring in one saved Outlook message somebody chose, under Imported.
+///
+/// The file is opened for reading and seeking rather than read whole, so what
+/// is held is what the reader takes out under its own limit on one message.
+/// A file the reader refuses is refused in the reader's own sentence, which
+/// says what the file is rather than that something went wrong.
 pub fn a_saved_outlook_message_brought_in(
     cache: &crate::data::message_cache::MessageCache,
     account: &str,
     at: &std::path::Path,
 ) -> String {
-    let _ = (cache, account, at);
-    String::new()
+    let Ok(file) = std::fs::File::open(at) else {
+        return THAT_FILE_COULD_NOT_BE_READ.to_string();
+    };
+    let saved = a_saved_outlook_message_read_from(std::io::BufReader::new(file));
+    if let Some(why) = saved.refused {
+        return why.sentence();
+    }
+    let into = crate::application::import_tree::where_imported_folders_go();
+    let Some(folder_id) = a_folder_for_imported_mail(cache, account, &into) else {
+        return THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE.to_string();
+    };
+    let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
+    let mut counted = MessagesImported::default();
+    one_saved_outlook_message_filed(cache, &saved, folder_id, &already_here, &mut counted);
+    what_the_mail_import_did(&counted)
+}
+
+/// File one saved Outlook message and count it, whether it came from a file
+/// somebody chose or from a folder or zip.
+///
+/// The message goes through [`file_one_imported_message`] like every imported
+/// message, and the counts move the way they move for any other: here
+/// already, not saved, or brought in, and beside them what the saved message
+/// left in its file.
+pub fn one_saved_outlook_message_filed(
+    cache: &crate::data::message_cache::MessageCache,
+    saved: &SavedOutlookMessageRead,
+    folder_id: i64,
+    already_here: &std::collections::HashSet<String>,
+    counted: &mut MessagesImported,
+) {
+    counted.count_one_saved_outlook_message(saved);
+    if saved.refused.is_some() {
+        return;
+    }
+    let what = WhatToDoWithIt::for_one_read(&saved.read, already_here);
+    if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &saved.read) {
+        counted.count_one_written(file_one_imported_message(cache, message, folder_id));
+    }
+    counted.count_one(what);
 }
 
 // ── Writing messages out ────────────────────────────────────────────────────

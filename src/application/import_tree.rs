@@ -160,10 +160,19 @@ pub fn where_one_entry_lands(named: &str, opens_with: &[u8]) -> WhereItGoes {
     // furniture. A zip marks its folders with an entry of no bytes and a name
     // ending in a separator, and that name would otherwise be counted as one
     // somebody has to be warned about.
-    let read = match message_files::what_the_file_holds(opens_with) {
-        FileHolds::ManyMessages => ReadAs::OneAtATimeFromAnArchive,
-        FileHolds::OneMessage => ReadAs::OneMessage,
-        FileHolds::NotMail => return WhereItGoes::NotMail,
+    //
+    // A message Outlook saved is asked about before the mail question, which
+    // it answers as not mail. Whether it really is a message only its reader
+    // can say, so one that turns out to be something else is counted there
+    // with the files that held no mail.
+    let read = if begins_like_a_saved_outlook_message(opens_with) {
+        ReadAs::OneSavedOutlookMessage
+    } else {
+        match message_files::what_the_file_holds(opens_with) {
+            FileHolds::ManyMessages => ReadAs::OneAtATimeFromAnArchive,
+            FileHolds::OneMessage => ReadAs::OneMessage,
+            FileHolds::NotMail => return WhereItGoes::NotMail,
+        }
     };
     let Some(parts) = the_folder_named_by(named, read) else {
         return WhereItGoes::NameRefused;
@@ -172,6 +181,16 @@ pub fn where_one_entry_lands(named: &str, opens_with: &[u8]) -> WhereItGoes {
         folder: the_path_under_the_import_area(&parts),
         read,
     }
+}
+
+/// Whether these bytes begin the way a message Outlook saved does.
+///
+/// They may be one of Office's older documents instead, which begin the same
+/// way, and only the saved message's reader can tell the two apart.
+fn begins_like_a_saved_outlook_message(opens_with: &[u8]) -> bool {
+    opens_with.starts_with(
+        crate::service::outlook_data_file::one_saved_message::HOW_A_SAVED_MESSAGE_BEGINS,
+    )
 }
 
 /// The most folders deep an archive is followed.
@@ -532,7 +551,7 @@ pub fn where_a_folder_of_the_data_file_lands(named: &str) -> Option<String> {
         .map(|parts| the_path_under_the_import_area(&parts))
 }
 
-/// Which of the three this is, decided from how it begins.
+/// Which of the four this is, decided from how it begins.
 ///
 /// From the bytes rather than the name, which is this module's rule throughout
 /// and holds here for the same reason: mail is saved with every ending there
@@ -550,6 +569,9 @@ pub fn what_was_chosen(a_folder: bool, opens_with: &[u8]) -> WhatWasChosen {
     }
     if opens_with.starts_with(crate::service::outlook_data_file::HOW_ONE_BEGINS) {
         return WhatWasChosen::AnOutlookDataFile;
+    }
+    if begins_like_a_saved_outlook_message(opens_with) {
+        return WhatWasChosen::AnOutlookMessage;
     }
     match message_files::what_the_file_holds(opens_with) {
         FileHolds::NotMail => WhatWasChosen::AnArchive,
