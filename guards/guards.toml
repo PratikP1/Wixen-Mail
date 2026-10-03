@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 617 records have arrived since and have not been through it.
+# 622 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37652,4 +37652,92 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_goes_out_in_every_shape.rs", tests = 6 },
+]
+
+# A saved Outlook message's one-byte text read as Western European whatever
+# alphabet the message names, so a Russian subject arrives as accented Latin
+# letters (13-47, T-13-47-02). Written 2026-10-03 by 13-47.
+[[guard]]
+name = "a saved message's one-byte text is read in the alphabet it names"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''        EIGHT_BIT_TEXT => Some(WhatItSaid::Words(text_in(
+            before_the_nulls(&bytes),
+            alphabet,
+        ))),'''
+after = '''        EIGHT_BIT_TEXT => Some(WhatItSaid::Words(text_in(
+            before_the_nulls(&bytes),
+            None,
+        ))),'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_eight_bit_text_is_read_in_the_alphabet_the_file_names",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+]
+
+# A stream of a saved Outlook message read whole before the limit is asked,
+# so a stranger's body of any size arrives in memory before it is refused
+# (13-47, T-13-47-01). The refusal still comes; what goes red is the count of
+# bytes taken from the file. Written 2026-10-03 by 13-47.
+[[guard]]
+name = "a saved message's stream is never read past what may still come out"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''            .take(self.may_still_come_out.saturating_add(1))'''
+after = '''            .take(u64::MAX)'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_more_than_the_limit_is_refused_and_never_held",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+]
+
+# A blind copy sent to the Cc line by the rule both Outlook readers share,
+# which would tell everybody who reads the message something its sender chose
+# not to say (13-47). Written 2026-10-03 by 13-47.
+[[guard]]
+name = "the shared recipient rule never puts a blind copy on the Cc line"
+file = "src/service/outlook_data_file.rs"
+before = '''            Some(WRITTEN_TO) => went_to.to.push(who),
+            Some(COPIED_IN) => went_to.cc.push(who),'''
+after = '''            Some(WRITTEN_TO) => went_to.to.push(who),
+            Some(COPIED_IN) | Some(3) => went_to.cc.push(who),'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_a_blind_copy_is_counted_and_not_written_on_the_message",
+    "service::outlook_data_file::tests::test_one_rule_sends_recipients_to_to_and_cc_and_counts_the_rest",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file.rs", tests = 39 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+]
+
+# A file on a saved Outlook message brought by its name and type with none of
+# its bytes, so it arrives looking whole and opens as nothing (13-47). Written
+# 2026-10-03 by 13-47.
+[[guard]]
+name = "a file on a saved message comes with its bytes"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
+            Some(WhatItSaid::Bytes(bytes)) => bytes,'''
+after = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
+            Some(WhatItSaid::Bytes(_)) => Vec::new(),'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_a_file_on_the_message_goes_with_it_by_name_type_and_bytes",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+]
+
+# A message forwarded inside a saved Outlook message left in the file with
+# no count, so nobody is told one of its files did not come (13-47,
+# T-13-47-03). Written 2026-10-03 by 13-47.
+[[guard]]
+name = "a message inside a saved message is counted as a file not brought"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''                OnTheMessage::NotBrought => not_brought += 1,'''
+after = '''                OnTheMessage::NotBrought => {}'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_a_message_inside_the_message_is_counted_as_a_file_not_brought",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
 ]

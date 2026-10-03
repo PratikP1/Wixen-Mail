@@ -613,7 +613,7 @@ last_updated: 2026-10-03T12:00:00.000Z
 | 596 | 12 | unrun-verify | src/presentation/wx_managers.rs |  | 12-07: the contact editor under NVDA. What only the tester's ear settles: the Basic Info tab heard in its new order, Name then Prefix, Given name, Middle name, Family name and Suffix; the fill heard after typing a whole name; the Birthday and No year check boxes and the birthday's month, day and year; an address refused in a sentence naming it; the Add Phone Number dialog's Country entries; and a doubted number's sentence and the second OK that keeps it. tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs reads every new control named on MSAA and UI Automation at the handle the keyboard reaches, and the Accessibility scan's contact-editor and phone-number targets read them in the running program | open |  | 2026-09-24T11:45:00.000Z |  |
 | 597 | 12 | unrun-verify | src/application/contacts_sync.rs |  | 12-07: a contact with all five name parts has not round-tripped through a real account. The cases hold Google's honorificPrefix, middleName and honorificSuffix and Graph's title, middleName and generation to serde and to the mappings both ways, and a card's N to five parts; whether Google, Outlook and a CardDAV server, when one is set up, keep and return them is the tester's account to settle | open |  | 2026-09-24T11:45:00.000Z |  |
 | 598 | 12 | todo | Cargo.toml |  | 12-07: phonenumber 0.3.10 carries Google's numbering data 9.0.33 of 2026-06-17; Google's current release on 2026-09-23 was 9.0.39 of 2026-09-09, with 42 regions' data changed between, and upstream pull request 110, the fix for the reference-country defect, is open against the v0.3 branch. When a release carries newer data or that fix, take the 102 rows of 12-07's audit again against it and retire each route in application::phone_numbers the release makes unnecessary, keeping its rows as cases | open |  | 2026-09-24T11:45:00.000Z |  |
-| 599 | 12 | todo | installer/Wixen-Mail-Setup.iss |  | 12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own | open |  | 2026-09-24T11:45:00.000Z |  |
+| 599 | 12 | todo | installer/Wixen-Mail-Setup.iss |  | 12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own. Added 2026-10-03 by 13-47: cfb 0.15.0, MIT, whose LICENSE ships in the crate, needs its notice too, since MIT asks that the notice go with every copy | open |  | 2026-09-24T11:45:00.000Z |  |
 | 600 | 12 | todo | src/presentation/wx_managers.rs |  | 12-07: the Add Address dialog keeps its own list of 127 English country names, stores the name the provider then receives, and defaults to United States for a region it does not know. The phone dialog's Country list takes its names from Windows in its display language; version 2's translation has to reach the address list too, and changing what it stores changes what each provider receives, so 12-07 left it as it is | open |  | 2026-09-24T11:45:00.000Z |  |
 | 601 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07: pull request #99's Accessibility scan (run 35995441987) found the contact editor's Birthday Month list's value element, the static text showing the month, focusable with no name. It is the class ledger 411, 415, 418 and 423 name for Send Later's and the event form's lists, and the list is the one build_date_fields builds for all three, so 12-07 left it for the fix that reaches all of them | open |  | 2026-09-24T13:10:00.000Z |  |
 | 602 | 12 | todo | src/presentation/wx_item_form.rs |  | 12-07 judged ledger 416's class: an editable combo box carrying an accessible object of ours is put behind the MSAA proxy on UI Automation, which offers no ExpandCollapse pattern, and without the object Windows' own combo box provider offers it and takes the name from the label before the box. The contact editor's Prefix and Suffix boxes are named that way since 12-07, read by tests/the_contact_editor_fills_the_name_and_its_parts_from_each_other.rs; the event form's Category box still carries the object, and naming it the same way would close 416 | open |  | 2026-09-24T13:10:00.000Z |  |
@@ -807,6 +807,8 @@ last_updated: 2026-10-03T12:00:00.000Z
 | 790 | 13 | deviation | src/presentation/wx_app.rs |  | 13-45: Export Mailbox wrote every message of a folder after the first without the empty line in front of its separator, from 1fbe263b (2026-08-29), which built each message in a fresh buffer, until 51fbc763, so this program's own import read a folder back as its first message with the rest inside its body. Found by 13-45's round trip through the step the zip export shares; fixed by exporting_mail::one_stored_message_added asking where the message lands, and held by test_messages_built_a_buffer_at_a_time_read_back_as_as_many_messages. A zip exported in that time still holds every message's text, and exporting again gives one that reads back whole | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 | 791 | 13 | deviation | tests/mail_taken_off_leaves_no_words_behind.rs |  | 13-45: test_nothing_else_compacts_the_search_index was red on main from 13-44.9's merge (3b90bed8) until 51fbc763, because it read what_forgetting_costs.rs, compiled only for tests through the #[cfg(test)] on its mod line, as a second caller that ships. 13-44.9's merge did not run the target. The census now skips a module its parent declares under #[cfg(test)], with a case telling the two apart, and its record is remeasured | fixed |  | 2026-10-03T04:50:00.000Z | 2026-10-03T04:50:00.000Z |
 | 792 | 13 | unrun-verify | src/application/exporting_mail.rs |  | 13-46, for the tester: no file that File, Export Folder as Message Files wrote has been opened in another mail program. Export a folder with folders inside it, open its files in Thunderbird and in the mail program you use, and say whether every message arrives with its date, sender and attachments; then bring the same folder back with Import a Folder of Messages on your machine and say whether the folders and messages match. Not yet heard under NVDA either: the item and its letter X on the File menu, its description, the folder picker's title, the opening sentence, the progress lines and the closing sentence, including the one about numbered names. Held today by this program's own folder import reading the files back (application::exporting_mail's round trip) and by tests/mail_goes_out_in_every_shape.rs. Nothing here touches a server, so nothing goes to phase 14 | open |  | 2026-10-03T12:00:00.000Z |  |
+| 793 | 13 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup | open |  | 2026-10-03T18:00:00.000Z |  |
+| 794 | 13 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13-47, a question for Pratik: a saved Outlook message that was encrypted (class IPM.Note.SMIME) is read as mail by the data file's own rule and arrives with no words, carrying its encrypted part as a file, and nothing counts it. Recommended: count it beside the signature in LeftInTheFile and have 13-48's closing sentence say how many arrived encrypted, rather than refusing them, so the encrypted part is kept. Not checked against a real encrypted .msg; how Outlook stores one is assumed from the class name | open |  | 2026-10-03T18:00:00.000Z |  |
 
 ````json
 [
@@ -7992,7 +7994,7 @@ last_updated: 2026-10-03T12:00:00.000Z
     "phase": "12",
     "file": "installer/Wixen-Mail-Setup.iss",
     "line": null,
-    "description": "12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own",
+    "description": "12-07: the installer ships no third-party licence notices. self_cell, taken under its Apache-2.0 arm, already needed one (06-03's audit), and phonenumber 0.3.10, Apache-2.0 only, needs one too; Apache-2.0 asks that a redistributed binary carry the licence text. oncemutex, in phonenumber's closure, ships no licence text of its own. Added 2026-10-03 by 13-47: cfb 0.15.0, MIT, whose LICENSE ships in the crate, needs its notice too, since MIT asks that the notice go with every copy",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T11:45:00.000Z",
@@ -10312,6 +10314,30 @@ last_updated: 2026-10-03T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-03T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 793,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/outlook_data_file/one_saved_message.rs",
+    "line": null,
+    "description": "13-47: a saved Outlook message whose formatting is kept only in Outlook's own compressed format, which is most of them, arrives as its plain words, and LeftInTheFile::markup_only_in_outlooks_own_format says so for 13-48 to count; the formatting itself is never read, and nor is markup Outlook wraps inside that format. compressed-rtf 1.0.1, Microsoft's, from the same repository as outlook-pst, is RESEARCH-5's deferred candidate for reading it; it adds one lock entry and ships no licence text, as outlook-pst does not either, so it needs Pratik's confirmation and a notice before it is taken. All four real samples read on 2026-10-03 carry it and no web-page markup",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 794,
+    "kind": "todo",
+    "phase": "13",
+    "file": "src/service/outlook_data_file/one_saved_message.rs",
+    "line": null,
+    "description": "13-47, a question for Pratik: a saved Outlook message that was encrypted (class IPM.Note.SMIME) is read as mail by the data file's own rule and arrives with no words, carrying its encrypted part as a file, and nothing counts it. Recommended: count it beside the signature in LeftInTheFile and have 13-48's closing sentence say how many arrived encrypted, rather than refusing them, so the encrypted part is kept. Not checked against a real encrypted .msg; how Outlook stores one is assumed from the class name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-03T18:00:00.000Z",
     "resolved_at": null
   }
 ]

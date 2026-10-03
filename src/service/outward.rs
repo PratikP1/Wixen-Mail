@@ -1592,7 +1592,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 55] = [
+    const A_CRATE_THAT_CANNOT: [&str; 56] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1646,6 +1646,10 @@ mod completeness {
         // Reads an Outlook data file off this computer. It opens a file and
         // nothing else: no address in it names anywhere to go.
         "outlook-pst",
+        // Opens the container an Outlook saved message is, from bytes already
+        // on this computer. It reads streams out of a file and names no
+        // destination.
+        "cfb",
         // Reads a certificate that arrived on a message. Certificates name
         // places a checker could go to ask whether one has been withdrawn,
         // and this reads the naming and goes nowhere itself.

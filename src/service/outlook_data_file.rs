@@ -95,6 +95,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+pub mod one_saved_message;
+
 /// How every Outlook data file begins, whichever of the two kinds it is.
 ///
 /// Asked in two places. Here, only once opening one has already failed, and
@@ -1695,6 +1697,10 @@ struct WhoItWentTo {
     to: Vec<EmailAddress>,
     /// Everybody copied in.
     cc: Vec<EmailAddress>,
+    /// Everybody else the message listed, which is a blind copy or a kind of
+    /// recipient this program has no line for. Counted so whatever reads the
+    /// message can say they were left off rather than lose them in silence.
+    left_off: usize,
 }
 
 /// One message, as the raw bytes [`crate::service::mime::parse`] reads.
@@ -2427,13 +2433,25 @@ fn who_it_went_to(
     message: &dyn outlook_pst::messaging::message::Message,
     in_this_alphabet: Option<u16>,
 ) -> WhoItWentTo {
-    let mut went_to = WhoItWentTo::default();
     let Some(table) = message.recipient_table() else {
-        return went_to;
+        return WhoItWentTo::default();
     };
+    went_to_from(
+        table
+            .rows_matrix()
+            .map(|row| what_a_row_said(table.as_ref(), row, in_this_alphabet)),
+    )
+}
+
+/// Who a message went to, out of what each of its recipients said.
+///
+/// The one rule both Outlook readers send recipients through, a data file's
+/// table rows and a saved message's recipient storages alike, so the two
+/// cannot come to put the same person on different lines.
+fn went_to_from(rows: impl Iterator<Item = WhatTheItemSaid>) -> WhoItWentTo {
+    let mut went_to = WhoItWentTo::default();
     let names = WhatTheNamesAreHere::default();
-    for row in table.rows_matrix() {
-        let said = what_a_row_said(table.as_ref(), row, in_this_alphabet);
+    for said in rows {
         let one = TheItem::of(&said, &names);
         let Some(who) = one_person(
             &one,
@@ -2450,8 +2468,9 @@ fn who_it_went_to(
             // A blind copy, and anything else the file lists. What this program
             // reads a message as has no blind-copy line to put one on, and
             // writing one onto a message received would tell everybody who
-            // reads it afterwards something the sender chose not to say.
-            _ => {}
+            // reads it afterwards something the sender chose not to say. It is
+            // counted instead, so whatever reads the message can say so.
+            _ => went_to.left_off += 1,
         }
     }
     went_to
@@ -2906,7 +2925,7 @@ mod tests {
                 "charles@example.com".to_string(),
                 Some("Charles Babbage".to_string()),
             )],
-            cc: Vec::new(),
+            ..WhoItWentTo::default()
         };
 
         let raw = mail_written_from(&TheItem::of(&said, &names), &went_to);
@@ -3029,6 +3048,49 @@ mod tests {
         assert!(read_back.from.is_empty(), "{:?}", read_back.from);
         assert_eq!(read_back.subject, "A draft");
         assert_eq!(read_back.body_plain.as_deref(), Some("Half written."));
+    }
+
+    #[test]
+    fn test_one_rule_sends_recipients_to_to_and_cc_and_counts_the_rest() {
+        // A data file and a saved message both list their recipients beside
+        // the message, and both go through this rule, so one person cannot be
+        // put on different lines by the two readers. A blind copy is never
+        // written onto a message received, because that tells everybody who
+        // reads it something the sender chose not to say, and it is counted
+        // rather than lost. So is a kind of recipient this program has no line
+        // for. A row naming nobody at all is not a person and is not counted.
+        let recipient = |name: &str, address: &str, kind: i64| {
+            an_item(&[
+                (DISPLAY_NAME, words(name)),
+                (SMTP_ADDRESS, words(address)),
+                (RECIPIENT_KIND, WhatItSaid::Whole(kind)),
+            ])
+        };
+        let rows = vec![
+            recipient("Charles Babbage", "charles@example.com", WRITTEN_TO),
+            recipient("Mary Somerville", "mary@example.com", COPIED_IN),
+            recipient("Augustus De Morgan", "augustus@example.com", 3),
+            recipient("Michael Faraday", "michael@example.com", 0x1000_0001),
+            an_item(&[(RECIPIENT_KIND, WhatItSaid::Whole(WRITTEN_TO))]),
+        ];
+
+        let went_to = went_to_from(rows.into_iter());
+
+        assert_eq!(
+            went_to.to,
+            vec![EmailAddress::new(
+                "charles@example.com".to_string(),
+                Some("Charles Babbage".to_string())
+            )]
+        );
+        assert_eq!(
+            went_to.cc,
+            vec![EmailAddress::new(
+                "mary@example.com".to_string(),
+                Some("Mary Somerville".to_string())
+            )]
+        );
+        assert_eq!(went_to.left_off, 2);
     }
 
     #[test]
