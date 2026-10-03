@@ -494,6 +494,220 @@ fn a_date(n: usize) -> String {
     )
 }
 
+// ── The measurement at scale ────────────────────────────────────────────────
+
+/// How many messages a store holds, and how many of them are taken off.
+#[derive(Debug, Clone, Copy)]
+struct Shape {
+    messages: usize,
+    taken_off: usize,
+}
+
+/// The tester's folder the phase 10 README quotes, the scale rows' second
+/// size.
+const THE_TESTERS_SIZE: Shape = Shape {
+    messages: 12_872,
+    taken_off: 1_000,
+};
+/// PERF-03's size, the scale rows' first.
+const TWO_HUNDRED_THOUSAND: Shape = Shape {
+    messages: 200_000,
+    taken_off: 1_000,
+};
+
+/// One figure as the harness reports it, before it is worded as a row.
+struct Measured {
+    what: String,
+    value: String,
+    /// The rest of the conditions cell: what was counted, and what moved it.
+    detail: String,
+    /// The bytes behind the value, where the value is a size.
+    bytes: Option<u64>,
+}
+
+/// Every figure over stores of `shape` written under `into`, in the order
+/// the page lists them.
+fn measure(shape: Shape, _into: &Path) -> std::result::Result<Vec<Measured>, String> {
+    Ok(vec![Measured {
+        what: the_size(shape),
+        value: String::new(),
+        detail: String::new(),
+        bytes: None,
+    }])
+}
+
+/// How a row names the size it was taken at.
+fn the_size(shape: Shape) -> String {
+    format!("Forgetting at {} messages", with_commas(shape.messages))
+}
+
+/// A count written the way the page writes one: 12,872.
+fn with_commas(n: usize) -> String {
+    let digits = n.to_string();
+    let mut written = String::new();
+    for (at, digit) in digits.chars().enumerate() {
+        if at > 0 && (digits.len() - at).is_multiple_of(3) {
+            written.push(',');
+        }
+        written.push(digit);
+    }
+    written
+}
+
+/// The command the rows carry, backticked because the page's reading
+/// refuses a row whose command cell holds no backticked token.
+const THE_COMMAND: &str = "`cargo test --release --lib data::message_cache::what_forgetting_costs:: -- --ignored --nocapture --test-threads=1`";
+
+/// The rows the page takes, one per figure.
+fn the_rows(shape: Shape, measured: &[Measured], build: &str, machine: &str) -> Vec<String> {
+    let (date, _commit, version) = today_commit_and_version();
+    measured
+        .iter()
+        .map(|m| {
+            let conditions = format!(
+                "{version}, {build} build, {machine}, {} messages, {} taken off. {}",
+                shape.messages, shape.taken_off, m.detail
+            );
+            the_row(&[&m.what, &m.value, THE_COMMAND, &date, &conditions])
+        })
+        .collect()
+}
+
+/// Word a row the page will accept: a pipe inside a cell is written `\|` so
+/// the table stays a table.
+fn the_row(cells: &[&str]) -> String {
+    let cells: Vec<String> = cells.iter().map(|cell| cell.replace('|', "\\|")).collect();
+    format!("| {} |", cells.join(" | "))
+}
+
+/// The date, the commit and the version, for the rows.
+fn today_commit_and_version() -> (String, String, String) {
+    let date = chrono::Local::now().format("%Y-%m-%d").to_string();
+    let commit = std::process::Command::new("git")
+        .args(["rev-parse", "--short=8", "HEAD"])
+        .output()
+        .ok()
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    (date, commit, env!("CARGO_PKG_VERSION").to_string())
+}
+
+/// The processor, its logical core count and the memory, as Windows reports
+/// them. Written again from the scale harness, whose helpers live in an
+/// integration target the library cannot call.
+fn the_machine() -> String {
+    std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "$p = Get-CimInstance Win32_Processor | Select-Object -First 1; \
+             $c = Get-CimInstance Win32_ComputerSystem; \
+             '{0}, {1} logical processors, {2} GB' -f $p.Name.Trim(), $p.NumberOfLogicalProcessors, [math]::Round($c.TotalPhysicalMemory / 1GB)",
+        ])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+        .unwrap_or_else(|| "machine not read".to_string())
+}
+
+/// The bytes free on the drive holding `folder`, as Windows reports them.
+fn free_space_of(folder: &Path) -> std::result::Result<u64, String> {
+    let folder = folder.display().to_string().replace('\'', "''");
+    let out = std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            &format!(
+                "[System.IO.DriveInfo]::new([System.IO.Path]::GetPathRoot('{folder}')).AvailableFreeSpace"
+            ),
+        ])
+        .output()
+        .map_err(|e| format!("PowerShell could not be started: {e}"))?;
+    let said = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    said.parse()
+        .map_err(|_| format!("PowerShell did not answer a number of free bytes: {said:?}"))
+}
+
+/// Refuse to measure a debug build.
+fn refuse_a_debug_build() -> std::result::Result<(), String> {
+    if cfg!(debug_assertions) {
+        return Err(format!(
+            "this is a debug build and a debug figure is a figure about a binary nobody \
+             ships; run with --release: {THE_COMMAND}"
+        ));
+    }
+    Ok(())
+}
+
+/// The folder inside a run's directory that `TMP` and `TEMP` point at
+/// while it runs, and that the samples read.
+const TEMPORARY: &str = "temporary";
+
+/// `TMP` and `TEMP` pointed at a folder for as long as this lives, and put
+/// back as they were when it goes. SQLite on Windows takes its temporary
+/// folder from them, so the temporary disk a command needs lands where it
+/// can be measured and nowhere another test's files land.
+struct PointedAt {
+    tmp: Option<std::ffi::OsString>,
+    temp: Option<std::ffi::OsString>,
+}
+
+impl PointedAt {
+    fn the_folder(folder: &Path) -> Self {
+        let found = Self {
+            tmp: std::env::var_os("TMP"),
+            temp: std::env::var_os("TEMP"),
+        };
+        // Only the ignored cases call this, and they run alone with
+        // --test-threads=1, so no other thread reads the environment.
+        unsafe {
+            std::env::set_var("TMP", folder);
+            std::env::set_var("TEMP", folder);
+        }
+        found
+    }
+}
+
+impl Drop for PointedAt {
+    fn drop(&mut self) {
+        for (name, found) in [("TMP", &self.tmp), ("TEMP", &self.temp)] {
+            // As above: the ignored cases run alone.
+            unsafe {
+                match found {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+    }
+}
+
+/// The largest size the tester's size wrote, so the 200,000 case can
+/// refuse to start on a drive without room for it.
+static LARGEST_AT_THE_TESTERS_SIZE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+
+/// The largest size among the figures.
+fn the_largest(measured: &[Measured]) -> u64 {
+    measured.iter().filter_map(|m| m.bytes).max().unwrap_or(0)
+}
+
+/// Measure `shape` in a directory of its own, with `TMP` and `TEMP`
+/// pointed inside it, and print the rows.
+fn measured_alone(shape: Shape) -> Vec<Measured> {
+    let machine = the_machine();
+    let into = tempfile::tempdir().expect("a folder to leave nothing in");
+    let temporary = into.path().join(TEMPORARY);
+    std::fs::create_dir_all(&temporary).expect("a temporary folder to sample");
+    let pointed = PointedAt::the_folder(&temporary);
+    let measured = measure(shape, into.path()).expect("the measurement");
+    drop(pointed);
+    for row in the_rows(shape, &measured, "release", &machine) {
+        println!("{row}");
+    }
+    measured
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +773,88 @@ mod tests {
             Left::default(),
             "the file or its write log keeps words of mail taken off this computer"
         );
+    }
+
+    // ── The measurement, behind #[ignore] ───────────────────────────────────
+
+    #[test]
+    #[ignore = "writes 12,872 messages under each secure delete setting and times taking 1,000 off and compacting; run by hand on a quiet machine with --release and --test-threads=1, before the 200,000 case"]
+    fn test_what_forgetting_costs_at_the_testers_size() {
+        refuse_a_debug_build().expect("a release build");
+        let measured = measured_alone(THE_TESTERS_SIZE);
+        LARGEST_AT_THE_TESTERS_SIZE
+            .set(the_largest(&measured))
+            .expect("the tester's size measured once in a run");
+    }
+
+    #[test]
+    #[ignore = "writes 200,000 messages under each secure delete setting and times taking 1,000 off and compacting; run by hand on a quiet machine with --release and --test-threads=1, after the tester's size in the same run"]
+    fn test_what_forgetting_costs_at_two_hundred_thousand() {
+        refuse_a_debug_build().expect("a release build");
+        let largest = *LARGEST_AT_THE_TESTERS_SIZE.get().expect(
+            "the tester's size has not run in this process, so the space this needs is not \
+             known: run both with the command in the module's rows",
+        );
+        let needed =
+            3 * largest * TWO_HUNDRED_THOUSAND.messages as u64 / THE_TESTERS_SIZE.messages as u64;
+        let folder = std::env::temp_dir();
+        let free = free_space_of(&folder).expect("the free space read");
+        assert!(
+            free >= needed,
+            "the drive holding {} has {free} bytes free, and this needs {needed}: three \
+             times the largest file the tester's size wrote, scaled to 200,000 messages",
+            folder.display()
+        );
+        measured_alone(TWO_HUNDRED_THOUSAND);
+    }
+
+    // ── What runs on every commit ───────────────────────────────────────────
+
+    /// A store small enough to measure in seconds in a debug build.
+    const A_FEW: Shape = Shape {
+        messages: 120,
+        taken_off: 30,
+    };
+    /// What one measurement prints: five rows for each of the three secure
+    /// delete settings, six for VACUUM, one for the VACUUM that switches
+    /// auto vacuum to incremental, and six for the incremental vacuum.
+    const ROWS_A_MEASUREMENT_PRINTS: usize = 5 * 3 + 6 + 1 + 6;
+
+    fn is_a_date(cell: &str) -> bool {
+        chrono::NaiveDate::parse_from_str(cell, "%Y-%m-%d").is_ok()
+    }
+
+    fn is_a_commit(cell: &str) -> bool {
+        cell.len() >= 7 && cell.chars().all(|c| c.is_ascii_hexdigit())
+    }
+
+    #[test]
+    fn test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed() {
+        let into = tempfile::tempdir().expect("a folder to leave nothing in");
+        let measured = measure(A_FEW, into.path()).expect("the measurement at a few messages");
+        let rows = the_rows(A_FEW, &measured, "debug", "a machine");
+
+        assert_eq!(
+            rows.len(),
+            ROWS_A_MEASUREMENT_PRINTS,
+            "not the rows a measurement prints: {rows:#?}"
+        );
+        let mut named = BTreeSet::new();
+        for row in &rows {
+            let cells: Vec<&str> = row.split(" | ").collect();
+            assert_eq!(cells.len(), 6, "not the page's six columns: {row}");
+            let what = cells[0].trim_start_matches("| ");
+            assert!(
+                what.contains("120 messages"),
+                "the row does not name its size: {row}"
+            );
+            assert!(named.insert(what), "two rows name the same figure: {what}");
+            assert!(
+                cells[2].starts_with('`') && cells[2].contains("what_forgetting_costs"),
+                "the row does not carry its command: {row}"
+            );
+            assert!(is_a_date(cells[3]), "the row carries no date: {row}");
+            assert!(is_a_commit(cells[4]), "the row carries no commit: {row}");
+        }
     }
 }
