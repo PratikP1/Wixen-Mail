@@ -8,6 +8,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Export Folder as Message Files, on the File menu (#53, point 4; GAP-13).** The second half
+  of issue 53's point 4, the loose `.eml` files it asked for. File, Export Folder as Message
+  Files (`Alt+F`, then `X`, no shortcut key) asks for a folder to write into and writes the
+  mail of the folder you are on, and of every folder inside it, as one saved message per file,
+  with a folder for each folder inside. Each file is named by the day the message was written,
+  as its own date gives it, and then its subject: `2026-09-24 Hello.eml`, so a folder listing
+  reads in the order the mail came. A message with no date is named by its subject alone. The
+  subject is cleaned the way Save As cleans it, so a subject such as `CON` or one holding a
+  slash cannot name a device or a path. Two messages that would have the same name, or names
+  differing only in their capitals, get two: the second carries a number. A file already in
+  the folder you chose is never replaced; the new one takes the next number, and the sentence
+  at the end says how many did. A message whose text was never downloaded, a file this
+  computer does not have and a signature whose proof was not kept are counted and said in the
+  words the other exports use. Import a Folder of Messages reads what it writes back as the
+  same folders and messages. Save As now names its file through the same function, with no
+  change to the names it offers. The version does not move: no build has been cut since
+  1.0.0-alpha.1. Known limitations: no file this writes has been opened in another mail
+  program, only read back by this program's own folder import; and nobody has heard the item,
+  its description or its sentences with a screen reader.
 - **Export Folder as a Mailbox File, on the File menu (#53, point 4; GAP-13).** Issue 53
   said: "Export only as a zip of `.mbox`; never a bare `.mbox` or loose `.eml`, so one folder
   for Thunderbird means unzipping by hand." File, Export Folder as a Mailbox File (`Alt+F`, then
@@ -2326,7 +2345,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   issue stays open for them. And, from the two entries above, no real Outlook data file has been
   through the import and nobody has opened a file Save As wrote in another mail program.
   On 2026-10-03 the first half of point 4 landed: File, Export Folder as a Mailbox File writes a
-  bare mailbox file of one folder (see Added under Unreleased).
+  bare mailbox file of one folder (see Added under Unreleased). The second half landed the same
+  day: File, Export Folder as Message Files writes a folder as loose `.eml` files (see Added
+  under Unreleased).
 
 - **Settings opens in under half a second instead of over two.** Reported on 2026-09-15 from
   build `0.125.1+g3e633252` (#34): "Loading settings by pressing ctrl+, is noticeably slow."

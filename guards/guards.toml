@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 616 records have arrived since and have not been through it.
+# 617 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37578,7 +37578,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 4 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 6 },
 ]
 
 # A message file opened whether or not a file already has its name, so an
@@ -37632,4 +37632,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 6 },
+]
+
+# Export Folder as Message Files drops the folder picker's answer and writes
+# wherever the program happens to be running from (13-46). Anchored on this
+# handler's own refusal, which no other handler says. Written 2026-10-03 by
+# 13-46.
+[[guard]]
+name = "Export Folder as Message Files writes where the folder picker said"
+file = "src/presentation/wx_app.rs"
+suite = "mail_goes_out_in_every_shape"
+before = '''    let Some(chosen) = picker.get_path() else {
+        send_refusal(ui_tx, runtime, "No folder was chosen.");'''
+after = '''    let Some(chosen) = Some(".".to_string()) else {
+        send_refusal(ui_tx, runtime, "No folder was chosen.");'''
+red = [
+    "test_export_folder_as_message_files_reaches_its_writer",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 6 },
 ]
