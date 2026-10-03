@@ -16680,10 +16680,10 @@ fn fill_folders_from(
         MessagesImported, WhatToDoWithIt, file_one_imported_message,
     };
 
-    // One saved message, a whole archive and an Outlook data file are three
-    // different readers, and each refuses what the others take. Which one
-    // this is comes from how the file begins rather than from what it is
-    // called.
+    // One saved message, a whole archive, an Outlook data file and a message
+    // Outlook saved are four different readers, and each refuses what the
+    // others take. Which one this is comes from how the file begins rather
+    // than from what it is called.
     let opens_with = a_look_at_the_start_of(at);
     match import_tree::what_was_chosen(at.is_dir(), &opens_with) {
         import_tree::WhatWasChosen::MailInOneFile => {
@@ -16695,6 +16695,11 @@ fn fill_folders_from(
                 account,
                 at,
                 &|so_far| say(UIUpdate::StatusUpdated(so_far.to_string())),
+            );
+        }
+        import_tree::WhatWasChosen::AnOutlookMessage => {
+            return crate::application::importing_messages::a_saved_outlook_message_brought_in(
+                cache, account, at,
             );
         }
         import_tree::WhatWasChosen::AnArchive => {}

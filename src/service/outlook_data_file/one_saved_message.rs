@@ -560,7 +560,7 @@ mod tests {
     // real Outlook files read the same way, and none is copied in here.
 
     /// One value as a saved message holds it.
-    enum Held {
+    pub(super) enum Held {
         /// Text in Unicode, written as Outlook writes it, two bytes a letter.
         Unicode(&'static str),
         /// Text one byte a letter, in whichever alphabet the message names.
@@ -575,14 +575,14 @@ mod tests {
         AMessage(Properties),
     }
 
-    type Properties = Vec<(u16, Held)>;
+    pub(super) type Properties = Vec<(u16, Held)>;
 
     /// A saved message to be built.
     #[derive(Default)]
-    struct ASavedMessage {
-        top: Properties,
-        recipients: Vec<Properties>,
-        attachments: Vec<Properties>,
+    pub(super) struct ASavedMessage {
+        pub(super) top: Properties,
+        pub(super) recipients: Vec<Properties>,
+        pub(super) attachments: Vec<Properties>,
     }
 
     /// The type numbers MS-OXCDATA 2.11.1 gives each kind of value.
@@ -610,7 +610,7 @@ mod tests {
 
     /// A saved message written into a container in memory, by the writer the
     /// same package carries.
-    fn written(saved: &ASavedMessage) -> Vec<u8> {
+    pub(super) fn written(saved: &ASavedMessage) -> Vec<u8> {
         let mut file =
             cfb::CompoundFile::create(Cursor::new(Vec::new())).expect("a container in memory");
         let recipients = u32::try_from(saved.recipients.len()).expect("a few recipients");
@@ -1285,5 +1285,48 @@ mod tests {
             read(Cursor::new(written(&saved)), allowed),
             Err(WhyItWasNotRead::TooLarge)
         );
+    }
+}
+
+/// Saved messages built for the import's tests, the way the tests above build
+/// them, so a test of the import files a real container rather than a picture
+/// of one.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use super::super::{
+        BODY, DISPLAY_NAME, MESSAGE_CLASS, RECIPIENT_KIND, SENDER_NAME, SENDER_SMTP_ADDRESS,
+        SMTP_ADDRESS, SUBJECT,
+    };
+    use super::tests::{ASavedMessage, Held, written};
+
+    /// A message Ada sent Charles, saved by Outlook, with this subject and
+    /// these words.
+    pub(crate) fn a_saved_message(subject: &'static str, words: &'static str) -> Vec<u8> {
+        written(&ASavedMessage {
+            top: vec![
+                (MESSAGE_CLASS, Held::Unicode("IPM.Note")),
+                (SUBJECT, Held::Unicode(subject)),
+                (BODY, Held::Unicode(words)),
+                (SENDER_NAME, Held::Unicode("Ada Lovelace")),
+                (SENDER_SMTP_ADDRESS, Held::Unicode("ada@example.com")),
+            ],
+            recipients: vec![vec![
+                (DISPLAY_NAME, Held::Unicode("Charles Babbage")),
+                (SMTP_ADDRESS, Held::Unicode("charles@example.com")),
+                (RECIPIENT_KIND, Held::Whole(1)),
+            ]],
+            ..ASavedMessage::default()
+        })
+    }
+
+    /// An appointment Outlook saved as a file of its own.
+    pub(crate) fn an_appointment() -> Vec<u8> {
+        written(&ASavedMessage {
+            top: vec![
+                (MESSAGE_CLASS, Held::Unicode("IPM.Appointment")),
+                (SUBJECT, Held::Unicode("Lunch")),
+            ],
+            ..ASavedMessage::default()
+        })
     }
 }

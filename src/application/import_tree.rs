@@ -53,7 +53,9 @@
 //! them, so whatever unpacks the archive works down one folder at a time and
 //! lets each entry go again.
 
-use crate::application::importing_messages::ReadAs;
+use crate::application::importing_messages::{
+    ReadAs, WhatSavedOutlookMessagesLeft, what_saved_outlook_messages_left,
+};
 use crate::application::local_folders::LOCAL_PREFIX;
 use crate::application::message_files::{self, FileHolds};
 use crate::application::summing_up::SummingUp;
@@ -222,8 +224,9 @@ fn the_folder_named_by(named: &str, read: ReadAs) -> Option<Vec<&str>> {
         // A file of one message is a message in the folder it was sitting in,
         // and not a folder of its own. An export of separate messages is a
         // folder of them, and the other reading gives somebody four hundred
-        // folders holding one message each.
-        ReadAs::OneMessage => {
+        // folders holding one message each. A message Outlook saved is the
+        // same: Outlook's own drag out of a folder is a folder of them.
+        ReadAs::OneMessage | ReadAs::OneSavedOutlookMessage => {
             parts.pop();
         }
     }
@@ -333,6 +336,8 @@ pub struct FoldersImported {
     /// Folders in the archive that would have had the same name here as one
     /// already made, so their mail was filed into that one.
     pub filed_together: usize,
+    /// What the saved Outlook messages in the archive left in their files.
+    pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
 }
 
 /// The folders an archive turns into, and what to say about the rest of it.
@@ -488,6 +493,9 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
     if imported.folders == 0 && imported.held_no_mail == 0 && imported.names_refused == 0 {
         said.sentence("There is nothing in this archive that reads as mail");
     }
+    // Last, in the words the import of one saved message uses, so the two
+    // imports cannot come to word one fact two ways.
+    what_saved_outlook_messages_left(&mut said, &imported.from_saved_outlook_messages);
     said.spoken()
 }
 
@@ -501,6 +509,9 @@ pub enum WhatWasChosen {
     /// The file Outlook keeps somebody's mail, appointments, contacts, tasks
     /// and notes in, read by [`crate::service::outlook_data_file`].
     AnOutlookDataFile,
+    /// One message Outlook saved as a file of its own, read by
+    /// [`crate::service::outlook_data_file::one_saved_message`].
+    AnOutlookMessage,
 }
 
 /// Where a folder out of an Outlook data file lands on this computer, or
@@ -597,6 +608,100 @@ mod tests {
         );
         // A folder is still an archive, whatever a file inside it begins with.
         assert_eq!(what_was_chosen(true, b"!BDN"), WhatWasChosen::AnArchive);
+    }
+
+    /// How a saved Outlook message begins, with something after it.
+    fn a_saved_outlook_message() -> Vec<u8> {
+        [
+            crate::service::outlook_data_file::one_saved_message::HOW_A_SAVED_MESSAGE_BEGINS,
+            b"the rest of a saved message",
+        ]
+        .concat()
+    }
+
+    /// One of every count a saved Outlook message can leave, `each` times.
+    fn saved_outlook_messages_leaving(each: usize) -> WhatSavedOutlookMessagesLeft {
+        WhatSavedOutlookMessagesLeft {
+            read: each,
+            files_not_brought: each,
+            blind_copies: each,
+            formatting_only_in_outlooks_format: each,
+            signatures_not_kept: each,
+            not_messages: each,
+            could_not_be_read: each,
+        }
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_goes_to_its_own_reader() {
+        // Asked before the mail question, as the data file's signature is. A
+        // saved Outlook message is not mail by that question, so asked after
+        // it the file fell to the archive reader and was told it was not an
+        // archive, which is true and sends somebody looking for another file.
+        assert_eq!(
+            what_was_chosen(false, &a_saved_outlook_message()),
+            WhatWasChosen::AnOutlookMessage
+        );
+        // The other three are where they were.
+        assert_eq!(
+            what_was_chosen(false, b"!BDN\0\0\0\0SM\0\0the rest of a data file"),
+            WhatWasChosen::AnOutlookDataFile
+        );
+        assert_eq!(
+            what_was_chosen(false, one_message().as_bytes()),
+            WhatWasChosen::MailInOneFile
+        );
+        assert_eq!(
+            what_was_chosen(true, &a_saved_outlook_message()),
+            WhatWasChosen::AnArchive
+        );
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_in_an_archive_lands_in_the_folder_it_sat_in() {
+        // What somebody gets dragging a folder's messages out of Outlook: a
+        // folder of these. Each goes in the folder it sat in, as a saved
+        // message does, and is read by the saved message's own reader.
+        assert_eq!(
+            where_one_entry_lands("Work/Invoice.msg", &a_saved_outlook_message()),
+            WhereItGoes::Into {
+                folder: format!("{}/Work", where_imported_folders_go()),
+                read: ReadAs::OneSavedOutlookMessage,
+            }
+        );
+        assert_eq!(
+            where_one_entry_lands("Invoice.msg", &a_saved_outlook_message()),
+            WhereItGoes::Into {
+                folder: where_imported_folders_go(),
+                read: ReadAs::OneSavedOutlookMessage,
+            }
+        );
+    }
+
+    #[test]
+    fn test_what_saved_outlook_messages_left_is_said_after_the_folders() {
+        // In the same words the import of one saved message uses, after what
+        // the folders' own counts say, with the sentence about how new this
+        // reading is last of all.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 2,
+                held_no_mail: 1,
+                from_saved_outlook_messages: WhatSavedOutlookMessagesLeft {
+                    read: 2,
+                    blind_copies: 1,
+                    could_not_be_read: 1,
+                    ..WhatSavedOutlookMessagesLeft::default()
+                },
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 2 messages. 1 file in the archive was not mail and was left \
+             out. 1 blind copy recipient was left off, because a message here has no line for \
+             blind copies. 1 saved Outlook message could not be read, because it is damaged or \
+             larger than Wixen Mail will read. Reading saved Outlook messages is new to Wixen \
+             Mail and has been tried on only a few, so check what arrived against Outlook."
+        );
     }
 
     #[test]
@@ -721,6 +826,11 @@ mod tests {
                     ReadAs::OneAtATimeFromAnArchive => message_files::each_message_read_from(bytes)
                         .filter(|message| message.is_ok())
                         .count(),
+                    ReadAs::OneSavedOutlookMessage => usize::from(
+                        crate::application::importing_messages::one_saved_outlook_message_in(bytes)
+                            .read
+                            .is_ok(),
+                    ),
                 };
             }
         }
@@ -842,6 +952,7 @@ mod tests {
             held_no_mail: 2,
             names_refused: 3,
             filed_together: 2,
+            ..FoldersImported::default()
         });
 
         assert_eq!(
@@ -867,6 +978,7 @@ mod tests {
                 held_no_mail: 1,
                 names_refused: 1,
                 filed_together: 1,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
             what_the_folder_import_did(&FoldersImported {
                 folders: 11,
@@ -874,6 +986,7 @@ mod tests {
                 held_no_mail: 2,
                 names_refused: 3,
                 filed_together: 2,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
         ];
 

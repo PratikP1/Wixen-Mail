@@ -52,6 +52,7 @@ use crate::application::message_files;
 use crate::application::summing_up::SummingUp;
 use crate::common::Result;
 use crate::common::types::FolderType;
+use crate::service::outlook_data_file::one_saved_message::{LeftInTheFile, WhyItWasNotRead};
 
 /// What to say when a file of mail is chosen and no account is.
 ///
@@ -147,6 +148,10 @@ pub enum ReadAs {
     /// One message at a time, which is what an archive of a mailbox needs: each
     /// message is filed and let go before the next is read.
     OneAtATimeFromAnArchive,
+    /// One message Outlook saved as a file of its own, read through the reader
+    /// Outlook's data files have so the two cannot come to read differently.
+    /// Filed where a saved message would be, in the folder it sat in.
+    OneSavedOutlookMessage,
 }
 
 /// What an import of one file will do, or the one sentence saying why it will
@@ -297,7 +302,50 @@ pub fn each_message_in(
             message_files::read_one_message_as_it_arrived(bytes),
         )),
         ReadAs::OneAtATimeFromAnArchive => Box::new(message_files::each_message_read_from(bytes)),
+        ReadAs::OneSavedOutlookMessage => {
+            Box::new(std::iter::once(one_saved_outlook_message_in(bytes).read))
+        }
     }
+}
+
+// ── A message Outlook saved as a file ───────────────────────────────────────
+
+/// One saved Outlook message, read: the message, what stayed in the file, and
+/// the reader's reason when it read nothing.
+#[derive(Debug)]
+pub struct SavedOutlookMessageRead {
+    /// The message, read by this program's own reader from the bytes the
+    /// saved message became, or why there is none.
+    pub read: Result<message_files::MessageFromAFile>,
+    /// What the saved message held that did not come with it.
+    pub left_in_the_file: LeftInTheFile,
+    /// Why the reader read nothing, when it did not.
+    pub refused: Option<WhyItWasNotRead>,
+}
+
+impl SavedOutlookMessageRead {
+    /// Whether the file is not a saved Outlook message at all, which is a fact
+    /// about the file rather than about a message, and is counted with the
+    /// files that held no mail.
+    pub fn is_not_an_outlook_message(&self) -> bool {
+        self.refused == Some(WhyItWasNotRead::NotAnOutlookMessage)
+    }
+}
+
+impl From<WhyItWasNotRead> for SavedOutlookMessageRead {
+    fn from(why: WhyItWasNotRead) -> Self {
+        Self {
+            read: Err(why.into()),
+            left_in_the_file: LeftInTheFile::default(),
+            refused: Some(why),
+        }
+    }
+}
+
+/// One saved Outlook message held whole, read into a message.
+pub fn one_saved_outlook_message_in(bytes: &[u8]) -> SavedOutlookMessageRead {
+    let _ = bytes;
+    WhyItWasNotRead::NotAnOutlookMessage.into()
 }
 
 // ── Writing one message into a folder ───────────────────────────────────────
@@ -445,6 +493,32 @@ pub struct MessagesImported {
     /// nowhere else: a folder that only ever lived here was never going to
     /// reach another device anyway.
     pub the_server_also_fills_this_folder: bool,
+    /// What the saved Outlook messages among them left in their files.
+    pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
+}
+
+/// What saved Outlook messages left behind, one count to a cause.
+///
+/// Each count is a sentence at the end of an import, so each is something
+/// somebody can act on: open the message in Outlook for a file, a blind copy
+/// or the formatting, and keep the item in Outlook when it was not a message.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct WhatSavedOutlookMessagesLeft {
+    /// Saved messages read into messages at all.
+    pub read: usize,
+    /// Files on them that stayed in the saved messages.
+    pub files_not_brought: usize,
+    /// Recipients copied in blind, left off because a message here has no
+    /// line for them.
+    pub blind_copies: usize,
+    /// Messages whose formatting Outlook kept only in its own format.
+    pub formatting_only_in_outlooks_format: usize,
+    /// Signed messages that arrived without their signatures.
+    pub signatures_not_kept: usize,
+    /// Saved Outlook items that were appointments, contacts and the like.
+    pub not_messages: usize,
+    /// Saved messages damaged partway or larger than this program reads.
+    pub could_not_be_read: usize,
 }
 
 impl MessagesImported {
@@ -476,6 +550,16 @@ impl MessagesImported {
             self.not_written_down += 1;
         }
     }
+
+    /// Count what reading one saved Outlook message left in its file.
+    pub fn count_one_saved_outlook_message(&mut self, saved: &SavedOutlookMessageRead) {
+        let _ = saved;
+    }
+}
+
+/// The sentences about what saved Outlook messages left in their files.
+pub fn what_saved_outlook_messages_left(said: &mut SummingUp, left: &WhatSavedOutlookMessagesLeft) {
+    let _ = (said, left);
 }
 
 /// What an import did, in the words somebody hears.
@@ -533,7 +617,26 @@ pub fn what_the_mail_import_did(read: &MessagesImported) -> String {
              this folder on your other devices",
         );
     }
+    what_saved_outlook_messages_left(&mut said, &read.from_saved_outlook_messages);
     said.spoken()
+}
+
+/// What to say when a chosen file cannot be opened at all.
+pub const THAT_FILE_COULD_NOT_BE_READ: &str =
+    "That file could not be read, so nothing was imported.";
+
+/// What to say when the folder imported mail goes into cannot be made.
+pub const THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE: &str =
+    "The folder imported mail goes into could not be made, so nothing was imported.";
+
+/// Bring in one saved Outlook message somebody chose, under Imported.
+pub fn a_saved_outlook_message_brought_in(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &str,
+    at: &std::path::Path,
+) -> String {
+    let _ = (cache, account, at);
+    String::new()
 }
 
 // ── Writing messages out ────────────────────────────────────────────────────
@@ -660,6 +763,9 @@ pub struct MessagesExported {
 mod tests {
     use super::*;
     use crate::common::types::Protocol;
+    use crate::service::outlook_data_file::one_saved_message::for_tests::{
+        a_saved_message, an_appointment,
+    };
     use message_files::MessagesRead;
 
     /// A folder somebody reads their mail in, which is nearly every folder.
@@ -1080,6 +1186,7 @@ mod tests {
             could_not_be_read: 2,
             not_written_down: 2,
             the_server_also_fills_this_folder: true,
+            ..MessagesImported::default()
         });
 
         assert_eq!(
@@ -1251,12 +1358,15 @@ mod tests {
             CHOOSE_A_FOLDER_FIRST.to_string(),
             NOT_INTO_THE_OUTBOX.to_string(),
             message_files::NOT_A_MAIL_FILE.to_string(),
+            THAT_FILE_COULD_NOT_BE_READ.to_string(),
+            THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE.to_string(),
             what_the_mail_import_did(&MessagesImported {
                 brought_in: 5,
                 already_here: 2,
                 could_not_be_read: 2,
                 not_written_down: 2,
                 the_server_also_fills_this_folder: true,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
             what_the_mail_import_did(&MessagesImported {
                 brought_in: 1,
@@ -1264,6 +1374,7 @@ mod tests {
                 could_not_be_read: 1,
                 not_written_down: 1,
                 the_server_also_fills_this_folder: true,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
         ];
 
@@ -1281,6 +1392,173 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ── Saved Outlook messages ──────────────────────────────────────────────
+
+    /// One of every count a saved Outlook message can leave, `each` times.
+    fn saved_outlook_messages_leaving(each: usize) -> WhatSavedOutlookMessagesLeft {
+        WhatSavedOutlookMessagesLeft {
+            read: each,
+            files_not_brought: each,
+            blind_copies: each,
+            formatting_only_in_outlooks_format: each,
+            signatures_not_kept: each,
+            not_messages: each,
+            could_not_be_read: each,
+        }
+    }
+
+    /// One saved Outlook message read, with what it left in its file.
+    fn read_leaving(left: LeftInTheFile) -> SavedOutlookMessageRead {
+        SavedOutlookMessageRead {
+            read: message_files::read_one_message_as_it_arrived(one_message().as_bytes()),
+            left_in_the_file: left,
+            refused: None,
+        }
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_becomes_a_message_as_a_data_files_message_does() {
+        // The bytes the saved message's reader hands back go through the
+        // reader every other saved message goes through, and an entry of an
+        // archive read as a saved Outlook message is the same read.
+        let bytes = a_saved_message("The engine", "It weaves algebraic patterns.");
+
+        let saved = one_saved_outlook_message_in(&bytes);
+
+        assert_eq!(saved.refused, None);
+        assert_eq!(saved.left_in_the_file, LeftInTheFile::default());
+        let message = &saved.read.as_ref().expect("a message").message;
+        assert_eq!(message.subject, "The engine");
+        assert_eq!(
+            message.body_plain.as_deref(),
+            Some("It weaves algebraic patterns.")
+        );
+        let as_an_entry: Vec<_> = each_message_in(&bytes, ReadAs::OneSavedOutlookMessage).collect();
+        assert_eq!(as_an_entry.len(), 1);
+        assert_eq!(
+            as_an_entry[0].as_ref().expect("a message").message.subject,
+            "The engine"
+        );
+    }
+
+    #[test]
+    fn test_a_saved_outlook_item_that_is_not_a_message_is_refused_in_the_readers_words() {
+        // An appointment is a saved Outlook item and not mail, refused by
+        // name. A file that is no saved Outlook item at all is a different
+        // fact, the caller's to count with the files that held no mail.
+        let appointment = one_saved_outlook_message_in(&an_appointment());
+        assert_eq!(
+            appointment.refused,
+            Some(WhyItWasNotRead::AnotherKind("appointment"))
+        );
+        assert!(!appointment.is_not_an_outlook_message());
+
+        let not_one = one_saved_outlook_message_in(one_message().as_bytes());
+        assert!(not_one.is_not_an_outlook_message());
+        assert!(not_one.read.is_err());
+    }
+
+    #[test]
+    fn test_what_a_saved_outlook_message_left_is_counted_by_cause() {
+        // One count to a cause, so each is a sentence somebody can act on, and
+        // the refusals counted apart from the messages the filing counts.
+        let mut counted = MessagesImported::default();
+        counted.count_one_saved_outlook_message(&read_leaving(LeftInTheFile {
+            files_not_brought: 2,
+            blind_copies: 1,
+            markup_only_in_outlooks_own_format: true,
+            signature_not_kept: true,
+        }));
+        counted.count_one_saved_outlook_message(&read_leaving(LeftInTheFile {
+            blind_copies: 3,
+            ..LeftInTheFile::default()
+        }));
+        for why in [
+            WhyItWasNotRead::AnotherKind("contact"),
+            WhyItWasNotRead::NotAKindThisProgramKeeps,
+            WhyItWasNotRead::DamagedPartway,
+            WhyItWasNotRead::TooLarge,
+            // The caller's to count, with the files that held no mail.
+            WhyItWasNotRead::NotAnOutlookMessage,
+        ] {
+            counted.count_one_saved_outlook_message(&SavedOutlookMessageRead::from(why));
+        }
+
+        assert_eq!(
+            counted.from_saved_outlook_messages,
+            WhatSavedOutlookMessagesLeft {
+                read: 2,
+                files_not_brought: 2,
+                blind_copies: 4,
+                formatting_only_in_outlooks_format: 1,
+                signatures_not_kept: 1,
+                not_messages: 2,
+                could_not_be_read: 2,
+            }
+        );
+        assert_eq!(
+            counted.brought_in + counted.already_here + counted.could_not_be_read,
+            0,
+            "a refusal moved a count of messages: {counted:?}"
+        );
+    }
+
+    #[test]
+    fn test_what_saved_outlook_messages_left_is_said_one_cause_at_a_time() {
+        // Every count in the singular and in the plural, written out rather
+        // than built from parts, and the sentence about how new this reading
+        // is last of all.
+        let new_reading = "Reading saved Outlook messages is new to Wixen Mail and has been \
+                           tried on only a few, so check what arrived against Outlook.";
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 1,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(1),
+                ..MessagesImported::default()
+            }),
+            format!(
+                "Imported 1 message. 1 attached file stayed in its saved Outlook message, \
+                 because Outlook keeps it as another message, a link or something only \
+                 Outlook opens. 1 blind copy recipient was left off, because a message here \
+                 has no line for blind copies. 1 message had formatting Outlook kept only in \
+                 its own format, so it arrived as its words alone. 1 signed message arrived \
+                 without its signature, because a saved Outlook message does not keep one. 1 \
+                 saved Outlook item was not a message and was left out. 1 saved Outlook \
+                 message could not be read, because it is damaged or larger than Wixen Mail \
+                 will read. {new_reading}"
+            )
+        );
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                brought_in: 2,
+                from_saved_outlook_messages: saved_outlook_messages_leaving(2),
+                ..MessagesImported::default()
+            }),
+            format!(
+                "Imported 2 messages. 2 attached files stayed in their saved Outlook \
+                 messages, because Outlook keeps them as other messages, links or things \
+                 only Outlook opens. 2 blind copy recipients were left off, because a message \
+                 here has no line for blind copies. 2 messages had formatting Outlook kept \
+                 only in its own format, so they arrived as their words alone. 2 signed \
+                 messages arrived without their signatures, because a saved Outlook message \
+                 does not keep them. 2 saved Outlook items were not messages and were left \
+                 out. 2 saved Outlook messages could not be read, because they are damaged or \
+                 larger than Wixen Mail will read. {new_reading}"
+            )
+        );
+        // Nothing read into a message, nothing to check against Outlook.
+        assert_eq!(
+            what_the_mail_import_did(&MessagesImported {
+                from_saved_outlook_messages: WhatSavedOutlookMessagesLeft {
+                    not_messages: 1,
+                    ..WhatSavedOutlookMessagesLeft::default()
+                },
+                ..MessagesImported::default()
+            }),
+            "No messages were imported. 1 saved Outlook item was not a message and was left out."
+        );
     }
 
     /// One ordinary message, as a file saved from a mail program holds it.
@@ -1329,6 +1607,9 @@ mod end_to_end {
     use crate::application::checking_signatures::{SignatureCheck, for_message};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, MessageCache};
+    use crate::service::outlook_data_file::one_saved_message::for_tests::{
+        a_saved_message, an_appointment,
+    };
 
     /// An empty cache with one folder in it, the way an import finds one.
     fn a_cache() -> (TempHome<MessageCache>, i64) {
@@ -1599,6 +1880,80 @@ mod end_to_end {
         assert!(
             cache.was_filed_here(row).expect("the marker"),
             "the next check for mail would take this message away"
+        );
+    }
+
+    /// A saved Outlook message written into a folder of its own, the way
+    /// somebody drags one out of Outlook onto their desktop.
+    fn saved_in(folder: &tempfile::TempDir, bytes: &[u8]) -> std::path::PathBuf {
+        let at = folder.path().join("The engine.msg");
+        std::fs::write(&at, bytes).expect("the saved message written");
+        at
+    }
+
+    #[test]
+    fn test_a_saved_outlook_message_is_filed_under_imported_with_its_subject_and_text() {
+        // The whole road a chosen saved message takes: the file opened and
+        // read through the saved message's own reader, the message filed by
+        // the one function that files imported mail, under Imported, and the
+        // closing sentence saying how new this reading is.
+        let (cache, imported) = a_cache();
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let at = saved_in(
+            &folder,
+            &a_saved_message("The engine", "It weaves algebraic patterns."),
+        );
+
+        let said = a_saved_outlook_message_brought_in(&cache, "acct", &at);
+
+        let listed = cache
+            .get_message_list(imported, "acct")
+            .expect("the folder listing");
+        assert_eq!(listed.len(), 1, "{listed:?}");
+        assert_eq!(listed[0].subject, "The engine");
+        assert!(
+            listed[0].from_addr.contains("ada@example.com"),
+            "{}",
+            listed[0].from_addr
+        );
+        assert!(
+            cache
+                .get_message_body(listed[0].id)
+                .expect("the text")
+                .and_then(|body| body.body_plain)
+                .unwrap_or_default()
+                .contains("algebraic"),
+            "the message went into the folder with no text under it"
+        );
+        assert!(
+            cache.was_filed_here(listed[0].id).expect("the marker"),
+            "the next check for mail would take this message away"
+        );
+        assert_eq!(
+            said,
+            "Imported 1 message. Reading saved Outlook messages is new to Wixen Mail and has \
+             been tried on only a few, so check what arrived against Outlook."
+        );
+    }
+
+    #[test]
+    fn test_an_appointment_saved_as_a_file_is_refused_in_the_readers_words_and_nothing_is_filed() {
+        let (cache, imported) = a_cache();
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let at = saved_in(&folder, &an_appointment());
+
+        let said = a_saved_outlook_message_brought_in(&cache, "acct", &at);
+
+        assert_eq!(
+            said,
+            "That is an Outlook appointment, not a message. Wixen Mail reads saved messages \
+             from .msg files."
+        );
+        assert!(
+            cache
+                .get_message_list(imported, "acct")
+                .expect("the folder listing")
+                .is_empty()
         );
     }
 }
