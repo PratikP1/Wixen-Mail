@@ -616,6 +616,22 @@ fn ran_in_a_child_on_a_desktop_of_its_own(test: &str) -> bool {
     true
 }
 
+/// Where a window test's body runs.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WhereTheBodyRuns {
+    /// In a child of this executable on a desktop made for the run.
+    InAChild,
+    /// In this process, on the desktop it was started on.
+    OnTheRunnersOwnDesktop,
+}
+
+/// Where a window test's body runs, given the `CI` variable, which GitHub
+/// sets on every runner.
+fn where_the_body_runs(_ci: Option<&OsStr>) -> WhereTheBodyRuns {
+    // Today's answer, kept until the decision is written.
+    WhereTheBodyRuns::InAChild
+}
+
 /// How the child run ended.
 #[derive(Debug, Clone, PartialEq)]
 enum ChildEnd {
@@ -1552,6 +1568,20 @@ fn one_act(run: &Rc<RefCell<Run>>, body_editor: &WebView) -> Phase {
 // every other ending says which it was and what Windows says about the lock.
 
 const A_TEST: &str = "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure";
+
+#[test]
+fn test_the_window_test_runs_on_the_runners_own_desktop_only_where_ci_is_set() {
+    assert_eq!(
+        where_the_body_runs(Some(OsStr::new("true"))),
+        WhereTheBodyRuns::OnTheRunnersOwnDesktop,
+        "with CI set"
+    );
+    assert_eq!(
+        where_the_body_runs(None),
+        WhereTheBodyRuns::InAChild,
+        "without CI"
+    );
+}
 
 fn a_child_run(end: ChildEnd, output: &str, lock: SessionLock) -> ChildRun {
     ChildRun {
