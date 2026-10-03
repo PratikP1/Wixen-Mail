@@ -538,18 +538,9 @@ pub fn what_the_mail_import_did(read: &MessagesImported) -> String {
 
 // ── Writing messages out ────────────────────────────────────────────────────
 
-/// What to say when Export is asked for and no message is chosen.
-///
-/// The alternative is an empty file that another mail program then refuses to
-/// open, with nothing at any point saying the selection was the problem.
-pub const CHOOSE_THE_MESSAGES_TO_EXPORT: &str =
-    "Choose the messages to export first. Select one message in the list, or several.";
-
 /// What kind of file an export writes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WritingOut {
-    /// Nothing will be written, and this is what to say.
-    Refused(&'static str),
     /// One message, in the file a mail program saves a single message in.
     OneMessage,
     /// Several messages one after another, in one archive.
@@ -566,27 +557,11 @@ impl WritingOut {
     ///
     /// The two endings are the ones mail programs have used for years, so a
     /// file written here opens where somebody takes it.
-    pub const fn the_file_ends_with(&self) -> Option<&'static str> {
+    pub const fn the_file_ends_with(&self) -> &'static str {
         match self {
-            Self::Refused(_) => None,
-            Self::OneMessage => Some(".eml"),
-            Self::AnArchive => Some(".mbox"),
+            Self::OneMessage => ".eml",
+            Self::AnArchive => ".mbox",
         }
-    }
-}
-
-/// What writing out this many messages produces.
-///
-/// The two files are different things rather than a preference. A file holding
-/// a single message has no separator lines in it, so two messages written into
-/// one read back as the first message's headers with the second stuck on the
-/// end of its body. A mail program opens that without complaint, and the second
-/// message is gone.
-pub fn writing_out(how_many: usize) -> WritingOut {
-    match how_many {
-        0 => WritingOut::Refused(CHOOSE_THE_MESSAGES_TO_EXPORT),
-        1 => WritingOut::OneMessage,
-        _ => WritingOut::AnArchive,
     }
 }
 
@@ -653,12 +628,8 @@ const A_MESSAGE_WITH_NO_SUBJECT_IS_CALLED: &str = "message";
 ///
 /// Taken from the export of one message rather than written down a second
 /// time, so Save As and an export of one message name their file the same
-/// way. A refusal is the only answer that names no ending, and this does not
-/// ask about a refusal, so nothing reaches the second arm.
-const A_SAVED_MESSAGE_ENDS_WITH: &str = match WritingOut::OneMessage.the_file_ends_with() {
-    Some(ending) => ending,
-    None => ".eml",
-};
+/// way.
+const A_SAVED_MESSAGE_ENDS_WITH: &str = WritingOut::OneMessage.the_file_ends_with();
 
 /// What writing a file of messages out did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -673,25 +644,6 @@ pub struct MessagesExported {
     /// anyway they are headers with nothing under them, which looks like a
     /// successful export and is a file of empty messages.
     pub not_on_this_computer: usize,
-}
-
-/// What an export did, in the words somebody hears.
-pub fn what_the_mail_export_did(written: &MessagesExported) -> String {
-    // The opening comes from the writer rather than being written out again, so
-    // one fact has one wording wherever somebody meets it.
-    let mut said = SummingUp::opening(message_files::what_the_export_did(written.written));
-    if written.not_on_this_computer > 0 {
-        said.sentence(match written.not_on_this_computer {
-            1 => "1 message was left out, because it has not been downloaded to \
-                  this computer: open it once, then export again"
-                .to_string(),
-            many => format!(
-                "{many} messages were left out, because they have not been \
-                 downloaded to this computer: open each one once, then export again"
-            ),
-        });
-    }
-    said.spoken()
 }
 
 #[cfg(test)]
@@ -1132,28 +1084,6 @@ mod tests {
     }
 
     #[test]
-    fn test_exporting_with_nothing_chosen_says_so_rather_than_writing_an_empty_file() {
-        // An empty file that another mail program then refuses to open, and
-        // nothing at any point saying the selection was the problem.
-        assert_eq!(
-            writing_out(0),
-            WritingOut::Refused(CHOOSE_THE_MESSAGES_TO_EXPORT)
-        );
-    }
-
-    #[test]
-    fn test_one_message_is_written_as_a_single_message_and_several_as_an_archive() {
-        // The two are different files and not a preference. A file that holds
-        // one message has no separator lines in it, so two messages written
-        // into one read back as the first message's headers with the second
-        // stuck on the end of its body: a mail program opens it without
-        // complaint and the second message is gone.
-        assert_eq!(writing_out(1), WritingOut::OneMessage);
-        assert_eq!(writing_out(2), WritingOut::AnArchive);
-        assert_eq!(writing_out(4000), WritingOut::AnArchive);
-    }
-
-    #[test]
     fn test_save_as_offers_the_subject_as_the_file_name_ending_in_eml() {
         assert_eq!(
             saving_as(Some("Notes on the engine")),
@@ -1214,58 +1144,8 @@ mod tests {
         // A file whose name says one thing and whose contents are another is
         // the way an archive gets saved as a single message and opened as one
         // message with everything after the first stuck on its end.
-        assert_eq!(writing_out(1).the_file_ends_with(), Some(".eml"));
-        assert_eq!(writing_out(2).the_file_ends_with(), Some(".mbox"));
-        assert_eq!(writing_out(0).the_file_ends_with(), None);
-    }
-
-    #[test]
-    fn test_an_export_opens_with_the_same_count_the_writer_says() {
-        // One wording for one fact. The writer below says this about messages
-        // it wrote; this says it about an export somebody asked for, and the
-        // two meeting in the same status line with different words is what a
-        // copy of the sentence in each module leads to.
-        for how_many in [0, 1, 7] {
-            assert_eq!(
-                what_the_mail_export_did(&MessagesExported {
-                    written: how_many,
-                    ..MessagesExported::default()
-                }),
-                message_files::what_the_export_did(how_many)
-            );
-        }
-    }
-
-    #[test]
-    fn test_messages_whose_text_was_never_downloaded_are_said_rather_than_written_out_empty() {
-        // A folder shows every message it knows about and keeps the text of
-        // only the ones somebody has opened. Exported without asking, the rest
-        // go into the file as headers with nothing under them, which looks like
-        // a successful export and is a file of empty messages.
-        let said = what_the_mail_export_did(&MessagesExported {
-            written: 4,
-            not_on_this_computer: 2,
-        });
-
-        assert_eq!(
-            said,
-            "Exported 4 messages. 2 messages were left out, because they have not \
-             been downloaded to this computer: open each one once, then export again."
-        );
-    }
-
-    #[test]
-    fn test_one_message_left_out_of_an_export_is_said_in_the_singular() {
-        let said = what_the_mail_export_did(&MessagesExported {
-            written: 1,
-            not_on_this_computer: 1,
-        });
-
-        assert_eq!(
-            said,
-            "Exported 1 message. 1 message was left out, because it has not been \
-             downloaded to this computer: open it once, then export again."
-        );
+        assert_eq!(WritingOut::OneMessage.the_file_ends_with(), ".eml");
+        assert_eq!(WritingOut::AnArchive.the_file_ends_with(), ".mbox");
     }
 
     #[test]
@@ -1360,7 +1240,6 @@ mod tests {
             CHOOSE_AN_ACCOUNT_FIRST.to_string(),
             CHOOSE_A_FOLDER_FIRST.to_string(),
             NOT_INTO_THE_OUTBOX.to_string(),
-            CHOOSE_THE_MESSAGES_TO_EXPORT.to_string(),
             message_files::NOT_A_MAIL_FILE.to_string(),
             what_the_mail_import_did(&MessagesImported {
                 brought_in: 5,
@@ -1375,14 +1254,6 @@ mod tests {
                 could_not_be_read: 1,
                 not_written_down: 1,
                 the_server_also_fills_this_folder: true,
-            }),
-            what_the_mail_export_did(&MessagesExported {
-                written: 4,
-                not_on_this_computer: 2,
-            }),
-            what_the_mail_export_did(&MessagesExported {
-                written: 1,
-                not_on_this_computer: 1,
             }),
         ];
 

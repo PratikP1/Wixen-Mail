@@ -3805,7 +3805,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
@@ -12753,7 +12753,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
@@ -12795,7 +12795,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
@@ -16052,16 +16052,22 @@ red = [
     "application::sent_copy::tests::test_a_copy_kept_here_takes_a_number_the_server_will_never_issue",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_is_marked_as_one_filed_here",
     "data::message_cache::messages::tests::test_a_message_filed_into_a_folder_a_server_fills_leaves_the_servers_numbers_alone",
+    "data::message_cache::in_the_trash::tests::test_what_has_been_in_the_trash_leaves_out_deleted_filed_here_and_waiting_rows",
     "data::message_cache::messages::the_dispatcher_is_what_keeps_the_two_numberings_apart::test_a_folder_a_server_names_counts_down_from_the_top",
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
     { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
+    { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
+# Re-measured 2026-10-03 by 13-45, when removing five tests from
+# importing_messages.rs named it: the break also reddened a test 13-44.6
+# added in in_the_trash.rs, a file the record did not name, so the count
+# check could not have seen it fall behind.
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
 # test added to `messages.rs`: six short, none of them that plan's, all
 # 11-07.1's and 11-07.2's of 2026-09-19 in `moves_waiting` on both layers,
@@ -25225,7 +25231,7 @@ red = [
     "application::importing_messages::tests::test_save_as_takes_the_path_out_of_a_subject_before_offering_it_as_a_name",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 41 },
+    { file = "src/application/importing_messages.rs", tests = 36 },
 ]
 
 # File, Save As reaches a handler that writes, held by a reading of the main

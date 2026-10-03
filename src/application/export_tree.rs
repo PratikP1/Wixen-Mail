@@ -39,9 +39,11 @@
 //! Said plainly, because an export that quietly drops something is worse than
 //! one that says what it cannot carry:
 //!
-//! - **The files a message came with.** What is stored about one is its name,
-//!   its type and its size. The file itself was never kept, so a message that
-//!   arrived carrying three of them exports as the message and none of them.
+//! - **The files a message came with, where this computer never kept them.**
+//!   The files a message carries are kept when it is read, and those go with
+//!   it. One this computer does not have is described by name, type and size
+//!   and nothing more, so the message goes out without it, and the export
+//!   counts it and says so. See [`added_to_the_archive`].
 //! - **Every header nobody displays.** The message is built from the columns,
 //!   so what it arrived with and this program does not show is gone: the route
 //!   it took, the name of the program that sent it, whatever a mailing list
@@ -460,13 +462,8 @@ const SEPARATES_FOLDERS: &str = "/";
 ///
 /// Taken from the export that writes a single archive rather than written down
 /// a second time, so a folder inside this file is named the way a folder
-/// written out on its own is and the two cannot drift apart. A refusal is the
-/// only answer that names no ending, and this does not ask about a refusal, so
-/// nothing reaches the second arm.
-const AN_ARCHIVE_ENDS_WITH: &str = match WritingOut::AnArchive.the_file_ends_with() {
-    Some(ending) => ending,
-    None => ".mbox",
-};
+/// written out on its own is and the two cannot drift apart.
+const AN_ARCHIVE_ENDS_WITH: &str = WritingOut::AnArchive.the_file_ends_with();
 
 /// One folder as the exported file holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -816,7 +813,6 @@ fn how_much_came_out(written: &FoldersExported) -> String {
 mod tests {
     use super::*;
     use crate::application::filing::{AlreadyRead, a_row_filed_here};
-    use crate::application::importing_messages::what_the_mail_export_did;
     use crate::application::local_folders::{LOCAL_PREFIX, local_sent};
     use crate::common::types::Protocol;
     use crate::data::message_cache::IncomingMessage;
@@ -1431,9 +1427,7 @@ mod tests {
             folder.an_archive_of_its_mail(),
             format!(
                 "INBOX/Archive/2026{}",
-                WritingOut::AnArchive
-                    .the_file_ends_with()
-                    .expect("an archive names the ending its file should have")
+                WritingOut::AnArchive.the_file_ends_with()
             )
         );
     }
@@ -1943,10 +1937,12 @@ mod tests {
         // else. Left unsaid, the count on its own reads as a complete export
         // that happened to be smaller than expected.
         //
-        // The clause is taken from the one-folder export at the moment this
-        // runs rather than copied out here. A copy would go stale without
-        // anything noticing, and somebody would then hear one wording on the
-        // status line and another in the log.
+        // The clause is taken from the one-folder export, the mailbox file, at
+        // the moment this runs rather than copied out here. A copy would go
+        // stale without anything noticing, and somebody would then hear one
+        // wording on the status line and another in the log. Until 13-45 the
+        // one-folder side was what_the_mail_export_did, which nothing outside
+        // its tests reached and which went with it.
         for how_many in [1, 3] {
             let said = what_the_folder_export_did(&FoldersExported {
                 folders: 2,
@@ -1958,12 +1954,10 @@ mod tests {
                 signatures_that_could_not_be_kept: 0,
             });
 
-            let by_the_one_folder_export = what_the_mail_export_did(&MessagesExported {
-                written: 0,
-                not_on_this_computer: how_many,
-            });
+            let by_the_one_folder_export =
+                what_the_mailbox_file_export_did(&one_folder_counted(0, how_many), 0);
             let clause = by_the_one_folder_export
-                .strip_prefix("No messages were exported. ")
+                .strip_prefix("No messages were exported, so no file was written. ")
                 .expect("the one folder export opens with a count and then explains");
             assert_eq!(
                 said,
