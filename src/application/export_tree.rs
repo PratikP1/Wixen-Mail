@@ -684,6 +684,17 @@ pub struct FoldersExported {
 /// one thing on the status line and another in the log.
 pub fn what_the_folder_export_did(written: &FoldersExported) -> String {
     let mut said = SummingUp::opening(how_much_came_out(written));
+    what_was_left_behind(written, &mut said);
+    said.spoken()
+}
+
+/// The sentences about what an export could not carry: messages never
+/// downloaded, files this computer does not have, and signatures whose proof
+/// was not kept.
+///
+/// One function for every shape an export takes, so a rewording lands in all
+/// of them at once.
+fn what_was_left_behind(written: &FoldersExported, said: &mut SummingUp) {
     if written.messages.not_on_this_computer > 0 {
         // Two sentences written out rather than one built from parts. Several
         // words have to agree in number, and a sentence assembled from
@@ -733,24 +744,56 @@ pub fn what_the_folder_export_did(written: &FoldersExported) -> String {
             ),
         });
     }
-    said.spoken()
 }
 
 /// What writing one folder out as one mailbox file did, in the words somebody
 /// hears.
+///
+/// The folder alone goes into the file, so the folders inside it are counted
+/// and said, with the command that writes them too. Without that sentence a
+/// file of Work's own mail reads as the whole of Work.
+///
+/// What was left behind is said in the words the export of a whole mailbox
+/// uses, through the one function both call, so the same fact about the same
+/// mail is worded one way whichever shape it went out in.
 pub fn what_the_mailbox_file_export_did(
     written: &FoldersExported,
     folders_inside_not_included: usize,
 ) -> String {
-    format!(
-        "{} {folders_inside_not_included}",
-        what_the_folder_export_did(written)
-    )
+    let mut said = SummingUp::opening(match written.messages.written {
+        // Nothing went in, so nothing was put at the name chosen. Said, so
+        // somebody who already had a file there knows it is untouched.
+        0 => format!(
+            "{}, so no file was written",
+            message_files::what_the_export_did(0)
+        ),
+        many => format!(
+            "{} into one mailbox file",
+            message_files::what_the_export_did(many)
+        ),
+    });
+    what_was_left_behind(written, &mut said);
+    if folders_inside_not_included > 0 {
+        said.sentence(match folders_inside_not_included {
+            1 => "1 folder inside it was not included".to_string(),
+            many => format!("{many} folders inside it were not included"),
+        });
+        said.sentence("Export Mailbox writes a folder together with the folders inside it");
+    }
+    said.spoken()
 }
 
 /// What to say when a mailbox file stopped partway through.
+///
+/// Said instead of a count, never as well as one, for the reason the archive's
+/// own sentence gives. Unlike the archive, nothing half-written is left at the
+/// name chosen: what was written on the way is taken away, so the sentence says
+/// no file was written rather than that an unfinished one was.
 pub fn a_mailbox_file_that_broke_off(why: &crate::common::Error) -> String {
-    why.to_string()
+    format!(
+        "The folder could not be written out all the way through, so no file was \
+         written and a file already at that name is as it was. {why}"
+    )
 }
 
 /// The opening line: how many messages, and how many folders they came from.

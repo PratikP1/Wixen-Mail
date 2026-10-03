@@ -17279,7 +17279,7 @@ fn write_the_mailbox_out(
     to: &std::path::Path,
     say: &dyn Fn(UIUpdate),
 ) -> String {
-    use crate::application::export_tree;
+    use crate::application::{export_tree, exporting_mail};
 
     // The folder chosen and everything inside it, so exporting Work takes
     // Work/Invoices with it. Anything else in the account is left alone.
@@ -17305,30 +17305,14 @@ fn write_the_mailbox_out(
         let messages = cache.get_message_list(row.id, account).unwrap_or_default();
         let mut started = false;
         for message in &messages {
-            let text = cache.get_message_body(message.id).ok().flatten();
-            // The files this computer kept when the message was read. An
-            // attachment it does not have comes back described and empty, which
-            // is what the count of files left out is made of.
-            let files = cache
-                .attachments_with_content(message.id)
-                .unwrap_or_default();
-            // The form a signed message arrived in, where this computer kept
-            // it. Written as it arrived, its signature survives the trip; put
-            // back together from the columns, it does not, and importing the
-            // export again says nothing about a signature at all. A store that
-            // cannot be read answers the way a message that never claimed a
-            // signature does, which writes the message and says nothing false.
-            let arrived_as = cache
-                .signed_original(message.id)
-                .unwrap_or(crate::data::message_cache::signed_original::SignedOriginal::NotSigned);
+            // Read out the way the mailbox file of one folder reads it, so the
+            // two shapes cannot come to build a message two ways. A message
+            // after another in this folder's file lands behind the empty line
+            // the reader looks for, which a fresh buffer cannot carry.
             let mut one = Vec::new();
-            let became = export_tree::added_to_the_archive(
-                &mut one,
-                message,
-                text.as_ref(),
-                &files,
-                &arrived_as,
-            );
+            let landing = exporting_mail::InTheFile::after(started);
+            let became =
+                exporting_mail::one_stored_message_added(cache, message, landing, &mut one);
             became.counted_in(&mut counted);
             if !became.was_written() {
                 continue;

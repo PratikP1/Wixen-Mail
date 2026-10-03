@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 610 records have arrived since and have not been through it.
+# 612 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -9312,7 +9312,7 @@ red = [
     "presentation::message_rows::tests::test_correspondent_recovers_the_whole_name_when_it_contains_a_literal_angle_bracket",
 ]
 tests_last_seen = [
-    { file = "src/application/export_tree.rs", tests = 39 },
+    { file = "src/application/export_tree.rs", tests = 43 },
     { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
@@ -37424,7 +37424,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 3 },
+    { file = "tests/mail_taken_off_leaves_no_words_behind.rs", tests = 4 },
 ]
 
 # The file reading searches only the first page of the bytes it is handed,
@@ -37486,4 +37486,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 5 },
+]
+
+# A mailbox file nothing went into put in place anyway, so a backup already
+# at the name chosen is replaced by an empty file (13-45, T-13-45-01).
+# Written 2026-10-02 by 13-45.
+[[guard]]
+name = "a mailbox file nothing went into leaves the name chosen as it was"
+file = "src/service/mailbox_archive.rs"
+before = '''        if !anything_went_in {
+            drop(writing);'''
+after = '''        if false {
+            drop(writing);'''
+red = [
+    "application::exporting_mail::tests::test_a_file_already_at_the_name_chosen_keeps_its_bytes_when_no_message_went_in",
+    "application::exporting_mail::tests::test_a_folder_where_no_message_went_in_writes_no_file",
+    "service::mailbox_archive::tests::test_a_mailbox_file_nothing_went_into_leaves_the_file_already_there_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 4 },
+    { file = "src/service/mailbox_archive.rs", tests = 36 },
+]
+
+# The folders inside counted without the mark between a folder and the one
+# inside it, so the folder itself, and a sibling sharing the start of its
+# name, are said to be left out (13-45, T-13-45-02). Written 2026-10-02 by
+# 13-45.
+[[guard]]
+name = "a mailbox file of one folder counts only the folders inside it as left out"
+file = "src/application/exporting_mail.rs"
+before = '''    let inside = format!("{folder}/");'''
+after = '''    let inside = folder.to_string();'''
+red = [
+    "application::exporting_mail::tests::test_a_file_already_at_the_name_chosen_keeps_its_bytes_when_no_message_went_in",
+    "application::exporting_mail::tests::test_one_folder_written_as_a_mailbox_file_reads_back_as_the_same_messages",
+]
+tests_last_seen = [
+    { file = "src/application/exporting_mail.rs", tests = 4 },
 ]

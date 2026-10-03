@@ -1004,8 +1004,16 @@ impl ArchiveBeingWritten {
 /// found nothing to write must leave that file exactly as it was rather than
 /// as an empty or half-written one.
 pub struct MailboxFileBeingWritten {
+    /// The file being written, under the name it carries on the way.
+    writing: std::io::BufWriter<std::fs::File>,
+    /// The name it carries on the way: the one chosen with `.partial` on the
+    /// end, in the same folder, so putting it in place is a rename on one disk.
+    on_the_way: PathBuf,
     /// The name the person chose.
     at: PathBuf,
+    /// Whether any mail has gone in, which decides whether there is a file to
+    /// put in place at all.
+    anything_went_in: bool,
 }
 
 /// What finishing a mailbox file came to.
@@ -1019,38 +1027,115 @@ pub enum MailboxFileOutcome {
 }
 
 /// Start writing a mailbox file that will be put at the name chosen.
+///
+/// Opened now rather than at the first message, so a folder that is not there
+/// or a disk that is full is found before somebody waits through a long export
+/// and then hears it failed. Opened only if nothing already carries the name it
+/// is written under on the way: a file there is somebody's own, and not this
+/// program's to write over.
 pub fn one_mailbox_file_written_to(at: &Path) -> Result<MailboxFileBeingWritten> {
-    Err(Error::InPlainWords(format!(
-        "{} is not written yet.",
-        at.display()
-    )))
+    let on_the_way = the_name_on_the_way_to(at);
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&on_the_way)
+        .map_err(|why| match why.kind() {
+            std::io::ErrorKind::AlreadyExists => Error::InPlainWords(format!(
+                "{} is in the way of the file being written, so nothing was written. \
+                 Move it, or choose another name.",
+                on_the_way.display()
+            )),
+            _ => could_not_be_written(at, &why),
+        })?;
+    Ok(MailboxFileBeingWritten {
+        writing: std::io::BufWriter::new(file),
+        on_the_way,
+        at: at.to_path_buf(),
+        anything_went_in: false,
+    })
+}
+
+/// The name a mailbox file carries until it is put in place.
+fn the_name_on_the_way_to(at: &Path) -> PathBuf {
+    let mut named = at.as_os_str().to_os_string();
+    named.push(".partial");
+    PathBuf::from(named)
+}
+
+/// What to say when the file at this name could not be written.
+fn could_not_be_written(at: &Path, why: &std::io::Error) -> Error {
+    Error::InPlainWords(format!("{} could not be written: {why}.", at.display()))
 }
 
 impl MailboxFileBeingWritten {
     /// Write the next message into the file.
     pub fn write_into_it(&mut self, bytes: &[u8]) -> Result<()> {
-        Err(Error::InPlainWords(format!(
-            "{} bytes for {} are not written yet.",
-            bytes.len(),
-            self.at.display()
-        )))
+        std::io::Write::write_all(&mut self.writing, bytes)
+            .map_err(|why| could_not_be_written(&self.at, &why))?;
+        self.anything_went_in |= !bytes.is_empty();
+        Ok(())
     }
 
     /// Put the file in place, if anything went into it.
+    ///
+    /// Onto the disk first and then over the name chosen, so the name holds
+    /// either what was there before or the whole of the new file and never
+    /// part of it. When nothing went in, nothing is put in place: a file of no
+    /// messages over last month's backup would lose the backup for nothing.
     pub fn finish(self) -> Result<MailboxFileOutcome> {
-        Err(Error::InPlainWords(format!(
-            "{} is not finished yet.",
-            self.at.display()
-        )))
+        let Self {
+            writing,
+            on_the_way,
+            at,
+            anything_went_in,
+        } = self;
+        if !anything_went_in {
+            drop(writing);
+            taken_away(&on_the_way)?;
+            return Ok(MailboxFileOutcome::NothingWentIn);
+        }
+        let put_in_place = writing
+            .into_inner()
+            .map_err(|why| could_not_be_written(&at, why.error()))
+            .and_then(|file| {
+                file.sync_all()
+                    .map_err(|why| could_not_be_written(&at, &why))
+            })
+            .and_then(|()| {
+                std::fs::rename(&on_the_way, &at).map_err(|why| could_not_be_written(&at, &why))
+            });
+        match put_in_place {
+            Ok(()) => Ok(MailboxFileOutcome::Written),
+            // Whatever is left of the file is not a file anybody should keep.
+            // A failure to take it away is said too, because it names a file
+            // somebody will otherwise find and wonder about.
+            Err(why) => Err(match taken_away(&on_the_way) {
+                Ok(()) => why,
+                Err(also) => Error::InPlainWords(format!("{why} {also}")),
+            }),
+        }
     }
 
-    /// Stop, leaving the name chosen as it was.
+    /// Stop, take away what was written, and leave the name chosen as it was.
     pub fn abandon(self) -> Result<()> {
-        Err(Error::InPlainWords(format!(
-            "{} is not abandoned yet.",
-            self.at.display()
-        )))
+        let Self {
+            writing,
+            on_the_way,
+            ..
+        } = self;
+        drop(writing);
+        taken_away(&on_the_way)
     }
+}
+
+/// Take away a file written on the way, saying so if it cannot be.
+fn taken_away(on_the_way: &Path) -> Result<()> {
+    std::fs::remove_file(on_the_way).map_err(|why| {
+        Error::InPlainWords(format!(
+            "{} was left behind and can be deleted: {why}.",
+            on_the_way.display()
+        ))
+    })
 }
 
 #[cfg(test)]

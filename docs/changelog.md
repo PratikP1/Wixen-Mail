@@ -1259,6 +1259,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Export Mailbox keeps every message of a folder apart again.** Since 2026-08-29 each
+  message went into a folder's mailbox file without the empty line in front of the line that
+  starts the next message, so this program's own Import Mailbox read a folder of many messages
+  back as its first message, with every other message inside that one's body. Found on
+  2026-10-02 while writing the export of one folder as a mailbox file, which builds each
+  message the same way. A file exported before this version still holds every message's
+  text, and exporting the folder again gives one that reads back whole.
 - **A POP message deleted here is no longer downloaded again by the next check (GAP-14).**
   With "Leave mail on the server after downloading it" on, which is the default, a POP
   message moved to the Trash came straight back to the Inbox at the next check, because the

@@ -370,6 +370,18 @@ pub fn written_into_an_archive(
     }
 }
 
+/// What goes in front of a message that follows another in the same archive,
+/// when each message is built in a buffer of its own.
+///
+/// [`written_into_an_archive`] writes this itself when the buffer it is handed
+/// already holds a message. A writer that hands it a fresh buffer for every
+/// message, so that a folder is never held in memory whole, has to write it in
+/// front of every message after the first, or the reader finds no separator
+/// and reads the whole folder back as its first message.
+pub fn between_two_messages() -> &'static [u8] {
+    ENDS_A_LINE.as_bytes()
+}
+
 /// The line an archive puts in front of one message.
 ///
 /// `From`, who it is from, and when, in the form the format has used since

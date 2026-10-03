@@ -119,6 +119,43 @@ fn test_the_reading_refuses_a_check_that_returns_before_it() {
     );
 }
 
+/// Whether a parent module declares this module under `#[cfg(test)]`, so no
+/// line of its file ships.
+///
+/// A file can be test-only at the line that declares it rather than inside
+/// itself: `what_forgetting_costs.rs` measures the compaction and is compiled
+/// only for tests, and read as shipping it was a second caller that never
+/// runs in the program.
+fn declared_only_for_tests(parent: &str, module: &str) -> bool {
+    let lines: Vec<&str> = parent.lines().map(str::trim).collect();
+    lines.windows(2).any(|pair| {
+        pair[0] == "#[cfg(test)]"
+            && (pair[1] == format!("mod {module};") || pair[1] == format!("pub mod {module};"))
+    })
+}
+
+/// Whether the file at this path is a module its parent compiles only for
+/// tests.
+fn ships_nothing(path: &str) -> bool {
+    let Some((folder, file)) = path.rsplit_once('/') else {
+        return false;
+    };
+    let Some(module) = file.strip_suffix(".rs") else {
+        return false;
+    };
+    [format!("{folder}/mod.rs"), format!("{folder}.rs")]
+        .iter()
+        .filter_map(|parent| fs::read_to_string(parent).ok())
+        .any(|parent| declared_only_for_tests(&parent, module))
+}
+
+#[test]
+fn test_a_module_declared_only_for_tests_is_told_from_one_that_ships() {
+    let parent = "pub mod shipped;\n#[cfg(test)]\nmod measured;\n";
+    assert!(declared_only_for_tests(parent, "measured"));
+    assert!(!declared_only_for_tests(parent, "shipped"));
+}
+
 #[test]
 fn test_nothing_else_compacts_the_search_index() {
     let source_files = every_source_file();
@@ -132,6 +169,7 @@ fn test_nothing_else_compacts_the_search_index() {
         .filter(|path| {
             !path.ends_with("src/presentation/wx_app.rs")
                 && !path.ends_with("src/data/message_cache/taken_off_this_computer.rs")
+                && !ships_nothing(path)
         })
         .filter(|path| {
             fs::read_to_string(path).is_ok_and(|source| {
