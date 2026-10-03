@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 612 records have arrived since and have not been through it.
+# 613 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37529,4 +37529,49 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 4 },
+]
+
+# Export Folder as a Mailbox File stops asking the folder question, so a
+# saved search or a label is written out as though it were a folder (13-45,
+# T-13-45-03). Anchored on the handler's signature down to the call, because
+# the call line alone is in Export Mailbox too. Written 2026-10-03 by 13-45.
+[[guard]]
+name = "Export Folder as a Mailbox File asks whether what is chosen is a folder"
+file = "src/presentation/wx_app.rs"
+suite = "mail_goes_out_in_every_shape"
+before = '''fn export_a_folder_as_a_mailbox_file(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::{export_tree, exporting_mail};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let Some((account, folder)) = a_folder_to_write_out(state, cache, ui_tx, runtime, a11y) else {
+        return;
+    };'''
+after = '''fn export_a_folder_as_a_mailbox_file(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &Option<Arc<MessageCache>>,
+    frame: &Frame,
+    ui_tx: &Sender<UIUpdate>,
+    runtime: &Arc<Runtime>,
+    a11y: &Arc<Accessibility>,
+) {
+    use crate::application::{export_tree, exporting_mail};
+    use crate::presentation::accessibility::announcements::Priority;
+
+    let (Some(account), Some(folder)) = (Some(String::new()), Some(String::new())) else {
+        return;
+    };'''
+red = [
+    "test_every_export_asks_whether_what_is_chosen_is_a_folder",
+    "test_export_folder_as_a_mailbox_file_reaches_its_writer",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_goes_out_in_every_shape.rs", tests = 4 },
 ]
