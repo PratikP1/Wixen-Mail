@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 624 records have arrived since and have not been through it.
+# 625 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37775,4 +37775,25 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 42 },
+]
+
+# A message Outlook saved inside a folder or zip read in pieces like a
+# mailbox file, which finds no mail in it and counts it as nothing (13-48,
+# T-13-48-01). The break skips the branch that reads it whole and hands it
+# to its own reader; the reading of the worker's route reddens. Written
+# 2026-10-03 by 13-48.
+[[guard]]
+name = "a saved Outlook message in a folder or zip is read whole by its own reader"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = """            // One that is not a message at all is a file that held no mail.
+            if entry.read == ReadAs::OneSavedOutlookMessage {"""
+after = """            // One that is not a message at all is a file that held no mail.
+            if false {"""
+red = [
+    "test_importing_mail_sends_each_kind_of_file_to_its_own_reader",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
