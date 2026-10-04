@@ -98,13 +98,15 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-One hundred and eighty-one items. Walk them in order; the first ones are the
+One hundred and eighty-three items. Walk them in order; the first ones are the
 ground the rest stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57
 the same day, for what phase 10 built; this line said forty-one until then.
 Items 58 to 83 were added on 2026-09-20 for what phase 11 built; this line said
 fifty-seven until then. Items 84 to 95 were added on 2026-09-24 for what phase
 12 built; this line said eighty-three until then. Items 96 to 181 were added on
 2026-10-03 for what phase 13 built; this line said ninety-five until then.
+Items 182 and 183 were added on 2026-10-04 for what phase 13.1 changed; this
+line said one hundred and eighty-one until then.
 
 ### The main window
 
@@ -1182,6 +1184,26 @@ answers it there too.
     from the reader, and the closing sentence, including the sentence for a
     file over 25 MB if one is there. **NVDA, and a person with a mailbox
     file.** [ledger 801]
+
+### Phase 13's follow-ups
+
+Added 2026-10-04 for what phase 13.1 changed, one item for each ledger entry
+its plans opened for an ear. Item 182 belongs with Emptying the Trash and item
+183 with Export and import; they are here so the numbers run in order. Both
+were proved by tests and neither has been heard.
+
+182. **Put four messages from a POP account in the Trash every POP account
+    shares, then choose Action, Empty Folder (`Y`) on that Trash.** The
+    question heard to its end, "They will be taken off this computer for good,
+    and Wixen Mail keeps no other copy.", and Enter answering No. **NVDA.**
+    [ledger 804]
+183. **Import, with File, Import a Folder of Messages (`O`), a folder holding a
+    few messages saved from Outlook, one of them encrypted, an old Word or
+    Excel document, and a message you have already imported once.** The
+    closing sentence saying the encrypted message arrived encrypted, the
+    document counted as a file that was not mail with no empty folder left
+    under Imported, and the message already there said in its folder's words.
+    **NVDA, and a person with Outlook.** [ledger 805]
 
 ## B. Low vision and colour
 
