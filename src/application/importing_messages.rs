@@ -847,13 +847,81 @@ pub fn a_saved_outlook_message_brought_in(
         return why.sentence();
     }
     let into = crate::application::import_tree::where_imported_folders_go();
-    let Some(folder_id) = a_folder_for_imported_mail(cache, account, &into) else {
+    if a_folder_for_imported_mail(cache, account, &into).is_none() {
         return THE_IMPORTED_FOLDER_COULD_NOT_BE_MADE.to_string();
-    };
-    let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
+    }
     let mut counted = MessagesImported::default();
-    one_saved_outlook_message_filed(cache, &saved, folder_id, &already_here, &mut counted);
+    one_saved_outlook_message_filed(
+        &saved,
+        &mut AFolderMadeAtItsFirstMessage::found(cache, account, &into),
+        &mut counted,
+    );
     what_the_mail_import_did(&counted)
+}
+
+/// A folder imported mail goes into, made on this computer when the first
+/// message is filed into it.
+pub struct AFolderMadeAtItsFirstMessage<'a> {
+    cache: &'a crate::data::message_cache::MessageCache,
+    account: &'a str,
+    path: &'a str,
+    /// Its identifier, once it is on this computer.
+    id: Option<i64>,
+    /// The messages it already held, by identifier.
+    already_here: std::collections::HashSet<String>,
+    /// Whether this import filed a message into it.
+    filled: bool,
+}
+
+impl<'a> AFolderMadeAtItsFirstMessage<'a> {
+    /// The folder at this path, and what it already holds.
+    pub fn found(
+        cache: &'a crate::data::message_cache::MessageCache,
+        account: &'a str,
+        path: &'a str,
+    ) -> Self {
+        let id = a_folder_for_imported_mail(cache, account, path);
+        let already_here = id
+            .and_then(|id| cache.message_ids_in_folder(id).ok())
+            .unwrap_or_default();
+        Self {
+            cache,
+            account,
+            path,
+            id,
+            already_here,
+            filled: false,
+        }
+    }
+
+    /// File one message into the folder, through [`file_one_imported_message`]
+    /// like every imported message.
+    fn filed(&mut self, message: &message_files::MessageFromAFile) -> WhetherItWasWrittenDown {
+        let Some(id) = self
+            .id
+            .or_else(|| a_folder_for_imported_mail(self.cache, self.account, self.path))
+        else {
+            return WhetherItWasWrittenDown::ItCouldNotBeSavedHere;
+        };
+        self.id = Some(id);
+        let written = file_one_imported_message(self.cache, message, id);
+        self.filled |= matches!(written, WhetherItWasWrittenDown::ItIsInTheFolder { .. });
+        written
+    }
+
+    /// File one message the reader answered with, if it is one to bring in,
+    /// and count what was decided about it.
+    fn one_read_filed(
+        &mut self,
+        read: &Result<message_files::MessageFromAFile>,
+        counted: &mut MessagesImported,
+    ) {
+        let what = WhatToDoWithIt::for_one_read(read, &self.already_here);
+        if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, read) {
+            counted.count_one_written(self.filed(message));
+        }
+        counted.count_one(what);
+    }
 }
 
 /// File one saved Outlook message and count it, whether it came from a file
@@ -864,21 +932,81 @@ pub fn a_saved_outlook_message_brought_in(
 /// already, not saved, or brought in, and beside them what the saved message
 /// left in its file.
 pub fn one_saved_outlook_message_filed(
-    cache: &crate::data::message_cache::MessageCache,
     saved: &SavedOutlookMessageRead,
-    folder_id: i64,
-    already_here: &std::collections::HashSet<String>,
+    into: &mut AFolderMadeAtItsFirstMessage<'_>,
     counted: &mut MessagesImported,
 ) {
     counted.count_one_saved_outlook_message(saved);
-    if saved.refused.is_some() {
-        return;
+    if saved.refused.is_none() {
+        into.one_read_filed(&saved.read, counted);
     }
-    let what = WhatToDoWithIt::for_one_read(&saved.read, already_here);
-    if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &saved.read) {
-        counted.count_one_written(file_one_imported_message(cache, message, folder_id));
+}
+
+/// Bring in a folder or zip of mail somebody chose, saying how far it has got.
+///
+/// Answers with the closing sentence rather than saying it, as
+/// [`crate::application::importing_an_outlook_data_file::brought_in`] does, so
+/// the window decides how it is delivered and a test can drive the whole of it
+/// with a real store and a folder on disk.
+pub fn an_archive_brought_in(
+    cache: &crate::data::message_cache::MessageCache,
+    account: &str,
+    at: &std::path::Path,
+    so_far: &dyn Fn(&str),
+) -> String {
+    use crate::application::import_tree;
+
+    let mut archive = match crate::service::mailbox_archive::opened(at) {
+        Ok(archive) => archive,
+        Err(why) => return why.to_string(),
+    };
+    let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
+    let mut counted = plan.counted;
+    let mut brought_in = MessagesImported::default();
+
+    for folder in &plan.folders {
+        let mut into = AFolderMadeAtItsFirstMessage::found(cache, account, &folder.path);
+        for entry in &folder.entries {
+            // A message Outlook saved is read whole, because its reader moves
+            // about inside it, and under the archive's own bound on one entry.
+            // One that is not a message at all is a file that held no mail.
+            if entry.read == ReadAs::OneSavedOutlookMessage {
+                let saved = match archive.one_entry_read_through(&entry.named) {
+                    Ok(bytes) => one_saved_outlook_message_in(&bytes),
+                    // Counted with the damaged and the too large, which is
+                    // the one sentence those share.
+                    Err(_) => WhyItWasNotRead::TooLarge.into(),
+                };
+                if saved.is_not_an_outlook_message() {
+                    counted.held_no_mail += 1;
+                } else {
+                    one_saved_outlook_message_filed(&saved, &mut into, &mut brought_in);
+                }
+                continue;
+            }
+            // A piece at a time, never the whole entry. A mailbox somebody has
+            // kept for twenty years is one entry, and reading it whole is what
+            // used to refuse it: the limit was never about how much mail
+            // somebody is allowed to bring, it was about what one call could
+            // hold. Read this way nothing grows with the size of the file, so
+            // there is nothing left to refuse.
+            let _ = archive.one_entry_read_in_pieces(&entry.named, |reading| {
+                for read in message_files::each_message_read_piece_by_piece(reading) {
+                    into.one_read_filed(&read, &mut brought_in);
+                }
+                Ok(())
+            });
+        }
+        // Under one subject and at the lowest urgency, so a count climbing
+        // through forty thousand is heard at its latest value rather than
+        // forty thousand times.
+        so_far(&format!(
+            "{} messages imported so far.",
+            brought_in.brought_in
+        ));
     }
-    counted.count_one(what);
+    counted.carry_the_mail_counts(&brought_in);
+    import_tree::what_the_folder_import_did(&counted)
 }
 
 // ── Writing messages out ────────────────────────────────────────────────────
@@ -2241,6 +2369,152 @@ mod end_to_end {
                 .expect("the folder listing")
                 .is_empty()
         );
+    }
+
+    // ── A folder or zip of mail ─────────────────────────────────────────
+
+    /// A document an old version of Word saved: a container of the kind a
+    /// saved Outlook message is, holding a document and no message.
+    fn an_old_word_document() -> Vec<u8> {
+        use std::io::Write as _;
+        let mut file = cfb::CompoundFile::create(std::io::Cursor::new(Vec::new()))
+            .expect("a container in memory");
+        file.create_stream("/WordDocument")
+            .expect("the document's stream")
+            .write_all(b"Dear Charles, the figures follow.")
+            .expect("the document written");
+        file.flush().expect("the container written");
+        file.into_inner().into_inner()
+    }
+
+    /// A folder on disk holding these files at these names, as somebody
+    /// would choose one to import.
+    fn an_archive_holding(files: &[(&str, &[u8])]) -> tempfile::TempDir {
+        let archive = tempfile::tempdir().expect("a temporary folder");
+        for (named, bytes) in files {
+            let at = archive.path().join(named);
+            std::fs::create_dir_all(at.parent().expect("a folder it sits in"))
+                .expect("the folder it sits in");
+            std::fs::write(&at, bytes).expect("the file written");
+        }
+        archive
+    }
+
+    /// Every folder under Imported, by path, in order.
+    fn the_folders_under_imported(cache: &MessageCache) -> Vec<String> {
+        let under = format!(
+            "{}/",
+            crate::application::import_tree::where_imported_folders_go()
+        );
+        let mut paths: Vec<String> = cache
+            .get_folders_for_account("acct")
+            .expect("the folders")
+            .into_iter()
+            .map(|folder| folder.path)
+            .filter(|path| path.starts_with(&under))
+            .collect();
+        paths.sort();
+        paths
+    }
+
+    /// Where the folder an archive calls this lands.
+    fn imported(named: &str) -> String {
+        format!(
+            "{}/{named}",
+            crate::application::import_tree::where_imported_folders_go()
+        )
+    }
+
+    /// How many messages the folder at this path holds.
+    fn how_many_in(cache: &MessageCache, path: &str) -> usize {
+        let folder = cache
+            .get_folder("acct", path)
+            .expect("the folder read")
+            .expect("the folder is there");
+        cache
+            .get_message_list(folder.id, "acct")
+            .expect("the folder listing")
+            .len()
+    }
+
+    /// Nothing said as it goes, for a test that reads the closing sentence.
+    fn quietly(_: &str) {}
+
+    #[test]
+    fn test_a_folder_holding_only_files_that_are_not_mail_is_not_made() {
+        // An old Word or Excel document begins the way a saved Outlook
+        // message does, so a folder of them was planned as a folder of mail,
+        // made before the reader refused its first file, and left under
+        // Imported empty and counted as imported (ledger 797). A folder is
+        // made when its first message is filed.
+        let (cache, _) = a_cache();
+        let archive = an_archive_holding(&[
+            ("Letters/letter.doc", &an_old_word_document()),
+            ("Mail/one.eml", one_message().as_bytes()),
+        ]);
+
+        let said = an_archive_brought_in(&cache, "acct", archive.path(), &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Mail")]);
+        assert_eq!(how_many_in(&cache, &imported("Mail")), 1);
+        assert_eq!(
+            said,
+            "Imported 1 folder, 1 message. 1 file in the archive was not mail and was left out."
+        );
+    }
+
+    #[test]
+    fn test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time() {
+        // Nothing is filed the second time, so no folder is counted as
+        // imported, and nothing is made for the file that is not mail.
+        let (cache, _) = a_cache();
+        let archive = an_archive_holding(&[
+            ("Letters/letter.doc", &an_old_word_document()),
+            ("Mail/one.eml", one_message().as_bytes()),
+        ]);
+        an_archive_brought_in(&cache, "acct", archive.path(), &quietly);
+
+        let said = an_archive_brought_in(&cache, "acct", archive.path(), &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Mail")]);
+        assert_eq!(how_many_in(&cache, &imported("Mail")), 1);
+        assert_eq!(
+            said,
+            "No folders were imported. 1 file in the archive was not mail and was left out."
+        );
+    }
+
+    #[test]
+    fn test_a_folder_an_earlier_import_made_is_filled_again_and_counted_once() {
+        // Made by an earlier import and already there, it is not made again,
+        // and a new message filed into it counts it as imported once.
+        let (cache, _) = a_cache();
+        let first = an_archive_holding(&[("Mail/one.eml", one_message().as_bytes())]);
+        an_archive_brought_in(&cache, "acct", first.path(), &quietly);
+        let made_first = cache
+            .get_folder("acct", &imported("Mail"))
+            .expect("the folder read")
+            .expect("the folder is there")
+            .id;
+        let another = one_message().replace("note-1@example.com", "note-2@example.com");
+        let second = an_archive_holding(&[
+            ("Mail/one.eml", one_message().as_bytes()),
+            ("Mail/two.eml", another.as_bytes()),
+        ]);
+
+        let said = an_archive_brought_in(&cache, "acct", second.path(), &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Mail")]);
+        assert_eq!(
+            cache
+                .get_folder("acct", &imported("Mail"))
+                .expect("the folder read")
+                .expect("the folder is there")
+                .id,
+            made_first
+        );
+        assert_eq!(how_many_in(&cache, &imported("Mail")), 2);
+        assert_eq!(said, "Imported 1 folder, 1 message");
     }
 
     // ── The files an imported message carried ───────────────────────────

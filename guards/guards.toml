@@ -37815,10 +37815,12 @@ tests_last_seen = [
 # mailbox file, which finds no mail in it and counts it as nothing (13-48,
 # T-13-48-01). The break skips the branch that reads it whole and hands it
 # to its own reader; the reading of the worker's route reddens. Written
-# 2026-10-03 by 13-48.
+# 2026-10-03 by 13-48. Moved 2026-10-04 by 13.1-04 with the archive's
+# filling, from `fill_folders_from` in the window to `an_archive_brought_in`
+# in `importing_messages.rs` (D-18); the reading follows it there.
 [[guard]]
 name = "a saved Outlook message in a folder or zip is read whole by its own reader"
-file = "src/presentation/wx_app.rs"
+file = "src/application/importing_messages.rs"
 suite = "wired"
 before = """            // One that is not a message at all is a file that held no mail.
             if entry.read == ReadAs::OneSavedOutlookMessage {"""
@@ -37828,7 +37830,7 @@ red = [
     "test_importing_mail_sends_each_kind_of_file_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
