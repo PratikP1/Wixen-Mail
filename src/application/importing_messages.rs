@@ -874,13 +874,18 @@ pub struct AFolderMadeAtItsFirstMessage<'a> {
 }
 
 impl<'a> AFolderMadeAtItsFirstMessage<'a> {
-    /// The folder at this path, and what it already holds.
+    /// The folder at this path, and what it already holds, read without
+    /// making it.
     pub fn found(
         cache: &'a crate::data::message_cache::MessageCache,
         account: &'a str,
         path: &'a str,
     ) -> Self {
-        let id = a_folder_for_imported_mail(cache, account, path);
+        let id = cache
+            .get_folder(account, path)
+            .ok()
+            .flatten()
+            .map(|folder| folder.id);
         let already_here = id
             .and_then(|id| cache.message_ids_in_folder(id).ok())
             .unwrap_or_default();
@@ -948,6 +953,12 @@ pub fn one_saved_outlook_message_filed(
 /// [`crate::application::importing_an_outlook_data_file::brought_in`] does, so
 /// the window decides how it is delivered and a test can drive the whole of it
 /// with a real store and a folder on disk.
+///
+/// Each folder the archive names is made when its first message is filed, and
+/// counted when a message is filed into it, made now or already there. Every
+/// folder used to be made before anything in it was read, and an old Word or
+/// Excel document begins the way a saved Outlook message does, so a folder of
+/// them was left under Imported, empty, and counted as imported (ledger 797).
 pub fn an_archive_brought_in(
     cache: &crate::data::message_cache::MessageCache,
     account: &str,
@@ -961,7 +972,11 @@ pub fn an_archive_brought_in(
         Err(why) => return why.to_string(),
     };
     let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
-    let mut counted = plan.counted;
+    // Counted again as the folders fill, rather than as the archive plans them.
+    let mut counted = import_tree::FoldersImported {
+        folders: 0,
+        ..plan.counted
+    };
     let mut brought_in = MessagesImported::default();
 
     for folder in &plan.folders {
@@ -997,6 +1012,7 @@ pub fn an_archive_brought_in(
                 Ok(())
             });
         }
+        counted.folders += usize::from(into.filled);
         // Under one subject and at the lowest urgency, so a count climbing
         // through forty thousand is heard at its latest value rather than
         // forty thousand times.

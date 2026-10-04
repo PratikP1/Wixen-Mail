@@ -345,7 +345,11 @@ pub struct EntryToRead {
 /// been looked over, and the messages are counted as the folders are filled.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FoldersImported {
-    /// Folders made on this computer.
+    /// Folders a message was filed into, made by this import or already there.
+    ///
+    /// Looking the archive over counts the folders it plans, and filling them
+    /// counts again, because a folder whose files all turn out not to be mail
+    /// is never made.
     pub folders: usize,
     /// Messages written into them.
     pub messages: usize,
