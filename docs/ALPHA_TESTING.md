@@ -740,11 +740,12 @@ Written down so you do not spend time reporting things already on the list.
   Microsoft permissions, People.Read and Tasks.ReadWrite, approved, which is
   why an Outlook account signed in before then is asked to sign in again. The
   fault that stops the toolkit's own printing from starting a job on Windows is
-  written down, and Wixen Mail prints through Windows directly instead. On
-  2026-09-24 Pratik asked for more details before anything is filed with the
-  toolkit's authors, and nothing has been filed (ledger 614). Until 2026-10-04
-  this sentence said a decision had been made not to report it, which misread
-  his answer.
+  written down, and Wixen Mail prints through Windows directly instead. It was
+  reported to the toolkit's authors on 2026-10-03, after a test program
+  confirmed it, as issue 246 on the toolkit's own tracker (ledger 614 has the
+  link). Earlier on 2026-10-04 this sentence said nothing had been filed, and
+  before that it said a decision had been made not to report it; both misread
+  Pratik's answer of 2026-09-24, which was to see the details first.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
