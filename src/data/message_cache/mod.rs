@@ -1427,11 +1427,24 @@ impl MessageCache {
             // The test beside the task queries this back, so if the default
             // ever moves, that fails here rather than a duplicate task turning
             // up on somebody's phone.
+            //
+            // secure_delete is on so that every write overwrites with zeros
+            // what it frees, and an earlier version of a message's row does
+            // not stay readable in unused space after the message is taken
+            // off this computer (13.1-03, D-02, ledger 788). On rather than
+            // fast: SQLite's own page says fast zeroes only what costs no
+            // extra I/O, "leaving forensic traces on freelist pages", and a
+            // page freed under WAL keeps its last image in the write log and
+            // then in the file until it is reused. On writes the zeroed page
+            // through the write log into the file, and the next check's
+            // truncating checkpoint drops the older frames. 13-44.9 measured
+            // on within 8% of off for writing.
             "PRAGMA foreign_keys=ON;
              PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
              PRAGMA busy_timeout=5000;
-             PRAGMA cache_size=-8000;",
+             PRAGMA cache_size=-8000;
+             PRAGMA secure_delete=ON;",
         )
         .map_err(|e| Error::Other(format!("Failed to set pragmas: {}", e)))?;
 

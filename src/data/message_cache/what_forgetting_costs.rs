@@ -8,7 +8,9 @@
 //! left in unused space elsewhere in the file. Pratik was asked on 2026-09-30
 //! whether every write should overwrite what it frees, or a command should
 //! compact the database, and answered "Yes to the measuring as well." This is
-//! the measuring. It builds neither.
+//! the measuring. It builds neither. Pratik chose on 2026-10-03 from what it
+//! found: since 13.1-03 every connection the store opens has secure delete
+//! on, and no compacting command is built (D-02).
 //!
 //! # What it reads
 //!
@@ -56,8 +58,8 @@
 //! runs. The writes, the emptying and the compaction are timed, and the
 //! reading above says what the files keep (D38, D39).
 //!
-//! On the store written with secure delete off, which is the program today,
-//! VACUUM runs, then auto vacuum is switched to incremental, which takes a
+//! On the store written with secure delete off, which was the program until
+//! 13.1-03 turned it on for every connection, VACUUM runs, then auto vacuum is switched to incremental, which takes a
 //! VACUUM of its own, a second 1,000 are planted and taken off, and an
 //! incremental vacuum runs. Each is timed while the temporary folder and the
 //! write log are sampled, and while a second store on the same file, on
@@ -607,7 +609,8 @@ enum SecureDelete {
 
 impl SecureDelete {
     /// The order the measurement takes them in. Off comes last, because its
-    /// store is the program's own today and stays open for the commands.
+    /// store was the program's own until 13.1-03 and stays open for the
+    /// commands, which keeps the rows comparable with 13-44.9's.
     const IN_TURN: [Self; 3] = [Self::On, Self::Fast, Self::Off];
 
     /// The word the pragma takes, and the one a row uses.
@@ -1404,9 +1407,12 @@ mod tests {
     const PLANTED_AT_A_SMALL_SIZE: usize = 300;
 
     /// The most planted messages the finding lets leave a copy. Read on
-    /// 2026-10-03 over fifteen runs of this size: seven left none and eight
-    /// left one message's copies, one or two of them. Ten is far above that
-    /// and far below what any break of the removal leaves.
+    /// 2026-10-03 over fifteen runs of this size with secure delete off on
+    /// every write but the removal's: seven left none and eight left one
+    /// message's copies, one or two of them. Read again the same day by
+    /// 13.1-03 over fifteen runs with it on for every write: ten left none
+    /// and five left one message's copies, one or two of them. Ten is far
+    /// above either and far below what any break of the removal leaves.
     const MOST_THAT_LEAVE_A_COPY: usize = 10;
 
     /// D42: what the file and its write log keep of mail taken off through
@@ -1422,8 +1428,14 @@ mod tests {
     /// the privacy page says nothing searches out. Which runs leave one
     /// depends on the lengths of the times the store writes, so the case
     /// pins where a copy can lie and how few there are, not whether one
-    /// does. Secure delete on every write would leave none; whoever builds
-    /// it turns this case round to say so, in the same commit.
+    /// does.
+    ///
+    /// This said until 13.1-03 that secure delete on every write would
+    /// leave none. Every connection the store opens is on since then, and
+    /// fifteen runs under it said otherwise: a third of them still left one
+    /// message's copies, one or two of them, on a page of `messages`, every
+    /// one in the same place as before. So the case keeps its place and its
+    /// bound; on, not none, is what every write now does.
     #[test]
     fn test_what_the_file_keeps_of_mail_taken_off_after_the_next_check() {
         let home = tempfile::tempdir().expect("a folder to leave nothing in");

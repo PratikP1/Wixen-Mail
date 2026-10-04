@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 634 records have arrived since and have not been through it.
+# 636 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4491,6 +4491,11 @@ tests_last_seen = [
 # and it came from a feature this record has never opened. Emptying a folder
 # was built after the hand measurement above and asks this same question of the
 # same decision, so the record covered one more caller than it said it did.
+#
+# Corrected again on 2026-10-03 by 13.1-03, from its re-measure: a rule's
+# delete on an account with no trash (what_rules_tell_the_server.rs) asks the
+# same decision, and its case went red unnamed; when that began was not
+# traced. The re-measure was due because emptying.rs gained a test.
 name = "not knowing where the trash is does not read as having nowhere to put it"
 file = "src/application/destinations.rs"
 before = """    else {
@@ -4504,12 +4509,14 @@ red = [
     "application::destinations::tests::test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message",
     "application::emptying::tests::test_an_account_whose_trash_is_not_recognised_is_refused_rather_than_emptied",
     "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_on_an_account_with_no_trash_deletes_nothing_and_says_why",
 ]
 tests_last_seen = [
     { file = "src/application/deleting_at_the_server.rs", tests = 5 },
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
     { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -13354,7 +13361,7 @@ red = [
     "application::emptying::tests::test_the_reach_on_takes_the_folder_and_everything_under_it_deepest_first",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
     { file = "src/application/folders_underneath.rs", tests = 15 },
 ]
 
@@ -13856,7 +13863,7 @@ red = [
     "application::emptying::tests::test_the_permission_gates_emptying_here_and_says_nothing_about_a_folder_on_a_server",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -36930,7 +36937,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # An ordinary move into a folder every account shares records nobody, so
@@ -36964,7 +36971,7 @@ tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # The owner dropped from the read of the shared Trash, so a POP account's
@@ -37289,7 +37296,7 @@ red = [
     "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
@@ -37318,7 +37325,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
     { file = "src/application/pop_sync.rs", tests = 54 },
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # The soft delete put back in the arm every way of taking a message off
@@ -37363,7 +37370,7 @@ red = [
     "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
@@ -37382,7 +37389,7 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # Secure delete left on after a removal instead of put back as it was found
@@ -37397,7 +37404,7 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # The compaction takes no merge step and reports finished, so the search
@@ -37417,7 +37424,7 @@ red = [
     "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
@@ -37434,7 +37441,7 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_during_a_compaction_keeps_it_owed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # The call taken out of the check, so nothing lets the search index forget
@@ -37485,6 +37492,13 @@ tests_last_seen = [
 # (13-44.9, D42). Taken by hand against the whole library on 2026-10-03 by
 # 13-44.9: 21 of the 300 planted messages left 39 copies, 27 on pages of
 # `messages` and 12 on pages of `message_bodies`, after the next check.
+#
+# Since 13.1-03 every connection the store opens has secure delete on, so
+# the removal overwrites what it frees with its own switch gone, and on
+# 2026-10-03 this break left the finding and the index case green. What it
+# reddens now is the removal's file case, which starts from a connection set
+# off for that reason (D-14). The finding is reached by no single break
+# today: it goes red only with both the switch and the store's setting gone.
 [[guard]]
 name = "the file holds what the finding says of mail taken off"
 file = "src/data/message_cache/taken_off_this_computer.rs"
@@ -37492,13 +37506,10 @@ before = '''    pub fn take_off_this_computer(&self, message_id: i64) -> Result<
         let _overwriting = OverwritingWhatIsFreed::switched_on(&self.conn)?;'''
 after = '''    pub fn take_off_this_computer(&self, message_id: i64) -> Result<()> {'''
 red = [
-    "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_no_word_of_a_message_taken_off_once_the_index_lets_go",
     "data::message_cache::taken_off_this_computer::tests::test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index",
-    "data::message_cache::what_forgetting_costs::tests::test_what_the_file_keeps_of_mail_taken_off_after_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 14 },
-    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
 # The forgetting rows written without their commit cell, so a figure on the
@@ -38024,4 +38035,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
+]
+
+# Every connection to the mail database overwrites what its writes free, so
+# an earlier version of a message's row is not left readable in unused space
+# after the message is taken off (13.1-03, D-02, ledger 788). Written
+# 2026-10-03 by 13.1-03, the break taken by hand against the whole library
+# first: 8,920 passed and this one case failed.
+[[guard]]
+name = "every connection to the mail database overwrites what its writes free"
+file = "src/data/message_cache/mod.rs"
+before = '''             PRAGMA cache_size=-8000;
+             PRAGMA secure_delete=ON;",'''
+after = '''             PRAGMA cache_size=-8000;",'''
+red = [
+    "data::message_cache::taken_off_this_computer::tests::test_every_connection_to_the_store_overwrites_what_a_write_frees",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
+]
+
+# Empty Folder's question on the Trash every POP account shares says again
+# that no other copy exists anywhere, which overstates the loss when the POP
+# server keeps the mail (13.1-03, D-07, ledger 786). Written 2026-10-03 by
+# 13.1-03, the break taken by hand against the whole library first: 8,921
+# passed and this one case failed.
+[[guard]]
+name = "Empty Folder on the shared Trash says Wixen Mail keeps no other copy"
+file = "src/application/emptying.rs"
+before = '''            "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+                .to_string()'''
+after = '''            "They will be taken off this computer for good, and there is no other copy.".to_string()'''
+red = [
+    "application::emptying::tests::test_taking_mail_off_this_computer_says_what_wixen_mail_keeps_not_what_a_server_does",
+]
+tests_last_seen = [
+    { file = "src/application/emptying.rs", tests = 24 },
 ]

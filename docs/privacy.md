@@ -171,7 +171,7 @@ Whenever there is no second copy, for any of these reasons, the message says its
 could not be checked here, and says plainly that this is not the same as a signature that
 failed.
 
-### Mail taken off this computer keeps nothing it said
+### Mail taken off this computer: what goes, and what can stay
 
 Some mail has no copy anywhere but on this computer: mail collected over POP, a copy of a
 message you sent that Wixen Mail filed here, and mail brought in from a file. Since 2026-10-02,
@@ -196,14 +196,22 @@ Without those, the next check for mail would download the message again, and the
 "Then remove it after this many days" setting would lose the day it counts from.
 
 The space the removal frees in the mail database is overwritten rather than left holding the
-old bytes. A search stops finding the message at once. The search index keeps the words on its
-own pages until it rewrites them, which it does at the next check for mail; after that the
-mail database and its write log hold none of the message's words.
+old bytes, and since 2026-10-03 every other write to the mail database does the same. A search
+stops finding the message at once. The search index keeps the words on its own pages until it
+rewrites them, which it does at the next check for mail.
+
+After that, a few messages can still leave some of their words behind. Measured on
+2026-10-03: of 1,000 messages taken off a mail database holding 200,000, 1 left some of its
+words in unused space in the mail database, where Wixen Mail never reads them; of 1,000 taken
+off one holding 12,872, none did. Until 2026-10-03 this said that after the next check the
+mail database and its write log hold none of the message's words. Measured on 2026-10-02,
+before every write overwrote what it freed, 9 of 1,000 left some words at 200,000.
 
 What this does not reach:
 
-- Copies that earlier changes to the message left in unused space elsewhere in the mail
-  database. Nothing searches those out.
+- Copies of a message's words that writes made before 2026-10-03 left in unused space
+  elsewhere in the mail database. They stay until that space is used again, and nothing
+  searches them out.
 - The write log and the search index, until the next check for mail.
 - What your disk keeps of any data that was deleted or written over, which only the disk's own
   tools can clear.

@@ -249,7 +249,8 @@ pub fn the_question(
         WhatEmptyingDoes::MoveToOnThisComputer(trash) => format!("They will be moved to {trash}."),
         WhatEmptyingDoes::MoveToOnTheServer(trash) => format!("They will be moved to {trash}."),
         WhatEmptyingDoes::RemoveFromThisComputer => {
-            "They will be taken off this computer for good, and there is no other copy.".to_string()
+            "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+                .to_string()
         }
         WhatEmptyingDoes::RemoveFromTheServer => {
             "They will be taken off the server for good, on every device using this account."
@@ -556,6 +557,25 @@ mod tests {
         assert!(
             !removed.contains("moved"),
             "nothing is moved by this one: {removed}"
+        );
+    }
+
+    #[test]
+    fn test_taking_mail_off_this_computer_says_what_wixen_mail_keeps_not_what_a_server_does() {
+        // On the Trash every POP account shares, the POP server may still
+        // hold the messages with Leave mail on the server on, its default,
+        // so the question claims only what is true here (13.1-03, D-07).
+        let said = the_question("Trash", &WhatEmptyingDoes::RemoveFromThisComputer, 4, 0);
+
+        assert!(
+            said.contains(
+                "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+            ),
+            "{said}"
+        );
+        assert!(
+            !said.contains("there is no other copy"),
+            "the question says no copy exists anywhere, and a POP server may keep one: {said}"
         );
     }
 

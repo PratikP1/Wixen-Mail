@@ -24,7 +24,10 @@
 //! SQLite leaves a deleted row's bytes in the file until something reuses the
 //! space. The removal runs with `secure_delete` switched on, and puts back
 //! what it found. Measured by 13-44.8's planner: without it, every copy of
-//! the words stayed in the file.
+//! the words stayed in the file. Since 13.1-03 every connection the store
+//! opens is on already, so on the program's path the switch changes
+//! nothing; it stays for a connection set otherwise, as 13-44.9's
+//! measurement sets each setting by hand (D-14).
 
 use super::MessageCache;
 use crate::common::{Error, Result};
@@ -798,8 +801,16 @@ mod tests {
 
     #[test]
     fn test_the_file_holds_the_words_of_a_message_taken_off_only_in_the_search_index() {
+        // Started from a connection set off, so the removal's own switch is
+        // what overwrites; every connection the store opens is on already,
+        // and from there this would pass with the switch gone (13.1-03,
+        // D-14).
         let cache = a_cache();
         let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
+        cache
+            .conn
+            .pragma_update(None, "secure_delete", 0)
+            .expect("the setting switched off");
         for word in [ITS_SUBJECT_WORD, ITS_BODY_WORD] {
             let before = the_tables_holding_in_the_file(&cache, word);
             assert!(
@@ -842,12 +853,16 @@ mod tests {
 
     #[test]
     fn test_overwriting_freed_space_is_put_back_as_it_was_after_a_removal() {
+        // Every connection the store opens is already on, so this starts
+        // from one set off: a removal that forgot to put the setting back
+        // would read the same before and after on a connection left as it
+        // was opened (13.1-03, D-14).
         let cache = a_cache();
         let row = a_pop_message_in_the_trash(&cache, "aaa", b"one file");
-        let as_it_was: i64 = cache
+        cache
             .conn
-            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
-            .expect("the setting read");
+            .pragma_update(None, "secure_delete", 0)
+            .expect("the setting switched off");
 
         cache.take_off_this_computer(row).expect("taken off");
 
@@ -855,7 +870,23 @@ mod tests {
             .conn
             .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
             .expect("the setting read");
-        assert_eq!(after, as_it_was, "the removal left secure delete changed");
+        assert_eq!(after, 0, "the removal left secure delete changed");
+    }
+
+    #[test]
+    fn test_every_connection_to_the_store_overwrites_what_a_write_frees() {
+        let cache = a_cache();
+
+        let setting: i64 = cache
+            .conn
+            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
+            .expect("the setting read");
+
+        assert_eq!(
+            setting, 1,
+            "a connection to the mail database leaves what its writes free in the file, \
+             secure delete reading {setting} where on reads 1"
+        );
     }
 
     // ── The search index letting go (13-44.8, D32) ─────────────────────────
