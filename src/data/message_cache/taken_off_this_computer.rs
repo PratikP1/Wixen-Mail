@@ -858,6 +858,22 @@ mod tests {
         assert_eq!(after, as_it_was, "the removal left secure delete changed");
     }
 
+    #[test]
+    fn test_every_connection_to_the_store_overwrites_what_a_write_frees() {
+        let cache = a_cache();
+
+        let setting: i64 = cache
+            .conn
+            .pragma_query_value(None, "secure_delete", |setting| setting.get(0))
+            .expect("the setting read");
+
+        assert_eq!(
+            setting, 1,
+            "a connection to the mail database leaves what its writes free in the file, \
+             secure delete reading {setting} where on reads 1"
+        );
+    }
+
     // ── The search index letting go (13-44.8, D32) ─────────────────────────
 
     /// How many copies of a word the database file and its write log hold,
