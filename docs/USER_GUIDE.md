@@ -2162,6 +2162,15 @@ is not mail is counted and named in the sentence at the end, not quietly
 skipped. The status bar and your screen reader say when an import starts, how
 far it has got, and what it did.
 
+A folder is made under Imported only when a message is filed into it. Old Word
+and Excel documents begin the way a message Outlook saved does, so a folder
+holding only those is counted as files that were not mail and leaves no empty
+folder behind. Import the same folder or zip twice and the second time says no
+folders were imported and how many messages were already there. The sentence
+at the end of either import says how many messages were already in their
+folder, how many could not be read and how many could not be saved on this
+computer, in the same words whether you imported one file or a whole folder.
+
 A message Outlook saved, a `.msg` file such as the one you get by dragging a
 message out of Outlook onto your desktop, goes into Imported like any saved
 message. One found inside a folder or a zip goes into the folder it sat in.
@@ -2172,6 +2181,14 @@ sentence at the end. That sentence also says what a saved message held and did
 not bring: an attached file Outlook kept as another message or a link, a blind
 copy recipient, formatting Outlook kept only in its own format (the words
 arrive without it), and a signature.
+
+It also says how many saved messages arrived encrypted. Outlook saves an
+encrypted message with no words of its own and its words inside an encrypted
+part, which comes in as a file attached to the message. Wixen Mail does not
+open that part as a message, so read an encrypted message in Outlook, where
+your certificate is. No real encrypted `.msg` file has been imported yet: this
+is built from the name Outlook gives an encrypted message, so tell us if one
+arrives differently.
 
 Imported messages bring the files they carried, whether they came from a
 saved message, a mailbox file, a zip, a folder or a message Outlook saved, so

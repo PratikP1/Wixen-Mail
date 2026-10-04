@@ -3533,13 +3533,23 @@ fn test_a_signed_message_brought_in_from_a_file_has_its_arrived_in_form_kept() {
     );
 
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
-    for importing_here in ["fn fill_folders_from(", "fn one_file_of_mail_brought_in("] {
-        assert!(
-            body_of(&app, importing_here).contains("file_one_imported_message("),
-            "{importing_here} writes imported mail its own way, so whatever the one place \
-             that files a message decides about signatures does not reach it"
-        );
-    }
+    let importing_here = "fn one_file_of_mail_brought_in(";
+    assert!(
+        body_of(&app, importing_here).contains("file_one_imported_message("),
+        "{importing_here} writes imported mail its own way, so whatever the one place \
+         that files a message decides about signatures does not reach it"
+    );
+    // A folder or zip, filled in the application layer since 13.1-04: every
+    // message goes through the folder it is filed into, and the folder through
+    // the one place that files a message.
+    let importing_here = "pub fn an_archive_brought_in(";
+    assert!(
+        body_of(&importing, importing_here).contains("one_read_filed(")
+            && body_of(&importing, "impl<'a> AFolderMadeAtItsFirstMessage<'a> {")
+                .contains("file_one_imported_message("),
+        "{importing_here} writes imported mail its own way, so whatever the one place \
+         that files a message decides about signatures does not reach it"
+    );
     // The third import, since #53: mail out of an Outlook data file, filed in
     // its own module rather than in the window.
     let data_file = fs::read_to_string("src/application/importing_an_outlook_data_file.rs")
@@ -3594,7 +3604,16 @@ fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
         worker.contains("importing_messages::a_saved_outlook_message_brought_in("),
         "a message Outlook saved is recognised and then handed to nothing that reads one"
     );
+    assert!(
+        worker.contains("importing_messages::an_archive_brought_in("),
+        "a folder or zip is recognised and then handed to nothing that reads one"
+    );
 
+    // Each entry of a folder or zip is read where the archive is filled, in
+    // the application layer since 13.1-04.
+    let importing =
+        fs::read_to_string("src/application/importing_messages.rs").expect("the mail import");
+    let worker = body_of(&what_ships(&importing), "pub fn an_archive_brought_in(");
     let Some(at) = worker.find("ReadAs::OneSavedOutlookMessage") else {
         panic!(
             "the import worker reads every entry of a folder or zip as a mailbox file, so a \

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 636 records have arrived since and have not been through it.
+# 640 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3805,7 +3805,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
@@ -12764,7 +12764,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/application/pop_sync.rs", tests = 54 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
@@ -12807,7 +12807,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
@@ -16069,7 +16069,7 @@ red = [
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/application/moves_waiting.rs", tests = 52 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
@@ -25223,7 +25223,7 @@ red = [
     "application::import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
 ]
 
 # The name Save As offers is the subject with every path separator made
@@ -25246,7 +25246,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/export_tree.rs", tests = 55 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
 # File, Save As reaches a handler that writes, held by a reading of the main
@@ -33509,7 +33509,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/application/parts_left_behind.rs", tests = 8 },
     { file = "src/data/message_cache/attachment_content.rs", tests = 23 },
 ]
@@ -37704,7 +37704,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_eight_bit_text_is_read_in_the_alphabet_the_file_names",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A stream of a saved Outlook message read whole before the limit is asked,
@@ -37720,7 +37720,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_more_than_the_limit_is_refused_and_never_held",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A blind copy sent to the Cc line by the rule both Outlook readers share,
@@ -37739,7 +37739,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outlook_data_file.rs", tests = 39 },
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A file on a saved Outlook message brought by its name and type with none of
@@ -37753,10 +37753,13 @@ before = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
 after = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
             Some(WhatItSaid::Bytes(_)) => Vec::new(),'''
 red = [
+    "application::importing_messages::end_to_end::test_a_saved_outlook_message_keeps_the_files_it_carried",
     "service::outlook_data_file::one_saved_message::tests::test_a_file_on_the_message_goes_with_it_by_name_type_and_bytes",
+    "service::outlook_data_file::one_saved_message::tests::test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A message forwarded inside a saved Outlook message left in the file with
@@ -37771,7 +37774,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_a_message_inside_the_message_is_counted_as_a_file_not_brought",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A saved Outlook message chosen alone asked the mail question first, which
@@ -37790,7 +37793,7 @@ red = [
     "application::import_tree::tests::test_a_saved_outlook_message_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
 ]
 
 # Blind copy recipients a saved Outlook message held, left off the message
@@ -37805,17 +37808,19 @@ red = [
     "application::importing_messages::tests::test_what_a_saved_outlook_message_left_is_counted_by_cause",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
 # A message Outlook saved inside a folder or zip read in pieces like a
 # mailbox file, which finds no mail in it and counts it as nothing (13-48,
 # T-13-48-01). The break skips the branch that reads it whole and hands it
 # to its own reader; the reading of the worker's route reddens. Written
-# 2026-10-03 by 13-48.
+# 2026-10-03 by 13-48. Moved 2026-10-04 by 13.1-04 with the archive's
+# filling, from `fill_folders_from` in the window to `an_archive_brought_in`
+# in `importing_messages.rs` (D-18); the reading follows it there.
 [[guard]]
 name = "a saved Outlook message in a folder or zip is read whole by its own reader"
-file = "src/presentation/wx_app.rs"
+file = "src/application/importing_messages.rs"
 suite = "wired"
 before = """            // One that is not a message at all is a file that held no mail.
             if entry.read == ReadAs::OneSavedOutlookMessage {"""
@@ -37825,7 +37830,7 @@ red = [
     "test_importing_mail_sends_each_kind_of_file_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "tests/wired.rs", tests = 77 },
 ]
 
@@ -37886,7 +37891,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
 # Each record paired with the next file rather than its own, so a message's
@@ -37912,7 +37917,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/application/parts_left_behind.rs", tests = 8 },
     { file = "src/data/message_cache/attachment_content.rs", tests = 23 },
 ]
@@ -37931,10 +37936,11 @@ red = [
     "application::importing_messages::tests::test_files_too_large_to_keep_are_said_with_where_they_still_are",
     "application::importing_messages::end_to_end::test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said",
     "application::import_tree::tests::test_files_too_large_to_keep_are_said_after_the_folders",
+    "application::import_tree::tests::test_the_folder_import_says_what_it_did_not_bring_in_in_the_single_file_imports_words",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
-    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/application/import_tree.rs", tests = 40 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
 # A folder exported with no files on its messages, so an imported message,
@@ -38072,4 +38078,105 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying.rs", tests = 24 },
+]
+
+# A saved Outlook message of class IPM.Note.SMIME is read as having arrived
+# encrypted, and the signed class, which begins the same way, is not
+# (13.1-04, D-04 and D-17, ledger 794). The break reads the signed class in
+# its place. Written 2026-10-03 by 13.1-04, the break taken by hand against
+# the whole library first: 8,922 passed and this one case failed.
+[[guard]]
+name = "a saved Outlook message of the encrypted class is read as having arrived encrypted"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''        arrived_encrypted: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.eq_ignore_ascii_case(AN_ENCRYPTED_MESSAGE)),'''
+after = '''        arrived_encrypted: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.eq_ignore_ascii_case(A_SIGNED_MESSAGE)),'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
+]
+
+# Both imports' closing sentences say how many saved Outlook messages arrived
+# encrypted (13.1-04, D-04, ledger 794). The break never says it. Written
+# 2026-10-03 by 13.1-04, the break taken by hand against the whole library
+# first: 8,921 passed and these two cases failed.
+[[guard]]
+name = "both imports say how many saved Outlook messages arrived encrypted"
+file = "src/application/importing_messages.rs"
+before = '''    if left.arrived_encrypted > 0 {
+        said.sentence(match left.arrived_encrypted {'''
+after = '''    if left.arrived_encrypted == usize::MAX {
+        said.sentence(match left.arrived_encrypted {'''
+red = [
+    "application::import_tree::tests::test_what_saved_outlook_messages_left_is_said_after_the_folders",
+    "application::importing_messages::tests::test_what_saved_outlook_messages_left_is_said_one_cause_at_a_time",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 40 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
+]
+
+# A folder of an archive is made only when its first message is filed, so a
+# folder holding only files that begin the way a saved Outlook message does
+# and are not one, such as an old Word document, leaves nothing under
+# Imported (13.1-04, D-05 and D-18, ledger 797). The break makes every
+# planned folder before anything in it is read. Written 2026-10-04 by
+# 13.1-04, the break taken by hand against the whole library first: 8,924
+# passed and these two cases failed.
+[[guard]]
+name = "a folder an archive names is made only when its first message is filed"
+file = "src/application/importing_messages.rs"
+before = '''    /// The folder at this path, and what it already holds, read without
+    /// making it.
+    pub fn found(
+        cache: &'a crate::data::message_cache::MessageCache,
+        account: &'a str,
+        path: &'a str,
+    ) -> Self {
+        let id = cache
+            .get_folder(account, path)
+            .ok()
+            .flatten()
+            .map(|folder| folder.id);'''
+after = '''    /// The folder at this path, and what it already holds, read without
+    /// making it.
+    pub fn found(
+        cache: &'a crate::data::message_cache::MessageCache,
+        account: &'a str,
+        path: &'a str,
+    ) -> Self {
+        let id = a_folder_for_imported_mail(cache, account, path);'''
+red = [
+    "application::importing_messages::end_to_end::test_a_folder_holding_only_files_that_are_not_mail_is_not_made",
+    "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 51 },
+]
+
+# The folder import carries the messages already in a folder onto what its
+# closing sentence says, beside the stretches it could not read and the
+# messages it could not save (13.1-04, D-06 and D-19, ledger 798). The break
+# drops the first of the three from the carrying. Written 2026-10-04 by
+# 13.1-04, the break taken by hand against the whole library first: 8,925
+# passed and these three cases failed.
+[[guard]]
+name = "the folder import carries the messages already in a folder onto its sentence"
+file = "src/application/import_tree.rs"
+before = '''        self.messages = mail.brought_in;
+        self.already_here = mail.already_here;'''
+after = '''        self.messages = mail.brought_in;'''
+red = [
+    "application::import_tree::tests::test_the_folder_import_carries_what_the_mail_import_counted",
+    "application::importing_messages::end_to_end::test_a_folder_an_earlier_import_made_is_filled_again_and_counted_once",
+    "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 40 },
+    { file = "src/application/importing_messages.rs", tests = 51 },
 ]

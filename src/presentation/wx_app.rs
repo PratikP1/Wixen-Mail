@@ -16665,10 +16665,11 @@ fn mail_brought_in_from(
     });
 }
 
-/// Read the archive and file every folder in it, saying how far it has got.
+/// Hand what was chosen to the reader for its kind, saying how far it has got.
 ///
 /// Answers with the closing sentence rather than saying it, so the caller
-/// decides how it is delivered and this stays testable in principle.
+/// decides how it is delivered. Each reader files its own mail in the
+/// application layer, where a test can drive it with a real store.
 fn fill_folders_from(
     cache: &MessageCache,
     account: &str,
@@ -16676,11 +16677,6 @@ fn fill_folders_from(
     say: &dyn Fn(UIUpdate),
 ) -> String {
     use crate::application::import_tree;
-    use crate::application::importing_messages::{
-        MessagesImported, ReadAs, WhatToDoWithIt, file_one_imported_message,
-        one_saved_outlook_message_filed, one_saved_outlook_message_in,
-    };
-    use crate::service::outlook_data_file::one_saved_message::WhyItWasNotRead;
 
     // One saved message, a whole archive, an Outlook data file and a message
     // Outlook saved are four different readers, and each refuses what the
@@ -16706,79 +16702,9 @@ fn fill_folders_from(
         }
         import_tree::WhatWasChosen::AnArchive => {}
     }
-
-    let mut archive = match crate::service::mailbox_archive::opened(at) {
-        Ok(archive) => archive,
-        Err(why) => return why.to_string(),
-    };
-    let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
-    let mut counted = plan.counted;
-    let mut brought_in = MessagesImported::default();
-
-    for folder in &plan.folders {
-        let Some(folder_id) = crate::application::importing_messages::a_folder_for_imported_mail(
-            cache,
-            account,
-            &folder.path,
-        ) else {
-            continue;
-        };
-        let already_here = cache.message_ids_in_folder(folder_id).unwrap_or_default();
-        for entry in &folder.entries {
-            // A message Outlook saved is read whole, because its reader moves
-            // about inside it, and under the archive's own bound on one entry.
-            // One that is not a message at all is a file that held no mail.
-            if entry.read == ReadAs::OneSavedOutlookMessage {
-                let saved = match archive.one_entry_read_through(&entry.named) {
-                    Ok(bytes) => one_saved_outlook_message_in(&bytes),
-                    // Counted with the damaged and the too large, which is
-                    // the one sentence those share.
-                    Err(_) => WhyItWasNotRead::TooLarge.into(),
-                };
-                if saved.is_not_an_outlook_message() {
-                    counted.held_no_mail += 1;
-                } else {
-                    one_saved_outlook_message_filed(
-                        cache,
-                        &saved,
-                        folder_id,
-                        &already_here,
-                        &mut brought_in,
-                    );
-                }
-                continue;
-            }
-            // A piece at a time, never the whole entry. A mailbox somebody has
-            // kept for twenty years is one entry, and reading it whole is what
-            // used to refuse it: the limit was never about how much mail
-            // somebody is allowed to bring, it was about what one call could
-            // hold. Read this way nothing grows with the size of the file, so
-            // there is nothing left to refuse.
-            let _ = archive.one_entry_read_in_pieces(&entry.named, |reading| {
-                for read in
-                    crate::application::message_files::each_message_read_piece_by_piece(reading)
-                {
-                    let what = WhatToDoWithIt::for_one_read(&read, &already_here);
-                    if let (WhatToDoWithIt::BringItIn, Ok(message)) = (what, &read) {
-                        brought_in.count_one_written(file_one_imported_message(
-                            cache, message, folder_id,
-                        ));
-                    }
-                    brought_in.count_one(what);
-                }
-                Ok(())
-            });
-        }
-        // Under one subject and at the lowest urgency, so a count climbing
-        // through forty thousand is heard at its latest value rather than
-        // forty thousand times.
-        say(UIUpdate::StatusUpdated(format!(
-            "{} messages imported so far.",
-            brought_in.brought_in
-        )));
-    }
-    counted.carry_the_mail_counts(&brought_in);
-    import_tree::what_the_folder_import_did(&counted)
+    crate::application::importing_messages::an_archive_brought_in(cache, account, at, &|so_far| {
+        say(UIUpdate::StatusUpdated(so_far.to_string()))
+    })
 }
 
 /// Answer the meeting invitation the message in front of somebody carries.
