@@ -763,6 +763,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Every write to the mail database overwrites what it frees (GAP-14, ledger 788).**
+  Pratik's answer of 2026-10-03, from 13-44.9's measurement: SQLite's secure delete is now on
+  for every connection Wixen Mail opens to the mail database, not only while a message is
+  taken off this computer, so far fewer earlier versions of a message's row are left readable
+  in unused space after the message goes. It is "on" rather than "fast", because fast leaves old
+  bytes on free pages. No command to compact the database is added. Measured again the same
+  day: of 1,000 messages taken off a mail database holding 200,000, 1 still left some words in
+  unused space after the next check for mail, against 9 before; at 12,872, none. Writing mail
+  at 200,000 was about 9% slower in that one run. The privacy page's section on mail taken off
+  this computer is now called "Mail taken off this computer: what goes, and what can stay" and
+  says this, with its date and size; it used to say nothing stays. Known limitations: copies
+  that writes made before this change left in unused space stay until that space is used
+  again.
+- **Empty Folder on the Trash every POP account shares says "and Wixen Mail keeps no other
+  copy"** where it said "and there is no other copy", which was not true when the POP server
+  keeps the mail, as it does by default (ledger 786). The rest of the question is unchanged.
 - **Mail taken off this computer keeps none of its words (GAP-14).** Pratik's answer of
   2026-09-30: emptying a POP account's Trash drops the message text from the database too,
   keeping only what stops the message being downloaded again. A message kept on this

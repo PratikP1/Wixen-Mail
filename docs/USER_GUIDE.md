@@ -213,7 +213,7 @@ downloading it" and "Then remove it after this many days" settings, as before.
   again: its number on the POP server, when it was downloaded and which
   account it came from. A search stops finding it at once, and the search
   index lets go of its words at the next check for mail. The
-  [privacy page](privacy.md#mail-taken-off-this-computer-keeps-nothing-it-said)
+  [privacy page](privacy.md#mail-taken-off-this-computer-what-goes-and-what-can-stay)
   says what this does not reach.
 - After 15 or 30 days is done at the start of the account's first check of the
   day, before Wixen Mail connects to the POP server, so a server that cannot be
