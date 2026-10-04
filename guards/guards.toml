@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 639 records have arrived since and have not been through it.
+# 640 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -25223,7 +25223,7 @@ red = [
     "application::import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
 ]
 
 # The name Save As offers is the subject with every path separator made
@@ -37793,7 +37793,7 @@ red = [
     "application::import_tree::tests::test_a_saved_outlook_message_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
 ]
 
 # Blind copy recipients a saved Outlook message held, left off the message
@@ -37936,9 +37936,10 @@ red = [
     "application::importing_messages::tests::test_files_too_large_to_keep_are_said_with_where_they_still_are",
     "application::importing_messages::end_to_end::test_a_file_larger_than_the_store_keeps_is_listed_counted_and_said",
     "application::import_tree::tests::test_files_too_large_to_keep_are_said_after_the_folders",
+    "application::import_tree::tests::test_the_folder_import_says_what_it_did_not_bring_in_in_the_single_file_imports_words",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
     { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
@@ -38116,7 +38117,7 @@ red = [
     "application::importing_messages::tests::test_what_saved_outlook_messages_left_is_said_one_cause_at_a_time",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/import_tree.rs", tests = 40 },
     { file = "src/application/importing_messages.rs", tests = 51 },
 ]
 
@@ -38155,5 +38156,27 @@ red = [
     "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
 ]
 tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 51 },
+]
+
+# The folder import carries the messages already in a folder onto what its
+# closing sentence says, beside the stretches it could not read and the
+# messages it could not save (13.1-04, D-06 and D-19, ledger 798). The break
+# drops the first of the three from the carrying. Written 2026-10-04 by
+# 13.1-04, the break taken by hand against the whole library first: 8,925
+# passed and these three cases failed.
+[[guard]]
+name = "the folder import carries the messages already in a folder onto its sentence"
+file = "src/application/import_tree.rs"
+before = '''        self.messages = mail.brought_in;
+        self.already_here = mail.already_here;'''
+after = '''        self.messages = mail.brought_in;'''
+red = [
+    "application::import_tree::tests::test_the_folder_import_carries_what_the_mail_import_counted",
+    "application::importing_messages::end_to_end::test_a_folder_an_earlier_import_made_is_filled_again_and_counted_once",
+    "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 40 },
     { file = "src/application/importing_messages.rs", tests = 51 },
 ]

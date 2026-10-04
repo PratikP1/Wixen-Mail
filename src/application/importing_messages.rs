@@ -760,6 +760,94 @@ pub fn what_files_too_large_to_keep_left(said: &mut SummingUp, how_many: usize) 
     }
 }
 
+/// What a mail import brought its messages from and into, in the words its
+/// sentences name them by.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImportedFrom {
+    /// One file, into the one folder somebody chose.
+    OneFile,
+    /// A folder or zip, into a folder for each of its own.
+    AnArchive,
+}
+
+impl ImportedFrom {
+    /// What the messages were read out of.
+    const fn the_source(self) -> &'static str {
+        match self {
+            Self::OneFile => "the file",
+            Self::AnArchive => "the archive",
+        }
+    }
+
+    /// Where one message already was.
+    const fn where_one_was(self) -> &'static str {
+        match self {
+            Self::OneFile => "this folder",
+            Self::AnArchive => "its folder",
+        }
+    }
+
+    /// Where several messages already were.
+    const fn where_several_were(self) -> &'static str {
+        match self {
+            Self::OneFile => "this folder",
+            Self::AnArchive => "their folders",
+        }
+    }
+}
+
+/// The sentences about messages an import read and did not bring in, said by
+/// both imports.
+///
+/// One function, so the import of a file and the import of a folder or zip
+/// cannot come to word one fact two ways; until 13.1-04 the second counted all
+/// three and said none of them (ledger 798). Each sentence is written out in
+/// both numbers rather than built from parts, because several words have to
+/// agree, and only the places are filled in.
+pub fn what_was_not_brought_in(
+    said: &mut SummingUp,
+    from: ImportedFrom,
+    already_here: usize,
+    could_not_be_read: usize,
+    not_written_down: usize,
+) {
+    let source = from.the_source();
+    match already_here {
+        0 => {}
+        1 => said.sentence(format!(
+            "1 message was already in {} and was left as it is",
+            from.where_one_was()
+        )),
+        many => said.sentence(format!(
+            "{many} messages were already in {} and were left as they are",
+            from.where_several_were()
+        )),
+    }
+    // The same words the reader uses about the same fact, so somebody does
+    // not meet one wording in the status line and another in the log. A test
+    // holds the two together.
+    match could_not_be_read {
+        0 => {}
+        1 => said.sentence(format!(
+            "1 message in {source} could not be read, because there was nothing in it a \
+             mail program recognises"
+        )),
+        many => said.sentence(format!(
+            "{many} messages in {source} could not be read, because there was nothing in \
+             them a mail program recognises"
+        )),
+    }
+    match not_written_down {
+        0 => {}
+        1 => said.sentence(format!(
+            "1 message was read from {source} and could not be saved on this computer"
+        )),
+        many => said.sentence(format!(
+            "{many} messages were read from {source} and could not be saved on this computer"
+        )),
+    }
+}
+
 /// What an import did, in the words somebody hears.
 ///
 /// The counts that are not zero are the ones worth saying. Each one that is
@@ -771,41 +859,13 @@ pub fn what_the_mail_import_did(read: &MessagesImported) -> String {
         1 => "Imported 1 message".to_string(),
         many => format!("Imported {many} messages"),
     });
-    if read.already_here > 0 {
-        // Two sentences written out rather than one built from parts. Four
-        // words have to agree in number, and a sentence assembled from
-        // fragments reads like one.
-        said.sentence(match read.already_here {
-            1 => "1 message was already in this folder and was left as it is".to_string(),
-            many => {
-                format!("{many} messages were already in this folder and were left as they are")
-            }
-        });
-    }
-    if read.could_not_be_read > 0 {
-        // The same words the reader uses about the same fact, so somebody does
-        // not meet one wording in the status line and another in the log. A
-        // test holds the two together.
-        said.sentence(match read.could_not_be_read {
-            1 => "1 message in the file could not be read, because there was \
-                  nothing in it a mail program recognises"
-                .to_string(),
-            many => format!(
-                "{many} messages in the file could not be read, because there \
-                 was nothing in them a mail program recognises"
-            ),
-        });
-    }
-    if read.not_written_down > 0 {
-        said.sentence(match read.not_written_down {
-            1 => "1 message was read from the file and could not be saved on this computer"
-                .to_string(),
-            many => format!(
-                "{many} messages were read from the file and could not be saved \
-                 on this computer"
-            ),
-        });
-    }
+    what_was_not_brought_in(
+        &mut said,
+        ImportedFrom::OneFile,
+        read.already_here,
+        read.could_not_be_read,
+        read.not_written_down,
+    );
     what_files_too_large_to_keep_left(&mut said, read.files_too_large_to_keep);
     // Only when something really went in. Importing the same archive a second
     // time files nothing, and a sentence about where the imported mail stays

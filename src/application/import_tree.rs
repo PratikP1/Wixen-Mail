@@ -54,8 +54,8 @@
 //! lets each entry go again.
 
 use crate::application::importing_messages::{
-    MessagesImported, ReadAs, WhatSavedOutlookMessagesLeft, what_files_too_large_to_keep_left,
-    what_saved_outlook_messages_left,
+    ImportedFrom, MessagesImported, ReadAs, WhatSavedOutlookMessagesLeft,
+    what_files_too_large_to_keep_left, what_saved_outlook_messages_left, what_was_not_brought_in,
 };
 use crate::application::local_folders::LOCAL_PREFIX;
 use crate::application::message_files::{self, FileHolds};
@@ -383,8 +383,22 @@ impl FoldersImported {
     /// onto the first. A count left behind here is counted and never said.
     pub fn carry_the_mail_counts(&mut self, mail: &MessagesImported) {
         self.messages = mail.brought_in;
+        self.already_here = mail.already_here;
+        self.could_not_be_read = mail.could_not_be_read;
+        self.not_written_down = mail.not_written_down;
         self.files_too_large_to_keep = mail.files_too_large_to_keep;
         self.from_saved_outlook_messages = mail.from_saved_outlook_messages;
+    }
+
+    /// Whether the archive held nothing at all: no folder filled, and no file
+    /// or message counted for any reason.
+    ///
+    /// Not "no folder imported" alone. A folder is counted only when a message
+    /// is filed into it, so an archive imported a second time imports no
+    /// folder, and telling somebody it holds nothing that reads as mail
+    /// contradicts the sentence that says its mail was already here.
+    fn found_nothing(&self) -> bool {
+        *self == Self::default()
     }
 }
 
@@ -535,11 +549,20 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
             ),
         });
     }
+    // In the words the import of one file uses, naming the archive and its
+    // folders where that import names its file and its folder.
+    what_was_not_brought_in(
+        &mut said,
+        ImportedFrom::AnArchive,
+        imported.already_here,
+        imported.could_not_be_read,
+        imported.not_written_down,
+    );
     what_files_too_large_to_keep_left(&mut said, imported.files_too_large_to_keep);
     // An archive nothing at all was found in. "No folders were imported" on its
     // own is what a broken import says too, and somebody who cannot tell those
     // apart goes looking for a broken program rather than at their file.
-    if imported.folders == 0 && imported.held_no_mail == 0 && imported.names_refused == 0 {
+    if imported.found_nothing() {
         said.sentence("There is nothing in this archive that reads as mail");
     }
     // Last, in the words the import of one saved message uses, so the two
