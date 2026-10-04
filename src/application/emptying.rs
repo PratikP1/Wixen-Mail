@@ -560,6 +560,25 @@ mod tests {
     }
 
     #[test]
+    fn test_taking_mail_off_this_computer_says_what_wixen_mail_keeps_not_what_a_server_does() {
+        // On the Trash every POP account shares, the POP server may still
+        // hold the messages with Leave mail on the server on, its default,
+        // so the question claims only what is true here (13.1-03, D-07).
+        let said = the_question("Trash", &WhatEmptyingDoes::RemoveFromThisComputer, 4, 0);
+
+        assert!(
+            said.contains(
+                "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+            ),
+            "{said}"
+        );
+        assert!(
+            !said.contains("and there is no other copy"),
+            "the question says no copy exists anywhere, and a POP server may keep one: {said}"
+        );
+    }
+
+    #[test]
     fn test_the_question_about_a_server_folder_says_which_of_the_two_it_will_do() {
         // The same pair on the other route, which is where getting it wrong
         // costs the most: a message taken off a server is gone from every
