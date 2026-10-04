@@ -116,6 +116,10 @@ const WHAT_A_FILE_IS_READ_FOR: [u16; 4] =
 /// What Outlook calls a signed message, compared without regard to capitals.
 const A_SIGNED_MESSAGE: &str = "ipm.note.smime.multipartsigned";
 
+/// What Outlook calls an encrypted message, compared whole and without
+/// regard to capitals: the signed class begins the same way and is not one.
+const AN_ENCRYPTED_MESSAGE: &str = "ipm.note.smime";
+
 /// One saved message, read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedOutlookMessage {
@@ -237,7 +241,9 @@ pub fn read<R: Read + Seek>(
         signature_not_kept: item
             .words(MESSAGE_CLASS)
             .is_some_and(|class| class.to_ascii_lowercase().starts_with(A_SIGNED_MESSAGE)),
-        arrived_encrypted: false,
+        arrived_encrypted: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.eq_ignore_ascii_case(AN_ENCRYPTED_MESSAGE)),
     };
     Ok(SavedOutlookMessage {
         mail: message_files::written_as_one_message(&a_message_from(&item, &went_to), &files),

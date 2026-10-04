@@ -635,6 +635,7 @@ impl MessagesImported {
                 left.formatting_only_in_outlooks_format +=
                     usize::from(in_the_file.markup_only_in_outlooks_own_format);
                 left.signatures_not_kept += usize::from(in_the_file.signature_not_kept);
+                left.arrived_encrypted += usize::from(in_the_file.arrived_encrypted);
             }
             Some(WhyItWasNotRead::AnotherKind(_) | WhyItWasNotRead::NotAKindThisProgramKeeps) => {
                 left.not_messages += 1;
@@ -696,6 +697,17 @@ pub fn what_saved_outlook_messages_left(said: &mut SummingUp, left: &WhatSavedOu
             many => format!(
                 "{many} signed messages arrived without their signatures, because a saved \
                  Outlook message does not keep them"
+            ),
+        });
+    }
+    if left.arrived_encrypted > 0 {
+        said.sentence(match left.arrived_encrypted {
+            1 => "1 message arrived encrypted, with its words in the encrypted part attached \
+                  to it"
+                .to_string(),
+            many => format!(
+                "{many} messages arrived encrypted, with their words in the encrypted parts \
+                 attached to them"
             ),
         });
     }

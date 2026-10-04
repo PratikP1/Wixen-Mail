@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 636 records have arrived since and have not been through it.
+# 638 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -37704,7 +37704,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_eight_bit_text_is_read_in_the_alphabet_the_file_names",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A stream of a saved Outlook message read whole before the limit is asked,
@@ -37720,7 +37720,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_more_than_the_limit_is_refused_and_never_held",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A blind copy sent to the Cc line by the rule both Outlook readers share,
@@ -37739,7 +37739,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/outlook_data_file.rs", tests = 39 },
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A file on a saved Outlook message brought by its name and type with none of
@@ -37753,10 +37753,13 @@ before = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
 after = '''        let bytes = match said.said.remove(&THE_FILE_ITSELF) {
             Some(WhatItSaid::Bytes(_)) => Vec::new(),'''
 red = [
+    "application::importing_messages::end_to_end::test_a_saved_outlook_message_keeps_the_files_it_carried",
     "service::outlook_data_file::one_saved_message::tests::test_a_file_on_the_message_goes_with_it_by_name_type_and_bytes",
+    "service::outlook_data_file::one_saved_message::tests::test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/application/importing_messages.rs", tests = 48 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A message forwarded inside a saved Outlook message left in the file with
@@ -37771,7 +37774,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_a_message_inside_the_message_is_counted_as_a_file_not_brought",
 ]
 tests_last_seen = [
-    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 16 },
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
 # A saved Outlook message chosen alone asked the mail question first, which
@@ -38072,4 +38075,45 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying.rs", tests = 24 },
+]
+
+# A saved Outlook message of class IPM.Note.SMIME is read as having arrived
+# encrypted, and the signed class, which begins the same way, is not
+# (13.1-04, D-04 and D-17, ledger 794). The break reads the signed class in
+# its place. Written 2026-10-03 by 13.1-04, the break taken by hand against
+# the whole library first: 8,922 passed and this one case failed.
+[[guard]]
+name = "a saved Outlook message of the encrypted class is read as having arrived encrypted"
+file = "src/service/outlook_data_file/one_saved_message.rs"
+before = '''        arrived_encrypted: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.eq_ignore_ascii_case(AN_ENCRYPTED_MESSAGE)),'''
+after = '''        arrived_encrypted: item
+            .words(MESSAGE_CLASS)
+            .is_some_and(|class| class.eq_ignore_ascii_case(A_SIGNED_MESSAGE)),'''
+red = [
+    "service::outlook_data_file::one_saved_message::tests::test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part",
+]
+tests_last_seen = [
+    { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
+]
+
+# Both imports' closing sentences say how many saved Outlook messages arrived
+# encrypted (13.1-04, D-04, ledger 794). The break never says it. Written
+# 2026-10-03 by 13.1-04, the break taken by hand against the whole library
+# first: 8,921 passed and these two cases failed.
+[[guard]]
+name = "both imports say how many saved Outlook messages arrived encrypted"
+file = "src/application/importing_messages.rs"
+before = '''    if left.arrived_encrypted > 0 {
+        said.sentence(match left.arrived_encrypted {'''
+after = '''    if left.arrived_encrypted == usize::MAX {
+        said.sentence(match left.arrived_encrypted {'''
+red = [
+    "application::import_tree::tests::test_what_saved_outlook_messages_left_is_said_after_the_folders",
+    "application::importing_messages::tests::test_what_saved_outlook_messages_left_is_said_one_cause_at_a_time",
+]
+tests_last_seen = [
+    { file = "src/application/import_tree.rs", tests = 38 },
+    { file = "src/application/importing_messages.rs", tests = 48 },
 ]
