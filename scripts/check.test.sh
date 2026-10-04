@@ -476,6 +476,29 @@ case "$target_line" in
         ;;
 esac
 
+# The reading of mail taken off reads every file under `src` for a second caller
+# of the search index's compaction, and a caller can be added in any of them, so
+# a code commit that no record couples to it still runs it. `import_tree.rs` is
+# such a file: the folder import, which no record couples to this target.
+# Added 2026-10-03 by 13.1-02 (D-08): until then only a commit changing
+# `wx_app.rs` ran it, and ledger 791 is the reading going red on `main` for a
+# merge that never did.
+target_line="$(the_one_target_line "$(scoped_runs src/application/import_tree.rs)")"
+case "$target_line" in
+    shape:*)
+        suite_case_failed "a code commit anywhere runs the reading of mail taken off" "$target_line"
+        ;;
+    *)
+        if the_targets_named "$target_line" | tr ' ' '\n' |
+            grep -qx mail_taken_off_leaves_no_words_behind; then
+            suite_case_passed "a code commit anywhere runs the reading of mail taken off"
+        else
+            suite_case_failed "a code commit anywhere runs the reading of mail taken off" \
+                "no --test mail_taken_off_leaves_no_words_behind in: $target_line"
+        fi
+        ;;
+esac
+
 # A changed `tests/house_style.rs` is its own target and also one of the whole
 # tree's, and cargo is handed it once.
 target_line="$(the_one_target_line "$(scoped_runs tests/house_style.rs)")"
