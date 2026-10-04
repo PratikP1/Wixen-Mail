@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 635 records have arrived since and have not been through it.
+# 636 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4491,6 +4491,11 @@ tests_last_seen = [
 # and it came from a feature this record has never opened. Emptying a folder
 # was built after the hand measurement above and asks this same question of the
 # same decision, so the record covered one more caller than it said it did.
+#
+# Corrected again on 2026-10-03 by 13.1-03, from its re-measure: a rule's
+# delete on an account with no trash (what_rules_tell_the_server.rs) asks the
+# same decision, and its case went red unnamed; when that began was not
+# traced. The re-measure was due because emptying.rs gained a test.
 name = "not knowing where the trash is does not read as having nowhere to put it"
 file = "src/application/destinations.rs"
 before = """    else {
@@ -4504,12 +4509,14 @@ red = [
     "application::destinations::tests::test_an_account_with_no_folder_that_is_the_trash_does_not_delete_the_message",
     "application::emptying::tests::test_an_account_whose_trash_is_not_recognised_is_refused_rather_than_emptied",
     "application::mail_controller::against_a_server_that_answers::test_a_delete_with_no_recognised_trash_reaches_no_server",
+    "application::what_rules_tell_the_server::tests::test_a_rules_delete_on_an_account_with_no_trash_deletes_nothing_and_says_why",
 ]
 tests_last_seen = [
     { file = "src/application/deleting_at_the_server.rs", tests = 5 },
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
     { file = "src/application/mail_controller.rs", tests = 71 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -13354,7 +13361,7 @@ red = [
     "application::emptying::tests::test_the_reach_on_takes_the_folder_and_everything_under_it_deepest_first",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
     { file = "src/application/folders_underneath.rs", tests = 15 },
 ]
 
@@ -13856,7 +13863,7 @@ red = [
     "application::emptying::tests::test_the_permission_gates_emptying_here_and_says_nothing_about_a_folder_on_a_server",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 23 },
+    { file = "src/application/emptying.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -38047,4 +38054,22 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/mod.rs", tests = 23 },
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
+]
+
+# Empty Folder's question on the Trash every POP account shares says again
+# that no other copy exists anywhere, which overstates the loss when the POP
+# server keeps the mail (13.1-03, D-07, ledger 786). Written 2026-10-03 by
+# 13.1-03, the break taken by hand against the whole library first: 8,921
+# passed and this one case failed.
+[[guard]]
+name = "Empty Folder on the shared Trash says Wixen Mail keeps no other copy"
+file = "src/application/emptying.rs"
+before = '''            "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+                .to_string()'''
+after = '''            "They will be taken off this computer for good, and there is no other copy.".to_string()'''
+red = [
+    "application::emptying::tests::test_taking_mail_off_this_computer_says_what_wixen_mail_keeps_not_what_a_server_does",
+]
+tests_last_seen = [
+    { file = "src/application/emptying.rs", tests = 24 },
 ]

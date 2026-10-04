@@ -249,7 +249,8 @@ pub fn the_question(
         WhatEmptyingDoes::MoveToOnThisComputer(trash) => format!("They will be moved to {trash}."),
         WhatEmptyingDoes::MoveToOnTheServer(trash) => format!("They will be moved to {trash}."),
         WhatEmptyingDoes::RemoveFromThisComputer => {
-            "They will be taken off this computer for good, and there is no other copy.".to_string()
+            "They will be taken off this computer for good, and Wixen Mail keeps no other copy."
+                .to_string()
         }
         WhatEmptyingDoes::RemoveFromTheServer => {
             "They will be taken off the server for good, on every device using this account."
@@ -573,7 +574,7 @@ mod tests {
             "{said}"
         );
         assert!(
-            !said.contains("and there is no other copy"),
+            !said.contains("there is no other copy"),
             "the question says no copy exists anywhere, and a POP server may keep one: {said}"
         );
     }
