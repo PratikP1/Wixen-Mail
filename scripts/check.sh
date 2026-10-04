@@ -51,7 +51,15 @@ set -euo pipefail
 # `nvda-tests`, so no guard record's `file` can route the commits that break
 # it: 12-03 reworded four sentences across two files and two cases waited for
 # the old ones until the NVDA runner timed out (FOUND-22).
-guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners the_nvda_cases_wait_for_words_the_program_says)
+#
+# The ninth reads every file under `src` for a second caller of the search
+# index's compaction, which rewrites the whole index and is measured only where
+# a check calls it. A second caller can be added in any file, so no guard
+# record's `file` can route the commit that adds one: the one record naming this
+# target routes `wx_app.rs` alone, and 13-44.9's merge put a test-only caller
+# on `main` without running it (ledger 791). Added 2026-10-03 by 13.1-02; it
+# finished in 0.17 s and 0.18 s warm that day.
+guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with_themselves the_words_that_say_nothing no_label_is_only_a_space every_number_carries_its_command_and_its_date the_guard_sweep_runs_on_runners the_nvda_cases_wait_for_words_the_program_says mail_taken_off_leaves_no_words_behind)
 
 # The targets and library modules that read documents, which a documents-only
 # commit runs, and since 2026-09-23 a merge whose diff holds a document runs as
