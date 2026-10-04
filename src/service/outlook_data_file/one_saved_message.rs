@@ -137,6 +137,9 @@ pub struct LeftInTheFile {
     pub markup_only_in_outlooks_own_format: bool,
     /// Whether the message was signed, and the signature could not be kept.
     pub signature_not_kept: bool,
+    /// Whether the message arrived encrypted, so its words are in the
+    /// encrypted part it carries as a file rather than in the message.
+    pub arrived_encrypted: bool,
 }
 
 /// Why a saved message was not read, each with its own sentence.
@@ -234,6 +237,7 @@ pub fn read<R: Read + Seek>(
         signature_not_kept: item
             .words(MESSAGE_CLASS)
             .is_some_and(|class| class.to_ascii_lowercase().starts_with(A_SIGNED_MESSAGE)),
+        arrived_encrypted: false,
     };
     Ok(SavedOutlookMessage {
         mail: message_files::written_as_one_message(&a_message_from(&item, &went_to), &files),
@@ -1260,6 +1264,53 @@ mod tests {
             })
             .signature_not_kept
         );
+    }
+
+    #[test]
+    fn test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part() {
+        // Outlook saves an encrypted message as one of class IPM.Note.SMIME,
+        // with no words of its own and the encrypted part as a file on it.
+        // The part comes in as that file, and the message is counted as
+        // having arrived encrypted, so the closing sentence can say where its
+        // words went. Only that class, in any capitals: a signed message's
+        // class begins the same way and is the signature count's.
+        let encrypted_part = b"0\x82\x01\x00 the encrypted part".to_vec();
+        let saved_as = |class: &'static str| ASavedMessage {
+            top: vec![
+                (MESSAGE_CLASS, Held::Unicode(class)),
+                (SUBJECT, Held::Unicode("The figures")),
+            ],
+            attachments: vec![vec![
+                (ATTACH_METHOD, Held::Whole(BY_VALUE)),
+                (ATTACH_LONG_FILENAME, Held::Unicode("smime.p7m")),
+                (ATTACH_MIME_TAG, Held::Unicode("application/pkcs7-mime")),
+                (ATTACH_DATA, Held::Bytes(encrypted_part.clone())),
+            ]],
+            ..ASavedMessage::default()
+        };
+
+        for class in ["IPM.Note.SMIME", "ipm.note.smime", "IPM.NOTE.SMIME"] {
+            let read = read_all_of(written(&saved_as(class))).expect("the saved message was read");
+            assert!(read.left_in_the_file.arrived_encrypted, "{class}");
+            assert!(!read.left_in_the_file.signature_not_kept, "{class}");
+            let files = crate::service::mime::attachments_with_bytes(&read.mail)
+                .expect("what came out is a message");
+            assert_eq!(
+                files
+                    .iter()
+                    .map(|file| (file.described.filename.as_deref(), file.bytes.as_slice()))
+                    .collect::<Vec<_>>(),
+                vec![(Some("smime.p7m"), encrypted_part.as_slice())],
+                "{class}"
+            );
+        }
+
+        let signed = left_by(&saved_as("IPM.Note.SMIME.MultipartSigned"));
+        assert!(signed.signature_not_kept);
+        assert!(!signed.arrived_encrypted);
+        let plain = left_by(&saved_as("IPM.Note"));
+        assert!(!plain.signature_not_kept);
+        assert!(!plain.arrived_encrypted);
     }
 
     #[test]

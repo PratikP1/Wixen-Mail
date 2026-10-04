@@ -667,6 +667,7 @@ mod tests {
             blind_copies: each,
             formatting_only_in_outlooks_format: each,
             signatures_not_kept: each,
+            arrived_encrypted: each,
             not_messages: each,
             could_not_be_read: each,
         }
@@ -731,6 +732,7 @@ mod tests {
                 from_saved_outlook_messages: WhatSavedOutlookMessagesLeft {
                     read: 2,
                     blind_copies: 1,
+                    arrived_encrypted: 1,
                     could_not_be_read: 1,
                     ..WhatSavedOutlookMessagesLeft::default()
                 },
@@ -738,7 +740,8 @@ mod tests {
             }),
             "Imported 1 folder, 2 messages. 1 file in the archive was not mail and was left \
              out. 1 blind copy recipient was left off, because a message here has no line for \
-             blind copies. 1 saved Outlook message could not be read, because it is damaged or \
+             blind copies. 1 message arrived encrypted, with its words in the encrypted part \
+             attached to it. 1 saved Outlook message could not be read, because it is damaged or \
              larger than Wixen Mail will read. Reading saved Outlook messages is new to Wixen \
              Mail and has been tried on only a few, so check what arrived against Outlook."
         );

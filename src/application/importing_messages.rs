@@ -572,6 +572,9 @@ pub struct WhatSavedOutlookMessagesLeft {
     pub formatting_only_in_outlooks_format: usize,
     /// Signed messages that arrived without their signatures.
     pub signatures_not_kept: usize,
+    /// Messages that arrived encrypted, their words in the encrypted part
+    /// each carries as a file.
+    pub arrived_encrypted: usize,
     /// Saved Outlook items that were appointments, contacts and the like.
     pub not_messages: usize,
     /// Saved messages damaged partway or larger than this program reads.
@@ -1633,6 +1636,7 @@ mod tests {
             blind_copies: each,
             formatting_only_in_outlooks_format: each,
             signatures_not_kept: each,
+            arrived_encrypted: each,
             not_messages: each,
             could_not_be_read: each,
         }
@@ -1699,9 +1703,11 @@ mod tests {
             blind_copies: 1,
             markup_only_in_outlooks_own_format: true,
             signature_not_kept: true,
+            arrived_encrypted: false,
         }));
         counted.count_one_saved_outlook_message(&read_leaving(LeftInTheFile {
             blind_copies: 3,
+            arrived_encrypted: true,
             ..LeftInTheFile::default()
         }));
         for why in [
@@ -1723,6 +1729,7 @@ mod tests {
                 blind_copies: 4,
                 formatting_only_in_outlooks_format: 1,
                 signatures_not_kept: 1,
+                arrived_encrypted: 1,
                 not_messages: 2,
                 could_not_be_read: 2,
             }
@@ -1754,7 +1761,8 @@ mod tests {
                  has no line for blind copies. 1 message had formatting Outlook kept only in \
                  its own format, so it arrived as its words alone. 1 signed message arrived \
                  without its signature, because a saved Outlook message does not keep one. 1 \
-                 saved Outlook item was not a message and was left out. 1 saved Outlook \
+                 message arrived encrypted, with its words in the encrypted part attached to \
+                 it. 1 saved Outlook item was not a message and was left out. 1 saved Outlook \
                  message could not be read, because it is damaged or larger than Wixen Mail \
                  will read. {new_reading}"
             )
@@ -1772,8 +1780,9 @@ mod tests {
                  here has no line for blind copies. 2 messages had formatting Outlook kept \
                  only in its own format, so they arrived as their words alone. 2 signed \
                  messages arrived without their signatures, because a saved Outlook message \
-                 does not keep them. 2 saved Outlook items were not messages and were left \
-                 out. 2 saved Outlook messages could not be read, because they are damaged or \
+                 does not keep them. 2 messages arrived encrypted, with their words in the \
+                 encrypted parts attached to them. 2 saved Outlook items were not messages and \
+                 were left out. 2 saved Outlook messages could not be read, because they are damaged or \
                  larger than Wixen Mail will read. {new_reading}"
             )
         );
