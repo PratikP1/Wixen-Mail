@@ -26,10 +26,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   real `.msg` files saved by Outlook were read by hand on 2026-10-03 and no other has been
   through this reader, so check what arrived against Outlook; formatting Outlook kept only in
   its own format arrives as plain words (ledger 793); a message that was encrypted arrives
-  with no words and its encrypted part as a file, and nothing counts it yet (ledger 794); a
-  folder holding only old Office documents, which begin the same way, is made under Imported
-  and left empty (ledger 797); and nobody has heard the picker or the new sentences with a
-  screen reader.
+  with no words and its encrypted part as a file, which Wixen Mail does not open (until
+  13.1-04 on 2026-10-04 nothing counted it either, ledger 794; see Changed); until the same
+  day a folder holding only old Office documents, which begin the same way, was made under
+  Imported and left empty (ledger 797); and nobody has heard the picker or the new sentences
+  with a screen reader.
 - **Export Folder as Message Files, on the File menu (#53, point 4; GAP-13).** The second half
   of issue 53's point 4, the loose `.eml` files it asked for. File, Export Folder as Message
   Files (`Alt+F`, then `X`, no shortcut key) asks for a folder to write into and writes the
@@ -779,6 +780,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 - **Empty Folder on the Trash every POP account shares says "and Wixen Mail keeps no other
   copy"** where it said "and there is no other copy", which was not true when the POP server
   keeps the mail, as it does by default (ledger 786). The rest of the question is unchanged.
+- **The sentence at the end of an import says how many saved Outlook messages arrived
+  encrypted (GAP-13, ledger 794).** Outlook saves an encrypted message with no words of its
+  own and its words in an encrypted part, which comes in as a file attached to the message.
+  Such a message arrived looking empty and nothing said why; now the sentence says, for
+  example, "1 message arrived encrypted, with its words in the encrypted part attached to
+  it". Wixen Mail does not open that part as a message. Known limitations: no real
+  encrypted `.msg` file has been imported; a message is taken as encrypted when Outlook's
+  name for its kind is exactly the encrypted one, and Outlook may give that name to a
+  message signed in one of the two ways mail is signed, which would then be counted as
+  encrypted too.
+- **A folder or zip no longer leaves empty folders under Imported (GAP-13, ledger 797).**
+  Each folder is made when the first message is filed into it, so a folder holding only old
+  Word or Excel documents, which begin the way a message Outlook saved does, leaves nothing
+  behind, and the count of folders imported is the folders a message went into. Importing
+  the same folder or zip a second time says no folders were imported.
+- **Importing a folder or zip says what it did not bring in (GAP-13, ledger 798).** Its
+  closing sentence now says how many messages were already in their folders, how many could
+  not be read and how many could not be saved on this computer, in the words the import of
+  one file already used, for example "2 messages were already in their folders and were left
+  as they are". It counted all three before and said none of them.
 - **Mail taken off this computer keeps none of its words (GAP-14).** Pratik's answer of
   2026-09-30: emptying a POP account's Trash drops the message text from the database too,
   keeping only what stops the message being downloaded again. A message kept on this
