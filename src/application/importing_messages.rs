@@ -2496,7 +2496,8 @@ mod end_to_end {
         assert_eq!(how_many_in(&cache, &imported("Mail")), 1);
         assert_eq!(
             said,
-            "No folders were imported. 1 file in the archive was not mail and was left out."
+            "No folders were imported. 1 file in the archive was not mail and was left out. 1 \
+             message was already in its folder and was left as it is."
         );
     }
 
@@ -2530,7 +2531,11 @@ mod end_to_end {
             made_first
         );
         assert_eq!(how_many_in(&cache, &imported("Mail")), 2);
-        assert_eq!(said, "Imported 1 folder, 1 message");
+        assert_eq!(
+            said,
+            "Imported 1 folder, 1 message. 1 message was already in its folder and was left as \
+             it is."
+        );
     }
 
     // ── The files an imported message carried ───────────────────────────

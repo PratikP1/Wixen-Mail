@@ -363,6 +363,14 @@ pub struct FoldersImported {
     /// Files on the messages brought in that were larger than this computer
     /// keeps.
     pub files_too_large_to_keep: usize,
+    /// Messages a folder already held, left as they were.
+    pub already_here: usize,
+    /// Stretches of the archive's mailbox files that held nothing a mail
+    /// program recognises.
+    pub could_not_be_read: usize,
+    /// Messages read out of the archive that could not be saved on this
+    /// computer.
+    pub not_written_down: usize,
     /// What the saved Outlook messages in the archive left in their files.
     pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
 }
@@ -1057,6 +1065,9 @@ mod tests {
 
         counted.carry_the_mail_counts(&MessagesImported {
             brought_in: 5,
+            already_here: 3,
+            could_not_be_read: 4,
+            not_written_down: 6,
             files_too_large_to_keep: 2,
             from_saved_outlook_messages: saved,
             ..MessagesImported::default()
@@ -1069,9 +1080,77 @@ mod tests {
                 messages: 5,
                 held_no_mail: 1,
                 files_too_large_to_keep: 2,
+                already_here: 3,
+                could_not_be_read: 4,
+                not_written_down: 6,
                 from_saved_outlook_messages: saved,
                 ..FoldersImported::default()
             }
+        );
+    }
+
+    #[test]
+    fn test_the_folder_import_says_what_it_did_not_bring_in_in_the_single_file_imports_words() {
+        // Counted and never said until 13.1-04 (ledger 798). The words are the
+        // import of one file's, through one function, with the archive and
+        // its folders named where that import names its file and its folder.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 2,
+                already_here: 1,
+                could_not_be_read: 1,
+                not_written_down: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 2 messages. 1 message was already in its folder and was left as \
+             it is. 1 message in the archive could not be read, because there was nothing in it a \
+             mail program recognises. 1 message was read from the archive and could not be saved \
+             on this computer."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 2,
+                messages: 9,
+                already_here: 2,
+                could_not_be_read: 2,
+                not_written_down: 2,
+                files_too_large_to_keep: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 2 folders, 9 messages. 2 messages were already in their folders and were \
+             left as they are. 2 messages in the archive could not be read, because there was \
+             nothing in them a mail program recognises. 2 messages were read from the archive \
+             and could not be saved on this computer. 1 file was over 25 MB, the most Wixen Mail \
+             keeps of one file, so it is listed on its message and stays only in the file you \
+             imported from."
+        );
+    }
+
+    #[test]
+    fn test_an_archive_that_held_mail_and_filed_none_does_not_say_it_held_none() {
+        // A folder is counted only when a message is filed into it, so an
+        // archive imported a second time, or one holding only Outlook items
+        // that are not messages, imports no folder. Each still held something,
+        // and saying there is nothing in it that reads as mail would contradict
+        // the sentence after it.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                already_here: 3,
+                ..FoldersImported::default()
+            }),
+            "No folders were imported. 3 messages were already in their folders and were left as \
+             they are."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                from_saved_outlook_messages: WhatSavedOutlookMessagesLeft {
+                    not_messages: 1,
+                    ..WhatSavedOutlookMessagesLeft::default()
+                },
+                ..FoldersImported::default()
+            }),
+            "No folders were imported. 1 saved Outlook item was not a message and was left out."
         );
     }
 
@@ -1089,6 +1168,9 @@ mod tests {
                 names_refused: 1,
                 filed_together: 1,
                 files_too_large_to_keep: 1,
+                already_here: 1,
+                could_not_be_read: 1,
+                not_written_down: 1,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
             what_the_folder_import_did(&FoldersImported {
@@ -1098,6 +1180,9 @@ mod tests {
                 names_refused: 3,
                 filed_together: 2,
                 files_too_large_to_keep: 2,
+                already_here: 2,
+                could_not_be_read: 2,
+                not_written_down: 2,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
         ];
