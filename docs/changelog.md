@@ -822,7 +822,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   not searched out; the write log and the search index hold the words until the next check
   for mail; Windows Search's own index, if you let it index your mail, keeps its copy until
   it is rebuilt; a disk's own copies of deleted data are out of reach; replies and forwards
-  keep what they quoted. None of this has run against a real POP server.
+  keep what they quoted. None of this has run against a real POP server. Corrected
+  2026-10-04: the heading says more than was measured. Of 1,000 messages taken off a mail
+  database holding 200,000, 9 still left some words in unused space when measured on
+  2026-10-02, and 1 when measured again on 2026-10-03 after every write began overwriting
+  what it frees (the entry above, ledger 788).
 - **Closing Wixen Mail takes the window away at once, before it signs off.** The window
   used to stay on the screen for the up to three seconds the sign-off takes, which by ear is
   a window that has stopped answering. It now goes first, then any Trash set to be emptied

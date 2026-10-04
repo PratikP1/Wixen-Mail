@@ -685,7 +685,9 @@ Written down so you do not spend time reporting things already on the list.
   and busy, opening S/MIME mail, the key manager, PGP signatures, sending signed
   and encrypted mail, accounts on their own domains and emptying the Trash.
   The listening page, [items 96 to 181](manual-accessibility-pass.md), has the
-  walk for each.
+  walk for each. Items 182 and 183, added 2026-10-04, are the walk for what
+  phase 13.1 changed: Empty Folder's question on the Trash every POP account
+  shares, and the sentence at the end of a folder import.
 - **Printing.** `Ctrl+P` and File, Print open Windows' own print dialog on
   every surface that shows a message or an item. A test draws every page and
   reads each line back, and a job has been sent to Microsoft Print to PDF; no
@@ -724,7 +726,11 @@ Written down so you do not spend time reporting things already on the list.
   untried. A message Outlook saved (`.msg`) has come in only from files built
   for the tests and four samples read by hand, not from your Outlook. An
   imported message now keeps its files, and that has been tried only on files
-  the tests built.
+  the tests built. Since 2026-10-04 both imports count a saved message that
+  arrived encrypted and say so, a folder under Imported is made only when a
+  message is filed into it, and importing a folder says what was already
+  there, what could not be read and what could not be saved; all of it has
+  been tried only on files the tests built (ledgers 805 and 806).
 - **Four decisions phase 13 waited on, and how they were answered.** All four
   were answered on 2026-09-24. Reading `.msg` files uses the `cfb` library,
   which was approved. Printing uses three more parts of the `windows` library
@@ -734,8 +740,11 @@ Written down so you do not spend time reporting things already on the list.
   Microsoft permissions, People.Read and Tasks.ReadWrite, approved, which is
   why an Outlook account signed in before then is asked to sign in again. The
   fault that stops the toolkit's own printing from starting a job on Windows is
-  written down and, by decision, not reported to the toolkit's authors; Wixen
-  Mail prints through Windows directly instead.
+  written down, and Wixen Mail prints through Windows directly instead. On
+  2026-09-24 Pratik asked for more details before anything is filed with the
+  toolkit's authors, and nothing has been filed (ledger 614). Until 2026-10-04
+  this sentence said a decision had been made not to report it, which misread
+  his answer.
 - **Notes can now go to a calendar server, and no build has ever sent one to a
   real server.** If you added a calendar by its address, that same server is
   where your notes for that account now go, under the same sign-in. Settings
