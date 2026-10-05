@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 649 records have arrived since and have not been through it.
+# 662 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5653,11 +5653,18 @@ tests_last_seen = [
 # What this record cannot see. It is a source read, so it can tell that the arm
 # calls the routine that starts a sync. It cannot tell whether that sync then
 # reaches a server, and nothing here has ever run against a real account.
+#
+# Re-anchored on 2026-10-05 by 14-02, when the sync started taking the account
+# it syncs rather than reading the window's open one, and measured again.
 
 [[guard]]
 name = "the sync button in the calendar window really starts a sync"
 file = "src/presentation/managers.rs"
-before = """                crate::presentation::wx_app::spawn_calendar_sync(state, tx, rt);
+before = """                crate::presentation::wx_app::spawn_calendar_sync(
+                    tx,
+                    rt,
+                    crate::presentation::wx_app::the_active_account(state),
+                );
                 done.push("A calendar sync has started.".to_string());"""
 after = """                send_status(tx, rt, "Calendar sync requested");"""
 red = [
@@ -20531,17 +20538,19 @@ tests_last_seen = [
 # wording moved again on 2026-09-23 (12-03, #75): "Notes sync requested..."
 # used sync as a noun and said what had been asked for rather than what was
 # happening, and the step is "Syncing notes..." now. Re-anchored and
-# re-measured in the commit that moved it.
+# re-measured in the commit that moved it. Moved again on 2026-10-05 by 14-02,
+# out of the Sync Now arm into `sync_the_module`, which `F5` reaches too;
+# re-anchored there and measured again.
 [[guard]]
 name = "asking for a notes sync reaches the sync rather than reporting one"
 file = "src/presentation/wx_app.rs"
-before = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
-                                    spawn_notes_sync(app);
-                                }'''
-after = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
-                                }'''
+before = '''        PimModule::Notes => {
+            send_progress(tx, rt, "Syncing notes...");
+            spawn_notes_sync(app);
+        }'''
+after = '''        PimModule::Notes => {
+            send_progress(tx, rt, "Syncing notes...");
+        }'''
 red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
 ]
@@ -26587,7 +26596,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26614,7 +26623,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -38201,9 +38210,10 @@ before = '''        Some(_) if !account.use_oauth => {
 after = ''''''
 red = [
     "application::who_holds_the_calendars::tests::test_a_gmail_account_asks_google_only_with_a_key_and_a_browser_sign_in",
+    "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -38225,7 +38235,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -38248,7 +38258,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
 ]
 
 # A calendar sync that could not ask Google finishes with the cue for an
@@ -38265,7 +38275,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38284,7 +38294,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 # The contacts and tasks syncs say the same reason (14-01 task 2): after the
@@ -38308,7 +38318,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 [[guard]]
@@ -38328,7 +38338,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 [[guard]]
@@ -38344,7 +38354,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
 ]
 
 [[guard]]
@@ -38360,5 +38370,267 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+]
+
+# ── Each request a sync sends, written down (#22, 14-02) ───────────────────
+#
+# No request a calendar, contacts or tasks sync sent wrote a line at any
+# level, so a report about a Refresh could not say what was asked or what
+# came back. Each helper now writes one line per request at info, built from
+# parts. Written 2026-10-05 by 14-02, each break measured with
+# `scripts/guards.sh` against the whole library.
+
+# The query carries the sync marker and the page marker, so it never reaches
+# the line. The break keeps it.
+[[guard]]
+name = "a request's line cuts the query off the address"
+file = "src/service/asked_and_answered.rs"
+before = '''    let path: Vec<String> = url.path().split('/').map(masked).collect();'''
+after = '''    let path: Vec<String> = url[url::Position::BeforePath..]
+        .split('/')
+        .map(masked)
+        .collect();'''
+red = [
+    "service::asked_and_answered::tests::test_the_line_names_who_the_method_the_path_and_the_status_and_cuts_the_query",
+    "service::asked_and_answered::tests::test_a_path_segment_holding_an_address_is_masked_and_googles_word_for_me_is_kept",
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+    "service::asked_and_answered::tests::test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker",
+    "service::asked_and_answered::tests::test_a_google_tasks_read_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+]
+
+# Only a word of letters and underscores is taken from a refusal's body, so a
+# message, an address or a token cannot pass through as the reason. The break
+# accepts anything printable.
+[[guard]]
+name = "a refusal's reason word is letters and underscores only"
+file = "src/service/asked_and_answered.rs"
+before = '''            .all(|letter| letter.is_ascii_alphabetic() || letter == '_')'''
+after = '''            .all(|letter| !letter.is_control())'''
+red = [
+    "service::asked_and_answered::tests::test_the_reason_word_refuses_anything_but_a_short_word",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+]
+
+# A Google request that was answered writes its line at info, the level a
+# stored profile keeps (D-01). The break writes it at debug, where Pratik's
+# log never reaches.
+[[guard]]
+name = "an answered google request writes its line at info"
+file = "src/service/google_api.rs"
+before = '''        tracing::info!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+after = '''        tracing::debug!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+    "service::asked_and_answered::tests::test_a_refused_google_read_writes_its_status_and_reason_and_nothing_else_of_the_body",
+    "service::asked_and_answered::tests::test_a_changed_google_event_writes_its_line",
+    "service::asked_and_answered::tests::test_a_google_delete_answered_gone_counts_as_done_and_writes_the_status_it_was",
+    "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# A change sent to Google writes its line through the same helper the reads
+# use (14-02 task 2). The break has the create read its answer by hand, as
+# every write did before, so a new event is sent and nothing is written.
+[[guard]]
+name = "a change sent to google writes its line"
+file = "src/service/google_api.rs"
+before = '''        let (status, body) = Self::the_answer_written_down("POST", url, sent).await?;'''
+after = '''        let response = sent.map_err(|e| Error::Network(e.without_url().to_string()))?;
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();'''
+red = [
+    "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# The retry writes the error's text to the log at warn, and a transport
+# error's text names the whole address with its sync marker. The break keeps
+# the address in it.
+[[guard]]
+name = "a google request nobody answered keeps its address out of the error"
+file = "src/service/google_api.rs"
+before = '''                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e.without_url()
+                )));'''
+after = '''                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e
+                )));'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# Every request the tasks client sends writes its line at info, Google's and
+# Microsoft's alike. The break writes it at debug.
+[[guard]]
+name = "the tasks client writes each request's line at info"
+file = "src/service/tasks_api.rs"
+before = '''        tracing::info!(
+            "{}",
+            the_line(
+                who,'''
+after = '''        tracing::debug!(
+            "{}",
+            the_line(
+                who,'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_tasks_read_writes_its_line",
+    "service::asked_and_answered::tests::test_a_microsoft_to_do_read_is_written_under_microsofts_name",
+    "service::asked_and_answered::tests::test_a_refused_task_change_writes_its_reason_and_keeps_no_body",
+    "service::asked_and_answered::tests::test_a_task_delete_answered_not_found_writes_the_status_it_was",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/tasks_api.rs", tests = 62 },
+]
+
+# Only an account whose mail is at Microsoft asks Microsoft. The break lets
+# any account not at neither ask it, so a Gmail account on a copy holding a
+# Microsoft key asks Microsoft again (RESEARCH-2 defect 1).
+[[guard]]
+name = "a gmail account never asks microsoft"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    if WhoRunsTheMail::of(account) != WhoRunsTheMail::Microsoft {'''
+after = '''    if WhoRunsTheMail::of(account) == WhoRunsTheMail::SomebodyElse {'''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+]
+
+# An account at neither provider with nothing of its own hears why there is
+# nothing to bring, rather than "0 created". The break drops the reason.
+[[guard]]
+name = "an account at neither provider says why there is nothing to bring"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    (at_neither && !has_something_of_its_own).then_some(WhyNothingWasAsked::AtNeitherProvider)'''
+after = '''    let _ = (at_neither, has_something_of_its_own);
+    None'''
+red = [
+    "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+]
+
+# A finished calendar sync writes its line at info, the level a stored
+# profile keeps. The break writes it at debug.
+[[guard]]
+name = "a finished calendar sync writes its line at info"
+file = "src/presentation/wx_app.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,'''
+after = '''        tracing::debug!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,'''
+red = [
+    "test_each_sync_writes_its_finish_line_at_info",
+    "test_the_reading_complains_when_a_finish_line_is_missing_at_debug_or_says_the_sentence",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
+]
+
+# ── An added account's first sync, and F5 in a module (14-02 task 3) ───────
+
+# Each account added in a visit to the Account Manager has its calendars,
+# contacts and tasks brought once (REAL-01: "the sync run on account
+# creation"). The break starts nothing; the companion goes red too, because
+# its plant looks for the call the break took out.
+[[guard]]
+name = "an account added in the account manager has its first sync started"
+file = "src/presentation/wx_app.rs"
+before = '''            bring_what_a_new_account_holds(AppHandles { state, tx, rt }, a11y, account);'''
+after = '''            let _ = (state, tx, rt, a11y, account);'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_account_manager_starts_the_first_sync_of_an_added_account",
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# A reason known before anything is asked is said once for all three modules
+# when an account is added (D-10). The break starts the three syncs instead,
+# so each says the reason in turn.
+[[guard]]
+name = "a reason known on adding an account is said once, not per module"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''            MayGoogleBeAsked::No(why) => OneReason(why),'''
+after = '''            MayGoogleBeAsked::No(_) => TheThreeSyncs,'''
+red = [
+    "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+]
+
+# F5 with a module other than Mail showing syncs that module (D-11). The
+# break has it read the mail folder whatever is showing.
+[[guard]]
+name = "f5 in a module other than mail syncs that module"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''        | PimModule::Notes => WhatRefreshDoes::SyncsTheModule,'''
+after = '''        | PimModule::Notes => WhatRefreshDoes::ReadsTheFolder,'''
+red = [
+    "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+]
+
+# The window's first F5 arm syncs only when the answer says the module
+# showing syncs. The break inverts the comparison, so F5 in Contacts reads a
+# mail folder and F5 in Mail says Mail does not sync.
+[[guard]]
+name = "the f5 arm syncs only the modules the answer says sync"
+file = "src/presentation/wx_app.rs"
+before = '''                            ) == crate::application::who_holds_the_calendars::WhatRefreshDoes::SyncsTheModule =>'''
+after = '''                            ) == crate::application::who_holds_the_calendars::WhatRefreshDoes::ReadsTheFolder =>'''
+red = [
+    "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 30 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

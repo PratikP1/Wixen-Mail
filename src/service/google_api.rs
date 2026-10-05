@@ -4,6 +4,7 @@
 //! All methods take an OAuth access token and return deserialized results.
 
 use crate::common::{Error, Result};
+use crate::service::asked_and_answered::{WhatCameBack, WhoWasAsked, the_line, the_reason_word};
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
@@ -801,14 +802,62 @@ impl GoogleApiClient {
     // ── HTTP Helpers ────────────────────────────────────────────────────
 
     async fn api_get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
-        let resp = self
-            .http
-            .reading(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API GET failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+        let sent = self.http.reading(url).bearer_auth(token).send().await;
+        let (status, body) = Self::the_answer_written_down("GET", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
+    }
+
+    /// What came back for one request, read whole, with the line saying what
+    /// was asked and what came back written to the log at info.
+    ///
+    /// One line per request sent, so a call `with_retry` sends again writes
+    /// one per try (D-09). Built from the method, the address and the status;
+    /// never from the error's text, which names the whole address.
+    async fn the_answer_written_down(
+        method: &str,
+        url: &str,
+        sent: reqwest::Result<reqwest::Response>,
+    ) -> Result<(u16, String)> {
+        let response = match sent {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::info!(
+                    "{}",
+                    the_line(WhoWasAsked::Google, method, url, WhatCameBack::NoAnswer)
+                );
+                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e.without_url()
+                )));
+            }
+        };
+        let status = response.status().as_u16();
+        let body = response.text().await;
+        let reason = match &body {
+            Ok(body) if status >= 400 => the_reason_word(body),
+            _ => None,
+        };
+        tracing::info!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {
+                    status,
+                    reason: reason.as_deref(),
+                },
+            )
+        );
+        let body = body.map_err(|e| {
+            Error::Network(format!(
+                "Failed to read google response: {}",
+                e.without_url()
+            ))
+        })?;
+        Ok((status, body))
     }
 
     async fn api_post<T: serde::de::DeserializeOwned>(
@@ -817,15 +866,15 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(reqwest::Method::POST, url, "add something to this account")?
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API POST failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("POST", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_patch<T: serde::de::DeserializeOwned>(
@@ -834,7 +883,7 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::PATCH,
@@ -844,13 +893,13 @@ impl GoogleApiClient {
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API PATCH failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("PATCH", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_delete(&self, url: &str, token: &str) -> Result<()> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::DELETE,
@@ -859,9 +908,8 @@ impl GoogleApiClient {
             )?
             .bearer_auth(token)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API DELETE failed: {}", e)))?;
-        let status = resp.status().as_u16();
+            .await;
+        let (status, body) = Self::the_answer_written_down("DELETE", url, sent).await?;
         // Gone and Not Found both count as done: the event is not there, which
         // is the state that was asked for. Treating either as a failure meant
         // the tombstone never settled and the deletion was re-sent on every
@@ -872,7 +920,6 @@ impl GoogleApiClient {
         if status == 204 || status == 200 || status == 404 || status == 410 {
             return Ok(());
         }
-        let body = resp.text().await.unwrap_or_default();
         Err(Error::Api {
             status,
             provider: "google".to_string(),
@@ -880,25 +927,21 @@ impl GoogleApiClient {
         })
     }
 
-    async fn parse_response<T: serde::de::DeserializeOwned>(
-        resp: reqwest::Response,
+    /// The answer's body read as `T`, or the provider's refusal as an error.
+    fn read_the_body<T: serde::de::DeserializeOwned>(
+        status: u16,
+        body: &str,
         provider: &str,
     ) -> Result<T> {
-        let status = resp.status().as_u16();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| Error::Network(format!("Failed to read {} response: {}", provider, e)))?;
-
         if status >= 400 {
             return Err(Error::Api {
                 status,
                 provider: provider.to_string(),
-                message: crate::common::error::redact_provider_message(&body),
+                message: crate::common::error::redact_provider_message(body),
             });
         }
 
-        serde_json::from_str(&body).map_err(|e| {
+        serde_json::from_str(body).map_err(|e| {
             Error::Other(format!(
                 "Failed to parse {} API response: {} (body length: {})",
                 provider,

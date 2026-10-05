@@ -7563,7 +7563,7 @@ mod tests {
                 // Two address books answered, so somebody was asked.
                 what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked {
                     somebody: true,
-                    why_not_google: None,
+                    why_not_asked: None,
                 },
                 errors: vec!["one".to_string(), "two".to_string()],
             }

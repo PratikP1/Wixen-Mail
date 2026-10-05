@@ -4416,6 +4416,19 @@ impl WxMailApp {
                             let confirmed = if starred { "Flagged" } else { "Unflagged" };
                             let _ = a11y.signal(FeedbackEvent::Confirmed, confirmed);
                         }
+                        // Refresh with any module but Mail showing syncs that
+                        // module, as its Sync Now does (D-11). Until 14-02 it
+                        // read whatever mail folder the tree still had
+                        // selected and said "Refreshed" with that folder's
+                        // name, or that no folder was selected.
+                        _ if id == ID_REFRESH_FOLDER
+                            && crate::application::who_holds_the_calendars::what_refresh_does(
+                                lock_state(&state).active_module,
+                            ) == crate::application::who_holds_the_calendars::WhatRefreshDoes::SyncsTheModule =>
+                        {
+                            let module = lock_state(&state).active_module;
+                            sync_the_module(app, module);
+                        }
                         // Refresh on a saved search runs it again. That is what
                         // refreshing means here: results are worked out when
                         // somebody asks rather than kept up to date behind
@@ -4860,38 +4873,7 @@ impl WxMailApp {
                             // the shape that deadlocked the UI thread and
                             // froze the screen reader with it.
                             let module = lock_state(&state).active_module;
-                            match module {
-                                // Steps: shown, and spoken only under Say
-                                // every step (#38). The sync's own finish
-                                // is what is said by default.
-                                PimModule::Contacts => {
-                                    send_progress(&ui_tx, &runtime, "Syncing contacts...");
-                                    spawn_contacts_sync(app);
-                                }
-                                PimModule::Calendar => {
-                                    send_progress(&ui_tx, &runtime, "Syncing the calendar...");
-                                    spawn_calendar_sync(&state, &ui_tx, &runtime);
-                                }
-                                PimModule::Tasks => {
-                                    send_progress(&ui_tx, &runtime, "Syncing tasks...");
-                                    spawn_tasks_sync(app);
-                                }
-                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
-                                    spawn_notes_sync(app);
-                                }
-                                // Mail has its own Check Mail, and a reminder
-                                // is a property of something else everywhere
-                                // this program can reach, so neither is
-                                // offered this.
-                                PimModule::Mail | PimModule::Reminders => {
-                                    send_status(
-                                        &ui_tx,
-                                        &runtime,
-                                        "This module does not sync anywhere yet.",
-                                    );
-                                }
-                            }
+                            sync_the_module(app, module);
                         }
                         _ if id == ID_CYCLE_PANES || id == ID_PREVIOUS_PANE => {
                             // The sidebar and the list of whichever module is
@@ -5703,9 +5685,14 @@ impl WxMailApp {
                         _ if id == ID_DELETE_SEARCH => {
                             delete_the_chosen_search(app, &message_cache, &frame, &a11y)
                         }
-                        _ if id == ID_ACCOUNT_MGR => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
-                        }
+                        _ if id == ID_ACCOUNT_MGR => handle_account_mgr(
+                            &frame,
+                            &state,
+                            &message_cache,
+                            &a11y,
+                            &runtime,
+                            &ui_tx,
+                        ),
                         _ if id == ID_NEW_CONTACT => managers::new_contact(
                             &state,
                             &message_cache,
@@ -5714,9 +5701,14 @@ impl WxMailApp {
                             &runtime,
                             &a11y,
                         ),
-                        _ if id == ID_NEW_ACCOUNT => {
-                            handle_account_mgr(&frame, &state, &message_cache, &a11y, &runtime)
-                        }
+                        _ if id == ID_NEW_ACCOUNT => handle_account_mgr(
+                            &frame,
+                            &state,
+                            &message_cache,
+                            &a11y,
+                            &runtime,
+                            &ui_tx,
+                        ),
                         _ if id == ID_SAVE => {
                             send_refusal(&ui_tx, &runtime, "There is no draft open to save.")
                         }
@@ -5787,7 +5779,7 @@ impl WxMailApp {
                                 &a11y,
                             ) {
                                 send_progress(&ui_tx, &runtime, "Syncing contacts...");
-                                spawn_contacts_sync(app);
+                                spawn_contacts_sync(app, the_active_account(&state));
                             }
                         }
                         // Each of these used to be handed an empty list and
@@ -5884,15 +5876,15 @@ impl WxMailApp {
                         // them (#38): the finish is what is said by default.
                         _ if id == ID_SYNC_CONTACTS => {
                             send_progress(&ui_tx, &runtime, "Syncing contacts...");
-                            spawn_contacts_sync(app);
+                            spawn_contacts_sync(app, the_active_account(&state));
                         }
                         _ if id == ID_SYNC_CALENDAR => {
                             send_progress(&ui_tx, &runtime, "Syncing the calendar...");
-                            spawn_calendar_sync(&state, &ui_tx, &runtime);
+                            spawn_calendar_sync(&ui_tx, &runtime, the_active_account(&state));
                         }
                         _ if id == ID_SYNC_TASKS => {
                             send_progress(&ui_tx, &runtime, "Syncing tasks...");
-                            spawn_tasks_sync(app);
+                            spawn_tasks_sync(app, the_active_account(&state));
                         }
                         _ if id == ID_SETTINGS => {
                             // Taken first, before anything the open costs, so
@@ -22126,12 +22118,16 @@ fn emptying_the_trash_on_the_way_out(
 }
 
 /// Handle Account Manager dialog result.
+///
+/// Each account added in the visit has its calendars, contacts and tasks
+/// brought once, or hears once why they cannot be (REAL-01, 14-02).
 fn handle_account_mgr(
     frame: &Frame,
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     rt: &Arc<Runtime>,
+    tx: &Sender<UIUpdate>,
 ) {
     let (accounts, active_id, default_id) = {
         let s = lock_state(state);
@@ -22161,6 +22157,11 @@ fn handle_account_mgr(
             .filter(|held| !new.iter().any(|kept| kept.id == held.id))
             .map(|held| held.id.clone())
             .collect();
+        let added: Vec<Account> =
+            crate::application::who_holds_the_calendars::added_in_this_visit(&accounts, &new)
+                .into_iter()
+                .cloned()
+                .collect();
         let mut s = lock_state(state);
         // What Set Active chose, when it named an account that is still
         // there. This used to be dropped on the way out of the dialog and
@@ -22220,6 +22221,38 @@ fn handle_account_mgr(
                 crate::application::mail_session::no_longer_signed_in_to(&id),
             );
         }
+        for account in added {
+            bring_what_a_new_account_holds(AppHandles { state, tx, rt }, a11y, account);
+        }
+    }
+}
+
+/// Bring a newly added account's calendars, contacts and tasks once, or say
+/// once why they cannot be brought (14-02 choice 3, D-10).
+///
+/// Each sync says at most one sentence when it finishes, as it does from the
+/// Tools menu. A reason known before anything is asked is said once for all
+/// three modules, with the cue for an account needing attention (D-07),
+/// rather than three times.
+fn bring_what_a_new_account_holds(
+    app: AppHandles<'_>,
+    a11y: &Arc<Accessibility>,
+    account: Account,
+) {
+    use crate::application::who_holds_the_calendars::{self, WhatAddingAnAccountStarts};
+    match who_holds_the_calendars::what_adding_this_account_starts(&account) {
+        WhatAddingAnAccountStarts::TheThreeSyncs => {
+            spawn_contacts_sync(app, Some(account.clone()));
+            spawn_calendar_sync(app.tx, app.rt, Some(account.clone()));
+            spawn_tasks_sync(app, Some(account));
+        }
+        WhatAddingAnAccountStarts::OneReason(why) => {
+            let _ = a11y.signal(
+                FeedbackEvent::AccountNeedsAttention,
+                &why.sentence_for_every_module(),
+            );
+        }
+        WhatAddingAnAccountStarts::Nothing => {}
     }
 }
 
@@ -23683,7 +23716,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::ContactsSyncComplete(result) => {
             let msg = crate::application::contacts_sync::what_the_contacts_sync_did(result);
-            if result.what_was_asked.why_not_google.is_some() {
+            if result.what_was_asked.why_not_asked.is_some() {
                 // Google's address book could not be asked: said with the
                 // cue for an account needing attention, as the calendar's
                 // reason is, at any level (#22, D-07).
@@ -23785,7 +23818,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::CalendarSyncComplete(result) => {
             let msg = crate::application::calendar::what_the_calendar_sync_did(result);
-            if result.what_was_asked.why_not_google.is_some() {
+            if result.what_was_asked.why_not_asked.is_some() {
                 // A sync that could not ask Google says why with the cue for
                 // an account needing attention, never the success cue, which
                 // for a sync that did nothing is the defect #22 reports
@@ -30808,23 +30841,65 @@ fn the_search_index_forgets_what_was_taken_off() {
     }
 }
 
-/// Spawn contacts sync on a blocking thread (MessageCache is not Send).
-fn spawn_contacts_sync(app: AppHandles<'_>) {
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
-
+/// Sync the module showing, for the account the window has open: the one
+/// place that decides which sync a module's is, reached by the sidebar's Sync
+/// Now and by `F5` (D-11).
+fn sync_the_module(app: AppHandles<'_>, module: PimModule) {
     let AppHandles { state, tx, rt } = app;
+    match module {
+        // Steps: shown, and spoken only under Say every step (#38). The
+        // sync's own finish is what is said by default.
+        PimModule::Contacts => {
+            send_progress(tx, rt, "Syncing contacts...");
+            spawn_contacts_sync(app, the_active_account(state));
+        }
+        PimModule::Calendar => {
+            send_progress(tx, rt, "Syncing the calendar...");
+            spawn_calendar_sync(tx, rt, the_active_account(state));
+        }
+        PimModule::Tasks => {
+            send_progress(tx, rt, "Syncing tasks...");
+            spawn_tasks_sync(app, the_active_account(state));
+        }
+        PimModule::Notes => {
+            send_progress(tx, rt, "Syncing notes...");
+            spawn_notes_sync(app);
+        }
+        // Mail has its own Check Mail, and a reminder is a property of
+        // something else everywhere this program can reach, so neither is
+        // offered this.
+        PimModule::Mail | PimModule::Reminders => {
+            send_status(tx, rt, "This module does not sync anywhere yet.");
+        }
+    }
+}
+
+/// The account the window has open, as the syncs are handed it.
+pub(crate) fn the_active_account(state: &Arc<StdMutex<WxUIState>>) -> Option<Account> {
+    let s = lock_state(state);
+    let active = s.active_account_id.as_deref()?;
+    s.accounts
+        .iter()
+        .find(|account| account.id == active)
+        .cloned()
+}
+
+/// Spawn contacts sync on a blocking thread (MessageCache is not Send).
+///
+/// For the account it is handed rather than the one the window has open, so
+/// an account just added is synced whichever is open (14-02).
+fn spawn_contacts_sync(app: AppHandles<'_>, account: Option<Account>) {
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
+
+    let AppHandles { tx, rt, .. } = app;
     let tx = tx.clone();
-    let accounts = state
-        .lock()
-        .ok()
-        .map(|s| s.accounts.clone())
-        .unwrap_or_default();
-    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
-        let aid = account_id.as_deref().unwrap_or("default");
-        let account = accounts.iter().find(|account| account.id == aid);
+        let account = account.as_ref();
+        let aid = account.map_or("default", |account| account.id.as_str());
         // Counted from before the store is opened until the sync ends, so an
         // undo never takes back a deletion this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -30893,13 +30968,19 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
-        // Try Microsoft contacts sync
+        // Microsoft is asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key; when it does not, the reason
+        // is carried as Google's is (14-02).
         let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
-        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(outlook_creds) = microsoft {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
                 "outlook",
@@ -30928,7 +31009,9 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
         // Nothing here has ever met a CardDAV server. This is the non-test
         // path that reaches it, which is what makes the rest of it a feature
         // rather than a library nobody uses.
-        for book in cache.get_address_books_for_account(aid).unwrap_or_default() {
+        let address_books = cache.get_address_books_for_account(aid).unwrap_or_default();
+        let has_address_books_of_its_own = !address_books.is_empty();
+        for book in address_books {
             let Some(server) =
                 crate::application::carddav_sync::AnAddressBookServer::for_the(&book)
             else {
@@ -30944,7 +31027,28 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                 Err(e) => total.errors.push(format!("{}: {}", book.name, e)),
             }
         }
+        if let Some(why) = who_holds_the_calendars::at_neither_with_nothing_of_its_own(
+            account,
+            has_address_books_of_its_own,
+        ) {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Contacts,
+                account,
+                total.what_was_asked,
+                &[
+                    ("created", total.created_local.count()),
+                    ("updated", total.updated_local.count()),
+                    ("deleted", total.deleted_local.count()),
+                    ("sent", total.updated_remote.count()),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         handle.block_on(async {
             let _ = tx
                 .send(UIUpdate::ContactsSyncComplete(Box::new(total)))
@@ -30955,32 +31059,29 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
 
 /// Bring tasks down from Google Tasks and Microsoft To Do.
 ///
-/// Both are tried, because an account can be signed in to either or both, and
-/// an account that is signed in to neither costs nothing here: no credentials
-/// means the branch is skipped.
+/// Only the account's own provider is asked: Google Tasks for an account
+/// whose mail is at Google, Microsoft To Do for one at Microsoft (14-02).
+/// Until then both were tried whenever this copy held their keys, whatever
+/// the account. An account that cannot ask its provider says why.
 ///
 /// Both directions. Changes made here are pushed before anything is pulled,
 /// and when the same task changed in both places the provider's version wins
 /// and the count of replaced changes is said out loud, because a change that
 /// disappears silently is indistinguishable from one that never saved. See the
 /// note on `application::tasks_sync`.
-fn spawn_tasks_sync(app: AppHandles<'_>) {
+fn spawn_tasks_sync(app: AppHandles<'_>, account: Option<Account>) {
     use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
 
-    let AppHandles { state, tx, rt } = app;
+    let AppHandles { tx, rt, .. } = app;
     let tx = tx.clone();
-    let accounts = state
-        .lock()
-        .ok()
-        .map(|s| s.accounts.clone())
-        .unwrap_or_default();
-    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
-        let aid = account_id.as_deref().unwrap_or("default");
-        let account = accounts.iter().find(|account| account.id == aid);
+        let account = account.as_ref();
+        let aid = account.map_or("default", |account| account.id.as_str());
         // Counted until the sync ends, so an undo never takes back a deletion
         // this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -31022,14 +31123,19 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {e}")),
         }
 
         // Its own token, carrying the tasks permission, which the shared Graph
         // token has never carried: with that one every write was refused
-        // (ledger 282).
-        if crate::service::oauth_credentials::credentials_for("outlook").is_some() {
+        // (ledger 282). Asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key (14-02).
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(_) = microsoft {
             match handle.block_on(crate::service::oauth::a_tasks_token_for(aid)) {
                 Ok(token) => {
                     match handle.block_on(sync_microsoft_tasks(&cache, &client, &token, aid)) {
@@ -31040,12 +31146,33 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
                 Err(e) => total.errors.push(format!("Microsoft sign-in: {e}")),
             }
         }
+        // No account at neither provider has tasks of its own to ask.
+        if let Some(why) =
+            who_holds_the_calendars::at_neither_with_nothing_of_its_own(account, false)
+        {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
         // The messages go to the log and the count goes on screen, because the
         // status line has one line and a failure per list would fill it.
         for problem in &total.errors {
             tracing::warn!("Task sync: {}", problem);
         }
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Tasks,
+                account,
+                total.what_was_asked,
+                &[
+                    ("lists", total.lists),
+                    ("stored", total.stored),
+                    ("deleted", total.deleted),
+                    ("sent", total.sent),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         // Through the finishing event, as the contacts and calendar syncs
         // are, so the tone and the word follow the person's row for it and
         // the counts follow the level chosen while fetching (#38). Until
@@ -31054,7 +31181,7 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         let said = format!("Tasks: {}", total.summary());
         // A sync that could not ask Google finishes as an account needing
         // attention rather than as a completed sync (#22, D-07).
-        let _ = tx.try_send(if total.what_was_asked.why_not_google.is_some() {
+        let _ = tx.try_send(if total.what_was_asked.why_not_asked.is_some() {
             UIUpdate::ModuleSyncNeedsAttention(said)
         } else {
             UIUpdate::ModuleSyncFinished(said)
@@ -31160,26 +31287,24 @@ fn spawn_notes_sync(app: AppHandles<'_>) {
 }
 
 /// Spawn calendar sync on a blocking thread (MessageCache is not Send).
+///
+/// For the account it is handed, as the contacts and tasks syncs are (14-02).
 pub(crate) fn spawn_calendar_sync(
-    state: &Arc<StdMutex<WxUIState>>,
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
+    account: Option<Account>,
 ) {
     use crate::application::calendar::CalendarSyncResult;
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
 
     let tx = tx.clone();
-    let accounts = state
-        .lock()
-        .ok()
-        .map(|s| s.accounts.clone())
-        .unwrap_or_default();
-    let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
-        let aid = account_id.as_deref().unwrap_or("default");
-        let account = accounts.iter().find(|account| account.id == aid);
+        let account = account.as_ref();
+        let aid = account.map_or("default", |account| account.id.as_str());
         // Counted until the sync ends, so an undo never takes back a deletion
         // this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -31237,13 +31362,19 @@ pub(crate) fn spawn_calendar_sync(
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
-        // Try Microsoft calendar sync
+        // Microsoft is asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key; when it does not, the reason
+        // is carried as Google's is (14-02).
         let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
-        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(outlook_creds) = microsoft {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
                 "outlook",
@@ -31265,6 +31396,12 @@ pub(crate) fn spawn_calendar_sync(
 
         // CalDAV calendar sync
         let calendars = cache.get_calendars_for_account(aid).unwrap_or_default();
+        let has_calendars_of_its_own = calendars.iter().any(|c| {
+            c.source_provider.as_deref().is_some_and(|source| {
+                source == crate::application::calendar_source::ON_A_SERVER
+                    || source == crate::application::calendar_source::FROM_A_FEED
+            })
+        });
         let caldav_client = crate::service::caldav::CalDavClient::for_account(aid);
         for cal in calendars.iter().filter(|c| {
             c.source_provider.as_deref() == Some(crate::application::calendar_source::ON_A_SERVER)
@@ -31331,7 +31468,28 @@ pub(crate) fn spawn_calendar_sync(
                 e
             )),
         }
+        if let Some(why) = who_holds_the_calendars::at_neither_with_nothing_of_its_own(
+            account,
+            has_calendars_of_its_own,
+        ) {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,
+                account,
+                total.what_was_asked,
+                &[
+                    ("created", total.created),
+                    ("updated", total.updated),
+                    ("deleted", total.deleted),
+                    ("sent", total.sent),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         handle.block_on(async {
             let _ = tx
                 .send(UIUpdate::CalendarSyncComplete(Box::new(total)))
