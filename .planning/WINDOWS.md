@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 692
+open_count: 693
 waived_count: 0
-fixed_count: 114
-total_count: 806
-last_updated: 2026-10-04T12:00:00.000Z
+fixed_count: 116
+total_count: 809
+last_updated: 2026-10-05T18:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -821,6 +821,9 @@ last_updated: 2026-10-04T12:00:00.000Z
 | 804 | 13.1 | unrun-verify | src/application/emptying.rs | 252 | 13.1-03, for the tester: Empty Folder on the Trash every POP account shares, its question heard under NVDA with the new ending, "They will be taken off this computer for good, and Wixen Mail keeps no other copy." No NVDA case waits for this question, so the pull request's NVDA run does not hear it; held only by application::emptying's tests. Closed when it has been heard on a build holding cd22f70c | open |  | 2026-10-04T02:20:00.000Z |  |
 | 805 | 13.1 | unrun-verify | src/application/import_tree.rs |  | 13.1-04, for the tester: import, with File, Import a Folder of Messages, a folder holding a few messages saved from Outlook including an encrypted one, an old Word or Excel document, and a message already imported once, then listen to the closing sentence: whether it says the encrypted message arrived encrypted, counts the document as a file that was not mail with no empty folder left under Imported, and says the message already there in its folder's words. Held today by the sentence cases in application::importing_messages and application::import_tree and by importing_messages::end_to_end's folder cases over files the tests build. Nothing here touches a server, so nothing goes to phase 14. Closed when it has been heard on a build holding c6481c7c | open |  | 2026-10-04T05:36:30.000Z |  |
 | 806 | 13.1 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13.1-04, for Pratik if he has one: save an encrypted message from his own Outlook as a .msg file and import it, to check D-17's reading against a real file: that Outlook gives it the class IPM.Note.SMIME, that it arrives with its encrypted part as an attached file, and that the closing sentence counts it as arrived encrypted. A signed message saved the same way is worth trying too, since a message signed in the opaque form may carry the same class and would then be counted as encrypted. Nothing here touches a server. Closed when a real encrypted .msg has been through the import, or when Pratik says he has none to save | open |  | 2026-10-04T05:36:30.000Z |  |
+| 807 | 14 | deviation | src/presentation/wx_app.rs |  | 14-01: the calendar, contacts and tasks syncs skipped Google without a word and said 0 created (#22). Each spawn skipped its Google half inside its own if-let on credentials_for("gmail") with no line at any level, no sentence and no error, then said "Calendar sync: 0 created, 0 updated, 0 deleted" with the success cue; a Gmail account on an app password met the same silence, and an account whose mail is not at Google asked Google whenever a key was present. Fixed in 14-01's 73ecc2a5 (calendar) and e029a185 (contacts and tasks): application::who_holds_the_calendars answers whether an account may ask Google and why not, each sync says the reason alone or after the counts with the cue for an account needing attention at any level, and writes the module and the reason's word at info | fixed |  | 2026-10-05T18:00:00.000Z | 2026-10-05T18:00:00.000Z |
+| 808 | 14 | deviation | src/presentation/wx_app.rs |  | 14-01: spawn_calendar_sync added a pass's held_for_you_to_choose twice in its Google and Microsoft arms, so one calendar item held for a choice was said as two; the calendar server's arm added it once. Found by research 2 on 2026-10-04. Fixed in 14-01's 73ecc2a5: every pass folds through CalendarSyncResult::absorb, held by test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded and test_folding_two_calendar_passes_keeps_every_count | fixed |  | 2026-10-05T18:00:00.000Z | 2026-10-05T18:00:00.000Z |
+| 809 | 14 | unrun-verify | src/application/who_holds_the_calendars.rs |  | 14-01, for the tester in phase 14's sitting 1 (14-09): Sync Calendar, Sync Contacts and Sync Tasks on his Gmail account under NVDA, each heard saying its reason once, with the cue for an account needing attention and not the one for a finished sync, and the log of the day holding one "Google was not asked for" line per press. No NVDA case presses a Sync command, so the pull request's NVDA run does not hear these sentences; held today by application::who_holds_the_calendars's cases and the readings in tests/the_log_carries_what_a_report_needs.rs. Closed when heard on a build holding e029a185 | open |  | 2026-10-05T18:00:00.000Z |  |
 
 ````json
 [
@@ -10494,6 +10497,42 @@ last_updated: 2026-10-04T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-04T05:36:30.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 807,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-01: the calendar, contacts and tasks syncs skipped Google without a word and said 0 created (#22). Each spawn skipped its Google half inside its own if-let on credentials_for(\"gmail\") with no line at any level, no sentence and no error, then said \"Calendar sync: 0 created, 0 updated, 0 deleted\" with the success cue; a Gmail account on an app password met the same silence, and an account whose mail is not at Google asked Google whenever a key was present. Fixed in 14-01's 73ecc2a5 (calendar) and e029a185 (contacts and tasks): application::who_holds_the_calendars answers whether an account may ask Google and why not, each sync says the reason alone or after the counts with the cue for an account needing attention at any level, and writes the module and the reason's word at info",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
+    "resolved_at": "2026-10-05T18:00:00.000Z"
+  },
+  {
+    "id": 808,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-01: spawn_calendar_sync added a pass's held_for_you_to_choose twice in its Google and Microsoft arms, so one calendar item held for a choice was said as two; the calendar server's arm added it once. Found by research 2 on 2026-10-04. Fixed in 14-01's 73ecc2a5: every pass folds through CalendarSyncResult::absorb, held by test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded and test_folding_two_calendar_passes_keeps_every_count",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
+    "resolved_at": "2026-10-05T18:00:00.000Z"
+  },
+  {
+    "id": 809,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/application/who_holds_the_calendars.rs",
+    "line": null,
+    "description": "14-01, for the tester in phase 14's sitting 1 (14-09): Sync Calendar, Sync Contacts and Sync Tasks on his Gmail account under NVDA, each heard saying its reason once, with the cue for an account needing attention and not the one for a finished sync, and the log of the day holding one \"Google was not asked for\" line per press. No NVDA case presses a Sync command, so the pull request's NVDA run does not hear these sentences; held today by application::who_holds_the_calendars's cases and the readings in tests/the_log_carries_what_a_report_needs.rs. Closed when heard on a build holding e029a185",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
     "resolved_at": null
   }
 ]
