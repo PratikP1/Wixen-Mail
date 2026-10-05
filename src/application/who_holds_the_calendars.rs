@@ -15,6 +15,9 @@
 //! password, and a browser sign-in that is missing or has run out, which is
 //! only learned by asking for a token.
 //!
+//! Since 14-03 an account on an app password is asked with a browser sign-in
+//! of its own for these three alone (route B), which the reasons name.
+//!
 //! Since 14-02 the same is answered for Microsoft, which every sync asked
 //! whenever this copy held a Microsoft key, whatever the account; and an
 //! account at neither provider, with no calendar server, feed or address book
@@ -26,6 +29,7 @@ use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::types::PimModule;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
+use crate::service::oauth;
 
 /// The name Google's sign-in key and an account's Google tokens are filed
 /// under, as [`crate::application::who_runs_the_mail::WhoRunsTheMail`] names
@@ -97,11 +101,11 @@ impl WhyNothingWasAsked {
     /// The reason in a sentence about one module, for the status bar and the
     /// screen reader.
     ///
-    /// Each one names what to do, or that nothing here can be done yet: the
-    /// separate browser sign-in an app-password account needs arrives with
-    /// 14-03, and a sentence naming a control that does not exist would be
-    /// untrue until then. "Google sign-in key" is Pratik's word for what
-    /// Google's console calls a client.
+    /// Each one names what to do. An account on an app password, with no
+    /// separate browser sign-in or one that has run out, is sent to the
+    /// Account Manager's Sign In for Calendars, Contacts and Tasks, which
+    /// 14-03 built; until then the sentence said only why. "Google sign-in
+    /// key" is Pratik's word for what Google's console calls a client.
     pub fn sentence(self, module: Module) -> String {
         self.sentence_about(module.what_google_holds())
     }
@@ -125,13 +129,18 @@ impl WhyNothingWasAsked {
             ),
             WhyNothingWasAsked::SignsInWithAnAppPassword => format!(
                 "Nothing was asked of Google for this account's {holds}. The account signs in \
-                 with an app password, and Google gives {holds} only to a browser sign-in."
+                 to mail with an app password, and Google gives {holds} only to a browser \
+                 sign-in. {THE_WAY_TO_THE_SEPARATE_SIGN_IN}"
             ),
-            WhyNothingWasAsked::TheBrowserSignInRanOut
-            | WhyNothingWasAsked::TheSeparateSignInRanOut => format!(
+            WhyNothingWasAsked::TheBrowserSignInRanOut => format!(
                 "Nothing was asked of Google for this account's {holds}, because its browser \
                  sign-in is missing or has run out. Open the Account Manager with Ctrl+Shift+A \
                  and choose Sign In Again."
+            ),
+            WhyNothingWasAsked::TheSeparateSignInRanOut => format!(
+                "Nothing was asked of Google for this account's {holds}, because the browser \
+                 sign-in it keeps for them has run out or no longer works. \
+                 {THE_WAY_TO_THE_SEPARATE_SIGN_IN}"
             ),
             WhyNothingWasAsked::NoMicrosoftSignInKey => format!(
                 "Nothing was asked of Microsoft for this account's {holds}, because this copy of \
@@ -143,10 +152,26 @@ impl WhyNothingWasAsked {
             ),
         }
     }
+
+    /// The sign-in that has run out when a token is refused: the mail's own
+    /// for an account whose mail signs in through the browser, the separate
+    /// one for an account on an app password. Each is made again by a
+    /// different control.
+    fn the_sign_in_that_ran_out(account: &Account) -> Self {
+        match account.use_oauth {
+            true => WhyNothingWasAsked::TheBrowserSignInRanOut,
+            false => WhyNothingWasAsked::TheSeparateSignInRanOut,
+        }
+    }
 }
 
 /// What a provider holds for all three modules, as a person says it.
 const EVERY_MODULE_HOLDS: &str = "calendars, contacts and tasks";
+
+/// Where the separate browser sign-in for calendars, contacts and tasks is
+/// made, as the reasons that need it say it.
+const THE_WAY_TO_THE_SEPARATE_SIGN_IN: &str = "Open the Account Manager with Ctrl+Shift+A, \
+     choose the account and press Sign In for Calendars, Contacts and Tasks.";
 
 /// Whether Google may be asked for this account's calendars, contacts and
 /// tasks, carrying the key when it may.
@@ -166,13 +191,14 @@ pub fn may_google_be_asked<Key>(
     key: Option<Key>,
     holds_the_separate_sign_in: bool,
 ) -> MayGoogleBeAsked<Key> {
-    let _ = holds_the_separate_sign_in;
     if WhoRunsTheMail::of(account) != WhoRunsTheMail::Gmail {
         return MayGoogleBeAsked::NotGooglesToAsk;
     }
     match key {
         None => MayGoogleBeAsked::No(WhyNothingWasAsked::NoGoogleSignInKey),
-        Some(_) if !account.use_oauth => {
+        // Mail on an app password and no separate browser sign-in made yet
+        // for the calendars, contacts and tasks (route B).
+        Some(_) if !account.use_oauth && !holds_the_separate_sign_in => {
             MayGoogleBeAsked::No(WhyNothingWasAsked::SignsInWithAnAppPassword)
         }
         Some(key) => MayGoogleBeAsked::Yes(key),
@@ -378,6 +404,10 @@ async fn asked_of_google(account: Option<&Account>) -> Result<GooglesAnswer> {
 
 /// The token, or why there is none, with the key this copy holds passed in,
 /// so the decision is read without the machine's `oauth.toml`.
+///
+/// The token comes from the sign-in [`oauth::the_google_sign_in_for`] names:
+/// the mail sign-in for an account whose mail signs in through the browser,
+/// the separate one for an account on an app password (route B).
 pub async fn a_google_token_with(
     account: Option<&Account>,
     key: Option<crate::service::oauth_credentials::ClientCredentials>,
@@ -387,24 +417,22 @@ pub async fn a_google_token_with(
             WhyNothingWasAsked::NoAccountIsOpen,
         ));
     };
-    let key = match may_google_be_asked(account, key, false) {
+    let holds_the_separate_sign_in = !account.use_oauth
+        && oauth::a_sign_in_is_held(oauth::GOOGLE_CALENDARS_CONTACTS_AND_TASKS, &account.id);
+    let key = match may_google_be_asked(account, key, holds_the_separate_sign_in) {
         MayGoogleBeAsked::Yes(key) => key,
         MayGoogleBeAsked::NotGooglesToAsk => return Ok(GooglesAnswer::NotGooglesToAsk),
         MayGoogleBeAsked::No(why) => return Ok(GooglesAnswer::NothingAsked(why)),
     };
-    let sign_in = crate::service::oauth::AuthManager::new(
-        &account.id,
-        GOOGLE,
-        &key.client_id,
-        key.client_secret.as_deref(),
-    );
-    match sign_in.get_valid_token().await {
+    let sign_in = oauth::the_google_sign_in_for(account.use_oauth);
+    match oauth::a_google_token_from(&account.id, sign_in, &key).await {
         Ok(token) => Ok(GooglesAnswer::Token(token)),
         // No token stored, none that can be read, or a refresh Google
-        // refused: each is answered by signing in again. The network failing
-        // is not, and stays the sync's error to count.
+        // refused: each is answered by signing in again, with whichever
+        // control makes that sign-in. The network failing is not, and stays
+        // the sync's error to count.
         Err(Error::Authentication(_)) => Ok(GooglesAnswer::NothingAsked(
-            WhyNothingWasAsked::TheBrowserSignInRanOut,
+            WhyNothingWasAsked::the_sign_in_that_ran_out(account),
         )),
         Err(other) => Err(other),
     }

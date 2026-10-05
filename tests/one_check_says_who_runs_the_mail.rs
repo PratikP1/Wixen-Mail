@@ -141,6 +141,14 @@ const THE_CALLERS: &[Caller] = &[
         signature: Some("pub fn may_google_be_asked<"),
         names: "WhoRunsTheMail::of(",
     },
+    // And the one Google token answer, which chooses between an account's
+    // mail sign-in and its separate one for calendars, contacts and tasks
+    // (14-03, route B), asks that answer before either.
+    Caller {
+        file: "src/application/who_holds_the_calendars.rs",
+        signature: Some("pub async fn a_google_token_with("),
+        names: "may_google_be_asked(",
+    },
 ];
 
 /// A way of deciding for oneself, as it reads with every space removed, and

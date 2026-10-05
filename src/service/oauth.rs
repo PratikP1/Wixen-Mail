@@ -69,6 +69,18 @@ struct TokenErrorResponse {
 /// [`keyring_service`], so nothing about the mail sign-in changes.
 pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "google-calendars-contacts-tasks";
 
+/// Google's sign-in page, where both of an account's Google sign-ins begin.
+const GOOGLES_SIGN_IN_PAGE: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
+/// Where both of an account's Google sign-ins are exchanged and renewed.
+const GOOGLES_TOKEN_ADDRESS: &str = "https://oauth2.googleapis.com/token";
+
+/// Google's contacts, calendar and tasks permissions, which both of its
+/// sign-ins ask for.
+const GOOGLES_CONTACTS: &str = "https://www.googleapis.com/auth/contacts";
+const GOOGLES_CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
+const GOOGLES_TASKS: &str = "https://www.googleapis.com/auth/tasks";
+
 pub struct OAuthService;
 
 impl OAuthService {
@@ -77,12 +89,12 @@ impl OAuthService {
         vec![
             OAuthProvider {
                 name: "gmail".to_string(),
-                auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
-                token_url: "https://oauth2.googleapis.com/token".to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
                     "https://mail.google.com/".to_string(),
-                    "https://www.googleapis.com/auth/contacts".to_string(),
-                    "https://www.googleapis.com/auth/calendar".to_string(),
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
                     // Read and write, because the sync now does both:
                     // ticking a task off here reaches the phone. It was
                     // read-only while the sync only read, on the rule that
@@ -91,7 +103,21 @@ impl OAuthService {
                     //
                     // Widening a scope means new consent, so everybody signs in
                     // again once.
-                    "https://www.googleapis.com/auth/tasks".to_string(),
+                    GOOGLES_TASKS.to_string(),
+                ],
+            },
+            // The separate sign-in of an account whose mail keeps its app
+            // password: the same three as above and never mail, which the
+            // app password already does, on the same rule about asking for
+            // nothing that is not used.
+            OAuthProvider {
+                name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
+                default_scopes: vec![
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
+                    GOOGLES_TASKS.to_string(),
                 ],
             },
             OAuthProvider {
@@ -203,8 +229,9 @@ impl OAuthService {
             auth_request = auth_request.add_scope(Scope::new(scope.clone()));
         }
 
-        // Gmail requires access_type=offline for refresh tokens
-        if provider.eq_ignore_ascii_case("gmail") {
+        // Google hands back a refresh token only when asked for one, so both of
+        // its sign-ins ask, or each stops working an hour after it is made.
+        if p.auth_url == GOOGLES_SIGN_IN_PAGE {
             auth_request = auth_request.add_extra_param("access_type", "offline");
             auth_request = auth_request.add_extra_param("prompt", "consent");
         }
@@ -1030,8 +1057,10 @@ pub async fn a_tasks_token_for(account_id: &str) -> Result<String> {
 /// one already carries all four permissions (D-14), and the separate one
 /// when mail signs in with an app password.
 pub fn the_google_sign_in_for(signs_in_to_mail_through_a_browser: bool) -> &'static str {
-    let _ = signs_in_to_mail_through_a_browser;
-    "gmail"
+    match signs_in_to_mail_through_a_browser {
+        true => "gmail",
+        false => GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+    }
 }
 
 /// Whether the credential store holds anything for this sign-in and account.
@@ -1072,17 +1101,15 @@ pub async fn a_google_token_from(
 /// refresh that had to happen did not work. The token carries the calendar
 /// permission every Google sign-in here already asks for, which is enough to
 /// ask when people are free.
-pub async fn a_google_token_for(account_id: &str) -> Option<String> {
-    let held = crate::service::oauth_credentials::credentials_for("gmail")?;
-    AuthManager::new(
-        account_id,
-        "gmail",
-        &held.client_id,
-        held.client_secret.as_deref(),
-    )
-    .get_valid_token()
-    .await
-    .ok()
+///
+/// From the sign-in the account's calendars use, the one the syncs read
+/// through [`the_google_sign_in_for`], so an account whose mail keeps its app
+/// password asks with its separate sign-in here too.
+pub async fn a_google_token_for(account: &crate::data::account::Account) -> Option<String> {
+    let key = crate::service::oauth_credentials::credentials_for("gmail")?;
+    a_google_token_from(&account.id, the_google_sign_in_for(account.use_oauth), &key)
+        .await
+        .ok()
 }
 
 /// This account's Microsoft sign-in, when this build can sign in to Microsoft.
