@@ -23789,6 +23789,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     days_that_may_be_shown_twice: *days_that_may_be_shown_twice,
                     held_for_you_to_choose: *held_for_you_to_choose,
                     changes_that_cannot_be_saved: changes_that_cannot_be_saved.clone(),
+                    what_was_asked: Default::default(),
                     errors: errors.clone(),
                 },
             );

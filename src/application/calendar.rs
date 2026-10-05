@@ -96,7 +96,7 @@ const CALDAV: &str = "caldav";
 const PROVIDERS_A_CHANGE_CAN_REACH: [&str; 3] = [GOOGLE, MICROSOFT, CALDAV];
 
 /// Result of a calendar sync operation.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CalendarSyncResult {
     pub created: usize,
     pub updated: usize,
@@ -139,10 +139,33 @@ pub struct CalendarSyncResult {
     /// the server's copy was dropped with nothing said. Both copies are kept
     /// now. `application::calendar_conflict` raises them.
     pub held_for_you_to_choose: usize,
+    /// Whether any pass asked anybody, and why Google was not asked (#22), so
+    /// a sync that asked nobody says why instead of "0 created".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
     pub errors: Vec<String>,
 }
 
 impl CalendarSyncResult {
+    /// Fold one pass's result into the running total.
+    ///
+    /// One method rather than the additions the window wrote out by hand for
+    /// each of four passes, which counted an item held for a choice twice for
+    /// Google and for Microsoft, and would drop any count added later.
+    pub fn absorb(&mut self, pass: CalendarSyncResult) {
+        self.created += pass.created;
+        self.updated += pass.updated;
+        self.deleted += pass.deleted;
+        self.sent += pass.sent;
+        self.waiting_on_the_setting += pass.waiting_on_the_setting;
+        self.days_that_may_be_shown_twice += pass.days_that_may_be_shown_twice;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.changes_that_cannot_be_saved
+            .extend(pass.changes_that_cannot_be_saved);
+        self.what_was_asked = self.what_was_asked.with_a_pass(pass.what_was_asked);
+        self.errors.extend(pass.errors);
+    }
+
     /// Count a provider's copy of a meeting by where it went. A copy put on
     /// the row an answer filed first is an update, because the calendar
     /// already held the meeting.
@@ -11259,6 +11282,7 @@ mod tests {
                  is a calendar this program can only read."
                     .to_string(),
             ],
+            what_was_asked: Default::default(),
             errors: vec!["the server said no".to_string()],
         });
 
