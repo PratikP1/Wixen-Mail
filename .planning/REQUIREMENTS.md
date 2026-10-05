@@ -7200,7 +7200,10 @@ changed.
 Added 2026-09-20 for phase 14, the seventh of the seven groups Pratik agreed on 2026-09-16,
 the ones that need his account. Written as requirements only; no plan exists, for the same
 reason as phase 13 and because the steps a tester follows are written against the build that
-carries phase 12. Sending is proven; the rest is not.
+carries phase 12. Sending is proven; the rest is not. Planned 2026-10-05 against `01ef4589`,
+thirteen plans on Pratik's answers of that day to the twelve questions of the phase's
+proposal, listed with his answers in `phases/14-the-real-account-proofs/README.md`; until
+then the second sentence of this paragraph was true.
 
 - [ ] **REAL-01**: Adding a Gmail account brings its calendars, contacts and tasks, and
   Refresh in each module brings what the account has.
@@ -7216,6 +7219,21 @@ carries phase 12. Sending is proven; the rest is not.
     request the sync makes and what Google answers traced against the loopback servers and
     then his account; the sync run on account creation as well as on Refresh.
   - [S] What Google answers his account is his account's.
+  - Plans, 2026-10-05, phase 14 on Pratik's answers of that day: 14-01 has the three syncs
+    say why nothing was asked of Google instead of "0 created" and write the reason to the
+    log; 14-02 writes a line per request and per finished sync, against the loopback servers
+    first, keeps each account to its own provider, runs the three syncs once when an account
+    is added and makes F5 in a module sync it, earning the `[D]` clause's "traced against the
+    loopback servers" and "the sync run on account creation as well as on Refresh" in the
+    tree; 14-03 adds a separate browser sign-in for a Gmail account's calendars, contacts and
+    tasks with mail kept on its app password (answer 2) and Help's page for making the testing
+    key he makes himself (answer 1); 14-04 brings every Google calendar (answer 3); 14-06 the
+    reader his profile is read with; 14-08 the build. 14-09 reads the profile's log and the
+    sync against his account in sitting 1, and 14-12 adds a second Google account in sitting
+    4 for the creation half; 14-13's closing read ticks the box only if every line is proven.
+    The `[D]` clause's opening, the profile's log read first, has nothing to read on today's
+    build, which writes no line for a request, an answer or a skipped provider, so it is read
+    after 14-01 and 14-02 write them. No `[D]` clause is added and the box stays open.
 
 - [ ] **REAL-02**: The five write paths, copy within an account, copy across two, move within
   an account, move across two, and delete, are each proved against a real account and
@@ -7237,7 +7255,23 @@ carries phase 12. Sending is proven; the rest is not.
   - 13-44.8 on 2026-10-02: the delete line also owes the Trash emptied at a real server and
     a POP message taken off this computer and not downloaded again, ledgers 771, 784 and
     787, each written "for phase 14 under REAL-02's delete line"; named here because phase
-    14 has no plan or README on disk to carry them yet.
+    14 has no plan or README on disk to carry them yet. Since 2026-10-05 14-12 carries all
+    three, in sitting 4, on the non-Gmail IMAP account and the POP account Pratik adds.
+  - Plans, 2026-10-05, phase 14 on Pratik's answers of that day: 14-05 has each replayed
+    move, copy and delete name its row and where the server holds it, each crossing write its
+    steps, and each sign-in and send say how it signed in; 14-06 the tested proof reader;
+    14-07 corrects the sentences that say sending never ran, says what Gmail did to the
+    download of everything, closes ledger 148 and corrects #63's comment to the app password
+    (answers 4 and 8); 14-08 the build and a steps page per sitting; 14-09 records the two
+    deletes waiting since 2026-09-20 as evidence (answer 5); 14-10 copy and move within Gmail,
+    14-11 delete within Gmail and 14-12 copy and move across two accounts, ledger 187's three
+    questions and 547's, the Trash at a server and POP, each taken online, with the network
+    off and after a restart and recorded on #63 on his word (answer 9); 14-13 moves the
+    warning sentences per proven path on his word. On answer 7 the safety switch is not split
+    and its starting position does not move in this phase, so the `[D]` clause's
+    "`application::allowed`'s default moved per proven path" is not earned by phase 14, and
+    14-13 writes the split as a `todo` with its cost. No `[D]` clause is added and the box
+    stays open.
 
 ## v2 Requirements
 
@@ -7389,8 +7423,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43, 13-44 and 13-44.3 (done 2026-10-01, a rule's marks, flags and labels on arriving mail sent to the mail server in the check and a rule's Delete to the Trash there, ledger 678 closed): a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Planned 2026-09-29: 13-44.3 sends a rule's marks, flags and labels on arriving mail to the mail server in the check (ledger 678), and a rule's Delete to the Trash there through the menu's delete path; no `[D]` clause is added. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
 | GAP-13 | Phase 13 | Done 2026-10-03, 13-45 to 13-50: the bare mailbox file and the loose message files on the File menu (13-45, 13-46), `.msg` read through both imports (13-47, 13-48), `.pst` export said plainly to be out and on no menu (13-49), and imported messages keeping their files, with a file over 25 MB listed, counted and said (13-50, ledger 800), held by the round trips in `application::exporting_mail`, the reader's and the routing's cases, the kept-files cases in `application::importing_messages::end_to_end` and `tests/mail_goes_out_in_every_shape.rs`; ticked by 13-49, #53 closed from its merge; 13-50 added no `[D]` clause. Nobody has opened an export in another mail program (ledgers 502, 789, 792), no real `.pst` or Pratik's own `.msg` has been through an import (ledgers 499, 795), whether Outlook takes dragged message files is ledger 799, and no real mailbox file with attachments has been imported and a file opened from it (ledger 801). Until 13-50 "Done 2026-10-03, 13-45 to 13-49: the bare mailbox file and the loose message files on the File menu (13-45, 13-46), `.msg` read through both imports (13-47, 13-48), and `.pst` export said plainly to be out and on no menu (13-49), held by the round trips in `application::exporting_mail`, the reader's and the routing's cases and `tests/mail_goes_out_in_every_shape.rs`; ticked by 13-49, #53 closed from its merge; 13-50 to come, adding no `[D]` clause. Nobody has opened an export in another mail program (ledgers 502, 789, 792), no real `.pst` or Pratik's own `.msg` has been through an import (ledgers 499, 795), and whether Outlook takes dragged message files is ledger 799". Until 13-49 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, the loose message files in 13-46, File, Export Folder as Message Files, the `.msg` reader in 13-47, and `.msg` reading reachable from both imports in 13-48; 13-49 and 13-50 to come, 13-49 ticks it". Until 13-48 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, the loose message files in 13-46, File, Export Folder as Message Files, and the `.msg` reader in 13-47, wired by 13-48; 13-48 to 13-50 to come, 13-49 ticks it". Until 13-47 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, and the loose message files in 13-46, File, Export Folder as Message Files; 13-47 to 13-50 to come, 13-49 ticks it". Until 13-46 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File; 13-46 to 13-50 to come, 13-49 ticks it". Until 13-45 "Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20"". Closing read 2026-10-03, 13-51: stands; the conditional 13-50 ran. Phase 13.1, planned 2026-10-03: 13.1-04 for ledgers 794, 797 and 798, adding no `[D]` clause. 13.1-04 on 2026-10-04: an encrypted saved message counted and said, an archive's folder made at its first filed message, and the folder import's three counts said in the single-file import's words; ledgers 794, 797 and 798 closed, 805 and 806 opened. Closing read 2026-10-04, 13.1-05: stands; the ear is listening item 183 |
 | GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787), apart from copies earlier changes left in unused space, which 13-44.9 measured on 2026-10-03 at 9 messages in 1,000 at 200,000 and put to Pratik with the cost of reaching them (ledger 788). Until 13-44.9 it read "Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787)." Until 13-44.8 the row read "Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784)." Until 13-44.7 it read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending". Closing read 2026-10-03, 13-51: stands; ledger 788 was Pratik's choice until 2026-10-03. He chose that day, "yes to all.": secure delete on every connection and no compacting command, which is 13.1-03's with ledger 786, adding no `[D]` clause. 13.1-03 on 2026-10-03: secure delete on in `MessageCache::new`, the measurement taken again (on left 1 of 1,000 at 200,000), the privacy page reworded, Empty Folder's "and Wixen Mail keeps no other copy"; ledgers 788 and 786 closed, 804 opened. Closing read 2026-10-04, 13.1-05: stands; the ear is listening item 182 |
-| REAL-01 | Phase 14 | Not planned, 2026-09-20; needs Pratik's account |
-| REAL-02 | Phase 14 | Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's |
+| REAL-01 | Phase 14 | Planned 2026-10-05 against `01ef4589`: 14-01 to 14-04 the code, 14-06 the reader, 14-08 the build, 14-09 and 14-12 the sittings that read it against his account, 14-13 the closing read; nothing executed. Until then "Not planned, 2026-09-20; needs Pratik's account" |
+| REAL-02 | Phase 14 | Planned 2026-10-05 against `01ef4589`: 14-05 the log lines, 14-06 the reader, 14-07 the true words and #63 set right, 14-08 the build, 14-09 to 14-12 the sittings, 14-13 the warnings per path and the closing read; the switch's starting position stays (answer 7); nothing executed. Until then "Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's" |
 
 **Coverage:**
 
