@@ -1577,7 +1577,11 @@ pub fn manage_calendar(
                 // Really started, rather than announced. It said a sync had
                 // been asked for and nothing else happened, which is the one
                 // thing worse than saying nothing.
-                crate::presentation::wx_app::spawn_calendar_sync(state, tx, rt);
+                crate::presentation::wx_app::spawn_calendar_sync(
+                    tx,
+                    rt,
+                    crate::presentation::wx_app::the_active_account(state),
+                );
                 done.push("A calendar sync has started.".to_string());
             }
             wx_calendar::CalendarAction::CreateEvent(data) => {

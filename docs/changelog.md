@@ -1360,6 +1360,53 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Adding an account brings its calendars, contacts and tasks, and F5 syncs the module you
+  are in (REAL-01, #22).** Until this build nothing ran when you added an account, and `F5`
+  with Contacts, Calendar, Tasks or Notes showing read whatever mail folder the folder tree
+  still had selected and said "Refreshed" with that folder's name. Now adding an account in
+  the Account Manager runs its calendar, contacts and tasks syncs once, and each says one
+  sentence when it finishes; an account whose calendars, contacts and tasks cannot be asked
+  for, such as a Gmail account on an app password, hears the reason once rather than three
+  times. `F5` in Contacts, Calendar, Tasks or Notes does what Sync Now does there, and in Mail
+  it reads the open folder as before.
+- **Each sync asks only the account's own provider.** Until this build every sync asked
+  Microsoft whenever this copy of Wixen Mail held a Microsoft sign-in key, whatever the
+  account, so a Gmail account on such a copy reported "Microsoft auth" as an error on every
+  sync. Now Google is asked only for a Gmail account and Microsoft only for an Outlook.com or
+  Microsoft 365 account. A Microsoft account on a copy with no Microsoft sign-in key says so,
+  and an account at neither, with no calendar server, feed or address book of its own, says
+  there is nothing there to bring rather than "0 created".
+- **The log says what each calendar, contacts and tasks sync asked and what came back.**
+  Every request to Google, Google Tasks and Microsoft To Do now writes one line at Info:
+  who was asked, the method, the address without its query and with any address-like part
+  masked, and the status or that no answer came, with Google's one-word reason when it
+  refused. A request sent again after a failure writes a line each time, three retries at
+  most. Each finished sync writes one line with the module, where the account's mail is,
+  whether its provider answered or why it was not asked, and the counts. No line carries a
+  sign-in token, a sync marker or anything from a message. A request that reached nobody no
+  longer puts its whole address, sync marker included, into the warning the retry writes.
+  Known limitations: none of this has met a real Google or Microsoft account; it is proven
+  against stand-in servers on this computer, and nobody has heard the sentences said on
+  adding an account or on `F5` with a screen reader.
+- **Sync Calendar, Sync Contacts and Sync Tasks say why nothing came from Google (#22).**
+  Until this build each of them passed over Google without a word when it could not ask,
+  then said "Calendar sync: 0 created, 0 updated, 0 deleted" with the sound for a finished
+  sync, which sounds like a sync that found nothing. Now each says why in one sentence, with
+  the sound for an account needing attention: this copy of Wixen Mail has no Google sign-in
+  key (see Setting up a provider in Help); the account signs in with an app password, and
+  Google gives calendars, contacts and tasks only to a browser sign-in; or the account's
+  browser sign-in is missing or has run out (open the Account Manager with `Ctrl+Shift+A` and
+  choose Sign In Again). The sentence is said whatever you chose for how much is said while
+  mail is fetched, because it answers the command you gave. When a calendar server, a
+  calendar feed, an address book or Microsoft was asked as well, what it brought is said
+  first and the sentence follows. The log gets one line naming the module and the reason as
+  a word, never an address or a key. An account whose mail is not at Google no longer asks
+  Google for anything, whatever sign-in keys this copy holds, and a calendar item held for
+  you to choose between two copies is counted once rather than twice. The version does not
+  move: no build has been cut since 1.0.0-alpha.1. Known limitations: nothing here has met a
+  real Google account; an account on an app password has no way yet to sign in to Google for
+  its calendars, contacts and tasks, so its sentence names no button (a later change in this
+  phase adds one); and nobody has heard these sentences with a screen reader.
 - **Imported messages keep their files (GAP-13).** Until this build a message imported from
   a saved message, a mailbox file, a zip or a folder arrived with its words and a mark saying
   it had files, and without the files: opening one asked a mail server that had never held

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 692
+open_count: 696
 waived_count: 0
-fixed_count: 114
-total_count: 806
-last_updated: 2026-10-04T12:00:00.000Z
+fixed_count: 120
+total_count: 816
+last_updated: 2026-10-05T23:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -821,6 +821,16 @@ last_updated: 2026-10-04T12:00:00.000Z
 | 804 | 13.1 | unrun-verify | src/application/emptying.rs | 252 | 13.1-03, for the tester: Empty Folder on the Trash every POP account shares, its question heard under NVDA with the new ending, "They will be taken off this computer for good, and Wixen Mail keeps no other copy." No NVDA case waits for this question, so the pull request's NVDA run does not hear it; held only by application::emptying's tests. Closed when it has been heard on a build holding cd22f70c | open |  | 2026-10-04T02:20:00.000Z |  |
 | 805 | 13.1 | unrun-verify | src/application/import_tree.rs |  | 13.1-04, for the tester: import, with File, Import a Folder of Messages, a folder holding a few messages saved from Outlook including an encrypted one, an old Word or Excel document, and a message already imported once, then listen to the closing sentence: whether it says the encrypted message arrived encrypted, counts the document as a file that was not mail with no empty folder left under Imported, and says the message already there in its folder's words. Held today by the sentence cases in application::importing_messages and application::import_tree and by importing_messages::end_to_end's folder cases over files the tests build. Nothing here touches a server, so nothing goes to phase 14. Closed when it has been heard on a build holding c6481c7c | open |  | 2026-10-04T05:36:30.000Z |  |
 | 806 | 13.1 | todo | src/service/outlook_data_file/one_saved_message.rs |  | 13.1-04, for Pratik if he has one: save an encrypted message from his own Outlook as a .msg file and import it, to check D-17's reading against a real file: that Outlook gives it the class IPM.Note.SMIME, that it arrives with its encrypted part as an attached file, and that the closing sentence counts it as arrived encrypted. A signed message saved the same way is worth trying too, since a message signed in the opaque form may carry the same class and would then be counted as encrypted. Nothing here touches a server. Closed when a real encrypted .msg has been through the import, or when Pratik says he has none to save | open |  | 2026-10-04T05:36:30.000Z |  |
+| 807 | 14 | deviation | src/presentation/wx_app.rs |  | 14-01: the calendar, contacts and tasks syncs skipped Google without a word and said 0 created (#22). Each spawn skipped its Google half inside its own if-let on credentials_for("gmail") with no line at any level, no sentence and no error, then said "Calendar sync: 0 created, 0 updated, 0 deleted" with the success cue; a Gmail account on an app password met the same silence, and an account whose mail is not at Google asked Google whenever a key was present. Fixed in 14-01's 73ecc2a5 (calendar) and e029a185 (contacts and tasks): application::who_holds_the_calendars answers whether an account may ask Google and why not, each sync says the reason alone or after the counts with the cue for an account needing attention at any level, and writes the module and the reason's word at info | fixed |  | 2026-10-05T18:00:00.000Z | 2026-10-05T18:00:00.000Z |
+| 808 | 14 | deviation | src/presentation/wx_app.rs |  | 14-01: spawn_calendar_sync added a pass's held_for_you_to_choose twice in its Google and Microsoft arms, so one calendar item held for a choice was said as two; the calendar server's arm added it once. Found by research 2 on 2026-10-04. Fixed in 14-01's 73ecc2a5: every pass folds through CalendarSyncResult::absorb, held by test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded and test_folding_two_calendar_passes_keeps_every_count | fixed |  | 2026-10-05T18:00:00.000Z | 2026-10-05T18:00:00.000Z |
+| 809 | 14 | unrun-verify | src/application/who_holds_the_calendars.rs |  | 14-01, for the tester in phase 14's sitting 1 (14-09): Sync Calendar, Sync Contacts and Sync Tasks on his Gmail account under NVDA, each heard saying its reason once, with the cue for an account needing attention and not the one for a finished sync, and the log of the day holding one "Google was not asked for" line per press. No NVDA case presses a Sync command, so the pull request's NVDA run does not hear these sentences; held today by application::who_holds_the_calendars's cases and the readings in tests/the_log_carries_what_a_report_needs.rs. Closed when heard on a build holding e029a185 | open |  | 2026-10-05T18:00:00.000Z |  |
+| 810 | 14 | deviation | src/service/google_api.rs |  | 14-02: no request a calendar, contacts or tasks sync sent, and no finished sync, wrote a line at any level, so the log of #22's Refresh could not say what was asked or what Google answered (research 2 section 1, "What the log shows and what it cannot"). Fixed in 14-02's 97c4e1d2 (Google reads) and 1c588f91 (Google writes, the tasks client, the finish lines): service::asked_and_answered builds one line per request from the method, the host and path with the query cut and any address-like segment masked, and the status or "no answer came" with Google's reason word; each sync writes one finish line from numbers and words. Held against loopback stand-ins by service::asked_and_answered's cases and by the readings in tests/the_log_carries_what_a_report_needs.rs | fixed |  | 2026-10-05T23:00:00.000Z | 2026-10-05T23:00:00.000Z |
+| 811 | 14 | deviation | src/presentation/wx_app.rs |  | 14-02: each sync asked Microsoft whenever this copy held a Microsoft sign-in key, whatever the account, so a Gmail account on a copy holding both keys reported "Microsoft auth" as an error on every sync (research 2 section 1, defect 1). Fixed in 14-02's 1c588f91: application::who_holds_the_calendars::may_microsoft_be_asked answers from who runs the account's mail, each spawn asks a_microsoft_key, a Microsoft account with no key says why, and an account at neither provider with nothing of its own says there is nothing to bring | fixed |  | 2026-10-05T23:00:00.000Z | 2026-10-05T23:00:00.000Z |
+| 812 | 14 | deviation | src/presentation/wx_app.rs |  | 14-02: nothing ran when an account was added, so REAL-01's "the sync run on account creation" had no path (#22's first reading). Fixed in 14-02's 94fe66ab: handle_account_mgr takes the window's sender, finds the accounts added in the visit and for each starts what who_holds_the_calendars::what_adding_this_account_starts answers: the three syncs, the reason once for all three modules with the attention cue, or nothing for an account at neither provider | fixed |  | 2026-10-05T23:00:00.000Z | 2026-10-05T23:00:00.000Z |
+| 813 | 14 | deviation | src/presentation/wx_app.rs |  | 14-02: F5 with Contacts, Calendar, Tasks or Notes showing read whatever mail folder the tree still had selected and said "Refreshed" with that folder's name, or refused with "no folder selected", while REAL-01 and #22's steps call F5 Refresh in those modules. Fixed in 14-02's 94fe66ab (D-11): the first F5 arm asks what_refresh_does and reaches sync_the_module, the one place Sync Now reaches too; Mail keeps the folder and the saved search | fixed |  | 2026-10-05T23:00:00.000Z | 2026-10-05T23:00:00.000Z |
+| 814 | 14 | unrun-verify | src/presentation/wx_app.rs |  | 14-02, for the tester in phase 14's sitting 1 (14-09): add an account under NVDA and hear at most one sentence per module as its first sync finishes, or the reason once for all three; and press F5 in Contacts, Calendar, Tasks and Notes and hear each module's sync, and F5 in Mail still read the folder. No NVDA case adds an account or presses F5 in a module, so the pull request's NVDA run does not hear these; held today by application::who_holds_the_calendars's cases and readings. Closed when heard on a build holding 94fe66ab | open |  | 2026-10-05T23:00:00.000Z |  |
+| 815 | 14 | todo | src/application/who_holds_the_calendars.rs |  | 14-02, for Pratik: a Gmail account added with a browser sign-in whose token has already run out starts the three syncs, and each says the run-out reason, three sentences rather than one, because that reason is learned only by asking Google for a token. The executor's recommendation is to leave it: an account just added has just signed in, so the case needs a sign-in that runs out within seconds. Closed when Pratik accepts it or asks for the token to be tried once before the syncs start | open |  | 2026-10-05T23:00:00.000Z |  |
+| 816 | 14 | todo | src/presentation/wx_app.rs |  | 14-02, for the later Microsoft phase (answer 11): a Microsoft account whose Microsoft sign-in is refused still reports "Microsoft auth" or "Microsoft sign-in" as an error, where a Google sign-in refused says the run-out reason with the attention cue. Only the key's absence became a reason here, because Microsoft is not proven in this phase. Closed when the Microsoft phase maps a refused Microsoft sign-in to a reason, or decides it stays an error | open |  | 2026-10-05T23:00:00.000Z |  |
 
 ````json
 [
@@ -10494,6 +10504,126 @@ last_updated: 2026-10-04T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-04T05:36:30.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 807,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-01: the calendar, contacts and tasks syncs skipped Google without a word and said 0 created (#22). Each spawn skipped its Google half inside its own if-let on credentials_for(\"gmail\") with no line at any level, no sentence and no error, then said \"Calendar sync: 0 created, 0 updated, 0 deleted\" with the success cue; a Gmail account on an app password met the same silence, and an account whose mail is not at Google asked Google whenever a key was present. Fixed in 14-01's 73ecc2a5 (calendar) and e029a185 (contacts and tasks): application::who_holds_the_calendars answers whether an account may ask Google and why not, each sync says the reason alone or after the counts with the cue for an account needing attention at any level, and writes the module and the reason's word at info",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
+    "resolved_at": "2026-10-05T18:00:00.000Z"
+  },
+  {
+    "id": 808,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-01: spawn_calendar_sync added a pass's held_for_you_to_choose twice in its Google and Microsoft arms, so one calendar item held for a choice was said as two; the calendar server's arm added it once. Found by research 2 on 2026-10-04. Fixed in 14-01's 73ecc2a5: every pass folds through CalendarSyncResult::absorb, held by test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded and test_folding_two_calendar_passes_keeps_every_count",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
+    "resolved_at": "2026-10-05T18:00:00.000Z"
+  },
+  {
+    "id": 809,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/application/who_holds_the_calendars.rs",
+    "line": null,
+    "description": "14-01, for the tester in phase 14's sitting 1 (14-09): Sync Calendar, Sync Contacts and Sync Tasks on his Gmail account under NVDA, each heard saying its reason once, with the cue for an account needing attention and not the one for a finished sync, and the log of the day holding one \"Google was not asked for\" line per press. No NVDA case presses a Sync command, so the pull request's NVDA run does not hear these sentences; held today by application::who_holds_the_calendars's cases and the readings in tests/the_log_carries_what_a_report_needs.rs. Closed when heard on a build holding e029a185",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 810,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/service/google_api.rs",
+    "line": null,
+    "description": "14-02: no request a calendar, contacts or tasks sync sent, and no finished sync, wrote a line at any level, so the log of #22's Refresh could not say what was asked or what Google answered (research 2 section 1, \"What the log shows and what it cannot\"). Fixed in 14-02's 97c4e1d2 (Google reads) and 1c588f91 (Google writes, the tasks client, the finish lines): service::asked_and_answered builds one line per request from the method, the host and path with the query cut and any address-like segment masked, and the status or \"no answer came\" with Google's reason word; each sync writes one finish line from numbers and words. Held against loopback stand-ins by service::asked_and_answered's cases and by the readings in tests/the_log_carries_what_a_report_needs.rs",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": "2026-10-05T23:00:00.000Z"
+  },
+  {
+    "id": 811,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-02: each sync asked Microsoft whenever this copy held a Microsoft sign-in key, whatever the account, so a Gmail account on a copy holding both keys reported \"Microsoft auth\" as an error on every sync (research 2 section 1, defect 1). Fixed in 14-02's 1c588f91: application::who_holds_the_calendars::may_microsoft_be_asked answers from who runs the account's mail, each spawn asks a_microsoft_key, a Microsoft account with no key says why, and an account at neither provider with nothing of its own says there is nothing to bring",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": "2026-10-05T23:00:00.000Z"
+  },
+  {
+    "id": 812,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-02: nothing ran when an account was added, so REAL-01's \"the sync run on account creation\" had no path (#22's first reading). Fixed in 14-02's 94fe66ab: handle_account_mgr takes the window's sender, finds the accounts added in the visit and for each starts what who_holds_the_calendars::what_adding_this_account_starts answers: the three syncs, the reason once for all three modules with the attention cue, or nothing for an account at neither provider",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": "2026-10-05T23:00:00.000Z"
+  },
+  {
+    "id": 813,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-02: F5 with Contacts, Calendar, Tasks or Notes showing read whatever mail folder the tree still had selected and said \"Refreshed\" with that folder's name, or refused with \"no folder selected\", while REAL-01 and #22's steps call F5 Refresh in those modules. Fixed in 14-02's 94fe66ab (D-11): the first F5 arm asks what_refresh_does and reaches sync_the_module, the one place Sync Now reaches too; Mail keeps the folder and the saved search",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": "2026-10-05T23:00:00.000Z"
+  },
+  {
+    "id": 814,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-02, for the tester in phase 14's sitting 1 (14-09): add an account under NVDA and hear at most one sentence per module as its first sync finishes, or the reason once for all three; and press F5 in Contacts, Calendar, Tasks and Notes and hear each module's sync, and F5 in Mail still read the folder. No NVDA case adds an account or presses F5 in a module, so the pull request's NVDA run does not hear these; held today by application::who_holds_the_calendars's cases and readings. Closed when heard on a build holding 94fe66ab",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 815,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/application/who_holds_the_calendars.rs",
+    "line": null,
+    "description": "14-02, for Pratik: a Gmail account added with a browser sign-in whose token has already run out starts the three syncs, and each says the run-out reason, three sentences rather than one, because that reason is learned only by asking Google for a token. The executor's recommendation is to leave it: an account just added has just signed in, so the case needs a sign-in that runs out within seconds. Closed when Pratik accepts it or asks for the token to be tried once before the syncs start",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 816,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-02, for the later Microsoft phase (answer 11): a Microsoft account whose Microsoft sign-in is refused still reports \"Microsoft auth\" or \"Microsoft sign-in\" as an error, where a Google sign-in refused says the run-out reason with the attention cue. Only the key's absence became a reason here, because Microsoft is not proven in this phase. Closed when the Microsoft phase maps a refused Microsoft sign-in to a reason, or decides it stays an error",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:00:00.000Z",
     "resolved_at": null
   }
 ]
