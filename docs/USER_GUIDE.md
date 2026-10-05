@@ -253,7 +253,13 @@ The Tools menu also opens:
   waiting for the next automatic sync", and there is none; the three
   modules sync when you ask, from here or from each module's own Sync, and
   not on a schedule. Mail is the one thing that arrives on its own, as
-  [Getting your mail](#getting-your-mail) says.
+  [Getting your mail](#getting-your-mail) says. Corrected on 2026-10-05:
+  the three modules also sync once when you add an account, and `F5` in
+  Contacts, Calendar, Tasks or Notes syncs that module. An account whose
+  calendars, contacts and tasks cannot be asked for, such as a Gmail account
+  signing in with an app password, says why once instead. Each sync asks
+  only the account's own provider: Google for a Gmail account, Microsoft for
+  an Outlook.com or Microsoft 365 account.
 
 ### Offline Mode
 
@@ -2527,7 +2533,7 @@ a screen reader says they are unavailable.
 
 ### Search & Mail
 - `Ctrl+F` - Open search
-- `F5` - Refresh folder
+- `F5` - Refresh folder; in Contacts, Calendar, Tasks or Notes, sync that module
 - `F9` - Check mail
 
 ## Accessibility Features

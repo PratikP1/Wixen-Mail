@@ -175,6 +175,14 @@ no period before or after, so both buttons are unavailable and your screen
 reader says so. Which view the calendar opens on is on the Calendar section of
 the Calendar and PIM tab in Settings.
 
+`F5` in Contacts, Calendar, Tasks or Notes syncs that module for the account
+you are in, the same as Sync Now on the sidebar's menu: you hear "Syncing
+contacts..." if you chose to hear every step, then one sentence when the sync
+finishes. In Reminders it says the module does not sync anywhere yet. In Mail
+it reads the open folder again, as before. Until 2026-10-05 `F5` read the mail
+folder in every module, so in Contacts it said "Refreshed" with a mail
+folder's name.
+
 ### The Due Now Window
 
 Opens on its own when a reminder comes due, a task reaches its due date, or a
@@ -616,7 +624,7 @@ nothing landed a row when focus arrived.
 | Next unread | `Ctrl+U` | Go to the next message you have not read |
 | Previous unread | `Ctrl+Shift+U` | Go to the previous message you have not read |
 | Star or unstar | `Ctrl+Shift+S` | Star the selected message, or take the star off |
-| Refresh folder | `F5` | Read this folder again from the server |
+| Refresh folder | `F5` | Read this folder again from the server. With Contacts, Calendar, Tasks or Notes showing, `F5` syncs that module instead, as its Sync Now does. Since 2026-10-05; until then it read the mail folder whatever was showing |
 | Get older messages | `Shift+F9` | Carry on downloading everything, with this folder first. Every message of every kept folder comes down on its own after a check; this puts the folder you are in at the front of the queue |
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
@@ -1356,7 +1364,7 @@ and it is not in the tab order while it is empty.
 |--------|----------|-------------|
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
-| Refresh Folder | `F5` | Reload current folder |
+| Refresh Folder | `F5` | Reload current folder. In the other modules `F5` syncs the module instead; see The Sidebars |
 | Move Up | `Alt+Shift+Up` | Move the account, the pinned folder or the saved search the cursor is on one place up. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
 | Move Down | `Alt+Shift+Down` | Move the account, the pinned folder or the saved search the cursor is on one place down. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
 | Pin Folder | none | On the Action menu. Put the folder the cursor is on in Favourites, at the top of the tree. The folder also stays where it was |
