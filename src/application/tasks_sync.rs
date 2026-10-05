@@ -66,7 +66,7 @@
 //! surviving list to move it to, the list stays and the reason is said.
 
 use crate::application::deletions::DeletedHere;
-use crate::application::summing_up::SummingUp;
+use crate::application::who_holds_the_calendars::Module;
 use crate::common::{Error, Result};
 use crate::data::message_cache::{MessageCache, TaskEntry};
 use crate::service::caldav::how_many;
@@ -179,6 +179,7 @@ impl TaskSyncResult {
         self.kept_elsewhere += other.kept_elsewhere;
         self.needs_sign_in |= other.needs_sign_in;
         self.errors.extend(other.errors);
+        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);
     }
 
     /// What the status line says afterwards.
@@ -186,11 +187,16 @@ impl TaskSyncResult {
         // A count and the thing it counts, asked of the one routine that
         // answers that. Every clause here used to answer it again in its own
         // words, and two other modules doing the same read out "1 errors".
-        let mut said = SummingUp::opening(format!(
+        let nothing_went_wrong = self.errors.is_empty();
+        let counts = format!(
             "{} in {}",
             how_many(self.stored, "task"),
             how_many(self.lists, "list")
-        ));
+        );
+        // A sync that asked nobody says why rather than "0 tasks" (#22).
+        let mut said = self
+            .what_was_asked
+            .opening(Module::Tasks, counts, nothing_went_wrong);
         if self.unchanged > 0 {
             said.count(format!("{} unchanged", self.unchanged));
         }
@@ -255,6 +261,13 @@ impl TaskSyncResult {
             // sentence rather than another count, so it is closed at both ends
             // and nothing else is heard as part of the instruction.
             said.sentence(crate::service::tasks_api::NEEDS_SIGN_IN);
+        }
+        // Last, after what the providers that were asked did (D-08).
+        if let Some(why) = self
+            .what_was_asked
+            .after_the_counts(Module::Tasks, nothing_went_wrong)
+        {
+            said.sentence(why);
         }
         said.spoken()
     }

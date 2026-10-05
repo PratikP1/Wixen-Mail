@@ -917,6 +917,14 @@ pub enum UIUpdate {
     /// Until 2026-09-17 both syncs said their result through the status
     /// channel, which no earcon reached.
     ModuleSyncFinished(String),
+    /// A tasks sync finished without asking Google, with the sentence saying
+    /// why (#22, 14-01).
+    ///
+    /// Its own update rather than `ModuleSyncFinished`, because it is routed
+    /// through the event for an account needing attention: the success cue
+    /// for a sync that did nothing is the defect #22 reports, and the reason
+    /// is said whatever level was chosen while fetching.
+    ModuleSyncNeedsAttention(String),
     /// A message's flagged state changed (cache_id, new_flagged_state)
     ///
     /// Sent when the server accepts the change, and again with the opposite

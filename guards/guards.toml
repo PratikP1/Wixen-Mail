@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 645 records have arrived since and have not been through it.
+# 649 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -38203,7 +38203,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_gmail_account_asks_google_only_with_a_key_and_a_browser_sign_in",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 11 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -38225,7 +38225,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 11 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -38265,7 +38265,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 11 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38284,5 +38284,81 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 11 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+# The contacts and tasks syncs say the same reason (14-01 task 2): after the
+# counts when an address book or provider was asked, and kept by `absorb`,
+# which also notes that somebody answered. Without that note a sync whose
+# other pass ran would say the reason alone and drop the counts.
+[[guard]]
+name = "the contacts summary says why google was not asked after the counts"
+file = "src/application/contacts_sync.rs"
+before = '''    // Last, after what the address books that were asked did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Contacts, nothing_went_wrong)
+    {
+        said.sentence(why);
+    }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "the tasks summary says why google was not asked after the counts"
+file = "src/application/tasks_sync.rs"
+before = '''        // Last, after what the providers that were asked did (D-08).
+        if let Some(why) = self
+            .what_was_asked
+            .after_the_counts(Module::Tasks, nothing_went_wrong)
+        {
+            said.sentence(why);
+        }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "folding contacts results keeps the reason and notes somebody answered"
+file = "src/application/contacts_sync.rs"
+before = '''        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);
+        self.errors.extend(other.errors);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_contacts_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "folding tasks results keeps the reason and notes somebody answered"
+file = "src/application/tasks_sync.rs"
+before = '''        self.errors.extend(other.errors);
+        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_tasks_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
 ]
