@@ -133,6 +133,14 @@ const THE_CALLERS: &[Caller] = &[
         signature: None,
         names: "mail_auth::provider_of",
     },
+    // Whether an account's calendars, contacts and tasks are Google's to ask
+    // (14-01, #22): until then each sync asked Google whenever a key was
+    // present, whoever ran the account's mail.
+    Caller {
+        file: "src/application/who_holds_the_calendars.rs",
+        signature: Some("pub fn may_google_be_asked<"),
+        names: "WhoRunsTheMail::of(",
+    },
 ];
 
 /// A way of deciding for oneself, as it reads with every space removed, and

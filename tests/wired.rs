@@ -741,7 +741,7 @@ fn test_the_calendar_sync_says_what_nothing_can_send() {
          waits for ever is passed over in silence on every sync"
     );
     assert!(
-        app.contains("Ok(said) => total_cannot_be_saved.extend(said)"),
+        app.contains("Ok(said) => total.changes_that_cannot_be_saved.extend(said)"),
         "the answer is asked for and dropped, which reaches nobody"
     );
 }

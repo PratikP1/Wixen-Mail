@@ -162,8 +162,8 @@
 
 use crate::application::conflict_choice::{AField, BothCopies, TheOtherCopy};
 use crate::application::deletions::DeletedHere;
-use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
+use crate::application::who_holds_the_calendars::Module;
 use crate::common::{Error, Result};
 #[cfg(test)]
 use crate::data::message_cache::SyncState;
@@ -346,6 +346,9 @@ pub struct SyncResult {
     /// ordinary; work going with it is not, and "3 deleted" says nothing about
     /// whether any of it was yours.
     pub deleted_with_a_change_waiting: Contacts,
+    /// Whether any address book was asked, and why Google was not (#22), so a
+    /// sync that asked nobody says why instead of "0 created".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
     pub errors: Vec<String>,
 }
 
@@ -386,6 +389,7 @@ impl SyncResult {
         self.deleted_with_a_change_waiting = self
             .deleted_with_a_change_waiting
             .and(&other.deleted_with_a_change_waiting);
+        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);
         self.errors.extend(other.errors);
     }
 
@@ -1665,12 +1669,17 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
     let untouched = result
         .unchanged
         .apart_from(&result.contacts_something_happened_to());
-    let mut said = SummingUp::opening(format!(
+    let nothing_went_wrong = result.errors.is_empty();
+    let counts = format!(
         "Contacts sync: {} created, {} updated, {} deleted",
         created.count(),
         changed.count(),
         result.deleted_local.count()
-    ));
+    );
+    // A sync that asked nobody says why rather than "0 created" (#22).
+    let mut said = result
+        .what_was_asked
+        .opening(Module::Contacts, counts, nothing_went_wrong);
     if !result.updated_remote.is_empty() {
         said.count(format!("{} sent", result.updated_remote.count()));
     }
@@ -1807,6 +1816,13 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
                 result.deleted_with_a_change_waiting.count()
             )
         });
+    }
+    // Last, after what the address books that were asked did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Contacts, nothing_went_wrong)
+    {
+        said.sentence(why);
     }
     said.spoken()
 }
@@ -7492,6 +7508,7 @@ mod tests {
             held_for_you_to_choose: Contacts::these(["replaced 1"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 1"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 1"]),
+            what_was_asked: Default::default(),
             errors: vec!["one".to_string()],
         });
         total.absorb(SyncResult {
@@ -7508,6 +7525,7 @@ mod tests {
             held_for_you_to_choose: Contacts::these(["replaced 2"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 2"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 2"]),
+            what_was_asked: Default::default(),
             errors: vec!["two".to_string()],
         });
 
@@ -7542,6 +7560,11 @@ mod tests {
                     "deleted with a change 1",
                     "deleted with a change 2"
                 ]),
+                // Two address books answered, so somebody was asked.
+                what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked {
+                    somebody: true,
+                    why_not_google: None,
+                },
                 errors: vec!["one".to_string(), "two".to_string()],
             }
         );
