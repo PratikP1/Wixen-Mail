@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 649 records have arrived since and have not been through it.
+# 652 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -38361,4 +38361,75 @@ red = [
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+# ── Each request a sync sends, written down (#22, 14-02) ───────────────────
+#
+# No request a calendar, contacts or tasks sync sent wrote a line at any
+# level, so a report about a Refresh could not say what was asked or what
+# came back. Each helper now writes one line per request at info, built from
+# parts. Written 2026-10-05 by 14-02, each break measured with
+# `scripts/guards.sh` against the whole library.
+
+# The query carries the sync marker and the page marker, so it never reaches
+# the line. The break keeps it.
+[[guard]]
+name = "a request's line cuts the query off the address"
+file = "src/service/asked_and_answered.rs"
+before = '''    let path: Vec<String> = url.path().split('/').map(masked).collect();'''
+after = '''    let path: Vec<String> = url[url::Position::BeforePath..]
+        .split('/')
+        .map(masked)
+        .collect();'''
+red = [
+    "service::asked_and_answered::tests::test_the_line_names_who_the_method_the_path_and_the_status_and_cuts_the_query",
+    "service::asked_and_answered::tests::test_a_path_segment_holding_an_address_is_masked_and_googles_word_for_me_is_kept",
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 7 },
+]
+
+# Only a word of letters and underscores is taken from a refusal's body, so a
+# message, an address or a token cannot pass through as the reason. The break
+# accepts anything printable.
+[[guard]]
+name = "a refusal's reason word is letters and underscores only"
+file = "src/service/asked_and_answered.rs"
+before = '''            .all(|letter| letter.is_ascii_alphabetic() || letter == '_')'''
+after = '''            .all(|letter| !letter.is_control())'''
+red = [
+    "service::asked_and_answered::tests::test_the_reason_word_refuses_anything_but_a_short_word",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 7 },
+]
+
+# A Google request that was answered writes its line at info, the level a
+# stored profile keeps (D-01). The break writes it at debug, where Pratik's
+# log never reaches.
+[[guard]]
+name = "an answered google request writes its line at info"
+file = "src/service/google_api.rs"
+before = '''        tracing::info!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+after = '''        tracing::debug!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+    "service::asked_and_answered::tests::test_a_refused_google_read_writes_its_status_and_reason_and_nothing_else_of_the_body",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 7 },
+    { file = "src/service/google_api.rs", tests = 39 },
 ]

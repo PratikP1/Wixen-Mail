@@ -19,6 +19,17 @@
 //! records between them, each re-measured by a whole-library run whenever a
 //! test is added there; the line is this module's subject either way.
 
+use crate::common::logging::mask_email;
+
+/// The longest reason word kept. Google's reasons and statuses run to about
+/// thirty letters (`accessNotConfigured`, `PERMISSION_DENIED`); a token is
+/// longer, and is refused by its digits and punctuation before its length.
+const LONGEST_REASON: usize = 64;
+
+/// What the line says in place of an address that cannot be read as one, so
+/// nothing unreadable, and nothing the query may have held, is copied.
+const AN_ADDRESS_THAT_COULD_NOT_BE_READ: &str = "an address that could not be read";
+
 /// Who a request was sent to, as the log names them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhoWasAsked {
@@ -62,15 +73,83 @@ pub fn the_line(
     address: &str,
     came_back: WhatCameBack<'_>,
 ) -> String {
-    let _ = came_back;
-    format!("Asked {}: {} {}", who.name(), method, address)
+    let outcome = match came_back {
+        WhatCameBack::Answered {
+            status,
+            reason: Some(reason),
+        } => format!("answered {status} {reason}"),
+        WhatCameBack::Answered {
+            status,
+            reason: None,
+        } => format!("answered {status}"),
+        WhatCameBack::NoAnswer => "no answer came".to_string(),
+    };
+    format!(
+        "Asked {}: {method} {}, {outcome}",
+        who.name(),
+        where_it_was_sent(address)
+    )
+}
+
+/// The host and path of an address, with the query and the fragment cut off
+/// and any path segment holding an address masked.
+fn where_it_was_sent(address: &str) -> String {
+    let Ok(url) = url::Url::parse(address) else {
+        return AN_ADDRESS_THAT_COULD_NOT_BE_READ.to_string();
+    };
+    let port = url
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+    let path: Vec<String> = url.path().split('/').map(masked).collect();
+    format!(
+        "{}{port}{}",
+        url.host_str().unwrap_or_default(),
+        path.join("/")
+    )
+}
+
+/// One path segment, masked when it holds an address.
+///
+/// A calendar's identity can be an address, escaped in a path as `%40`.
+/// Google's own word for the signed-in person, `@me`, has nothing before the
+/// `@` and names nobody, so it is kept as it is.
+fn masked(segment: &str) -> String {
+    let readable = segment.replace("%40", "@");
+    match readable.find('@') {
+        Some(at) if at > 0 => mask_email(&readable),
+        _ => segment.to_string(),
+    }
 }
 
 /// The provider's reason for a refusal, as one word, read out of the body it
 /// refused with; nothing when the body holds no word of the right shape.
+///
+/// Google's first `errors[].reason`, else its `error.status`, whichever is
+/// first to be a word: letters and underscores only, and short. So no
+/// message, address or token can pass through it, and the body itself is
+/// never kept.
 pub fn the_reason_word(body: &str) -> Option<String> {
-    let _ = body;
-    None
+    let answer: serde_json::Value = serde_json::from_str(body).ok()?;
+    let error = answer.get("error")?;
+    let first_reason = error
+        .get("errors")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|errors| errors.iter().find_map(|each| each.get("reason")?.as_str()));
+    let status = error.get("status").and_then(serde_json::Value::as_str);
+    [first_reason, status]
+        .into_iter()
+        .flatten()
+        .find(|candidate| is_a_reason_word(candidate))
+        .map(str::to_string)
+}
+
+/// Letters and underscores, at least one and at most [`LONGEST_REASON`].
+fn is_a_reason_word(candidate: &str) -> bool {
+    (1..=LONGEST_REASON).contains(&candidate.len())
+        && candidate
+            .chars()
+            .all(|letter| letter.is_ascii_alphabetic() || letter == '_')
 }
 
 #[cfg(test)]
