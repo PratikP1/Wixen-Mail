@@ -692,26 +692,14 @@ pub enum UIUpdate {
     /// and a date style saved in Settings changed the calendar heading and
     /// not the rows until the program was started again.
     DateSettingsChanged(crate::presentation::date_display::DateSettings),
-    /// Calendar sync completed
-    CalendarSyncComplete {
-        created: usize,
-        updated: usize,
-        deleted: usize,
-        /// Changes made here that reached a provider.
-        sent: usize,
-        /// Changes still here because the account is open for reading only.
-        waiting_on_the_setting: usize,
-        /// Days of a repeating Outlook meeting that may now be listed twice.
-        days_that_may_be_shown_twice: usize,
-        /// Calendar items changed here and at the server as well, kept whole
-        /// and waiting for somebody to choose between the two copies.
-        held_for_you_to_choose: usize,
-        /// Calendars that can only be read and hold a change made here, one
-        /// sentence each. Spoken, not logged: nothing else in the sync
-        /// mentions them and nothing will ever send them.
-        changes_that_cannot_be_saved: Vec<String>,
-        errors: Vec<String>,
-    },
+    /// Calendar sync completed.
+    ///
+    /// The result whole, as the contacts sync's is, so no count can be
+    /// dropped between the worker and the window. Until 14-01 the fields were
+    /// copied out one by one and the window rebuilt the result from them, and
+    /// a field added to the result reached nobody until both copies were
+    /// written out again.
+    CalendarSyncComplete(Box<crate::application::calendar::CalendarSyncResult>),
     /// A flag change that could not go, kept rather than undone.
     ///
     /// Its own update rather than a status line, because it is said on its own
@@ -929,6 +917,14 @@ pub enum UIUpdate {
     /// Until 2026-09-17 both syncs said their result through the status
     /// channel, which no earcon reached.
     ModuleSyncFinished(String),
+    /// A tasks sync finished without asking Google, with the sentence saying
+    /// why (#22, 14-01).
+    ///
+    /// Its own update rather than `ModuleSyncFinished`, because it is routed
+    /// through the event for an account needing attention: the success cue
+    /// for a sync that did nothing is the defect #22 reports, and the reason
+    /// is said whatever level was chosen while fetching.
+    ModuleSyncNeedsAttention(String),
     /// A message's flagged state changed (cache_id, new_flagged_state)
     ///
     /// Sent when the server accepts the change, and again with the opposite

@@ -1360,6 +1360,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Sync Calendar, Sync Contacts and Sync Tasks say why nothing came from Google (#22).**
+  Until this build each of them passed over Google without a word when it could not ask,
+  then said "Calendar sync: 0 created, 0 updated, 0 deleted" with the sound for a finished
+  sync, which sounds like a sync that found nothing. Now each says why in one sentence, with
+  the sound for an account needing attention: this copy of Wixen Mail has no Google sign-in
+  key (see Setting up a provider in Help); the account signs in with an app password, and
+  Google gives calendars, contacts and tasks only to a browser sign-in; or the account's
+  browser sign-in is missing or has run out (open the Account Manager with `Ctrl+Shift+A` and
+  choose Sign In Again). The sentence is said whatever you chose for how much is said while
+  mail is fetched, because it answers the command you gave. When a calendar server, a
+  calendar feed, an address book or Microsoft was asked as well, what it brought is said
+  first and the sentence follows. The log gets one line naming the module and the reason as
+  a word, never an address or a key. An account whose mail is not at Google no longer asks
+  Google for anything, whatever sign-in keys this copy holds, and a calendar item held for
+  you to choose between two copies is counted once rather than twice. The version does not
+  move: no build has been cut since 1.0.0-alpha.1. Known limitations: nothing here has met a
+  real Google account; an account on an app password has no way yet to sign in to Google for
+  its calendars, contacts and tasks, so its sentence names no button (a later change in this
+  phase adds one); and nobody has heard these sentences with a screen reader.
 - **Imported messages keep their files (GAP-13).** Until this build a message imported from
   a saved message, a mailbox file, a zip or a folder arrived with its words and a mark saying
   it had files, and without the files: opening one asked a mail server that had never held

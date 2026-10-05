@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 640 records have arrived since and have not been through it.
+# 649 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26587,7 +26587,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26614,7 +26614,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -38179,4 +38179,186 @@ red = [
 tests_last_seen = [
     { file = "src/application/import_tree.rs", tests = 40 },
     { file = "src/application/importing_messages.rs", tests = 51 },
+]
+
+# ── Why nothing came from Google (#22, 14-01) ───────────────────────────────
+#
+# Each sync skipped Google inside its own check on the key and then said "0
+# created, 0 updated, 0 deleted" with the success cue. One answer now says
+# whether an account may ask Google and why not, and the calendar's summary,
+# its log line and its finish say the reason. Written 2026-10-05 by 14-01, each
+# break measured with `scripts/guards.sh` against the whole library.
+
+# A Gmail account on an app password is never asked of Google: Google gives
+# calendars, contacts and tasks only to a browser sign-in. Pratik's account.
+[[guard]]
+name = "a gmail account on an app password is not asked of google"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''        Some(_) if !account.use_oauth => {
+            MayGoogleBeAsked::No(WhyNothingWasAsked::SignsInWithAnAppPassword)
+        }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_gmail_account_asks_google_only_with_a_key_and_a_browser_sign_in",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+# When a calendar server or a feed was asked, its counts are said and the
+# reason Google was not asked follows them (D-08). The break drops it.
+[[guard]]
+name = "the calendar summary says why google was not asked after the counts"
+file = "src/application/calendar.rs"
+before = '''    // Last, after what the passes that ran did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Calendar, nothing_went_wrong)
+    {
+        said.sentence(why);
+    }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_calendar_summary_says_the_reason_after_the_counts_when_a_server_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+# The calendar sync asks the one answer and spells no Google sign-in of its
+# own, which is how it came to skip Google in silence. The break builds one
+# beside the question; the reading in the log's file catches the spelling, and
+# its companion goes red too, because its plants of the answer's log line are
+# read against a window that already fails the reading's first half.
+[[guard]]
+name = "the calendar sync builds no google sign-in of its own"
+file = "src/presentation/wx_app.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        // is said and written to the log (#22).
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);'''
+after = '''        // is said and written to the log (#22).
+        let _ = crate::service::oauth_credentials::credentials_for("gmail");
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);'''
+red = [
+    "test_a_sync_says_in_the_log_why_google_was_not_asked",
+    "test_the_reading_complains_when_a_sync_skips_the_answer_or_the_reason_goes_unwritten",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 15 },
+]
+
+# A calendar sync that could not ask Google finishes with the cue for an
+# account needing attention, never the success cue (D-07). The break
+# signals it as a sync that completed.
+[[guard]]
+name = "a calendar sync that asked google nothing is signalled as needing attention"
+file = "src/presentation/wx_app.rs"
+before = '''                // pressed, so it is said whatever level was chosen.
+                let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg);'''
+after = '''                // pressed, so it is said whatever level was chosen.
+                let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);'''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# An item held for a choice is counted once when the passes are folded: the
+# window added the Google and Microsoft passes' counts twice. The break adds
+# it twice in `absorb`.
+[[guard]]
+name = "a calendar item held for a choice is folded once"
+file = "src/application/calendar.rs"
+before = '''        self.held_for_you_to_choose += pass.held_for_you_to_choose;'''
+after = '''        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;'''
+red = [
+    "application::who_holds_the_calendars::tests::test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded",
+    "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+# The contacts and tasks syncs say the same reason (14-01 task 2): after the
+# counts when an address book or provider was asked, and kept by `absorb`,
+# which also notes that somebody answered. Without that note a sync whose
+# other pass ran would say the reason alone and drop the counts.
+[[guard]]
+name = "the contacts summary says why google was not asked after the counts"
+file = "src/application/contacts_sync.rs"
+before = '''    // Last, after what the address books that were asked did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Contacts, nothing_went_wrong)
+    {
+        said.sentence(why);
+    }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "the tasks summary says why google was not asked after the counts"
+file = "src/application/tasks_sync.rs"
+before = '''        // Last, after what the providers that were asked did (D-08).
+        if let Some(why) = self
+            .what_was_asked
+            .after_the_counts(Module::Tasks, nothing_went_wrong)
+        {
+            said.sentence(why);
+        }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "folding contacts results keeps the reason and notes somebody answered"
+file = "src/application/contacts_sync.rs"
+before = '''        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);
+        self.errors.extend(other.errors);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_contacts_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
+]
+
+[[guard]]
+name = "folding tasks results keeps the reason and notes somebody answered"
+file = "src/application/tasks_sync.rs"
+before = '''        self.errors.extend(other.errors);
+        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_tasks_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 18 },
 ]

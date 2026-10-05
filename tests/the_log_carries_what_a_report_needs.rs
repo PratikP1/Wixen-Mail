@@ -34,6 +34,28 @@ use wixen_mail::common::what_ships::what_ships;
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 const THE_QUEUE: &str = "src/presentation/accessibility/announcements.rs";
 
+/// The one answer to whether an account's calendars, contacts and tasks may
+/// be asked of Google (#22, 14-01).
+const THE_ANSWER: &str = "src/application/who_holds_the_calendars.rs";
+
+/// Each sync that may ask Google, and how its question reads with every space
+/// taken out: the account it found and the module it is. No closing bracket,
+/// because the formatter adds a comma after the last argument when it wraps.
+const THE_SYNCS_THAT_ASK_GOOGLE: [(&str, &str); 3] = [
+    (
+        "fn spawn_calendar_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Calendar",
+    ),
+    (
+        "fn spawn_contacts_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Contacts",
+    ),
+    (
+        "fn spawn_tasks_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Tasks",
+    ),
+];
+
 /// The five identifiers no log call may name as a value.
 const THE_SECRETS: [&str; 5] = [
     "body_plain",
@@ -549,6 +571,50 @@ fn no_log_call_spells_a_secret() -> Result<(), String> {
     Ok(())
 }
 
+/// Each sync that may ask Google asks the one answer for its token, naming
+/// its module, and spells no Google sign-in of its own; and the answer writes
+/// why nothing was asked at info, naming the module and the reason's word.
+///
+/// #22: each sync skipped Google inside its own `if let` on the key, with no
+/// line at any level, so the log of the Refresh Pratik reported could not
+/// say why nothing came. A sync spelling `"gmail"` is building a sign-in
+/// that skips the answer, whichever comes first.
+fn a_sync_says_in_the_log_why_google_was_not_asked(app: &str, answer: &str) -> Result<(), String> {
+    for (signature, question) in THE_SYNCS_THAT_ASK_GOOGLE {
+        let body = body_of(app, signature)?;
+        let packed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        if !packed.contains(question) {
+            return Err(format!(
+                "{signature} does not ask {question}, so it decides for itself whether Google \
+                 is asked and says nothing when it is not"
+            ));
+        }
+        if body.contains("\"gmail\"") {
+            return Err(format!(
+                "{signature} builds a Google sign-in of its own, so an account that cannot ask \
+                 Google is passed over without a reason"
+            ));
+        }
+    }
+    let body = body_of(answer, "pub async fn a_google_token(")?;
+    let nothing_asked = between(
+        &body,
+        "if let GooglesAnswer::NothingAsked(why) = &answer {",
+        "Ok(answer)",
+    )?;
+    let call = the_first_log_call(nothing_asked).ok_or(
+        "a sync that asked Google nothing writes nothing to the log, so a report cannot say why",
+    )?;
+    if call.level != "info" {
+        return Err(format!(
+            "the reason Google was not asked is written at {}, which a profile at info never \
+             keeps",
+            call.level
+        ));
+    }
+    call.names(&["module.word()", "why.word()"], "the reason's line")
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────
 
 #[test]
@@ -584,6 +650,15 @@ fn test_what_is_held_back_from_speech_is_written_and_never_the_words() {
 #[test]
 fn test_no_log_call_in_the_tree_spells_a_secret_or_a_body() {
     no_log_call_spells_a_secret().unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_sync_says_in_the_log_why_google_was_not_asked() {
+    a_sync_says_in_the_log_why_google_was_not_asked(
+        &shipped(THE_MAIN_WINDOW),
+        &shipped(THE_ANSWER),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
 }
 
 // ── The companions, each planting the opposite ──────────────────────────────
@@ -693,6 +768,53 @@ fn test_the_reading_complains_when_the_muted_line_is_missing_or_writes_the_words
     ))
     .expect_err("a muted line writing the words was passed over");
     assert!(why.contains("writes the words"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_sync_skips_the_answer_or_the_reason_goes_unwritten() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let answer = shipped(THE_ANSWER);
+    let reading = a_sync_says_in_the_log_why_google_was_not_asked;
+
+    let asks_nothing = with(
+        &app,
+        "who_holds_the_calendars::a_google_token(",
+        "who_holds_the_calendars::a_token_of_its_own(",
+    );
+    let why = reading(&asks_nothing, &answer).expect_err("a sync that skips the answer passed");
+    assert!(why.contains("does not ask"), "{why}");
+
+    let its_own_sign_in = with(
+        &app,
+        "who_holds_the_calendars::a_google_token(",
+        "crate::service::oauth_credentials::credentials_for(\"gmail\");\n        \
+         who_holds_the_calendars::a_google_token(",
+    );
+    let why = reading(&its_own_sign_in, &answer)
+        .expect_err("a sync building a Google sign-in of its own passed");
+    assert!(why.contains("of its own"), "{why}");
+
+    let body = body_of(&answer, "pub async fn a_google_token(").expect("the answer");
+    let (call, arguments) = the_call_between(
+        &body,
+        "if let GooglesAnswer::NothingAsked(why) = &answer {",
+        "Ok(answer)",
+    );
+    let why =
+        reading(&app, &with(&answer, &call, "")).expect_err("a reason written nowhere passed");
+    assert!(why.contains("writes nothing"), "{why}");
+    let why = reading(
+        &app,
+        &with(&answer, &call, &format!("tracing::debug!({arguments})")),
+    )
+    .expect_err("a reason written at debug passed");
+    assert!(why.contains("written at debug"), "{why}");
+    let why = reading(
+        &app,
+        &with(&answer, &call, "tracing::info!(\"{}\", why.word())"),
+    )
+    .expect_err("a reason line naming no module passed");
+    assert!(why.contains("module.word()"), "{why}");
 }
 
 #[test]

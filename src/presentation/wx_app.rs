@@ -23216,6 +23216,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let detail = the_counts_if_results_are_spoken(a11y, said);
             let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
         }
+        UIUpdate::ModuleSyncNeedsAttention(said) => {
+            // The sentence says why Google was not asked, which is the answer
+            // to the key somebody pressed, so it is said whatever level was
+            // chosen, with the cue for an account needing attention (#22,
+            // D-07).
+            let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, said);
+        }
         UIUpdate::WhatCouldBeFetched(count) => {
             // Said, not offered. Until 2026-09-17 this arm put a button above
             // the list offering to fetch the text; the download of everything
@@ -23676,13 +23683,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::ContactsSyncComplete(result) => {
             let msg = crate::application::contacts_sync::what_the_contacts_sync_did(result);
-            // Signalled rather than shown and spoken by hand, so somebody who
-            // wants a tone for a finished sync gets a tone and the status bar
-            // still gets the sentence through the visual channel. The routing
-            // is a setting, not a decision made here; so is whether the
-            // counts are said, which the level chosen while fetching decides.
-            let detail = the_counts_if_results_are_spoken(a11y, &msg);
-            let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
+            if result.what_was_asked.why_not_google.is_some() {
+                // Google's address book could not be asked: said with the
+                // cue for an account needing attention, as the calendar's
+                // reason is, at any level (#22, D-07).
+                let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg);
+            } else {
+                // Signalled rather than shown and spoken by hand, so somebody
+                // who wants a tone for a finished sync gets a tone and the
+                // status bar still gets the sentence through the visual
+                // channel. The routing is a setting, not a decision made
+                // here; so is whether the counts are said, which the level
+                // chosen while fetching decides.
+                let detail = the_counts_if_results_are_spoken(a11y, &msg);
+                let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
+            }
             for err in &result.errors {
                 tracing::warn!("Contacts sync error: {}", err);
             }
@@ -23768,35 +23783,22 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce_topic(&msg, Priority::Low, "calendar-events");
         }
-        UIUpdate::CalendarSyncComplete {
-            created,
-            updated,
-            deleted,
-            sent,
-            waiting_on_the_setting,
-            days_that_may_be_shown_twice,
-            held_for_you_to_choose,
-            changes_that_cannot_be_saved,
-            errors,
-        } => {
-            let msg = crate::application::calendar::what_the_calendar_sync_did(
-                &crate::application::calendar::CalendarSyncResult {
-                    created: *created,
-                    updated: *updated,
-                    deleted: *deleted,
-                    sent: *sent,
-                    waiting_on_the_setting: *waiting_on_the_setting,
-                    days_that_may_be_shown_twice: *days_that_may_be_shown_twice,
-                    held_for_you_to_choose: *held_for_you_to_choose,
-                    changes_that_cannot_be_saved: changes_that_cannot_be_saved.clone(),
-                    errors: errors.clone(),
-                },
-            );
-            // Signalled rather than shown and spoken by hand, matching how
-            // the contacts sync's own completion is routed just above.
-            let detail = the_counts_if_results_are_spoken(a11y, &msg);
-            let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
-            for err in errors {
+        UIUpdate::CalendarSyncComplete(result) => {
+            let msg = crate::application::calendar::what_the_calendar_sync_did(result);
+            if result.what_was_asked.why_not_google.is_some() {
+                // A sync that could not ask Google says why with the cue for
+                // an account needing attention, never the success cue, which
+                // for a sync that did nothing is the defect #22 reports
+                // (D-07). The reason is the answer to the key somebody
+                // pressed, so it is said whatever level was chosen.
+                let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg);
+            } else {
+                // Signalled rather than shown and spoken by hand, matching
+                // how the contacts sync's own completion is routed above.
+                let detail = the_counts_if_results_are_spoken(a11y, &msg);
+                let _ = a11y.signal(FeedbackEvent::SyncComplete, detail);
+            }
+            for err in &result.errors {
                 tracing::warn!("Calendar sync error: {}", err);
             }
         }
@@ -30808,13 +30810,21 @@ fn the_search_index_forgets_what_was_taken_off() {
 
 /// Spawn contacts sync on a blocking thread (MessageCache is not Send).
 fn spawn_contacts_sync(app: AppHandles<'_>) {
+    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
+    let accounts = state
+        .lock()
+        .ok()
+        .map(|s| s.accounts.clone())
+        .unwrap_or_default();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        let account = accounts.iter().find(|account| account.id == aid);
         // Counted from before the store is opened until the sync ends, so an
         // undo never takes back a deletion this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -30862,30 +30872,29 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                 .unwrap_or(true),
         );
 
-        // Try Google contacts sync
+        // Google's address book is asked only for an account whose mail is at
+        // Google, and only when it can be; when it cannot, the reason is
+        // carried to what is said and written to the log (#22).
         let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);
-        if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
-            let auth = crate::service::oauth::AuthManager::new(
-                aid,
-                "gmail",
-                &gmail_creds.client_id,
-                gmail_creds.client_secret.as_deref(),
-            );
-            match handle.block_on(auth.get_valid_token()) {
-                Ok(token) => {
-                    match handle.block_on(crate::application::contacts_sync::sync_google_contacts(
-                        &cache,
-                        &google_client,
-                        &token,
-                        aid,
-                        how_far,
-                    )) {
-                        Ok(result) => total.absorb(result),
-                        Err(e) => total.errors.push(format!("Google contacts: {}", e)),
-                    }
+        match handle.block_on(who_holds_the_calendars::a_google_token(
+            account,
+            Module::Contacts,
+        )) {
+            Ok(GooglesAnswer::Token(token)) => {
+                match handle.block_on(crate::application::contacts_sync::sync_google_contacts(
+                    &cache,
+                    &google_client,
+                    &token,
+                    aid,
+                    how_far,
+                )) {
+                    Ok(result) => total.absorb(result),
+                    Err(e) => total.errors.push(format!("Google contacts: {}", e)),
                 }
-                Err(e) => total.errors.push(format!("Google auth: {}", e)),
             }
+            Ok(GooglesAnswer::NotGooglesToAsk) => {}
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
         // Try Microsoft contacts sync
@@ -30957,14 +30966,21 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
 /// note on `application::tasks_sync`.
 fn spawn_tasks_sync(app: AppHandles<'_>) {
     use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
+    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
 
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
+    let accounts = state
+        .lock()
+        .ok()
+        .map(|s| s.accounts.clone())
+        .unwrap_or_default();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        let account = accounts.iter().find(|account| account.id == aid);
         // Counted until the sync ends, so an undo never takes back a deletion
         // this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -30992,22 +31008,22 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         let client = crate::service::tasks_api::TasksClient::for_account(aid);
         let mut total = TaskSyncResult::default();
 
-        if let Some(creds) = crate::service::oauth_credentials::credentials_for("gmail") {
-            let auth = crate::service::oauth::AuthManager::new(
-                aid,
-                "gmail",
-                &creds.client_id,
-                creds.client_secret.as_deref(),
-            );
-            match handle.block_on(auth.get_valid_token()) {
-                Ok(token) => {
-                    match handle.block_on(sync_google_tasks(&cache, &client, &token, aid)) {
-                        Ok(result) => total.absorb(result),
-                        Err(e) => total.errors.push(format!("Google Tasks: {e}")),
-                    }
+        // Google Tasks is asked only for an account whose mail is at Google,
+        // and only when it can be; when it cannot, the reason is carried to
+        // what is said and written to the log (#22).
+        match handle.block_on(who_holds_the_calendars::a_google_token(
+            account,
+            Module::Tasks,
+        )) {
+            Ok(GooglesAnswer::Token(token)) => {
+                match handle.block_on(sync_google_tasks(&cache, &client, &token, aid)) {
+                    Ok(result) => total.absorb(result),
+                    Err(e) => total.errors.push(format!("Google Tasks: {e}")),
                 }
-                Err(e) => total.errors.push(format!("Google sign-in: {e}")),
             }
+            Ok(GooglesAnswer::NotGooglesToAsk) => {}
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Err(e) => total.errors.push(format!("Google sign-in: {e}")),
         }
 
         // Its own token, carrying the tasks permission, which the shared Graph
@@ -31035,10 +31051,14 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         // the counts follow the level chosen while fetching (#38). Until
         // 2026-09-17 this went out on the status channel, which no earcon
         // reached and which every choice would have spoken.
-        let _ = tx.try_send(UIUpdate::ModuleSyncFinished(format!(
-            "Tasks: {}",
-            total.summary()
-        )));
+        let said = format!("Tasks: {}", total.summary());
+        // A sync that could not ask Google finishes as an account needing
+        // attention rather than as a completed sync (#22, D-07).
+        let _ = tx.try_send(if total.what_was_asked.why_not_google.is_some() {
+            UIUpdate::ModuleSyncNeedsAttention(said)
+        } else {
+            UIUpdate::ModuleSyncFinished(said)
+        });
         // The panel is showing what was there before this ran.
         let _ = tx.try_send(UIUpdate::ModuleChanged(PimModule::Tasks));
     });
@@ -31145,12 +31165,21 @@ pub(crate) fn spawn_calendar_sync(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
 ) {
+    use crate::application::calendar::CalendarSyncResult;
+    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+
     let tx = tx.clone();
+    let accounts = state
+        .lock()
+        .ok()
+        .map(|s| s.accounts.clone())
+        .unwrap_or_default();
     let account_id = state.lock().ok().and_then(|s| s.active_account_id.clone());
     let handle = rt.handle().clone();
 
     rt.spawn_blocking(move || {
         let aid = account_id.as_deref().unwrap_or("default");
+        let account = accounts.iter().find(|account| account.id == aid);
         // Counted until the sync ends, so an undo never takes back a deletion
         // this sync may be sending (13-09).
         let _under_way = crate::data::message_cache::taking_back::ASyncUnderWay::begins(
@@ -31183,55 +31212,33 @@ pub(crate) fn spawn_calendar_sync(
             }
         };
 
-        let mut total_created = 0usize;
-        let mut total_updated = 0usize;
-        let mut total_deleted = 0usize;
-        let mut total_sent = 0usize;
-        let mut total_waiting = 0usize;
-        let mut total_shown_twice = 0usize;
-        let mut total_held_for_a_choice = 0usize;
-        // A calendar that can only be read holds a change made here. Carried
-        // as sentences rather than a count, because the calendar's name and
-        // what to do instead are the useful part, and spoken rather than
-        // logged, because nothing else in the sync mentions it and nothing
-        // will ever send it.
-        let mut total_cannot_be_saved: Vec<String> = Vec::new();
-        let mut total_errors = Vec::new();
+        // One running total of the sync's own type, every pass folded by
+        // `absorb`. The counts were added up by hand here for four passes,
+        // and the two provider passes added an item held for a choice twice.
+        let mut total = CalendarSyncResult::default();
 
-        // Try Google calendar sync
+        // Google is asked only for an account whose mail is at Google, and
+        // only when it can be; when it cannot, the reason is carried to what
+        // is said and written to the log (#22).
         let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);
-        if let Some(gmail_creds) = crate::service::oauth_credentials::credentials_for("gmail") {
-            let auth = crate::service::oauth::AuthManager::new(
-                aid,
-                "gmail",
-                &gmail_creds.client_id,
-                gmail_creds.client_secret.as_deref(),
-            );
-            match handle.block_on(auth.get_valid_token()) {
-                Ok(token) => {
-                    match handle.block_on(crate::application::calendar::sync_google_calendar(
-                        &cache,
-                        &google_client,
-                        &token,
-                        aid,
-                    )) {
-                        Ok(result) => {
-                            total_created += result.created;
-                            total_updated += result.updated;
-                            total_deleted += result.deleted;
-                            total_sent += result.sent;
-                            total_waiting += result.waiting_on_the_setting;
-                            total_shown_twice += result.days_that_may_be_shown_twice;
-                            total_held_for_a_choice += result.held_for_you_to_choose;
-                            total_held_for_a_choice += result.held_for_you_to_choose;
-                            total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
-                            total_errors.extend(result.errors);
-                        }
-                        Err(e) => total_errors.push(format!("Google calendar: {}", e)),
-                    }
+        match handle.block_on(who_holds_the_calendars::a_google_token(
+            account,
+            Module::Calendar,
+        )) {
+            Ok(GooglesAnswer::Token(token)) => {
+                match handle.block_on(crate::application::calendar::sync_google_calendar(
+                    &cache,
+                    &google_client,
+                    &token,
+                    aid,
+                )) {
+                    Ok(result) => total.absorb(result),
+                    Err(e) => total.errors.push(format!("Google calendar: {}", e)),
                 }
-                Err(e) => total_errors.push(format!("Google auth: {}", e)),
             }
+            Ok(GooglesAnswer::NotGooglesToAsk) => {}
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
         // Try Microsoft calendar sync
@@ -31248,22 +31255,11 @@ pub(crate) fn spawn_calendar_sync(
                     match handle.block_on(crate::application::calendar::sync_microsoft_calendar(
                         &cache, &ms_client, &token, aid,
                     )) {
-                        Ok(result) => {
-                            total_created += result.created;
-                            total_updated += result.updated;
-                            total_deleted += result.deleted;
-                            total_sent += result.sent;
-                            total_waiting += result.waiting_on_the_setting;
-                            total_shown_twice += result.days_that_may_be_shown_twice;
-                            total_held_for_a_choice += result.held_for_you_to_choose;
-                            total_held_for_a_choice += result.held_for_you_to_choose;
-                            total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
-                            total_errors.extend(result.errors);
-                        }
-                        Err(e) => total_errors.push(format!("Microsoft calendar: {}", e)),
+                        Ok(result) => total.absorb(result),
+                        Err(e) => total.errors.push(format!("Microsoft calendar: {}", e)),
                     }
                 }
-                Err(e) => total_errors.push(format!("Microsoft auth: {}", e)),
+                Err(e) => total.errors.push(format!("Microsoft auth: {}", e)),
             }
         }
 
@@ -31281,7 +31277,7 @@ pub(crate) fn spawn_calendar_sync(
                 // Said rather than passed over. With changes now going up, a
                 // calendar nobody can sign in to is a change waiting for ever
                 // with no explanation, which reads as the sync being broken.
-                total_errors.push(format!(
+                total.errors.push(format!(
                     "{}: the sign-in for this calendar could not be read, so it \
                      was not synced and any changes to it are still waiting.",
                     cal.name
@@ -31296,18 +31292,10 @@ pub(crate) fn spawn_calendar_sync(
                 &username,
                 &password,
             )) {
-                Ok(result) => {
-                    total_created += result.created;
-                    total_updated += result.updated;
-                    total_deleted += result.deleted;
-                    total_sent += result.sent;
-                    total_waiting += result.waiting_on_the_setting;
-                    total_shown_twice += result.days_that_may_be_shown_twice;
-                    total_held_for_a_choice += result.held_for_you_to_choose;
-                    total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
-                    total_errors.extend(result.errors);
-                }
-                Err(e) => total_errors.push(format!("Calendar server ({}): {}", cal.name, e)),
+                Ok(result) => total.absorb(result),
+                Err(e) => total
+                    .errors
+                    .push(format!("Calendar server ({}): {}", cal.name, e)),
             }
         }
 
@@ -31322,14 +31310,10 @@ pub(crate) fn spawn_calendar_sync(
                 cal,
                 aid,
             )) {
-                Ok(result) => {
-                    total_created += result.created;
-                    total_updated += result.updated;
-                    total_deleted += result.deleted;
-                    total_cannot_be_saved.extend(result.changes_that_cannot_be_saved);
-                    total_errors.extend(result.errors);
-                }
-                Err(e) => total_errors.push(format!("Subscription refresh ({}): {}", cal.name, e)),
+                Ok(result) => total.absorb(result),
+                Err(e) => total
+                    .errors
+                    .push(format!("Subscription refresh ({}): {}", cal.name, e)),
             }
         }
 
@@ -31341,8 +31325,8 @@ pub(crate) fn spawn_calendar_sync(
         // an account signed in to Google and to Outlook runs two passes that
         // would each say the same sentence about the same row.
         match crate::application::calendar::changes_nothing_can_send(&cache, aid) {
-            Ok(said) => total_cannot_be_saved.extend(said),
-            Err(e) => total_errors.push(format!(
+            Ok(said) => total.changes_that_cannot_be_saved.extend(said),
+            Err(e) => total.errors.push(format!(
                 "The changes waiting to be sent could not be read: {}",
                 e
             )),
@@ -31350,17 +31334,7 @@ pub(crate) fn spawn_calendar_sync(
 
         handle.block_on(async {
             let _ = tx
-                .send(UIUpdate::CalendarSyncComplete {
-                    created: total_created,
-                    updated: total_updated,
-                    deleted: total_deleted,
-                    sent: total_sent,
-                    waiting_on_the_setting: total_waiting,
-                    days_that_may_be_shown_twice: total_shown_twice,
-                    held_for_you_to_choose: total_held_for_a_choice,
-                    changes_that_cannot_be_saved: total_cannot_be_saved,
-                    errors: total_errors,
-                })
+                .send(UIUpdate::CalendarSyncComplete(Box::new(total)))
                 .await;
         });
     });
