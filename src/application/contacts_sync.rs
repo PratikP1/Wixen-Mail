@@ -346,6 +346,9 @@ pub struct SyncResult {
     /// ordinary; work going with it is not, and "3 deleted" says nothing about
     /// whether any of it was yours.
     pub deleted_with_a_change_waiting: Contacts,
+    /// Whether any address book was asked, and why Google was not (#22), so a
+    /// sync that asked nobody says why instead of "0 created".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
     pub errors: Vec<String>,
 }
 
@@ -7492,6 +7495,7 @@ mod tests {
             held_for_you_to_choose: Contacts::these(["replaced 1"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 1"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 1"]),
+            what_was_asked: Default::default(),
             errors: vec!["one".to_string()],
         });
         total.absorb(SyncResult {
@@ -7508,6 +7512,7 @@ mod tests {
             held_for_you_to_choose: Contacts::these(["replaced 2"]),
             sent_over_a_newer_copy: Contacts::these(["sent over a newer copy 2"]),
             deleted_with_a_change_waiting: Contacts::these(["deleted with a change 2"]),
+            what_was_asked: Default::default(),
             errors: vec!["two".to_string()],
         });
 
@@ -7542,6 +7547,11 @@ mod tests {
                     "deleted with a change 1",
                     "deleted with a change 2"
                 ]),
+                // Two address books answered, so somebody was asked.
+                what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked {
+                    somebody: true,
+                    why_not_google: None,
+                },
                 errors: vec!["one".to_string(), "two".to_string()],
             }
         );

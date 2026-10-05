@@ -152,6 +152,9 @@ pub struct TaskSyncResult {
     /// reporting a clean sync over it is how somebody comes to trust a list
     /// that is missing half of itself.
     pub errors: Vec<String>,
+    /// Whether any provider was asked, and why Google was not (#22), so a sync
+    /// that asked nobody says why instead of "0 tasks in 0 lists".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
 }
 
 impl TaskSyncResult {
@@ -1831,6 +1834,7 @@ mod tests {
             lists_removed: 8,
             kept_elsewhere: 9,
             errors: vec!["one".to_string()],
+            what_was_asked: Default::default(),
         });
         total.absorb(TaskSyncResult {
             lists: 10,
@@ -1846,6 +1850,7 @@ mod tests {
             lists_removed: 80,
             kept_elsewhere: 90,
             errors: vec!["two".to_string()],
+            what_was_asked: Default::default(),
         });
         assert_eq!(
             total,
@@ -1863,6 +1868,11 @@ mod tests {
                 lists_removed: 88,
                 kept_elsewhere: 99,
                 errors: vec!["one".to_string(), "two".to_string()],
+                // Two providers answered, so somebody was asked.
+                what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked {
+                    somebody: true,
+                    why_not_google: None,
+                },
             }
         );
     }

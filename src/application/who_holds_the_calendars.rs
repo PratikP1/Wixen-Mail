@@ -246,7 +246,9 @@ impl WhatWasAsked {
 mod tests {
     use super::*;
     use crate::application::calendar::{CalendarSyncResult, what_the_calendar_sync_did};
+    use crate::application::contacts_sync::{Contacts, SyncResult, what_the_contacts_sync_did};
     use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
+    use crate::application::tasks_sync::TaskSyncResult;
 
     const EVERY_MODULE: [Module; 3] = [Module::Calendar, Module::Contacts, Module::Tasks];
     const EVERY_REASON: [WhyNothingWasAsked; 4] = [
@@ -564,6 +566,164 @@ mod tests {
         assert!(
             arm.contains("a11y.signal(FeedbackEvent::SyncComplete, detail)"),
             "a calendar sync that ran no longer finishes as one: {arm}"
+        );
+    }
+
+    // ── Contacts and tasks say the same reason (14-01 task 2) ──────────────
+    //
+    // Here rather than beside each summary, whose files 76 and 22 guard
+    // records fingerprint by their test counts.
+
+    fn not_asked(why: WhyNothingWasAsked) -> WhatWasAsked {
+        WhatWasAsked {
+            somebody: false,
+            why_not_google: Some(why),
+        }
+    }
+
+    fn a_contact_created() -> SyncResult {
+        let mut created = Contacts::default();
+        created.note("ann");
+        SyncResult {
+            created_local: created,
+            ..SyncResult::default()
+        }
+    }
+
+    #[test]
+    fn test_the_contacts_summary_says_the_reason_alone_when_nobody_was_asked() {
+        let why = WhyNothingWasAsked::NoGoogleSignInKey;
+        let said = what_the_contacts_sync_did(&SyncResult {
+            what_was_asked: not_asked(why),
+            ..SyncResult::default()
+        });
+        assert_eq!(said, why.sentence(Module::Contacts));
+    }
+
+    #[test]
+    fn test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked() {
+        let why = WhyNothingWasAsked::SignsInWithAnAppPassword;
+        let mut total = SyncResult {
+            what_was_asked: not_asked(why),
+            ..SyncResult::default()
+        };
+        total.absorb(a_contact_created());
+        assert_eq!(
+            what_the_contacts_sync_did(&total),
+            format!(
+                "Contacts sync: 1 created, 0 updated, 0 deleted. {}",
+                why.sentence(Module::Contacts)
+            )
+        );
+    }
+
+    #[test]
+    fn test_folding_contacts_results_keeps_the_first_reason_and_says_somebody_was_asked() {
+        let mut total = SyncResult::default();
+        total.absorb(SyncResult {
+            what_was_asked: not_asked(WhyNothingWasAsked::TheBrowserSignInRanOut),
+            ..SyncResult::default()
+        });
+        total.absorb(SyncResult {
+            what_was_asked: not_asked(WhyNothingWasAsked::NoGoogleSignInKey),
+            ..SyncResult::default()
+        });
+        assert_eq!(
+            total.what_was_asked,
+            WhatWasAsked {
+                somebody: true,
+                why_not_google: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
+            }
+        );
+    }
+
+    #[test]
+    fn test_the_tasks_summary_says_the_reason_alone_when_nobody_was_asked() {
+        let why = WhyNothingWasAsked::TheBrowserSignInRanOut;
+        let said = TaskSyncResult {
+            what_was_asked: not_asked(why),
+            ..TaskSyncResult::default()
+        }
+        .summary();
+        assert_eq!(said, why.sentence(Module::Tasks));
+    }
+
+    #[test]
+    fn test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked() {
+        let why = WhyNothingWasAsked::NoGoogleSignInKey;
+        let mut total = TaskSyncResult {
+            what_was_asked: not_asked(why),
+            ..TaskSyncResult::default()
+        };
+        total.absorb(TaskSyncResult {
+            stored: 2,
+            lists: 1,
+            ..TaskSyncResult::default()
+        });
+        assert_eq!(
+            total.summary(),
+            format!("2 tasks in 1 list. {}", why.sentence(Module::Tasks))
+        );
+    }
+
+    #[test]
+    fn test_folding_tasks_results_keeps_the_first_reason_and_says_somebody_was_asked() {
+        let mut total = TaskSyncResult::default();
+        total.absorb(TaskSyncResult {
+            what_was_asked: not_asked(WhyNothingWasAsked::SignsInWithAnAppPassword),
+            ..TaskSyncResult::default()
+        });
+        total.absorb(TaskSyncResult::default());
+        assert_eq!(
+            total.what_was_asked,
+            WhatWasAsked {
+                somebody: true,
+                why_not_google: Some(WhyNothingWasAsked::SignsInWithAnAppPassword),
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_contacts_or_tasks_sync_that_did_not_ask_google_is_signalled_as_needing_attention() {
+        // D-07 for the other two modules, as for the calendar above.
+        let contacts = the_windows_arm(
+            "UIUpdate::ContactsSyncComplete(result) => {",
+            "UIUpdate::WorkingDayChanged(",
+        );
+        assert!(
+            contacts.contains("what_was_asked.why_not_google.is_some()")
+                && contacts.contains("a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg)"),
+            "a contacts sync that asked Google nothing is not signalled as needing attention: \
+             {contacts}"
+        );
+        assert!(
+            contacts.contains("a11y.signal(FeedbackEvent::SyncComplete, detail)"),
+            "a contacts sync that ran no longer finishes as one: {contacts}"
+        );
+
+        // The tasks sync's sentence travels as a string, so the worker says
+        // which finish it is and the window's arm signals it.
+        let path = "src/presentation/wx_app.rs";
+        let source = std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let (_, spawn) = source
+            .split_once("fn spawn_tasks_sync(")
+            .unwrap_or_else(|| panic!("spawn_tasks_sync is not in {path}"));
+        let (spawn, _) = spawn
+            .split_once("\n}\n")
+            .unwrap_or_else(|| panic!("spawn_tasks_sync does not end in {path}"));
+        assert!(
+            spawn.contains("what_was_asked.why_not_google.is_some()")
+                && spawn.contains("UIUpdate::ModuleSyncNeedsAttention("),
+            "the tasks sync finishes as a completed sync when it asked Google nothing: {spawn}"
+        );
+        let tasks = the_windows_arm(
+            "UIUpdate::ModuleSyncNeedsAttention(said) => {",
+            "UIUpdate::WhatCouldBeFetched(",
+        );
+        assert!(
+            tasks.contains("a11y.signal(FeedbackEvent::AccountNeedsAttention, said)"),
+            "a tasks sync that asked Google nothing is not signalled as needing attention: \
+             {tasks}"
         );
     }
 }
