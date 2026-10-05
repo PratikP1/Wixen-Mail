@@ -306,8 +306,10 @@ pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
     account: &Account,
     google_key: Option<GoogleKey>,
     microsoft_key: Option<MicrosoftKey>,
+    holds_the_separate_sign_in: bool,
 ) -> WhatAddingAnAccountStarts {
     use WhatAddingAnAccountStarts::{Nothing, OneReason, TheThreeSyncs};
+    let _ = holds_the_separate_sign_in;
     match WhoRunsTheMail::of(account) {
         WhoRunsTheMail::Gmail => match may_google_be_asked(account, google_key, false) {
             MayGoogleBeAsked::Yes(_) => TheThreeSyncs,
@@ -333,6 +335,7 @@ pub fn what_adding_this_account_starts(account: &Account) -> WhatAddingAnAccount
         account,
         crate::service::oauth_credentials::credentials_for(GOOGLE),
         crate::service::oauth_credentials::credentials_for(MICROSOFT),
+        false,
     )
 }
 
@@ -343,6 +346,79 @@ pub fn added_in_this_visit<'a>(before: &[Account], after: &'a [Account]) -> Vec<
         .iter()
         .filter(|account| !before.iter().any(|held| held.id == account.id))
         .collect()
+}
+
+/// The accounts added in a visit, and after them each account signed in for
+/// its calendars, contacts and tasks in the same visit, every one once.
+pub fn with_those_signed_in_for_calendars<'a>(
+    added: Vec<&'a Account>,
+    after: &'a [Account],
+    signed_in_for_calendars: &[String],
+) -> Vec<&'a Account> {
+    let _ = (after, signed_in_for_calendars);
+    added
+}
+
+/// What the Account Manager's Sign In for Calendars, Contacts and Tasks does
+/// for the account chosen in its list (14-03 choices 1 and 3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WhatTheSeparateSignInDoes<Key> {
+    NothingChosen,
+    /// The account's mail is not at Google, so Google holds none of the three.
+    NotAtGoogle,
+    /// Mail already signs in to Google through the browser, and that sign-in
+    /// carries all four permissions (D-14).
+    TheMailSignInCoversIt,
+    NoGoogleSignInKey,
+    /// Sign in, with the key this copy holds.
+    SignsIn(Key),
+}
+
+/// What the button does for this account, with the key this copy holds.
+pub fn what_the_separate_sign_in_does<Key>(
+    account: Option<&Account>,
+    key: Option<Key>,
+) -> WhatTheSeparateSignInDoes<Key> {
+    let _ = (account, key);
+    WhatTheSeparateSignInDoes::NothingChosen
+}
+
+/// What the button does for this account, with the key this copy holds.
+///
+/// Thin glue over [`what_the_separate_sign_in_does`].
+pub fn what_the_separate_sign_in_does_here(
+    account: Option<&Account>,
+) -> WhatTheSeparateSignInDoes<crate::service::oauth_credentials::ClientCredentials> {
+    what_the_separate_sign_in_does(
+        account,
+        crate::service::oauth_credentials::credentials_for(GOOGLE),
+    )
+}
+
+impl<Key> WhatTheSeparateSignInDoes<Key> {
+    /// What the button says when it is pressed: the whole answer, or that
+    /// signing in has begun.
+    pub fn sentence(&self) -> String {
+        String::new()
+    }
+}
+
+/// What the button says when signing in worked.
+pub const SIGNED_IN_FOR_CALENDARS: &str = "";
+
+/// What the button says when signing in failed, after the reason the sign-in
+/// gave.
+pub fn signing_in_for_calendars_failed(why: &str) -> String {
+    let _ = why;
+    String::new()
+}
+
+/// What Sign In Again says for an account whose mail signs in with a
+/// password.
+pub fn what_sign_in_again_says_for_a_password_account(account: &Account) -> &'static str {
+    let _ = account;
+    "This account signs in with a password, so there is nothing to authorise. Edit it to change \
+     its password."
 }
 
 /// What Refresh, `F5`, does with a module showing (D-11).
@@ -1148,12 +1224,18 @@ mod tests {
         ];
         for (account, google_key, microsoft_key, expected) in rows {
             assert_eq!(
-                what_adding_an_account_starts(&account, google_key, microsoft_key),
+                what_adding_an_account_starts(&account, google_key, microsoft_key, false),
                 expected,
                 "{} with Google key {google_key:?} and Microsoft key {microsoft_key:?}",
                 account.email
             );
         }
+        // Route B (14-03): the app-password account signed in for its
+        // calendars, contacts and tasks in the visit it was added in.
+        assert_eq!(
+            what_adding_an_account_starts(&a_gmail_account(false), A_KEY, NO_KEY, true),
+            TheThreeSyncs
+        );
     }
 
     #[test]
@@ -1522,5 +1604,190 @@ mod tests {
         assert!(said.contains(THE_BUTTON), "{said}");
         assert!(said.contains("Ctrl+Shift+A"), "{said}");
         assert!(!said.contains("Sign In Again"), "{said}");
+    }
+
+    // ── The Account Manager's button (14-03 task 2) ────────────────────────
+
+    #[test]
+    fn test_the_separate_sign_in_button_answers_each_kind_of_account() {
+        use WhatTheSeparateSignInDoes::{
+            NoGoogleSignInKey, NotAtGoogle, NothingChosen, SignsIn, TheMailSignInCoversIt,
+        };
+        assert_eq!(what_the_separate_sign_in_does(None, A_KEY), NothingChosen);
+        for account in [a_microsoft_account(), an_account_at_neither()] {
+            assert_eq!(
+                what_the_separate_sign_in_does(Some(&account), A_KEY),
+                NotAtGoogle,
+                "{}",
+                account.email
+            );
+        }
+        // Choice 3: the mail sign-in already carries all four permissions,
+        // so the button says so rather than greying out.
+        assert_eq!(
+            what_the_separate_sign_in_does(Some(&a_gmail_account(true)), A_KEY),
+            TheMailSignInCoversIt
+        );
+        assert_eq!(
+            what_the_separate_sign_in_does(Some(&a_gmail_account(false)), NO_KEY),
+            NoGoogleSignInKey
+        );
+        assert_eq!(
+            what_the_separate_sign_in_does(Some(&a_gmail_account(false)), A_KEY),
+            SignsIn("a key")
+        );
+    }
+
+    #[test]
+    fn test_what_the_separate_sign_in_button_says_names_its_way_out() {
+        use WhatTheSeparateSignInDoes::{
+            NoGoogleSignInKey, NotAtGoogle, NothingChosen, SignsIn, TheMailSignInCoversIt,
+        };
+        assert_eq!(NothingChosen::<&str>.sentence(), "Choose an account first.");
+        assert_eq!(
+            SignsIn("a key").sentence(),
+            "Signing in to Google for the account's calendars, contacts and tasks. Finish in \
+             the browser."
+        );
+        let covered = TheMailSignInCoversIt::<&str>.sentence();
+        assert!(covered.contains("Sign In Again"), "{covered}");
+        let no_key = NoGoogleSignInKey::<&str>.sentence();
+        assert!(no_key.contains("Google sign-in key"), "{no_key}");
+        assert!(no_key.contains("Setting up a provider in Help"), "{no_key}");
+        let not_google = NotAtGoogle::<&str>.sentence();
+        assert!(not_google.contains("not at Google"), "{not_google}");
+        let every_answer: [WhatTheSeparateSignInDoes<&str>; 5] = [
+            NothingChosen,
+            NotAtGoogle,
+            TheMailSignInCoversIt,
+            NoGoogleSignInKey,
+            SignsIn("a key"),
+        ];
+        for said in every_answer.iter().map(WhatTheSeparateSignInDoes::sentence) {
+            assert_eq!(
+                reads_as_a_persons_sentence(&said, Voice::Answer),
+                Ok(()),
+                "{said}"
+            );
+            assert!(!said.to_lowercase().contains("oauth"), "jargon: {said}");
+        }
+    }
+
+    #[test]
+    fn test_signing_in_for_calendars_says_it_worked_or_why_not() {
+        assert_eq!(
+            reads_as_a_persons_sentence(SIGNED_IN_FOR_CALENDARS, Voice::Answer),
+            Ok(())
+        );
+        assert!(
+            SIGNED_IN_FOR_CALENDARS.contains("calendars, contacts and tasks"),
+            "{SIGNED_IN_FOR_CALENDARS}"
+        );
+        // When they are brought, so nobody waits for them with the window open.
+        assert!(
+            SIGNED_IN_FOR_CALENDARS.contains("close the Account Manager"),
+            "{SIGNED_IN_FOR_CALENDARS}"
+        );
+        let failed = signing_in_for_calendars_failed("The browser was closed.");
+        assert_eq!(
+            failed,
+            "Signing in to Google for calendars, contacts and tasks failed. The browser was \
+             closed."
+        );
+        assert_eq!(reads_as_a_persons_sentence(&failed, Voice::Answer), Ok(()));
+    }
+
+    #[test]
+    fn test_sign_in_again_on_a_password_gmail_account_names_the_separate_sign_in() {
+        let gmail = what_sign_in_again_says_for_a_password_account(&a_gmail_account(false));
+        assert!(gmail.contains(THE_BUTTON), "{gmail}");
+        assert!(gmail.contains("Edit it to change its password"), "{gmail}");
+        // Any other password account hears what it heard before.
+        assert_eq!(
+            what_sign_in_again_says_for_a_password_account(&an_account_at_neither()),
+            "This account signs in with a password, so there is nothing to authorise. Edit it \
+             to change its password."
+        );
+    }
+
+    #[test]
+    fn test_an_account_signed_in_for_calendars_in_a_visit_is_brought_once() {
+        let with_id = |id: &str| Account {
+            id: id.into(),
+            ..Account::default()
+        };
+        let after = [with_id("a1"), with_id("a2"), with_id("a3")];
+        let added = vec![&after[2]];
+        // A3 was added and signed in, so it is brought once; a2 was only
+        // signed in; an id the list no longer holds is passed over.
+        let signed_in = ["a3".to_string(), "a2".to_string(), "gone".to_string()];
+        let brought: Vec<&str> = with_those_signed_in_for_calendars(added, &after, &signed_in)
+            .iter()
+            .map(|account| account.id.as_str())
+            .collect();
+        assert_eq!(brought, ["a3", "a2"]);
+    }
+
+    /// The Account Manager's source, read whole.
+    fn the_account_manager() -> String {
+        let path = "src/presentation/wx_account_manager.rs";
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    /// The button signs in under the separate sign-in's name, the account it
+    /// signed in is carried out of the Account Manager whether or not
+    /// anything else changed, and the window brings it once (D-13).
+    fn the_account_manager_carries_out_an_account_signed_in_for_calendars(
+        manager: &str,
+        window: &str,
+    ) -> Reading<()> {
+        let sign_in = the_function(manager, "fn sign_in_for_calendars(")?;
+        if !sign_in.contains("GOOGLE_CALENDARS_CONTACTS_AND_TASKS")
+            || !sign_in.contains(".authorize()")
+        {
+            return Err("the button does not sign in under the separate sign-in's name".into());
+        }
+        let wired = the_function(manager, "fn wire_account_manager_actions(")?;
+        if !wired.contains("sign_in_for_calendars_selected(") {
+            return Err("nothing presses the button's function".into());
+        }
+        let shown = the_function(manager, "pub fn show_account_manager_dialog(")?;
+        if !shown.contains("outcome.changed || !signed_in_for_calendars.is_empty()") {
+            return Err(
+                "an account signed in for calendars is left behind when nothing else changed"
+                    .into(),
+            );
+        }
+        let handler = the_function(window, "fn handle_account_mgr(")?;
+        if !handler.contains("with_those_signed_in_for_calendars(") {
+            return Err("the window brings nothing for an account signed in for calendars".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_the_account_manager_carries_out_an_account_signed_in_for_calendars() {
+        the_account_manager_carries_out_an_account_signed_in_for_calendars(
+            &the_account_manager(),
+            &the_window(),
+        )
+        .unwrap_or_else(|why| panic!("{why}"));
+    }
+
+    #[test]
+    fn test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind() {
+        let manager = the_account_manager();
+        let left_behind = planted_in(
+            &manager,
+            "pub fn show_account_manager_dialog(",
+            "outcome.changed || !signed_in_for_calendars.is_empty()",
+            "outcome.changed",
+        );
+        let why = the_account_manager_carries_out_an_account_signed_in_for_calendars(
+            &left_behind,
+            &the_window(),
+        )
+        .expect_err("a sign-in left behind passed");
+        assert!(why.contains("left behind"), "{why}");
     }
 }
