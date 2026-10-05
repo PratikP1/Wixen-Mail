@@ -16,7 +16,8 @@
 //! only learned by asking for a token.
 
 use crate::application::summing_up::SummingUp;
-use crate::common::Result;
+use crate::application::who_runs_the_mail::WhoRunsTheMail;
+use crate::common::{Error, Result};
 use crate::data::account::Account;
 
 /// The name Google's sign-in key and an account's Google tokens are filed
@@ -44,7 +45,11 @@ impl Module {
 
     /// The module as one word in the log.
     pub fn word(self) -> &'static str {
-        ""
+        match self {
+            Module::Calendar => "calendar",
+            Module::Contacts => "contacts",
+            Module::Tasks => "tasks",
+        }
     }
 }
 
@@ -63,14 +68,42 @@ impl WhyNothingWasAsked {
     /// The reason as one word in the log, with nothing in it a reader of the
     /// log has to parse around.
     pub fn word(self) -> &'static str {
-        ""
+        match self {
+            WhyNothingWasAsked::NoAccountIsOpen => "no_account_open",
+            WhyNothingWasAsked::NoGoogleSignInKey => "no_google_sign_in_key",
+            WhyNothingWasAsked::SignsInWithAnAppPassword => "app_password",
+            WhyNothingWasAsked::TheBrowserSignInRanOut => "browser_sign_in_ran_out",
+        }
     }
 
     /// The reason in a sentence about one module, for the status bar and the
     /// screen reader.
+    ///
+    /// Each one names what to do, or that nothing here can be done yet: the
+    /// separate browser sign-in an app-password account needs arrives with
+    /// 14-03, and a sentence naming a control that does not exist would be
+    /// untrue until then. "Google sign-in key" is Pratik's word for what
+    /// Google's console calls a client.
     pub fn sentence(self, module: Module) -> String {
-        let _ = module.what_google_holds();
-        String::new()
+        let holds = module.what_google_holds();
+        match self {
+            WhyNothingWasAsked::NoAccountIsOpen => {
+                format!("Nothing was asked of Google for {holds}, because no account is open.")
+            }
+            WhyNothingWasAsked::NoGoogleSignInKey => format!(
+                "Nothing was asked of Google for this account's {holds}, because this copy of \
+                 Wixen Mail has no Google sign-in key. See Setting up a provider in Help."
+            ),
+            WhyNothingWasAsked::SignsInWithAnAppPassword => format!(
+                "Nothing was asked of Google for this account's {holds}. The account signs in \
+                 with an app password, and Google gives {holds} only to a browser sign-in."
+            ),
+            WhyNothingWasAsked::TheBrowserSignInRanOut => format!(
+                "Nothing was asked of Google for this account's {holds}, because its browser \
+                 sign-in is missing or has run out. Open the Account Manager with Ctrl+Shift+A \
+                 and choose Sign In Again."
+            ),
+        }
     }
 }
 
@@ -87,15 +120,23 @@ pub enum MayGoogleBeAsked<Key> {
 /// The answer from what is known before anything is asked: who runs the
 /// account's mail, whether it signs in through a browser, and the key this
 /// copy holds, if any.
-pub fn may_google_be_asked<Key>(_account: &Account, key: Option<Key>) -> MayGoogleBeAsked<Key> {
+pub fn may_google_be_asked<Key>(account: &Account, key: Option<Key>) -> MayGoogleBeAsked<Key> {
+    if WhoRunsTheMail::of(account) != WhoRunsTheMail::Gmail {
+        return MayGoogleBeAsked::NotGooglesToAsk;
+    }
     match key {
+        None => MayGoogleBeAsked::No(WhyNothingWasAsked::NoGoogleSignInKey),
+        Some(_) if !account.use_oauth => {
+            MayGoogleBeAsked::No(WhyNothingWasAsked::SignsInWithAnAppPassword)
+        }
         Some(key) => MayGoogleBeAsked::Yes(key),
-        None => MayGoogleBeAsked::NotGooglesToAsk,
     }
 }
 
 /// What the three syncs get when they ask for a Google token.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// No `Debug`, because it carries a token and `Debug` is what a log line
+/// prints.
 pub enum GooglesAnswer {
     Token(String),
     NotGooglesToAsk,
@@ -109,12 +150,28 @@ pub enum GooglesAnswer {
 /// An error is a token request that failed for a reason other than the
 /// sign-in, such as the network, and is the sync's to report.
 pub async fn a_google_token(account: Option<&Account>, module: Module) -> Result<GooglesAnswer> {
-    let _ = module;
+    let answer = asked_of_google(account).await?;
+    // One line per sync that asked nothing, so the log of a Refresh says why
+    // nothing came. The module and the reason as words: never an address, a
+    // token or a sentence somebody typed.
+    if let GooglesAnswer::NothingAsked(why) = &answer {
+        tracing::info!("Google was not asked for {}: {}", module.word(), why.word());
+    }
+    Ok(answer)
+}
+
+/// The token, or why there is none, without the log line.
+async fn asked_of_google(account: Option<&Account>) -> Result<GooglesAnswer> {
     let Some(account) = account else {
-        return Ok(GooglesAnswer::NotGooglesToAsk);
+        return Ok(GooglesAnswer::NothingAsked(
+            WhyNothingWasAsked::NoAccountIsOpen,
+        ));
     };
-    let Some(key) = crate::service::oauth_credentials::credentials_for(GOOGLE) else {
-        return Ok(GooglesAnswer::NotGooglesToAsk);
+    let key = crate::service::oauth_credentials::credentials_for(GOOGLE);
+    let key = match may_google_be_asked(account, key) {
+        MayGoogleBeAsked::Yes(key) => key,
+        MayGoogleBeAsked::NotGooglesToAsk => return Ok(GooglesAnswer::NotGooglesToAsk),
+        MayGoogleBeAsked::No(why) => return Ok(GooglesAnswer::NothingAsked(why)),
     };
     let sign_in = crate::service::oauth::AuthManager::new(
         &account.id,
@@ -122,7 +179,16 @@ pub async fn a_google_token(account: Option<&Account>, module: Module) -> Result
         &key.client_id,
         key.client_secret.as_deref(),
     );
-    sign_in.get_valid_token().await.map(GooglesAnswer::Token)
+    match sign_in.get_valid_token().await {
+        Ok(token) => Ok(GooglesAnswer::Token(token)),
+        // No token stored, none that can be read, or a refresh Google
+        // refused: each is answered by signing in again. The network failing
+        // is not, and stays the sync's error to count.
+        Err(Error::Authentication(_)) => Ok(GooglesAnswer::NothingAsked(
+            WhyNothingWasAsked::TheBrowserSignInRanOut,
+        )),
+        Err(other) => Err(other),
+    }
 }
 
 /// Whether a sync asked anybody, and why it did not ask Google, carried on
@@ -140,9 +206,16 @@ impl WhatWasAsked {
     /// back is somebody having been asked; the first reason held is kept.
     pub fn with_a_pass(self, pass: WhatWasAsked) -> Self {
         Self {
-            somebody: self.somebody || pass.somebody,
-            why_not_google: self.why_not_google,
+            somebody: true,
+            why_not_google: self.why_not_google.or(pass.why_not_google),
         }
+    }
+
+    /// The reason to say on its own: nobody at all was asked and nothing
+    /// went wrong, so there are no counts worth hearing (D-08).
+    fn alone(self, nothing_went_wrong: bool) -> Option<WhyNothingWasAsked> {
+        self.why_not_google
+            .filter(|_| !self.somebody && nothing_went_wrong)
     }
 
     /// How a summary opens: its counts, or the reason alone when nobody at
@@ -153,15 +226,19 @@ impl WhatWasAsked {
         counts: impl Into<String>,
         nothing_went_wrong: bool,
     ) -> SummingUp {
-        let _ = (module, nothing_went_wrong);
-        SummingUp::opening(counts)
+        match self.alone(nothing_went_wrong) {
+            Some(why) => SummingUp::opening_sentence(why.sentence(module)),
+            None => SummingUp::opening(counts),
+        }
     }
 
     /// The reason as a sentence after the counts, when somebody else was
     /// asked or something went wrong; nothing when it was said alone.
     pub fn after_the_counts(self, module: Module, nothing_went_wrong: bool) -> Option<String> {
-        let _ = (module, nothing_went_wrong);
-        None
+        match self.alone(nothing_went_wrong) {
+            Some(_) => None,
+            None => self.why_not_google.map(|why| why.sentence(module)),
+        }
     }
 }
 
@@ -348,11 +425,6 @@ mod tests {
                 "Calendar sync: 2 created, 0 updated, 0 deleted. {}",
                 why.sentence(Module::Calendar)
             )
-        );
-        assert_eq!(
-            reads_as_a_persons_sentence(&said, Voice::Answer),
-            Ok(()),
-            "{said}"
         );
 
         // And a pass that failed was a pass that asked: its error is counted

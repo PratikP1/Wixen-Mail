@@ -692,26 +692,14 @@ pub enum UIUpdate {
     /// and a date style saved in Settings changed the calendar heading and
     /// not the rows until the program was started again.
     DateSettingsChanged(crate::presentation::date_display::DateSettings),
-    /// Calendar sync completed
-    CalendarSyncComplete {
-        created: usize,
-        updated: usize,
-        deleted: usize,
-        /// Changes made here that reached a provider.
-        sent: usize,
-        /// Changes still here because the account is open for reading only.
-        waiting_on_the_setting: usize,
-        /// Days of a repeating Outlook meeting that may now be listed twice.
-        days_that_may_be_shown_twice: usize,
-        /// Calendar items changed here and at the server as well, kept whole
-        /// and waiting for somebody to choose between the two copies.
-        held_for_you_to_choose: usize,
-        /// Calendars that can only be read and hold a change made here, one
-        /// sentence each. Spoken, not logged: nothing else in the sync
-        /// mentions them and nothing will ever send them.
-        changes_that_cannot_be_saved: Vec<String>,
-        errors: Vec<String>,
-    },
+    /// Calendar sync completed.
+    ///
+    /// The result whole, as the contacts sync's is, so no count can be
+    /// dropped between the worker and the window. Until 14-01 the fields were
+    /// copied out one by one and the window rebuilt the result from them, and
+    /// a field added to the result reached nobody until both copies were
+    /// written out again.
+    CalendarSyncComplete(Box<crate::application::calendar::CalendarSyncResult>),
     /// A flag change that could not go, kept rather than undone.
     ///
     /// Its own update rather than a status line, because it is said on its own

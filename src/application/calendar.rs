@@ -51,7 +51,6 @@
 //! None of this has run against a live calendar.
 
 use crate::application::answered_meetings::{self, WhereTheCopyWent};
-use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
 #[cfg(test)]
@@ -159,7 +158,6 @@ impl CalendarSyncResult {
         self.waiting_on_the_setting += pass.waiting_on_the_setting;
         self.days_that_may_be_shown_twice += pass.days_that_may_be_shown_twice;
         self.held_for_you_to_choose += pass.held_for_you_to_choose;
-        self.held_for_you_to_choose += pass.held_for_you_to_choose;
         self.changes_that_cannot_be_saved
             .extend(pass.changes_that_cannot_be_saved);
         self.what_was_asked = self.what_was_asked.with_a_pass(pass.what_was_asked);
@@ -189,10 +187,16 @@ impl CalendarSyncResult {
 /// one. It names the setting, because "nothing happened" sends somebody looking
 /// for a broken account.
 pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
-    let mut said = SummingUp::opening(format!(
+    use crate::application::who_holds_the_calendars::Module;
+    let nothing_went_wrong = result.errors.is_empty();
+    let counts = format!(
         "Calendar sync: {} created, {} updated, {} deleted",
         result.created, result.updated, result.deleted
-    ));
+    );
+    // A sync that asked nobody says why rather than "0 created" (#22).
+    let mut said = result
+        .what_was_asked
+        .opening(Module::Calendar, counts, nothing_went_wrong);
     if result.sent > 0 {
         said.count(format!("{} sent", result.sent));
     }
@@ -235,6 +239,13 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
                 crate::application::conflict_choice::TheOtherCopy::ACalendar,
             ),
         );
+    }
+    // Last, after what the passes that ran did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Calendar, nothing_went_wrong)
+    {
+        said.sentence(why);
     }
     said.spoken()
 }
@@ -11329,17 +11340,19 @@ mod tests {
         // to wrap does not turn this into a failure about nothing.
         let packed: String = source.chars().filter(|c| !c.is_whitespace()).collect();
 
+        // Every pass folds through `absorb` and the window receives the
+        // result whole since 14-01, so these are the three hand-offs.
         for (carried, without_it) in [
             (
-                "total_cannot_be_saved.extend(result.changes_that_cannot_be_saved)",
+                "Ok(result)=>total.absorb(result)",
                 "the refresh works out the sentence and the window throws it away",
             ),
             (
-                "changes_that_cannot_be_saved:total_cannot_be_saved",
+                "UIUpdate::CalendarSyncComplete(Box::new(total))",
                 "the sentence never leaves the thread that made it",
             ),
             (
-                "changes_that_cannot_be_saved:changes_that_cannot_be_saved.clone()",
+                "what_the_calendar_sync_did(result)",
                 "the window has the sentence and never puts it in what it speaks",
             ),
         ] {

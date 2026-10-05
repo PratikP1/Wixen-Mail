@@ -36,6 +36,9 @@ pub(crate) use crate::service::caldav::how_many;
 #[derive(Debug)]
 pub struct SummingUp {
     opening: String,
+    /// The opening is a whole sentence rather than a label, so it is closed
+    /// even when nothing follows it.
+    opens_with_a_sentence: bool,
     counts: Vec<String>,
     sentences: Vec<String>,
 }
@@ -45,8 +48,18 @@ impl SummingUp {
     pub fn opening(opening: impl Into<String>) -> Self {
         Self {
             opening: opening.into(),
+            opens_with_a_sentence: false,
             counts: Vec::new(),
             sentences: Vec::new(),
+        }
+    }
+
+    /// Start with a whole sentence, for a summary with no counts to give,
+    /// such as a sync that asked nobody and says why.
+    pub fn opening_sentence(sentence: impl Into<String>) -> Self {
+        Self {
+            opens_with_a_sentence: true,
+            ..Self::opening(sentence)
         }
     }
 
@@ -79,7 +92,7 @@ impl SummingUp {
             said.push(' ');
             said.push_str(sentence);
         }
-        if !sentences.is_empty() {
+        if !sentences.is_empty() || self.opens_with_a_sentence {
             close(&mut said);
         }
         said

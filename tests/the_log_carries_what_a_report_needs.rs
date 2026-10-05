@@ -39,10 +39,11 @@ const THE_QUEUE: &str = "src/presentation/accessibility/announcements.rs";
 const THE_ANSWER: &str = "src/application/who_holds_the_calendars.rs";
 
 /// Each sync that may ask Google, and how its question reads with every space
-/// taken out: the account it found and the module it is.
+/// taken out: the account it found and the module it is. No closing bracket,
+/// because the formatter adds a comma after the last argument when it wraps.
 const THE_SYNCS_THAT_ASK_GOOGLE: [(&str, &str); 1] = [(
     "fn spawn_calendar_sync(",
-    "who_holds_the_calendars::a_google_token(account,Module::Calendar)",
+    "who_holds_the_calendars::a_google_token(account,Module::Calendar",
 )];
 
 /// The five identifiers no log call may name as a value.
