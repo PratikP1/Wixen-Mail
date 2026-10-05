@@ -101,7 +101,18 @@ impl WhyNothingWasAsked {
     /// untrue until then. "Google sign-in key" is Pratik's word for what
     /// Google's console calls a client.
     pub fn sentence(self, module: Module) -> String {
-        let holds = module.what_google_holds();
+        self.sentence_about(module.what_google_holds())
+    }
+
+    /// The reason in one sentence for all three modules, said once when an
+    /// account is added and none of them can be brought (14-02 choice 3).
+    pub fn sentence_for_every_module(self) -> String {
+        self.sentence_about(EVERY_MODULE_HOLDS)
+    }
+
+    /// The reason in a sentence about what a provider holds, as a person
+    /// says it.
+    fn sentence_about(self, holds: &str) -> String {
         match self {
             WhyNothingWasAsked::NoAccountIsOpen => {
                 format!("Nothing was asked of Google for {holds}, because no account is open.")
@@ -129,13 +140,10 @@ impl WhyNothingWasAsked {
             ),
         }
     }
-
-    /// The reason in one sentence for all three modules, said once when an
-    /// account is added and none of them can be brought.
-    pub fn sentence_for_every_module(self) -> String {
-        String::new()
-    }
 }
+
+/// What a provider holds for all three modules, as a person says it.
+const EVERY_MODULE_HOLDS: &str = "calendars, contacts and tasks";
 
 /// Whether Google may be asked for this account's calendars, contacts and
 /// tasks, carrying the key when it may.
@@ -265,15 +273,42 @@ pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
     google_key: Option<GoogleKey>,
     microsoft_key: Option<MicrosoftKey>,
 ) -> WhatAddingAnAccountStarts {
-    let _ = (account, google_key, microsoft_key);
-    WhatAddingAnAccountStarts::Nothing
+    use WhatAddingAnAccountStarts::{Nothing, OneReason, TheThreeSyncs};
+    match WhoRunsTheMail::of(account) {
+        WhoRunsTheMail::Gmail => match may_google_be_asked(account, google_key) {
+            MayGoogleBeAsked::Yes(_) => TheThreeSyncs,
+            MayGoogleBeAsked::No(why) => OneReason(why),
+            MayGoogleBeAsked::NotGooglesToAsk => Nothing,
+        },
+        WhoRunsTheMail::Microsoft => match may_microsoft_be_asked(account, microsoft_key) {
+            MayMicrosoftBeAsked::Yes(_) => TheThreeSyncs,
+            MayMicrosoftBeAsked::No(why) => OneReason(why),
+            MayMicrosoftBeAsked::NotMicrosoftsToAsk => Nothing,
+        },
+        WhoRunsTheMail::SomebodyElse => Nothing,
+    }
+}
+
+/// What adding this account starts, with the keys this copy holds.
+///
+/// Thin glue over [`what_adding_an_account_starts`]. A browser sign-in that
+/// has run out is learned only by asking, so an account whose sign-in has
+/// gone starts the three syncs and each says so.
+pub fn what_adding_this_account_starts(account: &Account) -> WhatAddingAnAccountStarts {
+    what_adding_an_account_starts(
+        account,
+        crate::service::oauth_credentials::credentials_for(GOOGLE),
+        crate::service::oauth_credentials::credentials_for(MICROSOFT),
+    )
 }
 
 /// The accounts in `after` that were not in `before`, by their identity: the
 /// accounts added in one visit to the Account Manager.
 pub fn added_in_this_visit<'a>(before: &[Account], after: &'a [Account]) -> Vec<&'a Account> {
-    let _ = before;
-    after.iter().collect()
+    after
+        .iter()
+        .filter(|account| !before.iter().any(|held| held.id == account.id))
+        .collect()
 }
 
 /// What Refresh, `F5`, does with a module showing (D-11).
@@ -287,8 +322,14 @@ pub enum WhatRefreshDoes {
 
 /// What `F5` does with this module showing.
 pub fn what_refresh_does(module: PimModule) -> WhatRefreshDoes {
-    let _ = module;
-    WhatRefreshDoes::ReadsTheFolder
+    match module {
+        PimModule::Mail => WhatRefreshDoes::ReadsTheFolder,
+        PimModule::Contacts
+        | PimModule::Calendar
+        | PimModule::Reminders
+        | PimModule::Tasks
+        | PimModule::Notes => WhatRefreshDoes::SyncsTheModule,
+    }
 }
 
 /// What the three syncs get when they ask for a Google token.
@@ -1176,7 +1217,9 @@ mod tests {
             .split_once("_ if id == ID_REFRESH_FOLDER")
             .ok_or("no arm answers F5")?;
         let (guard, rest) = after.split_once("=>").ok_or("the F5 arm has no body")?;
-        if !guard.contains("what_refresh_does(") {
+        if !guard.contains("what_refresh_does(")
+            || !guard.contains("WhatRefreshDoes::SyncsTheModule")
+        {
             return Err(
                 "the first arm F5 reaches does not ask which module is showing, so F5 in \
                  Contacts reads whatever mail folder the tree still has selected"
