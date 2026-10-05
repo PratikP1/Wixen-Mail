@@ -825,7 +825,12 @@ impl GoogleApiClient {
                     "{}",
                     the_line(WhoWasAsked::Google, method, url, WhatCameBack::NoAnswer)
                 );
-                return Err(Error::Network(format!("Google API {method} failed: {e}")));
+                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e.without_url()
+                )));
             }
         };
         let status = response.status().as_u16();
@@ -846,8 +851,12 @@ impl GoogleApiClient {
                 },
             )
         );
-        let body =
-            body.map_err(|e| Error::Network(format!("Failed to read google response: {}", e)))?;
+        let body = body.map_err(|e| {
+            Error::Network(format!(
+                "Failed to read google response: {}",
+                e.without_url()
+            ))
+        })?;
         Ok((status, body))
     }
 
@@ -857,15 +866,15 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(reqwest::Method::POST, url, "add something to this account")?
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API POST failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("POST", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_patch<T: serde::de::DeserializeOwned>(
@@ -874,7 +883,7 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::PATCH,
@@ -884,13 +893,13 @@ impl GoogleApiClient {
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API PATCH failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("PATCH", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_delete(&self, url: &str, token: &str) -> Result<()> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::DELETE,
@@ -899,9 +908,8 @@ impl GoogleApiClient {
             )?
             .bearer_auth(token)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API DELETE failed: {}", e)))?;
-        let status = resp.status().as_u16();
+            .await;
+        let (status, body) = Self::the_answer_written_down("DELETE", url, sent).await?;
         // Gone and Not Found both count as done: the event is not there, which
         // is the state that was asked for. Treating either as a failure meant
         // the tombstone never settled and the deletion was re-sent on every
@@ -912,24 +920,11 @@ impl GoogleApiClient {
         if status == 204 || status == 200 || status == 404 || status == 410 {
             return Ok(());
         }
-        let body = resp.text().await.unwrap_or_default();
         Err(Error::Api {
             status,
             provider: "google".to_string(),
             message: crate::common::error::redact_provider_message(&body),
         })
-    }
-
-    async fn parse_response<T: serde::de::DeserializeOwned>(
-        resp: reqwest::Response,
-        provider: &str,
-    ) -> Result<T> {
-        let status = resp.status().as_u16();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| Error::Network(format!("Failed to read {} response: {}", provider, e)))?;
-        Self::read_the_body(status, &body, provider)
     }
 
     /// The answer's body read as `T`, or the provider's refusal as an error.

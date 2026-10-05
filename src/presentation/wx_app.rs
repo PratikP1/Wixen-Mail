@@ -30810,7 +30810,9 @@ fn the_search_index_forgets_what_was_taken_off() {
 
 /// Spawn contacts sync on a blocking thread (MessageCache is not Send).
 fn spawn_contacts_sync(app: AppHandles<'_>) {
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
 
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
@@ -30897,9 +30899,15 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
-        // Try Microsoft contacts sync
+        // Microsoft is asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key; when it does not, the reason
+        // is carried as Google's is (14-02).
         let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
-        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(outlook_creds) = microsoft {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
                 "outlook",
@@ -30928,7 +30936,9 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
         // Nothing here has ever met a CardDAV server. This is the non-test
         // path that reaches it, which is what makes the rest of it a feature
         // rather than a library nobody uses.
-        for book in cache.get_address_books_for_account(aid).unwrap_or_default() {
+        let address_books = cache.get_address_books_for_account(aid).unwrap_or_default();
+        let has_address_books_of_its_own = !address_books.is_empty();
+        for book in address_books {
             let Some(server) =
                 crate::application::carddav_sync::AnAddressBookServer::for_the(&book)
             else {
@@ -30944,7 +30954,28 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                 Err(e) => total.errors.push(format!("{}: {}", book.name, e)),
             }
         }
+        if let Some(why) = who_holds_the_calendars::at_neither_with_nothing_of_its_own(
+            account,
+            has_address_books_of_its_own,
+        ) {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Contacts,
+                account,
+                total.what_was_asked,
+                &[
+                    ("created", total.created_local.count()),
+                    ("updated", total.updated_local.count()),
+                    ("deleted", total.deleted_local.count()),
+                    ("sent", total.updated_remote.count()),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         handle.block_on(async {
             let _ = tx
                 .send(UIUpdate::ContactsSyncComplete(Box::new(total)))
@@ -30966,7 +30997,9 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
 /// note on `application::tasks_sync`.
 fn spawn_tasks_sync(app: AppHandles<'_>) {
     use crate::application::tasks_sync::{TaskSyncResult, sync_google_tasks, sync_microsoft_tasks};
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
 
     let AppHandles { state, tx, rt } = app;
     let tx = tx.clone();
@@ -31028,8 +31061,13 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
 
         // Its own token, carrying the tasks permission, which the shared Graph
         // token has never carried: with that one every write was refused
-        // (ledger 282).
-        if crate::service::oauth_credentials::credentials_for("outlook").is_some() {
+        // (ledger 282). Asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key (14-02).
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(_) = microsoft {
             match handle.block_on(crate::service::oauth::a_tasks_token_for(aid)) {
                 Ok(token) => {
                     match handle.block_on(sync_microsoft_tasks(&cache, &client, &token, aid)) {
@@ -31040,12 +31078,33 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
                 Err(e) => total.errors.push(format!("Microsoft sign-in: {e}")),
             }
         }
+        // No account at neither provider has tasks of its own to ask.
+        if let Some(why) =
+            who_holds_the_calendars::at_neither_with_nothing_of_its_own(account, false)
+        {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
         // The messages go to the log and the count goes on screen, because the
         // status line has one line and a failure per list would fill it.
         for problem in &total.errors {
             tracing::warn!("Task sync: {}", problem);
         }
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Tasks,
+                account,
+                total.what_was_asked,
+                &[
+                    ("lists", total.lists),
+                    ("stored", total.stored),
+                    ("deleted", total.deleted),
+                    ("sent", total.sent),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         // Through the finishing event, as the contacts and calendar syncs
         // are, so the tone and the word follow the person's row for it and
         // the counts follow the level chosen while fetching (#38). Until
@@ -31166,7 +31225,9 @@ pub(crate) fn spawn_calendar_sync(
     rt: &Arc<Runtime>,
 ) {
     use crate::application::calendar::CalendarSyncResult;
-    use crate::application::who_holds_the_calendars::{self, GooglesAnswer, Module};
+    use crate::application::who_holds_the_calendars::{
+        self, GooglesAnswer, MayMicrosoftBeAsked, Module,
+    };
 
     let tx = tx.clone();
     let accounts = state
@@ -31241,9 +31302,15 @@ pub(crate) fn spawn_calendar_sync(
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
-        // Try Microsoft calendar sync
+        // Microsoft is asked only for an account whose mail is at Microsoft,
+        // and only when this copy holds its key; when it does not, the reason
+        // is carried as Google's is (14-02).
         let ms_client = crate::service::microsoft_graph::MsGraphClient::for_account(aid);
-        if let Some(outlook_creds) = crate::service::oauth_credentials::credentials_for("outlook") {
+        let microsoft = who_holds_the_calendars::a_microsoft_key(account);
+        if let MayMicrosoftBeAsked::No(why) = &microsoft {
+            total.what_was_asked.why_not_asked = Some(*why);
+        }
+        if let MayMicrosoftBeAsked::Yes(outlook_creds) = microsoft {
             let auth = crate::service::oauth::AuthManager::new(
                 aid,
                 "outlook",
@@ -31265,6 +31332,12 @@ pub(crate) fn spawn_calendar_sync(
 
         // CalDAV calendar sync
         let calendars = cache.get_calendars_for_account(aid).unwrap_or_default();
+        let has_calendars_of_its_own = calendars.iter().any(|c| {
+            c.source_provider.as_deref().is_some_and(|source| {
+                source == crate::application::calendar_source::ON_A_SERVER
+                    || source == crate::application::calendar_source::FROM_A_FEED
+            })
+        });
         let caldav_client = crate::service::caldav::CalDavClient::for_account(aid);
         for cal in calendars.iter().filter(|c| {
             c.source_provider.as_deref() == Some(crate::application::calendar_source::ON_A_SERVER)
@@ -31331,7 +31404,28 @@ pub(crate) fn spawn_calendar_sync(
                 e
             )),
         }
+        if let Some(why) = who_holds_the_calendars::at_neither_with_nothing_of_its_own(
+            account,
+            has_calendars_of_its_own,
+        ) {
+            total.what_was_asked.why_not_asked = Some(why);
+        }
 
+        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,
+                account,
+                total.what_was_asked,
+                &[
+                    ("created", total.created),
+                    ("updated", total.updated),
+                    ("deleted", total.deleted),
+                    ("sent", total.sent),
+                    ("errors", total.errors.len()),
+                ],
+            )
+        );
         handle.block_on(async {
             let _ = tx
                 .send(UIUpdate::CalendarSyncComplete(Box::new(total)))

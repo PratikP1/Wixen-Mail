@@ -14,6 +14,12 @@
 //! on them (D-06): no account open, no key in this copy, an account on an app
 //! password, and a browser sign-in that is missing or has run out, which is
 //! only learned by asking for a token.
+//!
+//! Since 14-02 the same is answered for Microsoft, which every sync asked
+//! whenever this copy held a Microsoft key, whatever the account; and an
+//! account at neither provider, with no calendar server, feed or address book
+//! of its own, hears why there is nothing to bring. Each finished sync writes
+//! one line built by [`the_finish_line`].
 
 use crate::application::summing_up::SummingUp;
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
@@ -24,6 +30,11 @@ use crate::data::account::Account;
 /// under, as [`crate::application::who_runs_the_mail::WhoRunsTheMail`] names
 /// it for a Gmail account.
 const GOOGLE: &str = "gmail";
+
+/// The name Microsoft's sign-in key is filed under, as
+/// [`crate::application::who_runs_the_mail::WhoRunsTheMail`] names it for a
+/// Microsoft account.
+const MICROSOFT: &str = "outlook";
 
 /// The part of the program whose sync is asking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +86,8 @@ impl WhyNothingWasAsked {
             WhyNothingWasAsked::NoGoogleSignInKey => "no_google_sign_in_key",
             WhyNothingWasAsked::SignsInWithAnAppPassword => "app_password",
             WhyNothingWasAsked::TheBrowserSignInRanOut => "browser_sign_in_ran_out",
-            WhyNothingWasAsked::NoMicrosoftSignInKey | WhyNothingWasAsked::AtNeitherProvider => "",
+            WhyNothingWasAsked::NoMicrosoftSignInKey => "no_microsoft_sign_in_key",
+            WhyNothingWasAsked::AtNeitherProvider => "at_neither_provider",
         }
     }
 
@@ -106,9 +118,14 @@ impl WhyNothingWasAsked {
                  sign-in is missing or has run out. Open the Account Manager with Ctrl+Shift+A \
                  and choose Sign In Again."
             ),
-            WhyNothingWasAsked::NoMicrosoftSignInKey | WhyNothingWasAsked::AtNeitherProvider => {
-                String::new()
-            }
+            WhyNothingWasAsked::NoMicrosoftSignInKey => format!(
+                "Nothing was asked of Microsoft for this account's {holds}, because this copy of \
+                 Wixen Mail has no Microsoft sign-in key. See Setting up a provider in Help."
+            ),
+            WhyNothingWasAsked::AtNeitherProvider => format!(
+                "This account's mail is at neither Google nor Microsoft, so there are no {holds} \
+                 there to bring."
+            ),
         }
     }
 }
@@ -155,8 +172,30 @@ pub fn may_microsoft_be_asked<Key>(
     account: &Account,
     key: Option<Key>,
 ) -> MayMicrosoftBeAsked<Key> {
-    let _ = (account, key);
-    MayMicrosoftBeAsked::NotMicrosoftsToAsk
+    if WhoRunsTheMail::of(account) != WhoRunsTheMail::Microsoft {
+        return MayMicrosoftBeAsked::NotMicrosoftsToAsk;
+    }
+    match key {
+        None => MayMicrosoftBeAsked::No(WhyNothingWasAsked::NoMicrosoftSignInKey),
+        Some(key) => MayMicrosoftBeAsked::Yes(key),
+    }
+}
+
+/// The key this copy holds for asking Microsoft about this account, or why
+/// there is none.
+///
+/// Thin glue over [`may_microsoft_be_asked`]. No account open is not
+/// Microsoft's to answer: Google's answer already gives that reason.
+pub fn a_microsoft_key(
+    account: Option<&Account>,
+) -> MayMicrosoftBeAsked<crate::service::oauth_credentials::ClientCredentials> {
+    match account {
+        Some(account) => may_microsoft_be_asked(
+            account,
+            crate::service::oauth_credentials::credentials_for(MICROSOFT),
+        ),
+        None => MayMicrosoftBeAsked::NotMicrosoftsToAsk,
+    }
 }
 
 /// Why there is nothing to bring for an account whose mail is at neither
@@ -166,8 +205,9 @@ pub fn at_neither_with_nothing_of_its_own(
     account: Option<&Account>,
     has_something_of_its_own: bool,
 ) -> Option<WhyNothingWasAsked> {
-    let _ = (account, has_something_of_its_own);
-    None
+    let at_neither =
+        account.is_some_and(|account| WhoRunsTheMail::of(account) == WhoRunsTheMail::SomebodyElse);
+    (at_neither && !has_something_of_its_own).then_some(WhyNothingWasAsked::AtNeitherProvider)
 }
 
 /// The line a finished sync writes to the log at info: the module, who runs
@@ -179,8 +219,22 @@ pub fn the_finish_line(
     asked: WhatWasAsked,
     counts: &[(&str, usize)],
 ) -> String {
-    let _ = (module, account, asked, counts);
-    String::new()
+    let whose = match account.map(WhoRunsTheMail::of) {
+        Some(WhoRunsTheMail::Gmail) => "account at google",
+        Some(WhoRunsTheMail::Microsoft) => "account at microsoft",
+        Some(WhoRunsTheMail::SomebodyElse) => "account at neither",
+        None => "no account",
+    };
+    let answered = match asked.why_not_asked {
+        Some(why) => format!("not asked: {}", why.word()),
+        None if asked.somebody => "answered".to_string(),
+        None => "nobody answered".to_string(),
+    };
+    let mut line = format!("{} sync finished, {whose}, {answered}", module.word());
+    for (what, how_many) in counts {
+        line.push_str(&format!(", {what} {how_many}"));
+    }
+    line
 }
 
 /// What the three syncs get when they ask for a Google token.
