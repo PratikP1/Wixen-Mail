@@ -158,6 +158,7 @@ mod tests {
     use crate::common::answering::{answering, heard};
     use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
     use crate::service::google_api::{GoogleApiClient, THE_MAIN_CALENDAR};
+    use crate::service::tasks_api::{GoogleTask, TasksClient};
 
     /// A calendar read the way a sync sends it, with its sync marker.
     const A_CALENDAR_READ: &str = "https://www.googleapis.com/calendar/v3/calendars/primary/events\
@@ -369,5 +370,223 @@ mod tests {
                 lines[0]
             );
         }
+    }
+
+    // ── Every helper writes the line (14-02 task 2) ─────────────────────────
+
+    /// One stand-in answering one request, and what it heard.
+    type AStandIn = (String, tokio::sync::oneshot::Receiver<String>);
+
+    async fn a_stand_in(status: &'static str, reply: &str) -> AStandIn {
+        let (address, listening) = answering(status, "application/json", reply.to_string()).await;
+        (format!("http://{address}"), listening)
+    }
+
+    /// The one line naming `who`, after the stand-in was asked.
+    async fn the_one_line(
+        captured: &CapturedLogs,
+        who: WhoWasAsked,
+        listening: tokio::sync::oneshot::Receiver<String>,
+    ) -> String {
+        heard(listening, "the request")
+            .await
+            .expect("the stand-in was asked");
+        let lines = the_lines_naming(captured, who);
+        assert_eq!(lines.len(), 1, "one request, one line: {lines:?}");
+        lines[0].clone()
+    }
+
+    /// The same line with the stand-in's port taken out, so it can be
+    /// compared whole.
+    fn without_the_port(line: &str, address: &str) -> String {
+        line.replace(address.trim_start_matches("http://"), "STAND-IN")
+    }
+
+    #[tokio::test]
+    async fn test_a_new_google_event_writes_its_line() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("200 OK", r#"{"id":"evt1"}"#).await;
+
+        GoogleApiClient::allowed_to_change_things_at(&address)
+            .create_event("a-token", THE_MAIN_CALENDAR, &Default::default())
+            .await
+            .expect("the event was answered");
+
+        let line = the_one_line(&captured, WhoWasAsked::Google, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google: POST STAND-IN/calendars/primary/events, answered 200"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_changed_google_event_writes_its_line() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("200 OK", r#"{"id":"evt1"}"#).await;
+
+        GoogleApiClient::allowed_to_change_things_at(&address)
+            .update_event("a-token", THE_MAIN_CALENDAR, "evt1", &Default::default())
+            .await
+            .expect("the change was answered");
+
+        let line = the_one_line(&captured, WhoWasAsked::Google, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google: PATCH STAND-IN/calendars/primary/events/evt1, answered 200"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_delete_answered_gone_counts_as_done_and_writes_the_status_it_was() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("410 Gone", "{}").await;
+
+        GoogleApiClient::allowed_to_change_things_at(&address)
+            .delete_event("a-token", THE_MAIN_CALENDAR, "evt1")
+            .await
+            .expect("an event already gone is the state that was asked for");
+
+        let line = the_one_line(&captured, WhoWasAsked::Google, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google: DELETE STAND-IN/calendars/primary/events/evt1, answered 410"
+        );
+    }
+
+    /// An address on this machine where nothing listens, so each request is
+    /// refused rather than left waiting out the client's timeout.
+    fn an_address_nobody_answers() -> String {
+        let taken = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+        let address = taken.local_addr().expect("the port that was taken");
+        format!("http://{address}")
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker() {
+        // D-09: one line per request sent, retries included. A refused
+        // connection is retried three times, so four requests, four lines.
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+
+        let failed = GoogleApiClient::new()
+            .pointed_at(&an_address_nobody_answers())
+            .list_events("a-token", None, None, Some("a-marker"), THE_MAIN_CALENDAR)
+            .await;
+
+        assert!(
+            failed.is_err(),
+            "nobody answered and yet: {:?}",
+            failed.ok()
+        );
+        let lines = the_lines_naming(&captured, WhoWasAsked::Google);
+        assert_eq!(lines.len(), 4, "{lines:?}");
+        assert!(
+            lines.iter().all(|line| line.ends_with(", no answer came")),
+            "{lines:?}"
+        );
+        // Every line at info or above, the retry's warning among them, whose
+        // error text named the whole address until 14-02.
+        for private in ["a-token", "a-marker", "syncToken"] {
+            assert!(
+                !the_info_lines(&captured)
+                    .iter()
+                    .any(|line| line.contains(private)),
+                "{private} reached the log: {:?}",
+                the_info_lines(&captured)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_google_tasks_read_writes_its_line() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("200 OK", r#"{"items":[]}"#).await;
+
+        TasksClient::new()
+            .pointed_at(&address)
+            .google_lists("a-token")
+            .await
+            .expect("an empty list of lists");
+
+        let line = the_one_line(&captured, WhoWasAsked::GoogleTasks, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google Tasks: GET STAND-IN/users/@me/lists, answered 200"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_to_do_read_is_written_under_microsofts_name() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("200 OK", r#"{"value":[]}"#).await;
+
+        TasksClient::new()
+            .pointed_at(&address)
+            .ms_lists("a-token")
+            .await
+            .expect("an empty list of lists");
+
+        let line = the_one_line(&captured, WhoWasAsked::MicrosoftToDo, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Microsoft To Do: GET STAND-IN/me/todo/lists, answered 200"
+        );
+    }
+
+    /// Google's refusal of a task change from a sign-in that never asked for
+    /// the tasks permission.
+    const NO_TASKS_PERMISSION: &str = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","errors":[{"message":"Insufficient Permission","domain":"global","reason":"insufficientPermissions"}],"status":"PERMISSION_DENIED"}}"#;
+
+    #[tokio::test]
+    async fn test_a_refused_task_change_writes_its_reason_and_keeps_no_body() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("403 Forbidden", NO_TASKS_PERMISSION).await;
+
+        let refused = TasksClient::allowed_to_change_things_at(&address)
+            .google_update_task(
+                "a-token",
+                "google:l1",
+                &GoogleTask {
+                    id: "google:t1".into(),
+                    ..GoogleTask::default()
+                },
+            )
+            .await;
+
+        // Still the sign-in answer the person can act on, and still no body.
+        let Err(crate::common::Error::Authentication(said)) = refused else {
+            panic!("a 403 on a change is not the sign-in answer: {refused:?}");
+        };
+        assert!(!said.contains("insufficient"), "{said}");
+        let line = the_one_line(&captured, WhoWasAsked::GoogleTasks, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google Tasks: PATCH STAND-IN/lists/l1/tasks/t1, answered 403 \
+             insufficientPermissions"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_delete_answered_not_found_writes_the_status_it_was() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let (address, listening) = a_stand_in("404 Not Found", "{}").await;
+
+        TasksClient::allowed_to_change_things_at(&address)
+            .google_delete_task("a-token", "google:l1", "google:t1")
+            .await
+            .expect("a task already gone is the state that was asked for");
+
+        let line = the_one_line(&captured, WhoWasAsked::GoogleTasks, listening).await;
+        assert_eq!(
+            without_the_port(&line, &address),
+            "Asked Google Tasks: DELETE STAND-IN/lists/l1/tasks/t1, answered 404"
+        );
     }
 }

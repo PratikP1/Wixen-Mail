@@ -23683,7 +23683,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::ContactsSyncComplete(result) => {
             let msg = crate::application::contacts_sync::what_the_contacts_sync_did(result);
-            if result.what_was_asked.why_not_google.is_some() {
+            if result.what_was_asked.why_not_asked.is_some() {
                 // Google's address book could not be asked: said with the
                 // cue for an account needing attention, as the calendar's
                 // reason is, at any level (#22, D-07).
@@ -23785,7 +23785,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::CalendarSyncComplete(result) => {
             let msg = crate::application::calendar::what_the_calendar_sync_did(result);
-            if result.what_was_asked.why_not_google.is_some() {
+            if result.what_was_asked.why_not_asked.is_some() {
                 // A sync that could not ask Google says why with the cue for
                 // an account needing attention, never the success cue, which
                 // for a sync that did nothing is the defect #22 reports
@@ -30893,7 +30893,7 @@ fn spawn_contacts_sync(app: AppHandles<'_>) {
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 
@@ -31022,7 +31022,7 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {e}")),
         }
 
@@ -31054,7 +31054,7 @@ fn spawn_tasks_sync(app: AppHandles<'_>) {
         let said = format!("Tasks: {}", total.summary());
         // A sync that could not ask Google finishes as an account needing
         // attention rather than as a completed sync (#22, D-07).
-        let _ = tx.try_send(if total.what_was_asked.why_not_google.is_some() {
+        let _ = tx.try_send(if total.what_was_asked.why_not_asked.is_some() {
             UIUpdate::ModuleSyncNeedsAttention(said)
         } else {
             UIUpdate::ModuleSyncFinished(said)
@@ -31237,7 +31237,7 @@ pub(crate) fn spawn_calendar_sync(
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
-            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_google = Some(why),
+            Ok(GooglesAnswer::NothingAsked(why)) => total.what_was_asked.why_not_asked = Some(why),
             Err(e) => total.errors.push(format!("Google sign-in: {}", e)),
         }
 

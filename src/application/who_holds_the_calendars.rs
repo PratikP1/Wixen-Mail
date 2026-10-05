@@ -62,6 +62,8 @@ pub enum WhyNothingWasAsked {
     NoGoogleSignInKey,
     SignsInWithAnAppPassword,
     TheBrowserSignInRanOut,
+    NoMicrosoftSignInKey,
+    AtNeitherProvider,
 }
 
 impl WhyNothingWasAsked {
@@ -73,6 +75,7 @@ impl WhyNothingWasAsked {
             WhyNothingWasAsked::NoGoogleSignInKey => "no_google_sign_in_key",
             WhyNothingWasAsked::SignsInWithAnAppPassword => "app_password",
             WhyNothingWasAsked::TheBrowserSignInRanOut => "browser_sign_in_ran_out",
+            WhyNothingWasAsked::NoMicrosoftSignInKey | WhyNothingWasAsked::AtNeitherProvider => "",
         }
     }
 
@@ -103,6 +106,9 @@ impl WhyNothingWasAsked {
                  sign-in is missing or has run out. Open the Account Manager with Ctrl+Shift+A \
                  and choose Sign In Again."
             ),
+            WhyNothingWasAsked::NoMicrosoftSignInKey | WhyNothingWasAsked::AtNeitherProvider => {
+                String::new()
+            }
         }
     }
 }
@@ -131,6 +137,50 @@ pub fn may_google_be_asked<Key>(account: &Account, key: Option<Key>) -> MayGoogl
         }
         Some(key) => MayGoogleBeAsked::Yes(key),
     }
+}
+
+/// Whether Microsoft may be asked for this account's calendars, contacts and
+/// tasks, carrying the key when it may.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MayMicrosoftBeAsked<Key> {
+    Yes(Key),
+    /// The account's mail is not at Microsoft, so Microsoft holds nothing of
+    /// it.
+    NotMicrosoftsToAsk,
+    No(WhyNothingWasAsked),
+}
+
+/// The answer from who runs the account's mail and the key this copy holds.
+pub fn may_microsoft_be_asked<Key>(
+    account: &Account,
+    key: Option<Key>,
+) -> MayMicrosoftBeAsked<Key> {
+    let _ = (account, key);
+    MayMicrosoftBeAsked::NotMicrosoftsToAsk
+}
+
+/// Why there is nothing to bring for an account whose mail is at neither
+/// Google nor Microsoft and which has nothing of its own to ask, such as a
+/// calendar server, a feed or an address book.
+pub fn at_neither_with_nothing_of_its_own(
+    account: Option<&Account>,
+    has_something_of_its_own: bool,
+) -> Option<WhyNothingWasAsked> {
+    let _ = (account, has_something_of_its_own);
+    None
+}
+
+/// The line a finished sync writes to the log at info: the module, who runs
+/// the account's mail, whether its provider answered or why it was not asked,
+/// and the counts. Numbers and words only, never a sentence the sync says.
+pub fn the_finish_line(
+    module: Module,
+    account: Option<&Account>,
+    asked: WhatWasAsked,
+    counts: &[(&str, usize)],
+) -> String {
+    let _ = (module, account, asked, counts);
+    String::new()
 }
 
 /// What the three syncs get when they ask for a Google token.
@@ -191,14 +241,16 @@ async fn asked_of_google(account: Option<&Account>) -> Result<GooglesAnswer> {
     }
 }
 
-/// Whether a sync asked anybody, and why it did not ask Google, carried on
-/// each module's result so its summary can say it.
+/// Whether a sync asked anybody, and why it did not ask the account's own
+/// provider, carried on each module's result so its summary can say it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WhatWasAsked {
     /// A pass asked somebody: Google, Microsoft, a server or a feed.
     pub somebody: bool,
-    /// Why Google was not asked, when it was not.
-    pub why_not_google: Option<WhyNothingWasAsked>,
+    /// Why the account's provider, Google or Microsoft, was not asked, or why
+    /// an account at neither has nothing to bring. Named `why_not_google`
+    /// until 14-02, when Microsoft and accounts at neither gained reasons.
+    pub why_not_asked: Option<WhyNothingWasAsked>,
 }
 
 impl WhatWasAsked {
@@ -207,14 +259,14 @@ impl WhatWasAsked {
     pub fn with_a_pass(self, pass: WhatWasAsked) -> Self {
         Self {
             somebody: true,
-            why_not_google: self.why_not_google.or(pass.why_not_google),
+            why_not_asked: self.why_not_asked.or(pass.why_not_asked),
         }
     }
 
     /// The reason to say on its own: nobody at all was asked and nothing
     /// went wrong, so there are no counts worth hearing (D-08).
     fn alone(self, nothing_went_wrong: bool) -> Option<WhyNothingWasAsked> {
-        self.why_not_google
+        self.why_not_asked
             .filter(|_| !self.somebody && nothing_went_wrong)
     }
 
@@ -237,7 +289,7 @@ impl WhatWasAsked {
     pub fn after_the_counts(self, module: Module, nothing_went_wrong: bool) -> Option<String> {
         match self.alone(nothing_went_wrong) {
             Some(_) => None,
-            None => self.why_not_google.map(|why| why.sentence(module)),
+            None => self.why_not_asked.map(|why| why.sentence(module)),
         }
     }
 }
@@ -251,11 +303,13 @@ mod tests {
     use crate::application::tasks_sync::TaskSyncResult;
 
     const EVERY_MODULE: [Module; 3] = [Module::Calendar, Module::Contacts, Module::Tasks];
-    const EVERY_REASON: [WhyNothingWasAsked; 4] = [
+    const EVERY_REASON: [WhyNothingWasAsked; 6] = [
         WhyNothingWasAsked::NoAccountIsOpen,
         WhyNothingWasAsked::NoGoogleSignInKey,
         WhyNothingWasAsked::SignsInWithAnAppPassword,
         WhyNothingWasAsked::TheBrowserSignInRanOut,
+        WhyNothingWasAsked::NoMicrosoftSignInKey,
+        WhyNothingWasAsked::AtNeitherProvider,
     ];
 
     /// The key a copy may hold, as the answer sees it: there or not.
@@ -330,6 +384,130 @@ mod tests {
         );
     }
 
+    fn a_microsoft_account() -> Account {
+        an_account_at("outlook.office365.com", "me@outlook.com")
+    }
+
+    fn an_account_at_neither() -> Account {
+        an_account_at("imap.example.com", "me@example.com")
+    }
+
+    #[test]
+    fn test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does() {
+        // Until 14-02 every sync asked Microsoft whenever this copy held a
+        // Microsoft key, so a Gmail account on a copy holding both keys
+        // reported "Microsoft auth" as an error on every sync.
+        assert_eq!(
+            may_microsoft_be_asked(&a_microsoft_account(), A_KEY),
+            MayMicrosoftBeAsked::Yes("a key")
+        );
+        assert_eq!(
+            may_microsoft_be_asked(&a_microsoft_account(), NO_KEY),
+            MayMicrosoftBeAsked::No(WhyNothingWasAsked::NoMicrosoftSignInKey)
+        );
+        for account in [a_gmail_account(true), an_account_at_neither()] {
+            assert_eq!(
+                may_microsoft_be_asked(&account, A_KEY),
+                MayMicrosoftBeAsked::NotMicrosoftsToAsk,
+                "{} asked Microsoft",
+                account.email
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring() {
+        assert_eq!(
+            at_neither_with_nothing_of_its_own(Some(&an_account_at_neither()), false),
+            Some(WhyNothingWasAsked::AtNeitherProvider)
+        );
+        // A calendar server, a feed or an address book of its own is asked,
+        // and its counts are what is said.
+        assert_eq!(
+            at_neither_with_nothing_of_its_own(Some(&an_account_at_neither()), true),
+            None
+        );
+        // An account at a provider has that provider's own answer, and no
+        // account at all has its own reason.
+        for account in [a_gmail_account(false), a_microsoft_account()] {
+            assert_eq!(
+                at_neither_with_nothing_of_its_own(Some(&account), false),
+                None,
+                "{}",
+                account.email
+            );
+        }
+        assert_eq!(at_neither_with_nothing_of_its_own(None, false), None);
+    }
+
+    #[test]
+    fn test_the_microsoft_and_neither_reasons_name_their_way_out() {
+        let module = Module::Contacts;
+        let no_key = WhyNothingWasAsked::NoMicrosoftSignInKey.sentence(module);
+        assert_eq!(
+            no_key,
+            "Nothing was asked of Microsoft for this account's contacts, because this copy of \
+             Wixen Mail has no Microsoft sign-in key. See Setting up a provider in Help."
+        );
+        let neither = WhyNothingWasAsked::AtNeitherProvider.sentence(Module::Calendar);
+        assert_eq!(
+            neither,
+            "This account's mail is at neither Google nor Microsoft, so there are no calendars \
+             there to bring."
+        );
+    }
+
+    #[test]
+    fn test_the_finish_line_names_the_module_the_provider_and_the_counts_in_words() {
+        let counts = [
+            ("created", 2),
+            ("updated", 0),
+            ("deleted", 1),
+            ("errors", 0),
+        ];
+        assert_eq!(
+            the_finish_line(
+                Module::Calendar,
+                Some(&a_gmail_account(false)),
+                not_asked(WhyNothingWasAsked::SignsInWithAnAppPassword),
+                &counts,
+            ),
+            "calendar sync finished, account at google, not asked: app_password, created 2, \
+             updated 0, deleted 1, errors 0"
+        );
+        let answered = WhatWasAsked {
+            somebody: true,
+            why_not_asked: None,
+        };
+        assert_eq!(
+            the_finish_line(
+                Module::Tasks,
+                Some(&a_microsoft_account()),
+                answered,
+                &[("stored", 4), ("errors", 1)]
+            ),
+            "tasks sync finished, account at microsoft, answered, stored 4, errors 1"
+        );
+        assert_eq!(
+            the_finish_line(
+                Module::Contacts,
+                Some(&an_account_at_neither()),
+                WhatWasAsked::default(),
+                &[("errors", 2)]
+            ),
+            "contacts sync finished, account at neither, nobody answered, errors 2"
+        );
+        assert_eq!(
+            the_finish_line(
+                Module::Contacts,
+                None,
+                not_asked(WhyNothingWasAsked::NoAccountIsOpen),
+                &[]
+            ),
+            "contacts sync finished, no account, not asked: no_account_open"
+        );
+    }
+
     #[test]
     fn test_every_reason_is_a_persons_sentence_naming_what_google_holds() {
         for module in EVERY_MODULE {
@@ -344,7 +522,10 @@ mod tests {
                     said.contains(module.what_google_holds()),
                     "{why:?} does not name the {module:?}: {said}"
                 );
-                assert!(said.contains("Google"), "Google is not named: {said}");
+                assert!(
+                    said.contains("Google") || said.contains("Microsoft"),
+                    "no provider is named: {said}"
+                );
             }
         }
     }
@@ -396,7 +577,7 @@ mod tests {
         let said = what_the_calendar_sync_did(&CalendarSyncResult {
             what_was_asked: WhatWasAsked {
                 somebody: false,
-                why_not_google: Some(why),
+                why_not_asked: Some(why),
             },
             ..CalendarSyncResult::default()
         });
@@ -412,7 +593,7 @@ mod tests {
         let mut total = CalendarSyncResult {
             what_was_asked: WhatWasAsked {
                 somebody: false,
-                why_not_google: Some(why),
+                why_not_asked: Some(why),
             },
             ..CalendarSyncResult::default()
         };
@@ -434,7 +615,7 @@ mod tests {
         let failed = CalendarSyncResult {
             what_was_asked: WhatWasAsked {
                 somebody: false,
-                why_not_google: Some(why),
+                why_not_asked: Some(why),
             },
             errors: vec!["the server said no".to_string()],
             ..CalendarSyncResult::default()
@@ -480,7 +661,7 @@ mod tests {
         let mut total = CalendarSyncResult {
             what_was_asked: WhatWasAsked {
                 somebody: false,
-                why_not_google: Some(WhyNothingWasAsked::NoGoogleSignInKey),
+                why_not_asked: Some(WhyNothingWasAsked::NoGoogleSignInKey),
             },
             ..CalendarSyncResult::default()
         };
@@ -507,7 +688,7 @@ mod tests {
             held_for_you_to_choose: 70,
             what_was_asked: WhatWasAsked {
                 somebody: false,
-                why_not_google: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
+                why_not_asked: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
             },
             errors: vec!["second".to_string()],
         });
@@ -524,7 +705,7 @@ mod tests {
                 held_for_you_to_choose: 77,
                 what_was_asked: WhatWasAsked {
                     somebody: true,
-                    why_not_google: Some(WhyNothingWasAsked::NoGoogleSignInKey),
+                    why_not_asked: Some(WhyNothingWasAsked::NoGoogleSignInKey),
                 },
                 errors: vec!["first".to_string(), "second".to_string()],
             }
@@ -555,7 +736,7 @@ mod tests {
             "UIUpdate::ModuleChanged(",
         );
         assert!(
-            arm.contains("what_was_asked.why_not_google.is_some()"),
+            arm.contains("what_was_asked.why_not_asked.is_some()"),
             "the calendar's finish does not look for the reason: {arm}"
         );
         assert!(
@@ -577,7 +758,7 @@ mod tests {
     fn not_asked(why: WhyNothingWasAsked) -> WhatWasAsked {
         WhatWasAsked {
             somebody: false,
-            why_not_google: Some(why),
+            why_not_asked: Some(why),
         }
     }
 
@@ -632,7 +813,7 @@ mod tests {
             total.what_was_asked,
             WhatWasAsked {
                 somebody: true,
-                why_not_google: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
+                why_not_asked: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
             }
         );
     }
@@ -678,7 +859,7 @@ mod tests {
             total.what_was_asked,
             WhatWasAsked {
                 somebody: true,
-                why_not_google: Some(WhyNothingWasAsked::SignsInWithAnAppPassword),
+                why_not_asked: Some(WhyNothingWasAsked::SignsInWithAnAppPassword),
             }
         );
     }
@@ -691,7 +872,7 @@ mod tests {
             "UIUpdate::WorkingDayChanged(",
         );
         assert!(
-            contacts.contains("what_was_asked.why_not_google.is_some()")
+            contacts.contains("what_was_asked.why_not_asked.is_some()")
                 && contacts.contains("a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg)"),
             "a contacts sync that asked Google nothing is not signalled as needing attention: \
              {contacts}"
@@ -712,7 +893,7 @@ mod tests {
             .split_once("\n}\n")
             .unwrap_or_else(|| panic!("spawn_tasks_sync does not end in {path}"));
         assert!(
-            spawn.contains("what_was_asked.why_not_google.is_some()")
+            spawn.contains("what_was_asked.why_not_asked.is_some()")
                 && spawn.contains("UIUpdate::ModuleSyncNeedsAttention("),
             "the tasks sync finishes as a completed sync when it asked Google nothing: {spawn}"
         );
