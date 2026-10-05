@@ -74,6 +74,7 @@ pub enum WhyNothingWasAsked {
     NoGoogleSignInKey,
     SignsInWithAnAppPassword,
     TheBrowserSignInRanOut,
+    TheSeparateSignInRanOut,
     NoMicrosoftSignInKey,
     AtNeitherProvider,
 }
@@ -87,6 +88,7 @@ impl WhyNothingWasAsked {
             WhyNothingWasAsked::NoGoogleSignInKey => "no_google_sign_in_key",
             WhyNothingWasAsked::SignsInWithAnAppPassword => "app_password",
             WhyNothingWasAsked::TheBrowserSignInRanOut => "browser_sign_in_ran_out",
+            WhyNothingWasAsked::TheSeparateSignInRanOut => "separate_sign_in_ran_out",
             WhyNothingWasAsked::NoMicrosoftSignInKey => "no_microsoft_sign_in_key",
             WhyNothingWasAsked::AtNeitherProvider => "at_neither_provider",
         }
@@ -125,7 +127,8 @@ impl WhyNothingWasAsked {
                 "Nothing was asked of Google for this account's {holds}. The account signs in \
                  with an app password, and Google gives {holds} only to a browser sign-in."
             ),
-            WhyNothingWasAsked::TheBrowserSignInRanOut => format!(
+            WhyNothingWasAsked::TheBrowserSignInRanOut
+            | WhyNothingWasAsked::TheSeparateSignInRanOut => format!(
                 "Nothing was asked of Google for this account's {holds}, because its browser \
                  sign-in is missing or has run out. Open the Account Manager with Ctrl+Shift+A \
                  and choose Sign In Again."
@@ -158,7 +161,12 @@ pub enum MayGoogleBeAsked<Key> {
 /// The answer from what is known before anything is asked: who runs the
 /// account's mail, whether it signs in through a browser, and the key this
 /// copy holds, if any.
-pub fn may_google_be_asked<Key>(account: &Account, key: Option<Key>) -> MayGoogleBeAsked<Key> {
+pub fn may_google_be_asked<Key>(
+    account: &Account,
+    key: Option<Key>,
+    holds_the_separate_sign_in: bool,
+) -> MayGoogleBeAsked<Key> {
+    let _ = holds_the_separate_sign_in;
     if WhoRunsTheMail::of(account) != WhoRunsTheMail::Gmail {
         return MayGoogleBeAsked::NotGooglesToAsk;
     }
@@ -275,7 +283,7 @@ pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
 ) -> WhatAddingAnAccountStarts {
     use WhatAddingAnAccountStarts::{Nothing, OneReason, TheThreeSyncs};
     match WhoRunsTheMail::of(account) {
-        WhoRunsTheMail::Gmail => match may_google_be_asked(account, google_key) {
+        WhoRunsTheMail::Gmail => match may_google_be_asked(account, google_key, false) {
             MayGoogleBeAsked::Yes(_) => TheThreeSyncs,
             MayGoogleBeAsked::No(why) => OneReason(why),
             MayGoogleBeAsked::NotGooglesToAsk => Nothing,
@@ -361,13 +369,25 @@ pub async fn a_google_token(account: Option<&Account>, module: Module) -> Result
 
 /// The token, or why there is none, without the log line.
 async fn asked_of_google(account: Option<&Account>) -> Result<GooglesAnswer> {
+    a_google_token_with(
+        account,
+        crate::service::oauth_credentials::credentials_for(GOOGLE),
+    )
+    .await
+}
+
+/// The token, or why there is none, with the key this copy holds passed in,
+/// so the decision is read without the machine's `oauth.toml`.
+pub async fn a_google_token_with(
+    account: Option<&Account>,
+    key: Option<crate::service::oauth_credentials::ClientCredentials>,
+) -> Result<GooglesAnswer> {
     let Some(account) = account else {
         return Ok(GooglesAnswer::NothingAsked(
             WhyNothingWasAsked::NoAccountIsOpen,
         ));
     };
-    let key = crate::service::oauth_credentials::credentials_for(GOOGLE);
-    let key = match may_google_be_asked(account, key) {
+    let key = match may_google_be_asked(account, key, false) {
         MayGoogleBeAsked::Yes(key) => key,
         MayGoogleBeAsked::NotGooglesToAsk => return Ok(GooglesAnswer::NotGooglesToAsk),
         MayGoogleBeAsked::No(why) => return Ok(GooglesAnswer::NothingAsked(why)),
@@ -452,11 +472,12 @@ mod tests {
     use crate::application::tasks_sync::TaskSyncResult;
 
     const EVERY_MODULE: [Module; 3] = [Module::Calendar, Module::Contacts, Module::Tasks];
-    const EVERY_REASON: [WhyNothingWasAsked; 6] = [
+    const EVERY_REASON: [WhyNothingWasAsked; 7] = [
         WhyNothingWasAsked::NoAccountIsOpen,
         WhyNothingWasAsked::NoGoogleSignInKey,
         WhyNothingWasAsked::SignsInWithAnAppPassword,
         WhyNothingWasAsked::TheBrowserSignInRanOut,
+        WhyNothingWasAsked::TheSeparateSignInRanOut,
         WhyNothingWasAsked::NoMicrosoftSignInKey,
         WhyNothingWasAsked::AtNeitherProvider,
     ];
@@ -490,21 +511,27 @@ mod tests {
         // The order of D-06: no key first, whatever the sign-in, because a
         // browser sign-in cannot run without one.
         assert_eq!(
-            may_google_be_asked(&a_gmail_account(true), NO_KEY),
+            may_google_be_asked(&a_gmail_account(true), NO_KEY, false),
             MayGoogleBeAsked::No(WhyNothingWasAsked::NoGoogleSignInKey)
         );
         assert_eq!(
-            may_google_be_asked(&a_gmail_account(false), NO_KEY),
+            may_google_be_asked(&a_gmail_account(false), NO_KEY, true),
             MayGoogleBeAsked::No(WhyNothingWasAsked::NoGoogleSignInKey)
         );
         // Pratik's account on 2026-10-04: a key, and an app password, which
         // Google takes for mail and never for calendars, contacts or tasks.
         assert_eq!(
-            may_google_be_asked(&a_gmail_account(false), A_KEY),
+            may_google_be_asked(&a_gmail_account(false), A_KEY, false),
             MayGoogleBeAsked::No(WhyNothingWasAsked::SignsInWithAnAppPassword)
         );
+        // Route B: the same account once it holds the separate browser
+        // sign-in for its calendars, contacts and tasks.
         assert_eq!(
-            may_google_be_asked(&a_gmail_account(true), A_KEY),
+            may_google_be_asked(&a_gmail_account(false), A_KEY, true),
+            MayGoogleBeAsked::Yes("a key")
+        );
+        assert_eq!(
+            may_google_be_asked(&a_gmail_account(true), A_KEY, false),
             MayGoogleBeAsked::Yes("a key")
         );
     }
@@ -519,7 +546,7 @@ mod tests {
         ] {
             for key in [A_KEY, NO_KEY] {
                 assert_eq!(
-                    may_google_be_asked(&account, key),
+                    may_google_be_asked(&account, key, true),
                     MayGoogleBeAsked::NotGooglesToAsk,
                     "{} asked Google with key {key:?}",
                     account.email
@@ -528,7 +555,11 @@ mod tests {
         }
         // A Workspace account on its own domain is Google's by its server.
         assert_eq!(
-            may_google_be_asked(&an_account_at("imap.gmail.com", "me@mycompany.com"), A_KEY),
+            may_google_be_asked(
+                &an_account_at("imap.gmail.com", "me@mycompany.com"),
+                A_KEY,
+                false
+            ),
             MayGoogleBeAsked::Yes("a key")
         );
     }
@@ -1102,8 +1133,10 @@ mod tests {
         assert_eq!(
             WhyNothingWasAsked::SignsInWithAnAppPassword.sentence_for_every_module(),
             "Nothing was asked of Google for this account's calendars, contacts and tasks. The \
-             account signs in with an app password, and Google gives calendars, contacts and \
-             tasks only to a browser sign-in."
+             account signs in to mail with an app password, and Google gives calendars, \
+             contacts and tasks only to a browser sign-in. Open the Account Manager with \
+             Ctrl+Shift+A, choose the account and press Sign In for Calendars, Contacts and \
+             Tasks."
         );
         for why in EVERY_REASON {
             let said = why.sentence_for_every_module();
@@ -1297,5 +1330,169 @@ mod tests {
         let why = f5_asks_the_module_showing_before_it_reads_a_folder(&asks_nothing)
             .expect_err("an F5 that never asks the module passed");
         assert!(why.contains("does not ask which module"), "{why}");
+    }
+
+    // ── The separate sign-in for calendars, contacts and tasks (14-03) ────
+    //
+    // Route B of #22: mail keeps its app password, and Google is signed in to
+    // through the browser for these three alone. Under test the credential
+    // store is a map per thread, so nothing here reaches the real one, and the
+    // Google key is passed in rather than read from this machine.
+
+    use crate::service::oauth::{GOOGLE_CALENDARS_CONTACTS_AND_TASKS, OAuthTokenSet};
+    use crate::service::oauth_credentials::ClientCredentials;
+
+    /// A Google sign-in key as a copy might hold one.
+    fn a_google_key() -> ClientCredentials {
+        ClientCredentials {
+            client_id: "a-client".into(),
+            client_secret: Some("a-secret".into()),
+            tenant_id: None,
+        }
+    }
+
+    /// Keep a token under one of an account's Google sign-ins, good for the
+    /// time given from now, or run out when it is negative.
+    fn holding(sign_in: &str, account: &Account, token: &str, good_for: chrono::TimeDelta) {
+        let kept = OAuthTokenSet {
+            access_token: token.into(),
+            refresh_token: None,
+            token_type: "Bearer".into(),
+            scope: None,
+            expires_at: Some((chrono::Utc::now() + good_for).to_rfc3339()),
+        };
+        crate::service::secret_store::write(
+            &crate::service::oauth::keyring_service(sign_in),
+            &account.id,
+            &serde_json::to_string(&kept).expect("a token set to write"),
+        )
+        .expect("the test store keeps it");
+    }
+
+    /// What came back, in words, since the answer prints nothing of itself.
+    fn what_came_back(answer: &GooglesAnswer) -> String {
+        match answer {
+            GooglesAnswer::Token(_) => "a token".into(),
+            GooglesAnswer::NotGooglesToAsk => "not Google's to ask".into(),
+            GooglesAnswer::NothingAsked(why) => format!("nothing asked: {why:?}"),
+        }
+    }
+
+    /// The Account Manager's button the reasons name, as it is heard.
+    const THE_BUTTON: &str = "Sign In for Calendars, Contacts and Tasks";
+
+    #[tokio::test]
+    async fn test_an_app_password_gmail_account_holding_the_separate_sign_in_asks_google_with_it() {
+        use crate::common::answering::{answering, asked_for, heard};
+        use crate::service::google_api::GoogleApiClient;
+
+        let account = a_gmail_account(false);
+        holding(
+            GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+            &account,
+            "the-separate-token",
+            chrono::TimeDelta::days(1),
+        );
+
+        let answer = a_google_token_with(Some(&account), Some(a_google_key()))
+            .await
+            .expect("nothing here meets the network");
+        let GooglesAnswer::Token(token) = answer else {
+            panic!(
+                "the separate sign-in was not used: {}",
+                what_came_back(&answer)
+            );
+        };
+
+        let (address, listening) = answering("200 OK", "application/json", "{}".into()).await;
+        GoogleApiClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .list_events(&token, None, None, None, "primary")
+            .await
+            .expect("the stand-in answers");
+        let request = heard(listening, "the calendar's events")
+            .await
+            .unwrap_or_else(|why| panic!("{why}"));
+        assert!(
+            asked_for(&request).contains("/calendars/primary/events"),
+            "{}",
+            asked_for(&request)
+        );
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer the-separate-token"),
+            "Google was not asked with the separate sign-in's token"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_browser_gmail_account_asks_google_with_its_mail_sign_in() {
+        // D-14: the mail sign-in already carries all four permissions, so a
+        // separate one, if somehow held, is not the one used.
+        let account = a_gmail_account(true);
+        holding(
+            GOOGLE,
+            &account,
+            "the-mail-token",
+            chrono::TimeDelta::days(1),
+        );
+        holding(
+            GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+            &account,
+            "the-separate-token",
+            chrono::TimeDelta::days(1),
+        );
+
+        let answer = a_google_token_with(Some(&account), Some(a_google_key()))
+            .await
+            .expect("nothing here meets the network");
+
+        match answer {
+            GooglesAnswer::Token(token) => assert_eq!(token, "the-mail-token"),
+            other => panic!("{}", what_came_back(&other)),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button() {
+        let answer = a_google_token_with(Some(&a_gmail_account(false)), Some(a_google_key()))
+            .await
+            .expect("nothing here meets the network");
+
+        let GooglesAnswer::NothingAsked(why) = answer else {
+            panic!("{}", what_came_back(&answer));
+        };
+        assert_eq!(why, WhyNothingWasAsked::SignsInWithAnAppPassword);
+        let said = why.sentence(Module::Calendar);
+        assert!(said.contains(THE_BUTTON), "{said}");
+        assert!(said.contains("Ctrl+Shift+A"), "{said}");
+        assert!(said.contains("app password"), "{said}");
+    }
+
+    #[tokio::test]
+    async fn test_an_app_password_gmail_account_whose_separate_sign_in_ran_out_names_the_button() {
+        let account = a_gmail_account(false);
+        // Run out an hour ago, with no refresh token to renew it: what a key
+        // in Testing leaves after its week.
+        holding(
+            GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+            &account,
+            "an-old-token",
+            chrono::TimeDelta::hours(-1),
+        );
+
+        let answer = a_google_token_with(Some(&account), Some(a_google_key()))
+            .await
+            .expect("nothing here meets the network");
+
+        let GooglesAnswer::NothingAsked(why) = answer else {
+            panic!("{}", what_came_back(&answer));
+        };
+        assert_eq!(why, WhyNothingWasAsked::TheSeparateSignInRanOut);
+        let said = why.sentence(Module::Tasks);
+        assert!(said.contains(THE_BUTTON), "{said}");
+        assert!(said.contains("Ctrl+Shift+A"), "{said}");
+        assert!(!said.contains("Sign In Again"), "{said}");
     }
 }
