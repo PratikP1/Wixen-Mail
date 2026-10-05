@@ -23,6 +23,7 @@
 
 use crate::application::summing_up::SummingUp;
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
+use crate::common::types::PimModule;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
 
@@ -127,6 +128,12 @@ impl WhyNothingWasAsked {
                  there to bring."
             ),
         }
+    }
+
+    /// The reason in one sentence for all three modules, said once when an
+    /// account is added and none of them can be brought.
+    pub fn sentence_for_every_module(self) -> String {
+        String::new()
     }
 }
 
@@ -235,6 +242,53 @@ pub fn the_finish_line(
         line.push_str(&format!(", {what} {how_many}"));
     }
     line
+}
+
+/// What adding an account starts (14-02 choice 3, REAL-01).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatAddingAnAccountStarts {
+    /// Its calendars, contacts and tasks are brought once, and each module
+    /// says at most one sentence when its sync finishes.
+    TheThreeSyncs,
+    /// Nothing can be asked, for this reason, said once for all three
+    /// modules.
+    OneReason(WhyNothingWasAsked),
+    /// An account at neither provider has nothing yet to bring, and nothing
+    /// is said.
+    Nothing,
+}
+
+/// What adding this account starts, from who runs its mail and the keys
+/// this copy holds.
+pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
+    account: &Account,
+    google_key: Option<GoogleKey>,
+    microsoft_key: Option<MicrosoftKey>,
+) -> WhatAddingAnAccountStarts {
+    let _ = (account, google_key, microsoft_key);
+    WhatAddingAnAccountStarts::Nothing
+}
+
+/// The accounts in `after` that were not in `before`, by their identity: the
+/// accounts added in one visit to the Account Manager.
+pub fn added_in_this_visit<'a>(before: &[Account], after: &'a [Account]) -> Vec<&'a Account> {
+    let _ = before;
+    after.iter().collect()
+}
+
+/// What Refresh, `F5`, does with a module showing (D-11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatRefreshDoes {
+    /// Reads the open folder or saved search again, in Mail.
+    ReadsTheFolder,
+    /// Does what the sidebar's Sync Now does in that module.
+    SyncsTheModule,
+}
+
+/// What `F5` does with this module showing.
+pub fn what_refresh_does(module: PimModule) -> WhatRefreshDoes {
+    let _ = module;
+    WhatRefreshDoes::ReadsTheFolder
 }
 
 /// What the three syncs get when they ask for a Google token.
@@ -960,5 +1014,245 @@ mod tests {
             "a tasks sync that asked Google nothing is not signalled as needing attention: \
              {tasks}"
         );
+    }
+
+    // ── Adding an account, and F5 in a module (14-02 task 3) ───────────────
+
+    #[test]
+    fn test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing() {
+        use WhatAddingAnAccountStarts::{Nothing, OneReason, TheThreeSyncs};
+        let rows = [
+            (a_gmail_account(true), A_KEY, NO_KEY, TheThreeSyncs),
+            (
+                a_gmail_account(false),
+                A_KEY,
+                A_KEY,
+                OneReason(WhyNothingWasAsked::SignsInWithAnAppPassword),
+            ),
+            (
+                a_gmail_account(true),
+                NO_KEY,
+                A_KEY,
+                OneReason(WhyNothingWasAsked::NoGoogleSignInKey),
+            ),
+            (a_microsoft_account(), NO_KEY, A_KEY, TheThreeSyncs),
+            (
+                a_microsoft_account(),
+                A_KEY,
+                NO_KEY,
+                OneReason(WhyNothingWasAsked::NoMicrosoftSignInKey),
+            ),
+            // Nothing of its own yet, and nothing to say about that until
+            // somebody asks for a sync.
+            (an_account_at_neither(), A_KEY, A_KEY, Nothing),
+        ];
+        for (account, google_key, microsoft_key, expected) in rows {
+            assert_eq!(
+                what_adding_an_account_starts(&account, google_key, microsoft_key),
+                expected,
+                "{} with Google key {google_key:?} and Microsoft key {microsoft_key:?}",
+                account.email
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_reason_said_on_adding_an_account_names_all_three_modules_once() {
+        assert_eq!(
+            WhyNothingWasAsked::SignsInWithAnAppPassword.sentence_for_every_module(),
+            "Nothing was asked of Google for this account's calendars, contacts and tasks. The \
+             account signs in with an app password, and Google gives calendars, contacts and \
+             tasks only to a browser sign-in."
+        );
+        for why in EVERY_REASON {
+            let said = why.sentence_for_every_module();
+            assert_eq!(
+                reads_as_a_persons_sentence(&said, Voice::Answer),
+                Ok(()),
+                "{why:?}"
+            );
+            assert!(said.contains("calendars, contacts and tasks"), "{said}");
+        }
+    }
+
+    #[test]
+    fn test_the_accounts_added_in_a_visit_are_those_that_were_not_there_before() {
+        let with_id = |id: &str| Account {
+            id: id.into(),
+            ..Account::default()
+        };
+        let before = [with_id("a1"), with_id("a2")];
+        // A2 renamed in the same visit is the same account, not a new one.
+        let after = [
+            Account {
+                name: "Renamed".into(),
+                ..with_id("a2")
+            },
+            with_id("a3"),
+            with_id("a4"),
+        ];
+        let added: Vec<&str> = added_in_this_visit(&before, &after)
+            .iter()
+            .map(|account| account.id.as_str())
+            .collect();
+        assert_eq!(added, ["a3", "a4"]);
+    }
+
+    #[test]
+    fn test_f5_reads_the_folder_in_mail_and_syncs_every_other_module() {
+        use WhatRefreshDoes::{ReadsTheFolder, SyncsTheModule};
+        let rows = [
+            (PimModule::Mail, ReadsTheFolder),
+            (PimModule::Contacts, SyncsTheModule),
+            (PimModule::Calendar, SyncsTheModule),
+            (PimModule::Reminders, SyncsTheModule),
+            (PimModule::Tasks, SyncsTheModule),
+            (PimModule::Notes, SyncsTheModule),
+        ];
+        assert_eq!(rows.len(), PimModule::ALL.len(), "a module has no row");
+        for (module, expected) in rows {
+            assert_eq!(what_refresh_does(module), expected, "{module:?}");
+        }
+    }
+
+    /// A reading's answer: nothing, or the complaint naming what is wrong.
+    type Reading<T> = std::result::Result<T, String>;
+
+    /// The window's source, read whole.
+    fn the_window() -> String {
+        let path = "src/presentation/wx_app.rs";
+        std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    }
+
+    /// One function's text, from its signature to the brace closing it at
+    /// column nought.
+    fn the_function(source: &str, signature: &str) -> Reading<String> {
+        let (_, after) = source.split_once(signature).ok_or(format!(
+            "{signature} is not in the window, so this reads nothing"
+        ))?;
+        let (body, _) = after
+            .split_once("\n}\n")
+            .ok_or(format!("{signature} does not end"))?;
+        Ok(body.to_string())
+    }
+
+    /// The Account Manager starts the first sync of each account added in a
+    /// visit, through the answer, and says one reason when it cannot (REAL-01:
+    /// "the sync run on account creation").
+    fn the_account_manager_starts_an_added_accounts_first_sync(window: &str) -> Reading<()> {
+        let manager = the_function(window, "fn handle_account_mgr(")?;
+        if !manager.contains("tx: &Sender<UIUpdate>") {
+            return Err("handle_account_mgr holds no sender, so it can start no sync".into());
+        }
+        if !manager.contains("added_in_this_visit(")
+            || !manager.contains("bring_what_a_new_account_holds(")
+        {
+            return Err(
+                "handle_account_mgr starts nothing for an account added in the visit".into(),
+            );
+        }
+        let bring = the_function(window, "fn bring_what_a_new_account_holds(")?;
+        for needed in [
+            "what_adding_this_account_starts(",
+            "spawn_contacts_sync(",
+            "spawn_calendar_sync(",
+            "spawn_tasks_sync(",
+            "sentence_for_every_module()",
+        ] {
+            if !bring.contains(needed) {
+                return Err(format!(
+                    "bring_what_a_new_account_holds does not reach {needed}"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The first arm `F5` reaches asks which module is showing, and in a
+    /// module other than Mail reaches the one place that chooses a module's
+    /// sync, which Sync Now reaches too (D-11).
+    fn f5_asks_the_module_showing_before_it_reads_a_folder(window: &str) -> Reading<()> {
+        let (_, after) = window
+            .split_once("_ if id == ID_REFRESH_FOLDER")
+            .ok_or("no arm answers F5")?;
+        let (guard, rest) = after.split_once("=>").ok_or("the F5 arm has no body")?;
+        if !guard.contains("what_refresh_does(") {
+            return Err(
+                "the first arm F5 reaches does not ask which module is showing, so F5 in \
+                 Contacts reads whatever mail folder the tree still has selected"
+                    .into(),
+            );
+        }
+        let (arm, _) = rest
+            .split_once("_ if id == ")
+            .ok_or("the F5 arm does not end")?;
+        if !arm.contains("sync_the_module(") {
+            return Err("F5 in a module does not reach that module's sync".into());
+        }
+        let (_, sync_now) = window
+            .split_once("_ if id == ID_CONTEXT_SYNC_NOW =>")
+            .ok_or("no Sync Now arm")?;
+        let (sync_now, _) = sync_now
+            .split_once("_ if id == ")
+            .ok_or("the Sync Now arm does not end")?;
+        if !sync_now.contains("sync_the_module(") {
+            return Err(
+                "Sync Now chooses a module's sync for itself, so it and F5 can come apart".into(),
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_the_account_manager_starts_the_first_sync_of_an_added_account() {
+        the_account_manager_starts_an_added_accounts_first_sync(&the_window())
+            .unwrap_or_else(|why| panic!("{why}"));
+    }
+
+    #[test]
+    fn test_f5_asks_the_module_showing_before_it_reads_a_folder() {
+        f5_asks_the_module_showing_before_it_reads_a_folder(&the_window())
+            .unwrap_or_else(|why| panic!("{why}"));
+    }
+
+    /// The window with one substring of one function replaced, so a plant
+    /// lands inside the region a reading reads.
+    fn planted_in(window: &str, signature: &str, from: &str, to: &str) -> String {
+        let body = the_function(window, signature).unwrap_or_else(|why| panic!("{why}"));
+        let changed = body.replacen(from, to, 1);
+        assert_ne!(changed, body, "the plant changed nothing in {signature}");
+        window.replacen(&body, &changed, 1)
+    }
+
+    #[test]
+    fn test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing() {
+        let window = the_window();
+        let reading = the_account_manager_starts_an_added_accounts_first_sync;
+        let starts_nothing = planted_in(
+            &window,
+            "fn handle_account_mgr(",
+            "bring_what_a_new_account_holds(",
+            "let _ = (",
+        );
+        let why = reading(&starts_nothing).expect_err("a visit that starts nothing passed");
+        assert!(why.contains("starts nothing"), "{why}");
+        let says_nothing = planted_in(
+            &window,
+            "fn bring_what_a_new_account_holds(",
+            "sentence_for_every_module()",
+            "to_string()",
+        );
+        let why = reading(&says_nothing).expect_err("a reason never said passed");
+        assert!(why.contains("sentence_for_every_module()"), "{why}");
+    }
+
+    #[test]
+    fn test_the_reading_of_f5_sees_an_arm_that_reads_the_folder_whatever_is_showing() {
+        let window = the_window();
+        let asks_nothing = window.replacen("what_refresh_does(", "a_module_nobody_asks(", 1);
+        assert_ne!(asks_nothing, window, "the plant changed nothing");
+        let why = f5_asks_the_module_showing_before_it_reads_a_folder(&asks_nothing)
+            .expect_err("an F5 that never asks the module passed");
+        assert!(why.contains("does not ask which module"), "{why}");
     }
 }
