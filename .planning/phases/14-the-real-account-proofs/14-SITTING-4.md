@@ -1,4 +1,6 @@
-# Sitting 4: two accounts, a Trash emptied at a server, and POP
+# Sitting 4, done last: two accounts, a Trash emptied at a server, and POP
+
+The sittings run in the order 2, 3, 1, 4, so this one comes after Sitting 1.
 
 This sitting adds the accounts you have, brings a second Google account's
 calendars, contacts and tasks, copies and moves messages between two

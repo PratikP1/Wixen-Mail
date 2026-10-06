@@ -26,9 +26,11 @@ on this computer while you install.
 10. Choose Finish (Alt+F).
 
 **Why Start Wixen Mail is unticked.** The agent reads your profile before
-the new build's first start, at the beginning of Sitting 1. The first start
-also sends the two deletes that have waited since 20 September, and you
-said to let them go; Sitting 1 is where they are read.
+the new build's first start, at the beginning of the first sitting. The
+first start also sends the two deletes that have waited since 20 September,
+and you said to let them go; the first sitting is where they are read. Since
+2026-10-06 the first sitting is Sitting 2, because your Google key comes
+later; until then this paragraph said Sitting 1.
 
 ## Check what is installed
 
@@ -50,7 +52,9 @@ a Gmail account". So that you do not have to start Wixen Mail to read them,
 the same page is installed as a file:
 `C:\Program Files\Wixen Mail\docs\PROVIDER_SETUP.md`.
 
-The key can wait. Sittings 2 and 3 do not need it; Sittings 1 and 4 do.
+The key can wait. Sittings 2 and 3 do not need it; Sittings 1 and 4 do. So
+the sittings run in the order 2, 3, 1, 4, and Sitting 1 starts once you say
+the key is placed.
 
 ## When you are done
 

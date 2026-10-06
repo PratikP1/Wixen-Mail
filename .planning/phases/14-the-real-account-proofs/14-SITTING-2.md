@@ -1,9 +1,13 @@
-# Sitting 2: copying and moving in Gmail, and undoing them
+# Sitting 2, done first: copying and moving in Gmail, and undoing them
 
-This sitting copies and moves proof messages within your Gmail account,
-online, offline and across a restart, then undoes a move, a copy and a mark
-before and after the server has heard of them. About 45 to 60 minutes. It
-does not need your Google key.
+The sittings run in the order 2, 3, 1, 4. Sitting 1 needs your Google key,
+and you said the key comes later, so this one comes first.
+
+This sitting is the new build's first start. That start lets the two
+deletes of 20 September go to Gmail. Then it copies and moves proof
+messages within your Gmail account, online, offline and across a restart,
+and undoes a move, a copy and a mark before and after the server has heard
+of them. About 45 to 60 minutes. It does not need your Google key.
 
 The agent corrects this sheet against the build you installed and reads
 your profile before you start. If a sentence you hear differs from the one
@@ -36,7 +40,7 @@ quoted here, the build is right and the sheet is wrong: say what you heard.
 
 ## Steps
 
-1. Start Wixen Mail and let the first check finish.
+1. Start Wixen Mail from the Start menu. This is the new build's first start: the first check runs and sends the two deletes of 20 September, the two messages you deleted that day, which you said to let go. Let it finish; there is nothing to press.
 2. If there is no "Wixen proof" folder on the Gmail account yet: in the folder tree on that account, open File, New, Folder, type "Wixen proof", and press Enter.
 3. Send yourself eleven messages, however is quickest (Ctrl+Shift+M for a new message, Ctrl+Enter to send), with the subjects "Wixen proof copy 1", "Wixen proof copy 2", "Wixen proof copy 3", "Wixen proof move 1" to "Wixen proof move 4", "Wixen proof undo 1" to "Wixen proof undo 3", and "Wixen proof mark 1".
 4. Press F9, Check Mail, so the eleven arrive in Inbox.
@@ -82,10 +86,13 @@ quoted here, the build is right and the sheet is wrong: say what you heard.
 44. Wait ten seconds.
 45. Press Ctrl+Z.
 46. The alpha page's item 20, its second half: press Ctrl+Shift+5 for Tasks.
-47. If "Wixen proof task" from Sitting 1 is there, press Delete on it.
-48. Press Ctrl+Z.
-49. In Gmail on the web or your phone, say what holds what: the "Wixen proof" label, Inbox, the Trash, and whether "Wixen proof mark 1" is unread.
-50. Press Ctrl+Q to quit.
+47. Press Ctrl+Shift+T for a new task. Type "Wixen proof undo task", leave the list it offers, and press Alt+S, Save.
+48. Press Delete on "Wixen proof undo task". Wixen Mail asks whether to delete "Wixen proof undo task", and says "Undo brings it back until your next action." Choose Yes; Enter answers No to this question.
+49. Open the Edit menu with Alt+E and listen to Undo's name. It should name the delete and the task.
+50. Press Escape.
+51. Press Ctrl+Z. You should hear "Undid Delete on Wixen proof undo task." Say where the cursor landed.
+52. In Gmail on the web or your phone, say what holds what: the "Wixen proof" label, Inbox, the Trash, and whether "Wixen proof mark 1" is unread.
+53. Press Ctrl+Q to quit.
 
 ## At the end
 

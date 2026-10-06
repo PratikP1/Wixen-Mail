@@ -1,4 +1,7 @@
-# Sitting 3: deleting in Gmail, and undoing a delete
+# Sitting 3, done second: deleting in Gmail, and undoing a delete
+
+The sittings run in the order 2, 3, 1, 4. Sitting 1 needs your Google key,
+and you said the key comes later, so this one comes second, after Sitting 2.
 
 This sitting deletes proof messages in your Gmail account, online, offline
 and across a restart, deletes one permanently, holds one back with the

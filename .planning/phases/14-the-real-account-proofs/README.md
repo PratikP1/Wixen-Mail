@@ -48,13 +48,13 @@ planners took" below, for him to overrule.
 | 2 | How his Gmail account signs in for calendars, contacts and tasks | "We'll separate the two signins for now. Mail with app password and cal/task/etc with browser signin." | Route B. Mail stays on the app password; a separate browser sign-in asks Google for the calendar, contacts and tasks permissions only, kept under a credential store entry of its own. | 14-01, 14-03, 14-07, 14-09, 14-12 |
 | 3 | All his Google calendars, or only the main one | "All Google calendars." | 14-04 reads Google's calendar list, hidden calendars included, and files each calendar under its own row. | 14-04, 14-09, 14-12 |
 | 4 | The sending proof of 18 September: app password or browser sign-in | "Correct the comment to accurately describe how signin occurs." | The comment on #63 that says "OAuth" is edited on his own repository to say the app password, with a dated sentence saying what it said before. From 14-05 every sign-in line and the send line say how they signed in, so the next record cannot name the wrong one. | 14-05, 14-07 |
-| 5 | The two deletes waiting since 20 September | "Let the two waiting deletes go." | Nothing holds them. They go to Gmail at the new build's first check, at the start of sitting 1, after the reading before it, and are recorded on #63 as evidence for the delete line, not as its proof. | 14-05, 14-08, 14-09 |
+| 5 | The two deletes waiting since 20 September | "Let the two waiting deletes go." | Nothing holds them. They go to Gmail at the new build's first check, at the start of the first sitting, after the reading before it, and are recorded on #63 as evidence for the delete line, not as its proof. Since 2026-10-06 the first sitting is sitting 2 (14-10); until then it was sitting 1 (14-09). | 14-05, 14-08, 14-10 |
 | 6 | Other accounts | "I'll add more accounts." | A second account for the crossings (a second Google account on his project's tester list also proves adding an account); an IMAP account run by neither Google nor Microsoft for emptying the Trash at a server; a POP account with Leave mail on the server on. Sheet 4 names what each part needs, and a line without its account is recorded as still open, never dropped. | 14-08, 14-12 |
 | 7 | The safety switch for changes to mail | "Do what's appropriate." | The recommendation, (a): the warning sentences change path by path as each line is proven, and the switch is neither split nor moved from its starting position in this phase. Splitting it, (b), is decided after the phase with its cost in front of him; 14-13 writes it as a `todo`. Not (c). | 14-07, 14-13 |
 | 8 | Three sentences false today, corrected before the build | "Do what's appropriate." (7 and 8 answered together) | The recommendation: all three corrected before the build, each saying what happened and when. Sending was proven on 18 September 2026; Gmail met the download of everything on 18 to 20 September; a Google account's calendars, contacts and tasks need the browser sign-in. | 14-07 |
 | 9 | Reading his profile, and posting the records | "yes to both." | His settings, log and mail database are read before and after each sitting with Python, read-only, printing counts, the build's name and masked lines, never a body, and no subject except those beginning "Wixen proof". His one-line confirmation of a sitting's drafted record is the word to post it on #22 and #63. 14-06 writes that rule once, as a reader with a test. | 14-06, 14-09 to 14-12 |
 | 10 | Listening checks in the same sittings | "yes." | Each sheet carries the two to five listening items that walk the same screens at the same moment, and nothing else from the listening page. | 14-08 to 14-12 |
-| 11 | What phase 14 covers, and in what order | "Yes." | Microsoft, CalDAV and CardDAV, invitations from a real organiser, S/MIME and PGP with a correspondent, a work directory, free/busy, shared mailboxes and other sending addresses go to a later phase. The order is confirmed: #22 first, then copy, move and delete within Gmail, then across two accounts. | every plan |
+| 11 | What phase 14 covers, and in what order | "Yes." | Microsoft, CalDAV and CardDAV, invitations from a real organiser, S/MIME and PGP with a correspondent, a work directory, free/busy, shared mailboxes and other sending addresses go to a later phase. The order is confirmed: #22 first, then copy, move and delete within Gmail, then across two accounts. On 2026-10-06 he installed the build and answered "installed, key later", so, as the proposal allowed and he accepted on 2026-10-05 if the key was not ready, the sittings run copy and move (14-10), delete (14-11), #22 once he says the key is placed (14-09), then across two accounts (14-12). | every plan |
 | 12 | The build: made here or from CI, and which version | "yes." | Made on this machine from the last code plan's merge, 14-07's, with no push needed; the version stays `1.0.0-alpha.1`. Windows' list of installed programs shows the full build string; `1.0.0.14999` appears only in the setup file's own Properties (14-08, premise 11). | 14-08 |
 
 ## The plans
@@ -74,10 +74,10 @@ changes what is spoken or shown. Every plan merges with `git merge --no-ff`, and
 | 14-06 | 6 | `scripts/read-a-proof.py`, the tested way to read a proof from his profile without printing his mail; one crash writer naming the build; the page window's test out of his `crash.log` | REAL-01, REAL-02 | The executor | One, the test that wrote into his `crash.log` | no |
 | 14-07 | 7 | True words before the build: sending proven on 2026-09-18, what Gmail did to the download, the first-run sentence about the provider, the shortcuts page's crossing sentence; the records put straight and #63's comment corrected to the app password | REAL-02 | The executor; the edit on #63 rests on answer 4 | 148 fixed; 191 rewritten; 11, 64, 65, 67, 72, 523, 525 and 546 amended; two new (the Trash unreadable on 18 and 20 September, Refresh's help sentence) | yes |
 | 14-08 | 8 | The build at 14-07's merge, the install page and the four sitting sheets | REAL-01, REAL-02 | The executor builds and writes; Pratik installs and places his key | None | no |
-| 14-09 | 9 | Sitting 1: the first start and the two waiting deletes, the browser sign-in, the three syncs and F5 in each module, one event, contact and task read back in Google's own apps; recorded on #22 and #63 | REAL-01, REAL-02 | Pratik sits, 40 to 60 minutes, and gives his word; the executor reads before and after, drafts and posts | Dated lines on 154, 194, 203, 216, 218, 434, 435, 523, 525, 543, 597, 628, 671, 727 and 732; one per defect found | no |
-| 14-10 | 10 | Sitting 2: copy and move within Gmail, online, offline and back, across a restart, one message changed in Gmail meanwhile, undo at the server and of a mark; recorded on #63 | REAL-02 | Pratik, 45 to 60 minutes; the executor as above | 544, 546, 623 and 625; Refresh's sentence if 14-07 did not open it; one per defect | no |
-| 14-11 | 11 | Sitting 3: delete within Gmail online, offline and across a restart, Delete Permanently against his own expunge setting, a delete held by the account's box, undo; recorded on #63 | REAL-02 | Pratik, 25 to 35 minutes; the executor as above | 376, 377, 544, 546 and 625; one per defect | no |
-| 14-12 | 12 | Sitting 4: copy and move across two accounts, ledger 187's three questions and 547's, a second Google account added, the Trash emptied at a non-Gmail IMAP server, the POP lines; recorded on #63 and #22 | REAL-01, REAL-02 | Pratik adds his accounts and sits, 60 to 80 minutes and two-minute looks later; the executor as above | 183, 187, 188, 191, 547, 770, 771, 784, 787 and 804, with due dates; one per defect | no |
+| 14-09 | 11 | Sitting 1, done third: the browser sign-in, the three syncs and F5 in each module, one event, contact and task read back in Google's own apps; recorded on #22 | REAL-01 | Pratik sits, 40 to 60 minutes, and gives his word; the executor reads before and after, drafts and posts | Dated lines on 154, 194, 203, 216, 218, 434, 435, 543, 597, 628, 671, 727 and 732; one per defect found | no |
+| 14-10 | 9 | Sitting 2, done first: the first start and the two waiting deletes; copy and move within Gmail, online, offline and back, across a restart, one message changed in Gmail meanwhile, undo at the server and of a mark; recorded on #63 | REAL-02 | Pratik, 45 to 60 minutes; the executor as above | 523, 525, 544, 546, 623 and 625; Refresh's sentence if 14-07 did not open it; one per defect | no |
+| 14-11 | 10 | Sitting 3, done second: delete within Gmail online, offline and across a restart, Delete Permanently against his own expunge setting, a delete held by the account's box, undo; recorded on #63 | REAL-02 | Pratik, 25 to 35 minutes; the executor as above | 376, 377, 544, 546 and 625; one per defect | no |
+| 14-12 | 12 | Sitting 4, done last: copy and move across two accounts, ledger 187's three questions and 547's, a second Google account added, the Trash emptied at a non-Gmail IMAP server, the POP lines; recorded on #63 and #22 | REAL-01, REAL-02 | Pratik adds his accounts and sits, 60 to 80 minutes and two-minute looks later; the executor as above | 183, 187, 188, 191, 547, 770, 771, 784, 787 and 804, with due dates; one per defect | no |
 | 14-13 | 13 | The warnings per proven path on his word, the switch left where it is and its split ledgered, the closing read, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | REAL-01, REAL-02 | The executor drafts and runs the gate; Pratik says yes per path and close or leave open for #22 and #63, about 10 minutes | One per changed spoken sentence; the switch's split, a `todo`; the ride-along entries read | yes |
 
 The times are the proposal's estimates, not measurements.
@@ -97,14 +97,31 @@ plans that share no file, and these share those. Each plan depends on the one be
   reader that every sitting is read from. 14-07 is last of the code, so the build says only
   true things.
 - **14-08** makes the build at 14-07's merge and writes the install page and the four sheets.
-- **14-09 to 14-12** are the four sittings, in answer 11's order.
+- **14-09 to 14-12** are the four sittings. Since 2026-10-06 they run 14-10, 14-11, 14-09,
+  14-12, in waves 9 to 12 in that order, each depending on the one before it; the plans kept
+  their numbers and the sheets their names.
 - **14-13 last,** at the highest wave: the wording per proven path, the closing read and the
   phase's full gate.
 
-The proposal said sittings 2 and 3 could go first if his key is not ready. The plans as
-written do not allow that without a change: 14-10 and 14-11 read 14-09's summary, and 14-11's
-precondition needs it to say the Trash was readable on the installed build. Running them
-first is a decision to take with him that re-points those two preconditions.
+**Why the sittings were reordered.** The proposal said sittings 2 and 3 could go first if his
+key is not ready ("Sittings 2 and 3 can go first; the build carries everything they need"),
+and on 2026-10-05 he accepted copy, move and delete going first in that case. On 2026-10-06 he
+installed the build and answered 14-08's checkpoint in his words: "installed, key later". So
+the order became copy and move within Gmail (14-10), delete within Gmail (14-11), #22 and the
+browser sign-in (14-09) once he says the key is placed, then across two accounts (14-12). Until
+that day this paragraph said running them first needed a change that re-points two
+preconditions. 14-08 made it on its branch:
+
+- The first start, the two deletes of 2026-09-20 with their verdict, record on #63 and REAL-02
+  line, ledger 523 and 525, and the first reading of whether the Trash can be read moved from
+  14-09 to 14-10. Sheet 2 now opens with the first start; sheet 1 assumes the program has
+  started once.
+- 14-11's precondition and premise 5 read 14-10's summary for the Trash, not 14-09's.
+- Sheet 2's step for the alpha page's item 20 in Tasks makes its own task, "Wixen proof undo
+  task", since the proof task of sitting 1 does not exist yet.
+- 14-09 now serves REAL-01 alone and posts on #22 only.
+- Each sheet's heading says where it falls: "Sitting 2, done first", "Sitting 3, done second",
+  "Sitting 1, done third", "Sitting 4, done last".
 
 ## Decisions the planners took
 
@@ -120,7 +137,7 @@ block.
   which ships in the installer (proposal).
 - **D-04. One build,** and a fix build only when a sitting finds a defect (proposal).
 - **D-05. Research's sitting 0 is folded into sitting 1:** the first start is the first thing
-  sitting 1 does (proposal).
+  sitting 1 does (proposal). Since 2026-10-06 it is folded into sitting 2, which comes first.
 - **D-06. When several reasons apply, only the first is said,** in the order no Google sign-in
   key in this copy, then the app password, then a browser sign-in that has run out, because
   each later one cannot be acted on until the earlier is settled (14-01 choice 1).
@@ -237,16 +254,18 @@ In the order the plans meet them.
    script as it is written, since its two `sed` calls only read the version and are the
    project's own build script, so the rule against `sed`, which is about editing files, does
    not stop it. 14-08 built with it that day.
-3. **Any time before sitting 1: his Google testing key,** with the Calendar, People and Tasks
-   interfaces turned on and himself as the tester, and `oauth.toml` placed in his settings
-   folder (answer 1). Help's page from 14-03 walks through it; 30 to 60 minutes if he has no
-   project yet, by the proposal's estimate.
-4. **14-08: installing the build himself,** 5 to 10 minutes, and one line back: "installed,
-   key placed", "installed, key later", or what went wrong.
-5. **The four sittings:** 14-09, 40 to 60 minutes; 14-10, 45 to 60; 14-11, 25 to 35, starting
-   with reading his own Gmail IMAP expunge setting; 14-12, 60 to 80, after adding the accounts
-   he has, then about two minutes on the days the 15-day Trash emptying and the one-day POP
-   removal fall due. Each ends with his one-line word on the drafted record.
+3. **Any time before sitting 1, which now comes third: his Google testing key,** with the
+   Calendar, People and Tasks interfaces turned on and himself as the tester, and `oauth.toml`
+   placed in his settings folder (answer 1). Help's page from 14-03 walks through it; 30 to 60
+   minutes if he has no project yet, by the proposal's estimate. Sitting 1 starts on his word
+   that the key is placed.
+4. **14-08: installing the build himself,** 5 to 10 minutes, and one line back. **Answered
+   2026-10-06: "installed, key later".** The registry reads `1.0.0-alpha.1+1118.gd3455792`.
+5. **The four sittings, in the order of 2026-10-06:** 14-10, 45 to 60 minutes, the first start
+   included; 14-11, 25 to 35, starting with reading his own Gmail IMAP expunge setting; 14-09,
+   40 to 60, once his key is placed; 14-12, 60 to 80, after adding the accounts he has, then
+   about two minutes on the days the 15-day Trash emptying and the one-day POP removal fall
+   due. Each ends with his one-line word on the drafted record.
 6. **14-13: his word per path** on the drafted warning sentences, and "close" or "leave open"
    for #22 and #63, about 10 minutes.
 7. **Any fix plan a sitting names** (14-09.1 and so on) is inserted with him; each costs an
@@ -265,8 +284,15 @@ In the order the plans meet them.
 
 ## Handover
 
-14-01 is next, on a branch cut from `main` at the commit landing these plans. Nothing needs
-Pratik's time until 14-08, apart from his testing key, which he can make any time before
-sitting 1, and his ruling on the build script, which 14-08's first task waits for. The commit
-landing these plans is on `main` and not pushed; before it, `main` was level with
-`origin/main`.
+Written 2026-10-06, when 14-08 merged. 14-01 to 14-08 are on `main` and not pushed. The build
+`1.0.0-alpha.1+1118.gd3455792` is installed and has not been started; Start Wixen Mail was
+unticked on setup's last page, so the agent reads his profile before the first start.
+
+14-10 is next: sitting 2, `14-SITTING-2.md`, which opens with the new build's first start and
+the two deletes of 2026-09-20. Then 14-11, sitting 3. Then 14-09, sitting 1, once Pratik says
+his Google key is placed. Then 14-12, sitting 4, and 14-13.
+
+Until 2026-10-06 this section read: "14-01 is next, on a branch cut from `main` at the commit
+landing these plans. Nothing needs Pratik's time until 14-08, apart from his testing key, which
+he can make any time before sitting 1, and his ruling on the build script, which 14-08's first
+task waits for."
