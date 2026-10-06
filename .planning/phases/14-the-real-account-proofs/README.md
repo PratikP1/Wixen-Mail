@@ -233,7 +233,10 @@ In the order the plans meet them.
    build runs as written; no, and a small red and green plan rewrites those two reads first,
    inserted before 14-08, since `tests/installer.rs` already reads the script. His twelve
    answers do not settle it, and 14-08's task 1 does not start until his ruling is written
-   here or in `STATE.md`.
+   here or in `STATE.md`. **Answered 2026-10-06, in 14-08's brief: yes.** The brief said to run the
+   script as it is written, since its two `sed` calls only read the version and are the
+   project's own build script, so the rule against `sed`, which is about editing files, does
+   not stop it. 14-08 built with it that day.
 3. **Any time before sitting 1: his Google testing key,** with the Calendar, People and Tasks
    interfaces turned on and himself as the tester, and `oauth.toml` placed in his settings
    folder (answer 1). Help's page from 14-03 walks through it; 30 to 60 minutes if he has no
