@@ -17,6 +17,14 @@ pub enum MailAuth {
     OAuth2(String),
 }
 
+impl MailAuth {
+    /// How the account signs in, in words a log line can carry, and never
+    /// what it signs in with.
+    pub fn how_it_signs_in(&self) -> &'static str {
+        ""
+    }
+}
+
 impl std::fmt::Debug for MailAuth {
     /// Says which kind it is and never what it holds.
     ///
@@ -69,6 +77,48 @@ mod tests {
         assert_ne!(
             format!("{:?}", MailAuth::Password("x".to_string())),
             format!("{:?}", MailAuth::OAuth2("x".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_a_sign_in_names_its_kind_in_words_and_never_its_secret() {
+        // The words a sign-in line and the send line carry (14-05), so the
+        // record of a sitting says which sign-in was used rather than
+        // guessing it, as the comment on #63 did.
+        let password = MailAuth::Password("hunter2".to_string());
+        let token = MailAuth::OAuth2("ya29.a0AfH6SMB".to_string());
+
+        assert_eq!(password.how_it_signs_in(), "with a password");
+        assert_eq!(token.how_it_signs_in(), "through a browser sign-in");
+    }
+
+    #[tokio::test]
+    async fn test_signing_in_with_a_password_says_so_in_the_log() {
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+        use crate::service::protocols::imap::against_a_server_that_answers::{
+            a_server_that_can, reading_only_on,
+        };
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_can("UIDPLUS").await;
+
+        reading_only_on(&server).await;
+
+        let signed_in: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| {
+                *level == tracing::Level::INFO && line.starts_with("Signed in to")
+            })
+            .map(|(_, line)| line)
+            .collect();
+        let [line] = signed_in.as_slice() else {
+            panic!("not one sign-in line: {signed_in:?}");
+        };
+        assert!(line.ends_with("with a password"), "{line}");
+        assert!(
+            !line.contains("hunter2"),
+            "the password was written: {line}"
         );
     }
 }

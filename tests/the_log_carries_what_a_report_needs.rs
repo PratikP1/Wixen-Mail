@@ -68,6 +68,30 @@ const THE_SYNCS_AND_THEIR_MODULES: [(&str, &str); 3] = [
 const THE_MICROSOFT_QUESTION: &str = "who_holds_the_calendars::a_microsoft_key(account)";
 const A_MICROSOFT_KEY_OF_ITS_OWN: &str = "credentials_for(\"outlook\")";
 
+/// Each line saying an account signed in, and the send line: the file, the
+/// function that writes it and the words it opens with (14-05).
+const THE_SIGN_IN_LINES: [(&str, &str, &str); 3] = [
+    (
+        "src/service/protocols/imap.rs",
+        "pub async fn connect(",
+        "Signed in to",
+    ),
+    (
+        "src/service/protocols/pop3.rs",
+        "pub async fn connect(",
+        "Signed in to",
+    ),
+    (
+        "src/service/protocols/smtp.rs",
+        "pub async fn send_email(",
+        "Email sent",
+    ),
+];
+
+/// What says how an account signed in: the one method that words it, or
+/// the one kind POP has.
+const HOW_IT_SIGNED_IN: [&str; 2] = ["how_it_signs_in()", "WITH_A_PASSWORD"];
+
 /// The five identifiers no log call may name as a value.
 const THE_SECRETS: [&str; 5] = [
     "body_plain",
@@ -702,6 +726,56 @@ fn each_sync_asks_before_building_a_microsoft_sign_in(app: &str) -> Result<(), S
     Ok(())
 }
 
+/// The log call in `body` whose message opens with `opens`, if any.
+fn the_call_opening<'a>(body: &'a str, opens: &str) -> Option<LogCall<'a>> {
+    let mut from = 0usize;
+    while let Some(call) = the_first_log_call(&body[from..]) {
+        if call
+            .arguments
+            .trim_start()
+            .starts_with(&format!("\"{opens}"))
+        {
+            return Some(call);
+        }
+        from += call.ends_at();
+    }
+    None
+}
+
+/// Each line saying an account signed in, and the send line, says whether a
+/// password or a browser sign-in was used, at info (14-05).
+///
+/// Answer 4 of 2026-10-05: the record of the sending proof of 18 September
+/// named the browser sign-in, and the account had signed in with an app
+/// password. Nothing in the log could have said which, because no line did.
+/// `read` hands back a file's shipped text, so a companion can plant one.
+fn each_sign_in_says_how_it_signed_in(read: impl Fn(&str) -> String) -> Result<(), String> {
+    for (file, signature, opens) in THE_SIGN_IN_LINES {
+        let source = read(file);
+        let body = body_of(&source, signature)?;
+        let call = the_call_opening(&body, opens).ok_or(format!(
+            "{file}'s {signature} writes no line opening {opens:?}, so the log cannot say it \
+             happened"
+        ))?;
+        if !call.at_or_above_info() {
+            return Err(format!(
+                "{file}'s {opens:?} line is written at {}, which a profile at info never keeps",
+                call.level
+            ));
+        }
+        if !HOW_IT_SIGNED_IN
+            .iter()
+            .any(|how| call.arguments.contains(how))
+        {
+            return Err(format!(
+                "{file}'s line {} does not say how the account signed in",
+                call.spelled()
+            ));
+        }
+    }
+    Ok(())
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────
 
 #[test]
@@ -752,6 +826,11 @@ fn test_a_sync_says_in_the_log_why_google_was_not_asked() {
 fn test_each_sync_writes_its_finish_line_at_info() {
     each_sync_writes_its_finish_line_at_info(&shipped(THE_MAIN_WINDOW))
         .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_each_sign_in_and_the_send_line_say_how_the_account_signed_in() {
+    each_sign_in_says_how_it_signed_in(shipped).unwrap_or_else(|why| panic!("{why}"));
 }
 
 #[test]
@@ -977,6 +1056,49 @@ fn test_the_reading_complains_when_a_sync_looks_up_a_microsoft_key_of_its_own() 
     )))
     .expect_err("a sync looking up a key of its own passed");
     assert!(why.contains("of its own"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_sign_in_or_the_send_line_does_not_say_how() {
+    // Each of the three planted in turn, the last the reading reads among
+    // them, so a reading that stopped after the first would pass none.
+    for (file, signature, opens, planted) in [
+        (
+            "src/service/protocols/imap.rs",
+            "pub async fn connect(",
+            "Signed in to",
+            "tracing::info!(\"Signed in to {}\", self.config.server)",
+        ),
+        (
+            "src/service/protocols/pop3.rs",
+            "pub async fn connect(",
+            "Signed in to",
+            "tracing::info!(\"Signed in to {}\", self.config.server)",
+        ),
+        (
+            "src/service/protocols/smtp.rs",
+            "pub async fn send_email(",
+            "Email sent",
+            "tracing::info!(\"Email sent successfully\")",
+        ),
+    ] {
+        let source = shipped(file);
+        let body = body_of(&source, signature).expect("the function");
+        let call = the_call_opening(&body, opens).expect("the line");
+        let changed = with(&source, &call.spelled(), planted);
+        let why = each_sign_in_says_how_it_signed_in(|read| {
+            if read == file {
+                changed.clone()
+            } else {
+                shipped(read)
+            }
+        })
+        .expect_err("a line saying nothing of how the account signed in passed");
+        assert!(
+            why.contains(file) && why.contains("does not say how"),
+            "{why}"
+        );
+    }
 }
 
 #[test]
