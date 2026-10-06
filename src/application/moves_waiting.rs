@@ -746,17 +746,62 @@ fn the_line_about_a_replay(
         (_, Some(done)) => done,
         (_, None) => "the server had already done it",
     };
-    let now = match (left, waiting.what.destination()) {
+    let now = and_where_it_is_now(waiting, left);
+    Some(format!(
+        "A waiting {kind} of message {row} in {from} was replayed: {answered}{now}"
+    ))
+}
+
+/// The end of a replay's line: which number the destination holds the
+/// message under, or that its next read brings it, or nothing for a delete
+/// outright.
+fn and_where_it_is_now(waiting: &AWaitingMove, left: Option<WhereTheReplayLeftIt>) -> String {
+    let holder = if waiting.what.crosses_to().is_some() {
+        "the other account"
+    } else {
+        "the server"
+    };
+    match (left, waiting.what.destination()) {
         (Some(WhereTheReplayLeftIt::HeldAs(uid)), Some(destination)) => {
-            format!("; the server holds it in {destination} as {uid}")
+            format!("; {holder} holds it in {destination} as {uid}")
         }
         (Some(WhereTheReplayLeftIt::TheNextReadBringsIt), Some(destination)) => {
             format!("; the next read of {destination} brings it")
         }
         _ => String::new(),
+    }
+}
+
+/// The line the log keeps about a crossing's outcome, after its steps have
+/// written theirs.
+///
+/// A refusal says only that it was refused, since the step that met it has
+/// already written the other account's words, and the reasons the replay
+/// gives on its own name an account as the person called it, which may be
+/// an address. None for a crossing nobody could settle, which waits and
+/// whose step has said why.
+fn the_line_about_a_crossing(
+    waiting: &AWaitingMove,
+    replayed: &Replayed,
+    left: Option<WhereTheReplayLeftIt>,
+) -> Option<String> {
+    let arrived = match replayed {
+        Replayed::NotReached => return None,
+        Replayed::Refused(_) => "was refused, so it is put back here".to_string(),
+        Replayed::Done | Replayed::AlreadyDone => format!(
+            "was replayed: it arrived at the other account{}",
+            and_where_it_is_now(waiting, left)
+        ),
+        Replayed::DoneWithSomethingToSay(_) => format!(
+            "was replayed: it arrived at the other account and is still at the source{}",
+            and_where_it_is_now(waiting, left)
+        ),
     };
     Some(format!(
-        "A waiting {kind} of message {row} in {from} was replayed: {answered}{now}"
+        "A waiting {} of message {} in {} {arrived}",
+        the_kind_of(&waiting.what),
+        waiting.message_row_id,
+        waiting.from_folder_path
     ))
 }
 
@@ -1005,22 +1050,27 @@ pub(crate) async fn replay_the_crossings_waiting_for<O: OpensASession>(
         };
         let (answer, was_there_before) =
             one_crossing(accounts, cache, &waiting, &message.subject).await;
-        match &answer {
+        let left = match &answer {
             Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-                settle_the_crossed_row(accounts, cache, &waiting, was_there_before.as_deref())
-                    .await?;
+                let left =
+                    settle_the_crossed_row(accounts, cache, &waiting, was_there_before.as_deref())
+                        .await?;
                 cache.the_move_is_over(waiting.message_row_id)?;
                 cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+                Some(left)
             }
             // The undo is the window's, so the sentence is said beside it
             // and the bytes go there.
-            Replayed::Refused(_) => {}
-            Replayed::NotReached => {
-                replayed.push((waiting, answer));
-                break;
-            }
+            Replayed::Refused(_) | Replayed::NotReached => None,
+        };
+        if let Some(line) = the_line_about_a_crossing(&waiting, &answer, left) {
+            tracing::info!("{line}");
         }
+        let reached = answer != Replayed::NotReached;
         replayed.push((waiting, answer));
+        if !reached {
+            break;
+        }
     }
     Ok(replayed)
 }
@@ -1134,23 +1184,30 @@ async fn one_crossing<O: OpensASession>(
 /// crossing is done: under the number the destination folder holds the
 /// identifier under and did not before, unmarked, or gone for the next read
 /// of that folder to bring down when it cannot be told.
+///
+/// Hands back where it left the message, for the crossing's line in the log.
 async fn settle_the_crossed_row<O: OpensASession>(
     accounts: &O,
     cache: &MessageCache,
     waiting: &AWaitingMove,
     was_there_before: Option<&[u32]>,
-) -> Result<()> {
+) -> Result<WhereTheReplayLeftIt> {
     let (Some(other), Some(into)) = (waiting.what.crosses_to(), waiting.what.destination()) else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::NowhereToHoldIt);
     };
     let Some(message) = cache.get_message(waiting.message_row_id)? else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
+    };
+    let the_next_read_brings_it = || {
+        cache
+            .let_the_next_read_bring_it(waiting.message_row_id)
+            .map(|()| WhereTheReplayLeftIt::TheNextReadBringsIt)
     };
     let Some(folder) = cache.get_folder(&other.id, into)? else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        return the_next_read_brings_it();
     };
     let ASessionFor::Open(destination) = accounts.session_for(&other.id).await else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        return the_next_read_brings_it();
     };
     let now = destination
         .which_messages_carry(into, &message.message_id)
@@ -1161,8 +1218,10 @@ async fn settle_the_crossed_row<O: OpensASession>(
         .filter(|uid| !was_there_before.is_some_and(|before| before.contains(uid)))
         .collect();
     match arrived.as_slice() {
-        [uid] => cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid),
-        _ => cache.let_the_next_read_bring_it(waiting.message_row_id),
+        [uid] => cache
+            .the_server_holds_it_at(waiting.message_row_id, folder.id, *uid)
+            .map(|()| WhereTheReplayLeftIt::HeldAs(*uid)),
+        _ => the_next_read_brings_it(),
     }
 }
 
@@ -2331,7 +2390,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_destination_that_takes_it().await;
         let accounts = two_accounts_at(&source, &destination).await;
@@ -2365,7 +2424,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_copy_across_writes_no_removal() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_destination_that_takes_it().await;
         let accounts = two_accounts_at(&source, &destination).await;
@@ -2398,7 +2457,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_refused_append_writes_the_destinations_words() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
         let accounts = two_accounts_at(&source, &destination).await;
@@ -2436,7 +2495,7 @@ mod tests {
             ),
         ] {
             let captured = CapturedLogs::default();
-            let _logging = tracing::subscriber::set_default(captured.clone());
+            let _logging = captured.as_the_default();
             let source = a_source_server(ASourceServer::default()).await;
             let accounts = a_source_and_a_scripted_destination(
                 &source,
@@ -2465,7 +2524,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_resumed_crossing_writes_no_fetch() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let source = a_source_server(ASourceServer::default()).await;
         let destination = a_destination_that_takes_it().await;
         let accounts = two_accounts_at(&source, &destination).await;
@@ -3450,7 +3509,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_replayed_copy_names_its_row_and_where_the_server_holds_the_copy() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_can("MOVE UIDPLUS").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3472,7 +3531,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_replayed_move_names_its_row_and_how_the_server_moved_it() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_can("MOVE UIDPLUS").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3494,7 +3553,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_replayed_delete_to_the_trash_names_its_row_and_the_trashs_number() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_can("MOVE UIDPLUS").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3526,7 +3585,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_replayed_delete_outright_names_its_row_and_no_number() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_can("UIDPLUS").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3552,7 +3611,7 @@ mod tests {
     #[tokio::test]
     async fn test_a_refused_replay_names_its_row_and_the_servers_words() {
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_refuses_and_holds_nothing("UID MOVE").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3578,7 +3637,7 @@ mod tests {
         // The answer the two deletes waiting since 2026-09-20 meet at their
         // first check against Gmail, which wrote nothing at all until now.
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_refuses("MOVE UIDPLUS", "UID MOVE").await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();
@@ -3601,7 +3660,7 @@ mod tests {
         // Both callers already write a server never reached, with the row or
         // the account, so a second line here would be the same fact twice.
         let captured = CapturedLogs::default();
-        let _logging = tracing::subscriber::set_default(captured.clone());
+        let _logging = captured.as_the_default();
         let server = a_server_that_hangs_up_on_the_change().await;
         let session = ASessionOfItsOwn::at(&server).await;
         let home = a_cache();

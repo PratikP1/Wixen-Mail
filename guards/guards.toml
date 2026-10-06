@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 683 records have arrived since and have not been through it.
+# 684 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3984,7 +3984,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
@@ -5293,10 +5293,17 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_refuses_the_append_answers_refused_and_the_undo_puts_the_row_back",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
     "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
+    # Added 2026-10-06 by 14-05: a crossing's steps write their lines, and a
+    # fetch that hands nothing over writes none of them.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
+    "application::moves_waiting::tests::test_a_copy_across_writes_no_removal",
+    "application::moves_waiting::tests::test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived",
+    "application::moves_waiting::tests::test_a_refused_append_writes_the_destinations_words",
+    "application::moves_waiting::tests::test_an_append_never_answered_writes_what_the_other_account_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -13699,7 +13706,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
@@ -16089,7 +16096,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
@@ -16593,7 +16600,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -18938,7 +18945,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
@@ -19081,9 +19088,11 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards",
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing",
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
+    # Added 2026-10-06 by 14-05: the removal sent first writes a fifth line.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── An append nobody answered, counted as one that landed ────────────────────
@@ -19147,10 +19156,14 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_already_held_the_identifier_reads_only_a_new_number_as_the_arrival",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_does_not_hold_it_answers_refused",
+    # Added 2026-10-06 by 14-05: what asking found is written in the append's
+    # line and in the resume's, so a wrong answer writes the wrong words.
+    "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
+    "application::moves_waiting::tests::test_an_append_never_answered_writes_what_the_other_account_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -19191,7 +19204,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_resumed_move_whose_folder_nobody_read_settles_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── A finished move leaving its message on the disk ──────────────────────────
@@ -19225,7 +19238,7 @@ red = [
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── A moved day of a series showing on both dates ────────────────────────────
@@ -27515,7 +27528,7 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27674,10 +27687,13 @@ red = [
     "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+    # Added 2026-10-06 by 14-05: the fetch's line says what the store did with
+    # the bytes, and with no store asked it says they were not kept.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27698,7 +27714,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27718,10 +27734,13 @@ red = [
     "data::message_cache::moves_in_flight::tests::test_a_message_too_large_to_keep_leaves_nothing_to_resume_from",
     "application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+    # Added 2026-10-06 by 14-05: the fetch's line says the message was too
+    # large to keep, and under the break it says it was kept.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27797,7 +27816,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
@@ -35768,7 +35787,7 @@ red = [
     "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -36298,7 +36317,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -36332,7 +36351,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # Labelling's do-half sending a run's label on its own worker rather than
@@ -39061,5 +39080,22 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 59 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
+]
+
+# A crossing that lands writes where the other account holds the message,
+# after its steps have written theirs, so a sitting can read the new number
+# that answers ledger 187's questions (14-05). The break writes no outcome.
+[[guard]]
+name = "a crossing writes where the other account holds the message"
+file = "src/application/moves_waiting.rs"
+before = '''        if let Some(line) = the_line_about_a_crossing(&waiting, &answer, left) {'''
+after = '''        if let Some(line) = None::<String> {'''
+red = [
+    "application::moves_waiting::tests::test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived",
+    "application::moves_waiting::tests::test_a_copy_across_writes_no_removal",
+    "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
