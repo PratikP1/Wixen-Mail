@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 696
+open_count: 698
 waived_count: 0
-fixed_count: 120
-total_count: 816
-last_updated: 2026-10-05T23:00:00.000Z
+fixed_count: 122
+total_count: 820
+last_updated: 2026-10-05T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -831,6 +831,10 @@ last_updated: 2026-10-05T23:00:00.000Z
 | 814 | 14 | unrun-verify | src/presentation/wx_app.rs |  | 14-02, for the tester in phase 14's sitting 1 (14-09): add an account under NVDA and hear at most one sentence per module as its first sync finishes, or the reason once for all three; and press F5 in Contacts, Calendar, Tasks and Notes and hear each module's sync, and F5 in Mail still read the folder. No NVDA case adds an account or presses F5 in a module, so the pull request's NVDA run does not hear these; held today by application::who_holds_the_calendars's cases and readings. Closed when heard on a build holding 94fe66ab | open |  | 2026-10-05T23:00:00.000Z |  |
 | 815 | 14 | todo | src/application/who_holds_the_calendars.rs |  | 14-02, for Pratik: a Gmail account added with a browser sign-in whose token has already run out starts the three syncs, and each says the run-out reason, three sentences rather than one, because that reason is learned only by asking Google for a token. The executor's recommendation is to leave it: an account just added has just signed in, so the case needs a sign-in that runs out within seconds. Closed when Pratik accepts it or asks for the token to be tried once before the syncs start | open |  | 2026-10-05T23:00:00.000Z |  |
 | 816 | 14 | todo | src/presentation/wx_app.rs |  | 14-02, for the later Microsoft phase (answer 11): a Microsoft account whose Microsoft sign-in is refused still reports "Microsoft auth" or "Microsoft sign-in" as an error, where a Google sign-in refused says the run-out reason with the attention cue. Only the key's absence became a reason here, because Microsoft is not proven in this phase. Closed when the Microsoft phase maps a refused Microsoft sign-in to a reason, or decides it stays an error | open |  | 2026-10-05T23:00:00.000Z |  |
+| 817 | 14 | deviation | src/service/oauth.rs |  | 14-03: no Gmail account on an app password could ever reach its calendars, contacts or tasks, because Google gives those only to a browser sign-in and the only Google sign-in here was the mail one, and no page said how to make the Google sign-in key a copy needs (#22; research 2 section 1). Fixed in 14-03's b315dfc6 and fe71b237: a separate browser sign-in, google-calendars-contacts-tasks, asks Google for the calendar, contacts and tasks permissions and never mail, keeps its token under its own credential store entry, which removing the account and uninstalling erase; the three syncs and Find When Everyone Is Free ask Google with it through oauth::a_google_token_from; the Account Manager's Sign In for Calendars, Contacts and Tasks (Alt+T) makes it and the account's three are brought once when the Account Manager closes; Setting up a provider in Help walks through making the key in Testing and placing oauth.toml, checked against Google's pages read 2026-10-05. Held by application::who_holds_the_calendars's and service::oauth's cases against the test credential store and a loopback stand-in; nothing has met a real Google account | fixed |  | 2026-10-05T23:30:00.000Z | 2026-10-05T23:30:00.000Z |
+| 818 | 14 | deviation | docs/installing.md |  | 14-03: docs/installing.md said oauth.toml "holds the sign-in keys this build was made with" and that "a build made without one cannot offer the browser sign-in at all", when no build has ever put the file there: it is read from the settings folder, put there by a person, at each sign-in and sync (src/service/oauth_credentials.rs, load_from_toml; src/common/paths.rs, oauth_toml). Fixed in 14-03's documents commit: the paragraph says the file is the person's own key, is read at each sign-in, and that a copy with none there and none built in cannot sign in through the browser, dated with what it said before | fixed |  | 2026-10-05T23:30:00.000Z | 2026-10-05T23:30:00.000Z |
+| 819 | 14 | todo | src/presentation/wx_account_manager.rs |  | 14-03, found reading premise 4: run_oauth_flow writes the account's whole address to the log at info, "OAuth authorized for {} ({})" with account.email, while every other line about an account names it by its id or masks the address. Not this plan's to change; the separate sign-in's own lines name the account by its id only. Closed when the line names the account by its id or masks the address, with a reading in tests/the_log_carries_what_a_report_needs.rs | open |  | 2026-10-05T23:30:00.000Z |  |
+| 820 | 14 | unrun-verify | src/presentation/wx_account_manager.rs |  | 14-03, for the tester in phase 14's sitting 1 (14-09): Sign In for Calendars, Contacts and Tasks heard under NVDA with its letter, Alt+T, on the Account Manager, and each of its sentences heard (an account not at Google, a Gmail account whose mail signs in through the browser, no key, signing in, signed in, a failure); and Setting up a provider's section on making a Google sign-in key followed by ear through Google's console, saying which steps read badly. No NVDA case presses the button, and the scan reads its name only. Closed when heard on a build holding 14-03's merge | open |  | 2026-10-05T23:30:00.000Z |  |
 
 ````json
 [
@@ -10624,6 +10628,54 @@ last_updated: 2026-10-05T23:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-05T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 817,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "14-03: no Gmail account on an app password could ever reach its calendars, contacts or tasks, because Google gives those only to a browser sign-in and the only Google sign-in here was the mail one, and no page said how to make the Google sign-in key a copy needs (#22; research 2 section 1). Fixed in 14-03's b315dfc6 and fe71b237: a separate browser sign-in, google-calendars-contacts-tasks, asks Google for the calendar, contacts and tasks permissions and never mail, keeps its token under its own credential store entry, which removing the account and uninstalling erase; the three syncs and Find When Everyone Is Free ask Google with it through oauth::a_google_token_from; the Account Manager's Sign In for Calendars, Contacts and Tasks (Alt+T) makes it and the account's three are brought once when the Account Manager closes; Setting up a provider in Help walks through making the key in Testing and placing oauth.toml, checked against Google's pages read 2026-10-05. Held by application::who_holds_the_calendars's and service::oauth's cases against the test credential store and a loopback stand-in; nothing has met a real Google account",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:30:00.000Z",
+    "resolved_at": "2026-10-05T23:30:00.000Z"
+  },
+  {
+    "id": 818,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "docs/installing.md",
+    "line": null,
+    "description": "14-03: docs/installing.md said oauth.toml \"holds the sign-in keys this build was made with\" and that \"a build made without one cannot offer the browser sign-in at all\", when no build has ever put the file there: it is read from the settings folder, put there by a person, at each sign-in and sync (src/service/oauth_credentials.rs, load_from_toml; src/common/paths.rs, oauth_toml). Fixed in 14-03's documents commit: the paragraph says the file is the person's own key, is read at each sign-in, and that a copy with none there and none built in cannot sign in through the browser, dated with what it said before",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:30:00.000Z",
+    "resolved_at": "2026-10-05T23:30:00.000Z"
+  },
+  {
+    "id": 819,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "14-03, found reading premise 4: run_oauth_flow writes the account's whole address to the log at info, \"OAuth authorized for {} ({})\" with account.email, while every other line about an account names it by its id or masks the address. Not this plan's to change; the separate sign-in's own lines name the account by its id only. Closed when the line names the account by its id or masks the address, with a reading in tests/the_log_carries_what_a_report_needs.rs",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 820,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "14-03, for the tester in phase 14's sitting 1 (14-09): Sign In for Calendars, Contacts and Tasks heard under NVDA with its letter, Alt+T, on the Account Manager, and each of its sentences heard (an account not at Google, a Gmail account whose mail signs in through the browser, no key, signing in, signed in, a failure); and Setting up a provider's section on making a Google sign-in key followed by ear through Google's console, saying which steps read badly. No NVDA case presses the button, and the scan reads its name only. Closed when heard on a build holding 14-03's merge",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-05T23:30:00.000Z",
     "resolved_at": null
   }
 ]
