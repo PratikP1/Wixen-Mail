@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 682 records have arrived since and have not been through it.
+# 683 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5296,7 +5296,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -13686,13 +13686,25 @@ red = [
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
     "data::message_cache::shared_folders::tests::test_afterwards_no_account_keeps_a_copy_of_a_folder_that_is_shared",
     "data::message_cache::shared_folders::tests::test_two_messages_numbered_the_same_both_survive_and_one_records_its_old_number",
+    # Added 2026-10-06 by 14-05, whose re-measure found five more, none of
+    # them that plan's: an emptying of the Trash and a message taken off this
+    # computer both move rows through this function, and neither module was
+    # named here, so no count check fired when their tests arrived.
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
+    "data::message_cache::taken_off_this_computer::tests::test_a_file_another_message_carries_stays_when_one_is_taken_off",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_during_a_compaction_keeps_it_owed",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
+    "data::message_cache::what_forgetting_costs::tests::test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
 # test added to `messages.rs`: three short, none of them that plan's. All
@@ -16077,7 +16089,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
@@ -16571,10 +16583,17 @@ red = [
     # And task 3's: a rule's Delete is read through the waiting move's own
     # answer, so a lost connection leaves it waiting in the menu's store.
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    # Added 2026-10-06 by 14-05. A replay that never reached the server
+    # writes no line of its own, and under the break it reads as refused and
+    # writes one; an emptying of the Trash goes through the same replay, so a
+    # server never reached is put back rather than left waiting.
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
+    "application::moves_waiting::tests::test_a_replay_that_never_reached_the_server_writes_no_line_of_its_own",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -19131,7 +19150,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -27491,9 +27510,12 @@ red = [
     "application::moves_waiting::tests::test_a_refusal_for_a_message_already_where_it_was_going_is_already_done",
     "application::moves_waiting::tests::test_a_refusal_for_a_message_the_destination_already_holds_is_already_done",
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
+    # Added 2026-10-06 by 14-05: the already-done answer writes its own line,
+    # which a refusal does not.
+    "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27655,7 +27677,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27676,7 +27698,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27699,7 +27721,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27775,7 +27797,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
@@ -35746,7 +35768,7 @@ red = [
     "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -36268,9 +36290,15 @@ after = '''        if let Err(why) = Ok::<(), Error>(()) {'''
 red = [
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    # Added 2026-10-06 by 14-05, whose re-measure found them: an emptying of
+    # the Trash puts a refused delete back through the same undo since
+    # 13-44.6, and nothing had named it here.
+    "application::emptying_the_trash::tests::test_a_delete_the_server_refuses_is_put_back_in_the_trash",
+    "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -36304,7 +36332,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]
 
 # Labelling's do-half sending a run's label on its own worker rather than
@@ -39011,4 +39039,27 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# A change replayed within one account writes one line naming the message by
+# its row, so two copies made in one minute can be told apart in the log
+# (14-05). The break leaves the row out of both the replayed line and the
+# refused one.
+[[guard]]
+name = "a replayed change within one account names its row in the log"
+file = "src/application/moves_waiting.rs"
+before = '''    let kind = the_kind_of(&waiting.what);
+    let row = waiting.message_row_id;'''
+after = '''    let kind = the_kind_of(&waiting.what);
+    let row = "";'''
+red = [
+    "application::moves_waiting::tests::test_a_replayed_copy_names_its_row_and_where_the_server_holds_the_copy",
+    "application::moves_waiting::tests::test_a_replayed_move_names_its_row_and_how_the_server_moved_it",
+    "application::moves_waiting::tests::test_a_replayed_delete_to_the_trash_names_its_row_and_the_trashs_number",
+    "application::moves_waiting::tests::test_a_replayed_delete_outright_names_its_row_and_no_number",
+    "application::moves_waiting::tests::test_a_refused_replay_names_its_row_and_the_servers_words",
+    "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 59 },
 ]

@@ -523,13 +523,13 @@ pub fn what_the_store_says(
 /// not something a caller should know about.
 pub(crate) trait ReplaysAMove {
     /// Move the message; any answer that is not an error is the server
-    /// having done something with it.
-    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()>;
+    /// having done something with it, said in the program's words.
+    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String>;
     /// Delete the message into `trash`, or off the server when there is
-    /// none.
-    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()>;
-    /// Copy the message, leaving the original where it is.
-    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()>;
+    /// none, and say what the server did.
+    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String>;
+    /// Copy the message, leaving the original where it is, and say so.
+    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String>;
     /// The numbers the folder holds a message with this identifier under.
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>>;
     /// Mark the message read or unread, flagged or not, where the marks say.
@@ -556,22 +556,19 @@ impl ReplaysAMove for crate::application::mail_controller::MailController {
         Ok(())
     }
 
-    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
         let moved = self.move_message(from, uid, into).await?;
-        tracing::info!("A waiting move was replayed: {}", moved.spoken(into));
-        Ok(())
+        Ok(moved.spoken(into))
     }
 
-    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
         self.copy_message(from, uid, into).await?;
-        tracing::info!("A waiting copy was replayed: copied to {into}");
-        Ok(())
+        Ok(copied_to(into))
     }
 
-    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
         let deletion = self.delete_message(folder, uid, trash).await?;
-        tracing::info!("A waiting delete was replayed: {}", deletion.spoken());
-        Ok(())
+        Ok(deletion.spoken())
     }
 
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
@@ -633,7 +630,7 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
     // is the answer for the move as well, so the two wait, or are put
     // back, together.
     let marked = send_the_marks_first(server, cache, waiting).await;
-    let answer = match (marked, &waiting.what) {
+    let said = match (marked, &waiting.what) {
         (Err(not_sent), _) => Err(not_sent),
         (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
             server.move_it(from, waiting.uid, into_folder_path).await
@@ -656,6 +653,12 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
             ));
         }
     };
+    // What the server did, in words, kept for the log apart from whether it
+    // did it, which is all the reading of the answer below asks.
+    let (answer, done) = match said {
+        Ok(done) => (Ok(()), Some(done)),
+        Err(why) => (Err(why), None),
+    };
     // Where the message is, asked only of a server that answered no: a
     // server that hung up cannot be asked, and asking would turn the
     // question into a second failure. A question that fails is read the
@@ -669,19 +672,92 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
         }
         _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
     };
-    match &what_it_means {
+    let left = match &what_it_means {
         Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-            settle_the_row(server, cache, waiting).await?;
+            let left = settle_the_row(server, cache, waiting).await?;
             cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+            Some(left)
         }
         // The undo is the caller's, so the sentence is said beside it, and
         // the row stops waiting there too: a refusal met with the program
         // gone before the undo ran is met again at the next check, which
         // undoes it then.
-        Replayed::Refused(_) | Replayed::NotReached => {}
+        Replayed::Refused(_) | Replayed::NotReached => None,
+    };
+    if let Some(line) = the_line_about_a_replay(waiting, &what_it_means, done.as_deref(), left) {
+        tracing::info!("{line}");
     }
     let failed = answer.as_ref().err().map(why_the_push_failed);
     Ok((what_it_means, failed))
+}
+
+/// Where a replay left the row's message, as far as this computer knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhereTheReplayLeftIt {
+    /// The destination holds it under this number, and the row is that
+    /// message there now.
+    HeldAs(u32),
+    /// The destination could not say, so its next read brings the message.
+    TheNextReadBringsIt,
+    /// A delete outright, which leaves nothing to hold.
+    NowhereToHoldIt,
+}
+
+/// The word a log line names a waiting change by.
+fn the_kind_of(what: &WhatAWaitingMoveDoes) -> &'static str {
+    match what {
+        WhatAWaitingMoveDoes::Move { .. } => "move",
+        WhatAWaitingMoveDoes::Copy { .. } => "copy",
+        WhatAWaitingMoveDoes::DeleteToTrash { .. } | WhatAWaitingMoveDoes::DeleteOutright => {
+            "delete"
+        }
+        WhatAWaitingMoveDoes::MoveAcross { .. } => "move to another account",
+        WhatAWaitingMoveDoes::CopyAcross { .. } => "copy to another account",
+    }
+}
+
+/// What a copy the server carried out comes to, in the program's words.
+fn copied_to(into: &str) -> String {
+    format!("Copied to {into}")
+}
+
+/// The one line the log keeps about a change replayed within one account:
+/// which row, what the server answered, and where it holds the message now.
+///
+/// None for a server never reached, which both callers already write with
+/// the row or the account. The row's number names the message, never its
+/// subject or its sender, because the log is attached to reports.
+fn the_line_about_a_replay(
+    waiting: &AWaitingMove,
+    replayed: &Replayed,
+    done: Option<&str>,
+    left: Option<WhereTheReplayLeftIt>,
+) -> Option<String> {
+    let kind = the_kind_of(&waiting.what);
+    let row = waiting.message_row_id;
+    let from = &waiting.from_folder_path;
+    let answered = match (replayed, done) {
+        (Replayed::NotReached, _) => return None,
+        (Replayed::Refused(why), _) => {
+            return Some(format!(
+                "A waiting {kind} of message {row} in {from} was refused: {why}"
+            ));
+        }
+        (_, Some(done)) => done,
+        (_, None) => "the server had already done it",
+    };
+    let now = match (left, waiting.what.destination()) {
+        (Some(WhereTheReplayLeftIt::HeldAs(uid)), Some(destination)) => {
+            format!("; the server holds it in {destination} as {uid}")
+        }
+        (Some(WhereTheReplayLeftIt::TheNextReadBringsIt), Some(destination)) => {
+            format!("; the next read of {destination} brings it")
+        }
+        _ => String::new(),
+    };
+    Some(format!(
+        "A waiting {kind} of message {row} in {from} was replayed: {answered}{now}"
+    ))
 }
 
 /// What one delete, made here and then sent on a session already open, came
@@ -805,27 +881,38 @@ async fn where_it_is_now<S: ReplaysAMove>(
 /// destination brings the message down. A delete outright changes nothing
 /// here: the row stays marked deleted under its number, which is what the
 /// next read of its folder forgets, as a delete's row always was.
+///
+/// Hands back where it left the message, for the replay's line in the log.
 async fn settle_the_row<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
     waiting: &AWaitingMove,
-) -> Result<()> {
+) -> Result<WhereTheReplayLeftIt> {
     let Some(destination) = waiting.what.destination() else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::NowhereToHoldIt);
     };
+    // A row already gone here holds nothing, and the next read of the
+    // destination brings the message as it would any other.
     let Some(message) = cache.get_message(waiting.message_row_id)? else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
     let Some(folder) = cache.get_folder(&waiting.account_id, destination)? else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
     match server
         .where_it_is(destination, &message.message_id)
         .await?
         .as_slice()
     {
-        [uid] => cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid),
-        _ => cache.let_the_next_read_bring_it(waiting.message_row_id),
+        [uid] => {
+            cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid)?;
+            Ok(WhereTheReplayLeftIt::HeldAs(*uid))
+        }
+        _ => {
+            cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+            Ok(WhereTheReplayLeftIt::TheNextReadBringsIt)
+        }
     }
 }
 
@@ -1237,22 +1324,23 @@ mod tests {
     }
 
     impl ReplaysAMove for ASessionOfItsOwn {
-        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(from).await?;
-            session.move_message(uid, into).await.map(|_| ())
+            Ok(session.move_message(uid, into).await?.spoken(into))
         }
 
-        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(folder).await?;
-            session.delete_message(uid, trash).await.map(|_| ())
+            Ok(session.delete_message(uid, trash).await?.spoken())
         }
 
-        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(from).await?;
-            session.copy_message(uid, into).await
+            session.copy_message(uid, into).await?;
+            Ok(copied_to(into))
         }
 
         async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
@@ -3493,16 +3581,21 @@ mod tests {
     /// What a check asks to carry out a rule's Delete. These cases hold no
     /// rule, so nothing here is asked.
     impl ReplaysAMove for AServerThatLists {
-        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(format!("Moved to {into}"))
         }
 
-        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
-            Ok(())
+        async fn delete_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _trash: Option<&str>,
+        ) -> Result<String> {
+            Ok("Deleted".to_string())
         }
 
-        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn copy_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(copied_to(into))
         }
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
