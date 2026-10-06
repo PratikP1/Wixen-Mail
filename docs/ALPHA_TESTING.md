@@ -171,6 +171,15 @@ choice if you would rather not repeat that every week. [Choosing a sign-in
 method](PROVIDER_SETUP.md#choosing-a-sign-in-method) has the full detail, and
 what to do if you signed in before this limit applied to you.
 
+The same weekly limit applies to the separate browser sign-in a Gmail account
+on an app password makes for its calendars, contacts and tasks, from the
+Account Manager's Sign In for Calendars, Contacts and Tasks button, `Alt+T`.
+When it runs out, each sync says so and names that button; mail on the app
+password carries on. That sign-in needs a Google sign-in key you make yourself,
+and [Calendars, contacts and tasks for a Gmail
+account](PROVIDER_SETUP.md#calendars-contacts-and-tasks-for-a-gmail-account)
+walks through making one.
+
 ### Turning it off for one run
 
     wixen-mail --read-only

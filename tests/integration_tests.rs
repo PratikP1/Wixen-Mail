@@ -446,10 +446,17 @@ fn test_spellchecker_special_tokens_not_flagged() {
 
 #[test]
 fn test_oauth_providers_available() {
-    let providers = OAuthService::providers();
-    assert_eq!(providers.len(), 2);
-    assert_eq!(providers[0].name, "gmail");
-    assert_eq!(providers[1].name, "outlook");
+    let names: Vec<String> = OAuthService::providers()
+        .into_iter()
+        .map(|provider| provider.name)
+        .collect();
+    // Gmail's mail sign-in; the separate Google sign-in a Gmail account on an
+    // app password makes for its calendars, contacts and tasks (14-03, route
+    // B of #22); and Microsoft's.
+    assert_eq!(
+        names,
+        ["gmail", "google-calendars-contacts-tasks", "outlook"]
+    );
 }
 
 // What used to be here asked two questions of a second authorization URL

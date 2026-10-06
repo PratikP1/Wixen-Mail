@@ -34,6 +34,40 @@ use wixen_mail::common::what_ships::what_ships;
 const THE_MAIN_WINDOW: &str = "src/presentation/wx_app.rs";
 const THE_QUEUE: &str = "src/presentation/accessibility/announcements.rs";
 
+/// The one answer to whether an account's calendars, contacts and tasks may
+/// be asked of Google (#22, 14-01).
+const THE_ANSWER: &str = "src/application/who_holds_the_calendars.rs";
+
+/// Each sync that may ask Google, and how its question reads with every space
+/// taken out: the account it found and the module it is. No closing bracket,
+/// because the formatter adds a comma after the last argument when it wraps.
+const THE_SYNCS_THAT_ASK_GOOGLE: [(&str, &str); 3] = [
+    (
+        "fn spawn_calendar_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Calendar",
+    ),
+    (
+        "fn spawn_contacts_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Contacts",
+    ),
+    (
+        "fn spawn_tasks_sync(",
+        "who_holds_the_calendars::a_google_token(account,Module::Tasks",
+    ),
+];
+
+/// Each sync and the module its finish line names (14-02).
+const THE_SYNCS_AND_THEIR_MODULES: [(&str, &str); 3] = [
+    ("fn spawn_calendar_sync(", "Module::Calendar"),
+    ("fn spawn_contacts_sync(", "Module::Contacts"),
+    ("fn spawn_tasks_sync(", "Module::Tasks"),
+];
+
+/// The one question a sync asks before it builds a Microsoft sign-in, with
+/// every space taken out, and the key lookup that skips it.
+const THE_MICROSOFT_QUESTION: &str = "who_holds_the_calendars::a_microsoft_key(account)";
+const A_MICROSOFT_KEY_OF_ITS_OWN: &str = "credentials_for(\"outlook\")";
+
 /// The five identifiers no log call may name as a value.
 const THE_SECRETS: [&str; 5] = [
     "body_plain",
@@ -549,6 +583,125 @@ fn no_log_call_spells_a_secret() -> Result<(), String> {
     Ok(())
 }
 
+/// Each sync that may ask Google asks the one answer for its token, naming
+/// its module, and spells no Google sign-in of its own; and the answer writes
+/// why nothing was asked at info, naming the module and the reason's word.
+///
+/// #22: each sync skipped Google inside its own `if let` on the key, with no
+/// line at any level, so the log of the Refresh Pratik reported could not
+/// say why nothing came. A sync spelling `"gmail"` is building a sign-in
+/// that skips the answer, whichever comes first.
+fn a_sync_says_in_the_log_why_google_was_not_asked(app: &str, answer: &str) -> Result<(), String> {
+    for (signature, question) in THE_SYNCS_THAT_ASK_GOOGLE {
+        let body = body_of(app, signature)?;
+        let packed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        if !packed.contains(question) {
+            return Err(format!(
+                "{signature} does not ask {question}, so it decides for itself whether Google \
+                 is asked and says nothing when it is not"
+            ));
+        }
+        if body.contains("\"gmail\"") {
+            return Err(format!(
+                "{signature} builds a Google sign-in of its own, so an account that cannot ask \
+                 Google is passed over without a reason"
+            ));
+        }
+    }
+    let body = body_of(answer, "pub async fn a_google_token(")?;
+    let nothing_asked = between(
+        &body,
+        "if let GooglesAnswer::NothingAsked(why) = &answer {",
+        "Ok(answer)",
+    )?;
+    let call = the_first_log_call(nothing_asked).ok_or(
+        "a sync that asked Google nothing writes nothing to the log, so a report cannot say why",
+    )?;
+    if call.level != "info" {
+        return Err(format!(
+            "the reason Google was not asked is written at {}, which a profile at info never \
+             keeps",
+            call.level
+        ));
+    }
+    call.names(&["module.word()", "why.word()"], "the reason's line")
+}
+
+/// The log call in `body` that writes a sync's finish line, if any.
+fn the_finish_call(body: &str) -> Option<LogCall<'_>> {
+    let mut from = 0usize;
+    while let Some(call) = the_first_log_call(&body[from..]) {
+        if call.arguments.contains("the_finish_line(") {
+            return Some(call);
+        }
+        from += call.ends_at();
+    }
+    None
+}
+
+/// Each sync writes one finish line at info, naming its module and built by
+/// the one function that keeps it to numbers and words, and none of the
+/// sentences the sync says (14-02).
+///
+/// #22: no finished sync wrote a line at any level, so the log of a Refresh
+/// said nothing about what the sync did. A sentence said to the person can
+/// carry a calendar's or an address book's name, which the log must not.
+fn each_sync_writes_its_finish_line_at_info(app: &str) -> Result<(), String> {
+    for (signature, module) in THE_SYNCS_AND_THEIR_MODULES {
+        let body = body_of(app, signature)?;
+        let call = the_finish_call(&body).ok_or(format!(
+            "{signature} writes no finish line, so the log of a sync cannot say what it did"
+        ))?;
+        if call.level != "info" {
+            return Err(format!(
+                "{signature}'s finish line is written at {}, which a profile at info never keeps",
+                call.level
+            ));
+        }
+        let packed: String = call
+            .arguments
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        if !packed.contains(module) {
+            return Err(format!("{signature}'s finish line does not name {module}"));
+        }
+        if packed.contains(".summary()") || packed.contains("what_the_") {
+            return Err(format!(
+                "{signature}'s finish line writes the sentence the sync says, which can name a \
+                 calendar or an address book"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Each sync asks the one answer whether Microsoft may be asked, and builds
+/// no Microsoft key of its own (14-02).
+///
+/// RESEARCH-2 defect 1: each sync asked Microsoft whenever this copy held a
+/// Microsoft key, so a Gmail account on a copy holding both asked Microsoft on
+/// every sync and reported "Microsoft auth" as an error.
+fn each_sync_asks_before_building_a_microsoft_sign_in(app: &str) -> Result<(), String> {
+    for (signature, _) in THE_SYNCS_AND_THEIR_MODULES {
+        let body = body_of(app, signature)?;
+        let packed: String = body.chars().filter(|c| !c.is_whitespace()).collect();
+        if !packed.contains(THE_MICROSOFT_QUESTION) {
+            return Err(format!(
+                "{signature} does not ask {THE_MICROSOFT_QUESTION}, so it decides for itself \
+                 whether Microsoft is asked"
+            ));
+        }
+        if body.contains(A_MICROSOFT_KEY_OF_ITS_OWN) {
+            return Err(format!(
+                "{signature} looks up a Microsoft key of its own, so an account whose mail is \
+                 not at Microsoft can ask Microsoft"
+            ));
+        }
+    }
+    Ok(())
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────
 
 #[test]
@@ -584,6 +737,27 @@ fn test_what_is_held_back_from_speech_is_written_and_never_the_words() {
 #[test]
 fn test_no_log_call_in_the_tree_spells_a_secret_or_a_body() {
     no_log_call_spells_a_secret().unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_a_sync_says_in_the_log_why_google_was_not_asked() {
+    a_sync_says_in_the_log_why_google_was_not_asked(
+        &shipped(THE_MAIN_WINDOW),
+        &shipped(THE_ANSWER),
+    )
+    .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_each_sync_writes_its_finish_line_at_info() {
+    each_sync_writes_its_finish_line_at_info(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_each_sync_asks_before_building_a_microsoft_sign_in() {
+    each_sync_asks_before_building_a_microsoft_sign_in(&shipped(THE_MAIN_WINDOW))
+        .unwrap_or_else(|why| panic!("{why}"));
 }
 
 // ── The companions, each planting the opposite ──────────────────────────────
@@ -693,6 +867,116 @@ fn test_the_reading_complains_when_the_muted_line_is_missing_or_writes_the_words
     ))
     .expect_err("a muted line writing the words was passed over");
     assert!(why.contains("writes the words"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_sync_skips_the_answer_or_the_reason_goes_unwritten() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let answer = shipped(THE_ANSWER);
+    let reading = a_sync_says_in_the_log_why_google_was_not_asked;
+
+    let asks_nothing = with(
+        &app,
+        "who_holds_the_calendars::a_google_token(",
+        "who_holds_the_calendars::a_token_of_its_own(",
+    );
+    let why = reading(&asks_nothing, &answer).expect_err("a sync that skips the answer passed");
+    assert!(why.contains("does not ask"), "{why}");
+
+    let its_own_sign_in = with(
+        &app,
+        "who_holds_the_calendars::a_google_token(",
+        "crate::service::oauth_credentials::credentials_for(\"gmail\");\n        \
+         who_holds_the_calendars::a_google_token(",
+    );
+    let why = reading(&its_own_sign_in, &answer)
+        .expect_err("a sync building a Google sign-in of its own passed");
+    assert!(why.contains("of its own"), "{why}");
+
+    let body = body_of(&answer, "pub async fn a_google_token(").expect("the answer");
+    let (call, arguments) = the_call_between(
+        &body,
+        "if let GooglesAnswer::NothingAsked(why) = &answer {",
+        "Ok(answer)",
+    );
+    let why =
+        reading(&app, &with(&answer, &call, "")).expect_err("a reason written nowhere passed");
+    assert!(why.contains("writes nothing"), "{why}");
+    let why = reading(
+        &app,
+        &with(&answer, &call, &format!("tracing::debug!({arguments})")),
+    )
+    .expect_err("a reason written at debug passed");
+    assert!(why.contains("written at debug"), "{why}");
+    let why = reading(
+        &app,
+        &with(&answer, &call, "tracing::info!(\"{}\", why.word())"),
+    )
+    .expect_err("a reason line naming no module passed");
+    assert!(why.contains("module.word()"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_finish_line_is_missing_at_debug_or_says_the_sentence() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let reading = each_sync_writes_its_finish_line_at_info;
+    // The tasks sync's, the last of the three the reading reads, so a reading
+    // that stopped after the first would pass these.
+    let body = body_of(&app, "fn spawn_tasks_sync(").expect("the tasks sync");
+    let call = the_finish_call(&body).expect("the tasks sync's finish line");
+    let (spelled, arguments) = (call.spelled(), call.arguments.to_string());
+
+    let why = reading(&with(&app, &spelled, "")).expect_err("a sync with no finish line passed");
+    assert!(
+        why.contains("fn spawn_tasks_sync(") && why.contains("writes no finish line"),
+        "{why}"
+    );
+    let why = reading(&with(
+        &app,
+        &spelled,
+        &format!("tracing::debug!({arguments})"),
+    ))
+    .expect_err("a finish line at debug passed");
+    assert!(why.contains("written at debug"), "{why}");
+    let why = reading(&with(
+        &app,
+        &spelled,
+        &format!("tracing::info!({}, total.summary())", arguments.trim_end()),
+    ))
+    .expect_err("a finish line writing the sentence passed");
+    assert!(why.contains("writes the sentence"), "{why}");
+}
+
+#[test]
+fn test_the_reading_complains_when_a_sync_looks_up_a_microsoft_key_of_its_own() {
+    let app = shipped(THE_MAIN_WINDOW);
+    let reading = each_sync_asks_before_building_a_microsoft_sign_in;
+    let body = body_of(&app, "fn spawn_tasks_sync(").expect("the tasks sync");
+    // The question as the tasks sync spells it, so the plant lands in the
+    // last body the reading reads.
+    let at = body
+        .find("who_holds_the_calendars::a_microsoft_key(")
+        .expect("the tasks sync asks the question");
+    let asked = &body[at..at + body[at..].find(')').expect("the call closes") + 1];
+    let tasks = |planted: &str| {
+        let changed = body.replacen(asked, planted, 1);
+        assert_ne!(changed, body, "the plant changed nothing");
+        app.replacen(&body, &changed, 1)
+    };
+
+    let why = reading(&tasks(
+        "crate::service::oauth_credentials::credentials_for(\"outlook\")",
+    ))
+    .expect_err("a sync that skips the question passed");
+    assert!(
+        why.contains("fn spawn_tasks_sync(") && why.contains("does not ask"),
+        "{why}"
+    );
+    let why = reading(&tasks(&format!(
+        "{{ let _ = crate::service::oauth_credentials::credentials_for(\"outlook\"); {asked} }}"
+    )))
+    .expect_err("a sync looking up a key of its own passed");
+    assert!(why.contains("of its own"), "{why}");
 }
 
 #[test]

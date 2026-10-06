@@ -48,6 +48,7 @@
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{TaskEntry, TaskListEntry};
+use crate::service::asked_and_answered::{WhatCameBack, WhoWasAsked, the_line, the_reason_word};
 use crate::service::microsoft_graph::MsDateTimeTimeZone;
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
@@ -767,6 +768,24 @@ fn refusal(status: reqwest::StatusCode) -> Error {
     Error::Protocol(format!("The task service refused the change: {status}"))
 }
 
+/// Which service a task address belongs to, by its path: Microsoft's lists
+/// sit under `/me/todo/`, and every Google address is under `/lists/` or
+/// `/users/@me/lists`. By the path rather than by which base the address
+/// starts with, because a client pointed at a stand-in has one base for both.
+fn who_holds_a_task_address(url: &str) -> WhoWasAsked {
+    if url.contains("/me/todo/") {
+        WhoWasAsked::MicrosoftToDo
+    } else {
+        WhoWasAsked::GoogleTasks
+    }
+}
+
+/// An answer's body read as `T`.
+fn read_the_body<T: serde::de::DeserializeOwned>(body: &str) -> Result<T> {
+    serde_json::from_str(body)
+        .map_err(|e| Error::Protocol(format!("The task service sent something unreadable: {e}")))
+}
+
 /// Where to ask for somebody's Google task lists.
 fn google_lists_url(base: &str, page: Option<&str>) -> String {
     let mut url = format!("{base}/users/@me/lists?maxResults=100");
@@ -888,24 +907,66 @@ impl TasksClient {
     }
 
     async fn get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
-        let response = self
-            .http
-            .reading(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
-        if !response.status().is_success() {
+        let sent = self.http.reading(url).bearer_auth(token).send().await;
+        let (status, body) = Self::the_answer_written_down("GET", url, sent).await?;
+        if !status.is_success() {
             // The status and nothing else. A body from a failed request can
             // carry the token back, and this goes to a log file.
             return Err(Error::Protocol(format!(
-                "The task service refused the request: {}",
-                response.status()
+                "The task service refused the request: {status}"
             )));
         }
-        response.json::<T>().await.map_err(|e| {
-            Error::Protocol(format!("The task service sent something unreadable: {e}"))
-        })
+        read_the_body(&body)
+    }
+
+    /// What came back for one request, read whole, with the line saying what
+    /// was asked and what came back written to the log at info (14-02).
+    ///
+    /// Of a refusal's body only the provider's reason word reaches the line,
+    /// and the body goes no further than the caller, which keeps the status
+    /// alone. Built from the method, the address and the status; never from
+    /// the error's text, which names the whole address and its page marker.
+    async fn the_answer_written_down(
+        method: &str,
+        url: &str,
+        sent: reqwest::Result<reqwest::Response>,
+    ) -> Result<(reqwest::StatusCode, String)> {
+        let who = who_holds_a_task_address(url);
+        let response = match sent {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::info!("{}", the_line(who, method, url, WhatCameBack::NoAnswer));
+                return Err(Error::Network(format!(
+                    "Could not reach the task service: {}",
+                    e.without_url()
+                )));
+            }
+        };
+        let status = response.status();
+        let body = response.text().await;
+        let reason = match &body {
+            Ok(body) if !status.is_success() => the_reason_word(body),
+            _ => None,
+        };
+        tracing::info!(
+            "{}",
+            the_line(
+                who,
+                method,
+                url,
+                WhatCameBack::Answered {
+                    status: status.as_u16(),
+                    reason: reason.as_deref(),
+                },
+            )
+        );
+        let body = body.map_err(|e| {
+            Error::Protocol(format!(
+                "The task service sent something unreadable: {}",
+                e.without_url()
+            ))
+        })?;
+        Ok((status, body))
     }
 
     /// Every Google task list on the account.
@@ -987,20 +1048,19 @@ impl TasksClient {
         B: serde::Serialize,
         T: serde::de::DeserializeOwned,
     {
-        let response = self
+        let asked = method.to_string();
+        let sent = self
             .http
             .changing(method, url, "change a task")?
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
-        if !response.status().is_success() {
-            return Err(refusal(response.status()));
+            .await;
+        let (status, body) = Self::the_answer_written_down(&asked, url, sent).await?;
+        if !status.is_success() {
+            return Err(refusal(status));
         }
-        response.json::<T>().await.map_err(|e| {
-            Error::Protocol(format!("The task service sent something unreadable: {e}"))
-        })
+        read_the_body(&body)
     }
 
     /// Delete one thing.
@@ -1009,17 +1069,17 @@ impl TasksClient {
     /// asked for, and treating it as a failure means retrying a deletion
     /// forever against something that no longer exists.
     async fn delete(&self, url: &str, token: &str) -> Result<()> {
-        let response = self
+        let sent = self
             .http
             .changing(reqwest::Method::DELETE, url, "delete a task")?
             .bearer_auth(token)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Could not reach the task service: {e}")))?;
-        if response.status().is_success() || response.status() == reqwest::StatusCode::NOT_FOUND {
+            .await;
+        let (status, _) = Self::the_answer_written_down("DELETE", url, sent).await?;
+        if status.is_success() || status == reqwest::StatusCode::NOT_FOUND {
             return Ok(());
         }
-        Err(refusal(response.status()))
+        Err(refusal(status))
     }
 
     /// Put a new task in a Google list, and read back what was stored.

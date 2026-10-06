@@ -51,7 +51,6 @@
 //! None of this has run against a live calendar.
 
 use crate::application::answered_meetings::{self, WhereTheCopyWent};
-use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
 #[cfg(test)]
@@ -96,7 +95,7 @@ const CALDAV: &str = "caldav";
 const PROVIDERS_A_CHANGE_CAN_REACH: [&str; 3] = [GOOGLE, MICROSOFT, CALDAV];
 
 /// Result of a calendar sync operation.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CalendarSyncResult {
     pub created: usize,
     pub updated: usize,
@@ -139,10 +138,32 @@ pub struct CalendarSyncResult {
     /// the server's copy was dropped with nothing said. Both copies are kept
     /// now. `application::calendar_conflict` raises them.
     pub held_for_you_to_choose: usize,
+    /// Whether any pass asked anybody, and why Google was not asked (#22), so
+    /// a sync that asked nobody says why instead of "0 created".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
     pub errors: Vec<String>,
 }
 
 impl CalendarSyncResult {
+    /// Fold one pass's result into the running total.
+    ///
+    /// One method rather than the additions the window wrote out by hand for
+    /// each of four passes, which counted an item held for a choice twice for
+    /// Google and for Microsoft, and would drop any count added later.
+    pub fn absorb(&mut self, pass: CalendarSyncResult) {
+        self.created += pass.created;
+        self.updated += pass.updated;
+        self.deleted += pass.deleted;
+        self.sent += pass.sent;
+        self.waiting_on_the_setting += pass.waiting_on_the_setting;
+        self.days_that_may_be_shown_twice += pass.days_that_may_be_shown_twice;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.changes_that_cannot_be_saved
+            .extend(pass.changes_that_cannot_be_saved);
+        self.what_was_asked = self.what_was_asked.with_a_pass(pass.what_was_asked);
+        self.errors.extend(pass.errors);
+    }
+
     /// Count a provider's copy of a meeting by where it went. A copy put on
     /// the row an answer filed first is an update, because the calendar
     /// already held the meeting.
@@ -166,10 +187,16 @@ impl CalendarSyncResult {
 /// one. It names the setting, because "nothing happened" sends somebody looking
 /// for a broken account.
 pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
-    let mut said = SummingUp::opening(format!(
+    use crate::application::who_holds_the_calendars::Module;
+    let nothing_went_wrong = result.errors.is_empty();
+    let counts = format!(
         "Calendar sync: {} created, {} updated, {} deleted",
         result.created, result.updated, result.deleted
-    ));
+    );
+    // A sync that asked nobody says why rather than "0 created" (#22).
+    let mut said = result
+        .what_was_asked
+        .opening(Module::Calendar, counts, nothing_went_wrong);
     if result.sent > 0 {
         said.count(format!("{} sent", result.sent));
     }
@@ -212,6 +239,13 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
                 crate::application::conflict_choice::TheOtherCopy::ACalendar,
             ),
         );
+    }
+    // Last, after what the passes that ran did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Calendar, nothing_went_wrong)
+    {
+        said.sentence(why);
     }
     said.spoken()
 }
@@ -11259,6 +11293,7 @@ mod tests {
                  is a calendar this program can only read."
                     .to_string(),
             ],
+            what_was_asked: Default::default(),
             errors: vec!["the server said no".to_string()],
         });
 
@@ -11305,17 +11340,19 @@ mod tests {
         // to wrap does not turn this into a failure about nothing.
         let packed: String = source.chars().filter(|c| !c.is_whitespace()).collect();
 
+        // Every pass folds through `absorb` and the window receives the
+        // result whole since 14-01, so these are the three hand-offs.
         for (carried, without_it) in [
             (
-                "total_cannot_be_saved.extend(result.changes_that_cannot_be_saved)",
+                "Ok(result)=>total.absorb(result)",
                 "the refresh works out the sentence and the window throws it away",
             ),
             (
-                "changes_that_cannot_be_saved:total_cannot_be_saved",
+                "UIUpdate::CalendarSyncComplete(Box::new(total))",
                 "the sentence never leaves the thread that made it",
             ),
             (
-                "changes_that_cannot_be_saved:changes_that_cannot_be_saved.clone()",
+                "what_the_calendar_sync_did(result)",
                 "the window has the sentence and never puts it in what it speaks",
             ),
         ] {
