@@ -2256,6 +2256,17 @@ is for; `Delete` removes the one you are on, asking first and naming what it
 will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
 every module in full.
 
+### Your calendars in the Calendar module
+
+The Calendar module's sidebar lists each of your calendars. A Gmail account
+brings every calendar on its Google calendar list, each as a calendar of its
+own, and one you hid in Google Calendar arrives hidden here. To show or hide a
+calendar, go to it in the sidebar and press `Enter`; Wixen Mail says whether it
+is now showing or hidden, and a sync never changes it back. [Which of your
+Google calendars come](PROVIDER_SETUP.md#which-of-your-google-calendars-come)
+says how a read-only calendar and one that shows only free and busy times are
+handled.
+
 ### Undo in the other modules
 
 `Ctrl+Z` in a module's list takes back the last thing you did to an item

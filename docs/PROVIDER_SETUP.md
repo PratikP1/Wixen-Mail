@@ -484,6 +484,31 @@ tasks, so it does not need restarting.
 After that, Sync Calendar, Sync Contacts and Sync Tasks on the Tools menu, and
 `F5` in the Calendar, Contacts and Tasks modules, ask Google with this sign-in.
 
+#### Which of your Google calendars come
+
+Every calendar on your Google calendar list comes, not only your main one, and
+each is a calendar of its own in the Calendar module's sidebar. Your main
+calendar is called Google Calendar unless you named it yourself at Google. Every
+other calendar has the name you gave it at Google, or Google's name for it.
+Until 2026-10-05 only the main calendar came, and every other calendar on the
+account was never read.
+
+- **A calendar shared with you to look at, not to change,** is read-only here.
+  If you change an event in it on this computer, your change is kept here and
+  each sync says it cannot be sent.
+- **A calendar that shows only when its owner is free or busy** does not come,
+  because there is nothing in it to show. Each sync says how many were passed
+  over.
+- **A calendar you hid or unticked in Google Calendar** comes hidden. To show
+  it, go to it in the Calendar module's sidebar and press `Enter`. Press
+  `Enter` again to hide it. A sync never changes what you chose.
+- **A calendar Google stops listing,** because you left it or its owner
+  stopped sharing it, is taken off this computer with its events, and the sync
+  says so. A change you made in it here and had not sent yet is kept, in no
+  calendar, and each sync says it cannot be sent.
+
+None of this has been tried against a real Google account yet.
+
 #### While your key is in Testing
 
 - **The sign-in lasts seven days.** Google's page says a project in Testing "is
