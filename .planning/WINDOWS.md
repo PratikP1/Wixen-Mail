@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 701
+open_count: 703
 waived_count: 0
 fixed_count: 124
-total_count: 825
-last_updated: 2026-10-06T04:00:00.000Z
+total_count: 827
+last_updated: 2026-10-06T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -840,6 +840,8 @@ last_updated: 2026-10-06T04:00:00.000Z
 | 823 | 14 | unrun-verify | src/presentation/wx_app.rs |  | 14-04, for the tester in phase 14's sitting 1 (14-09): the Calendar module's sidebar heard under NVDA with his own Google calendars after Sync Calendar, each by its own name, a calendar he may only read and one hidden in Google Calendar among them if he has them, Enter on a hidden one heard as showing, and the sync's sentence heard with its count of calendars read and, if he has one, the sentence about a calendar that shows only free and busy times. No NVDA case reaches a Google calendar, and the scan reads names only. Closed when heard on a build holding 14-04's merge | open |  | 2026-10-06T04:00:00.000Z |  |
 | 824 | 14 | todo | src/presentation/wx_app.rs |  | 14-04, found reading the sidebar's Enter handler: the Calendar module's sidebar finds the calendar a row stands for by matching the row's text (CalendarContainerItem::shown of the name and whether it is showing), so two calendars with the same name and the same visibility are one row to it, and Enter on the second shows or hides the first. Every Google calendar being brought makes that likelier: a Work calendar of one's own and one shared, or the same holiday calendar on two accounts. Not this plan's to change; closed when the sidebar keeps each row's calendar id, with a case of two calendars of one name | open |  | 2026-10-06T04:00:00.000Z |  |
 | 825 | 14 | todo | src/application/calendar.rs |  | 14-04: a meeting held in two Google calendars and deleted here from one of them is noted by Google's identity, and events_deleted_here is asked by that identity across the account, so the read of the other calendar leaves that calendar's copy as it was for as long as the note is kept, rather than updating it. Nothing is lost and the other copy stays; it is not brought up to date until the note is let go. Closed when a deletion note is asked within its calendar, as the lookups are since 14-04 | open |  | 2026-10-06T04:00:00.000Z |  |
+| 826 | 14 | todo | src/application/mail_across_accounts.rs | 293 | 14-05, found reading the window's crossing arms: a copy to another account of a message over 25 MB goes through copy_it_across (called from wx_app.rs's copy arm), not the step functions, so it writes no line at all, done or refused, while a move of the same message writes its steps and its ending. copy_it_across takes no row, so a line naming the message as the others do needs one more parameter and the window's call changed. Closed when copy_it_across writes its fetch, its append's answer and its ending with the row, with a case on its loopback servers | open |  | 2026-10-06T12:00:00.000Z |  |
+| 827 | 14 | todo | src/presentation/accessibility/screen_reader.rs |  | 14-05: a case capturing log lines with tracing::subscriber::set_default hears nothing when it is the only dispatcher in the process and other cases reach the same call sites on other threads first, since tracing-core 0.1.36 then asks only that thread's default (Rebuilder::JustOne); a move_it_across case passed alone and failed three runs in three beside its module. CapturedLogs::as_the_default holds a second dispatcher and rebuilds the interest cache; 14-05's cases use it, and the earlier capturing cases in asked_and_answered.rs, feedback.rs, screen_reader.rs and elsewhere still call set_default directly and pass today because several capture at once. Closed when every capturing case uses as_the_default | open |  | 2026-10-06T12:00:00.000Z |  |
 
 ````json
 [
@@ -10741,6 +10743,30 @@ last_updated: 2026-10-06T04:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-06T04:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 826,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/application/mail_across_accounts.rs",
+    "line": 293,
+    "description": "14-05, found reading the window's crossing arms: a copy to another account of a message over 25 MB goes through copy_it_across (called from wx_app.rs's copy arm), not the step functions, so it writes no line at all, done or refused, while a move of the same message writes its steps and its ending. copy_it_across takes no row, so a line naming the message as the others do needs one more parameter and the window's call changed. Closed when copy_it_across writes its fetch, its append's answer and its ending with the row, with a case on its loopback servers",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 827,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/presentation/accessibility/screen_reader.rs",
+    "line": null,
+    "description": "14-05: a case capturing log lines with tracing::subscriber::set_default hears nothing when it is the only dispatcher in the process and other cases reach the same call sites on other threads first, since tracing-core 0.1.36 then asks only that thread's default (Rebuilder::JustOne); a move_it_across case passed alone and failed three runs in three beside its module. CapturedLogs::as_the_default holds a second dispatcher and rebuilds the interest cache; 14-05's cases use it, and the earlier capturing cases in asked_and_answered.rs, feedback.rs, screen_reader.rs and elsewhere still call set_default directly and pass today because several capture at once. Closed when every capturing case uses as_the_default",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T12:00:00.000Z",
     "resolved_at": null
   }
 ]

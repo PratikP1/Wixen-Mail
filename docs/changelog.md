@@ -1425,6 +1425,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limitations: none of this has met a real Google or Microsoft account; it is proven
   against stand-in servers on this computer, and nobody has heard the sentences said on
   adding an account or on `F5` with a screen reader.
+- **The log says which message a move, copy or delete sent later was about, and where it
+  went (REAL-02).** Until this build a change made here and sent to the server afterwards
+  wrote one line naming only the folder, so two copies made in the same minute could not be
+  told apart. A change the server had already carried out wrote nothing, and a move or copy
+  to another account wrote nothing once it worked. Now each change sent later writes one line
+  at Info: the kind of change, the message's number on this computer, the folder it came
+  from, what the server did, and the number the server files it under now, or that the next
+  read of that folder brings it. A change the server turned down writes the server's own
+  words. A move or copy to another account writes a line for each step: fetching the message
+  and its size, the other account taking it or turning it down, the message leaving the
+  account it was in, and where it arrived. A move of a message over 25 MB to another account
+  writes the same steps. Signing in to a mail server and sending a message now say whether a
+  password or the browser sign-in was used. No line carries a subject, an address, a password
+  or a sign-in token. Known limitations: none of this has met a real account; it is proven
+  against stand-in servers on this computer. A copy of a message over 25 MB to another account
+  still writes nothing.
 - **Sync Calendar, Sync Contacts and Sync Tasks say why nothing came from Google (#22).**
   Until this build each of them passed over Google without a word when it could not ask,
   then said "Calendar sync: 0 created, 0 updated, 0 deleted" with the sound for a finished

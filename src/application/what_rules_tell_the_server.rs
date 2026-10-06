@@ -640,13 +640,13 @@ mod tests {
 
     /// What the menu's replay asks, which a rule's Delete is sent through.
     impl ReplaysAMove for AServerThatKeepsFlags {
-        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
-            Mailbox::move_message(self, from, uid, into)
-                .await
-                .map(|_| ())
+        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
+            Ok(Mailbox::move_message(self, from, uid, into)
+                .await?
+                .spoken(into))
         }
 
-        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
             self.log.borrow_mut().push(match trash {
                 Some(trash) => format!("DELETE {uid} in {folder} into {trash}"),
                 None => format!("DELETE {uid} in {folder}"),
@@ -655,14 +655,14 @@ mod tests {
                 return Err(refusal.as_error());
             }
             self.take_it(folder, uid, trash);
-            Ok(())
+            Ok("Deleted".to_string())
         }
 
-        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             self.log
                 .borrow_mut()
                 .push(format!("COPY {uid} in {from} into {into}"));
-            Ok(())
+            Ok(format!("Copied to {into}"))
         }
 
         async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {

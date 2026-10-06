@@ -735,6 +735,36 @@ pub(crate) mod tests {
                 .iter()
                 .any(|(seen, message)| *seen == level && message.contains(contains))
         }
+
+        /// This capture as the thread's default while the answer lives, held
+        /// so that cases on other threads cannot leave it hearing nothing.
+        ///
+        /// `tracing` decides once per call site whether anybody listens, and
+        /// while one dispatcher is registered in the whole process it asks
+        /// only the default of the thread that reached the call site first
+        /// (`tracing-core` 0.1.36, `callsite.rs`, `Rebuilder::JustOne`). A
+        /// case beside others that reach the same call sites on threads with
+        /// no subscriber then finds them marked as heard by nobody, and its
+        /// capture stays empty. Found 2026-10-06 by 14-05: a case on
+        /// `move_it_across` passed alone and failed three runs in three
+        /// beside the other cases of its module. A second dispatcher held
+        /// alongside makes every call site ask every dispatcher, and the
+        /// rebuild settles the ones already reached.
+        pub(crate) fn as_the_default(&self) -> HeldAsTheDefault {
+            let guard = tracing::subscriber::set_default(self.clone());
+            let alongside = tracing::Dispatch::new(Self::default());
+            tracing::callsite::rebuild_interest_cache();
+            HeldAsTheDefault {
+                _guard: guard,
+                _alongside: alongside,
+            }
+        }
+    }
+
+    /// What [`CapturedLogs::as_the_default`] holds until the case ends.
+    pub(crate) struct HeldAsTheDefault {
+        _guard: tracing::subscriber::DefaultGuard,
+        _alongside: tracing::Dispatch,
     }
 
     /// Pulls the `message` field out of an event, dropping everything else a

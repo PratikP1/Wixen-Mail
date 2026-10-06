@@ -3241,16 +3241,21 @@ pub(crate) mod tests {
     /// the replay's own steps. These scripts hold no rule that deletes, so
     /// nothing here is asked.
     impl crate::application::moves_waiting::ReplaysAMove for Scripted {
-        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(format!("Moved to {into}"))
         }
 
-        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
-            Ok(())
+        async fn delete_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _trash: Option<&str>,
+        ) -> Result<String> {
+            Ok("Deleted".to_string())
         }
 
-        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn copy_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(format!("Copied to {into}"))
         }
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {

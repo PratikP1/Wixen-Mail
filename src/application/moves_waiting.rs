@@ -523,13 +523,13 @@ pub fn what_the_store_says(
 /// not something a caller should know about.
 pub(crate) trait ReplaysAMove {
     /// Move the message; any answer that is not an error is the server
-    /// having done something with it.
-    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()>;
+    /// having done something with it, said in the program's words.
+    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String>;
     /// Delete the message into `trash`, or off the server when there is
-    /// none.
-    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()>;
-    /// Copy the message, leaving the original where it is.
-    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()>;
+    /// none, and say what the server did.
+    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String>;
+    /// Copy the message, leaving the original where it is, and say so.
+    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String>;
     /// The numbers the folder holds a message with this identifier under.
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>>;
     /// Mark the message read or unread, flagged or not, where the marks say.
@@ -556,22 +556,19 @@ impl ReplaysAMove for crate::application::mail_controller::MailController {
         Ok(())
     }
 
-    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+    async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
         let moved = self.move_message(from, uid, into).await?;
-        tracing::info!("A waiting move was replayed: {}", moved.spoken(into));
-        Ok(())
+        Ok(moved.spoken(into))
     }
 
-    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+    async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
         self.copy_message(from, uid, into).await?;
-        tracing::info!("A waiting copy was replayed: copied to {into}");
-        Ok(())
+        Ok(copied_to(into))
     }
 
-    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+    async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
         let deletion = self.delete_message(folder, uid, trash).await?;
-        tracing::info!("A waiting delete was replayed: {}", deletion.spoken());
-        Ok(())
+        Ok(deletion.spoken())
     }
 
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
@@ -633,7 +630,7 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
     // is the answer for the move as well, so the two wait, or are put
     // back, together.
     let marked = send_the_marks_first(server, cache, waiting).await;
-    let answer = match (marked, &waiting.what) {
+    let said = match (marked, &waiting.what) {
         (Err(not_sent), _) => Err(not_sent),
         (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
             server.move_it(from, waiting.uid, into_folder_path).await
@@ -656,6 +653,12 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
             ));
         }
     };
+    // What the server did, in words, kept for the log apart from whether it
+    // did it, which is all the reading of the answer below asks.
+    let (answer, done) = match said {
+        Ok(done) => (Ok(()), Some(done)),
+        Err(why) => (Err(why), None),
+    };
     // Where the message is, asked only of a server that answered no: a
     // server that hung up cannot be asked, and asking would turn the
     // question into a second failure. A question that fails is read the
@@ -669,19 +672,137 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
         }
         _ => what_a_replay_answered(&answer, WhereItIsNow::NotThere),
     };
-    match &what_it_means {
+    let left = match &what_it_means {
         Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-            settle_the_row(server, cache, waiting).await?;
+            let left = settle_the_row(server, cache, waiting).await?;
             cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+            Some(left)
         }
         // The undo is the caller's, so the sentence is said beside it, and
         // the row stops waiting there too: a refusal met with the program
         // gone before the undo ran is met again at the next check, which
         // undoes it then.
-        Replayed::Refused(_) | Replayed::NotReached => {}
+        Replayed::Refused(_) | Replayed::NotReached => None,
+    };
+    if let Some(line) = the_line_about_a_replay(waiting, &what_it_means, done.as_deref(), left) {
+        tracing::info!("{line}");
     }
     let failed = answer.as_ref().err().map(why_the_push_failed);
     Ok((what_it_means, failed))
+}
+
+/// Where a replay left the row's message, as far as this computer knows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WhereTheReplayLeftIt {
+    /// The destination holds it under this number, and the row is that
+    /// message there now.
+    HeldAs(u32),
+    /// The destination could not say, so its next read brings the message.
+    TheNextReadBringsIt,
+    /// A delete outright, which leaves nothing to hold.
+    NowhereToHoldIt,
+}
+
+/// The word a log line names a waiting change by.
+fn the_kind_of(what: &WhatAWaitingMoveDoes) -> &'static str {
+    match what {
+        WhatAWaitingMoveDoes::Move { .. } => "move",
+        WhatAWaitingMoveDoes::Copy { .. } => "copy",
+        WhatAWaitingMoveDoes::DeleteToTrash { .. } | WhatAWaitingMoveDoes::DeleteOutright => {
+            "delete"
+        }
+        WhatAWaitingMoveDoes::MoveAcross { .. } => "move to another account",
+        WhatAWaitingMoveDoes::CopyAcross { .. } => "copy to another account",
+    }
+}
+
+/// What a copy the server carried out comes to, in the program's words.
+fn copied_to(into: &str) -> String {
+    format!("Copied to {into}")
+}
+
+/// The one line the log keeps about a change replayed within one account:
+/// which row, what the server answered, and where it holds the message now.
+///
+/// None for a server never reached, which both callers already write with
+/// the row or the account. The row's number names the message, never its
+/// subject or its sender, because the log is attached to reports.
+fn the_line_about_a_replay(
+    waiting: &AWaitingMove,
+    replayed: &Replayed,
+    done: Option<&str>,
+    left: Option<WhereTheReplayLeftIt>,
+) -> Option<String> {
+    let kind = the_kind_of(&waiting.what);
+    let row = waiting.message_row_id;
+    let from = &waiting.from_folder_path;
+    let answered = match (replayed, done) {
+        (Replayed::NotReached, _) => return None,
+        (Replayed::Refused(why), _) => {
+            return Some(format!(
+                "A waiting {kind} of message {row} in {from} was refused: {why}"
+            ));
+        }
+        (_, Some(done)) => done,
+        (_, None) => "the server had already done it",
+    };
+    let now = and_where_it_is_now(waiting, left);
+    Some(format!(
+        "A waiting {kind} of message {row} in {from} was replayed: {answered}{now}"
+    ))
+}
+
+/// The end of a replay's line: which number the destination holds the
+/// message under, or that its next read brings it, or nothing for a delete
+/// outright.
+fn and_where_it_is_now(waiting: &AWaitingMove, left: Option<WhereTheReplayLeftIt>) -> String {
+    let holder = if waiting.what.crosses_to().is_some() {
+        "the other account"
+    } else {
+        "the server"
+    };
+    match (left, waiting.what.destination()) {
+        (Some(WhereTheReplayLeftIt::HeldAs(uid)), Some(destination)) => {
+            format!("; {holder} holds it in {destination} as {uid}")
+        }
+        (Some(WhereTheReplayLeftIt::TheNextReadBringsIt), Some(destination)) => {
+            format!("; the next read of {destination} brings it")
+        }
+        _ => String::new(),
+    }
+}
+
+/// The line the log keeps about a crossing's outcome, after its steps have
+/// written theirs.
+///
+/// A refusal says only that it was refused, since the step that met it has
+/// already written the other account's words, and the reasons the replay
+/// gives on its own name an account as the person called it, which may be
+/// an address. None for a crossing nobody could settle, which waits and
+/// whose step has said why.
+fn the_line_about_a_crossing(
+    waiting: &AWaitingMove,
+    replayed: &Replayed,
+    left: Option<WhereTheReplayLeftIt>,
+) -> Option<String> {
+    let arrived = match replayed {
+        Replayed::NotReached => return None,
+        Replayed::Refused(_) => "was refused, so it is put back here".to_string(),
+        Replayed::Done | Replayed::AlreadyDone => format!(
+            "was replayed: it arrived at the other account{}",
+            and_where_it_is_now(waiting, left)
+        ),
+        Replayed::DoneWithSomethingToSay(_) => format!(
+            "was replayed: it arrived at the other account and is still at the source{}",
+            and_where_it_is_now(waiting, left)
+        ),
+    };
+    Some(format!(
+        "A waiting {} of message {} in {} {arrived}",
+        the_kind_of(&waiting.what),
+        waiting.message_row_id,
+        waiting.from_folder_path
+    ))
 }
 
 /// What one delete, made here and then sent on a session already open, came
@@ -805,27 +926,38 @@ async fn where_it_is_now<S: ReplaysAMove>(
 /// destination brings the message down. A delete outright changes nothing
 /// here: the row stays marked deleted under its number, which is what the
 /// next read of its folder forgets, as a delete's row always was.
+///
+/// Hands back where it left the message, for the replay's line in the log.
 async fn settle_the_row<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
     waiting: &AWaitingMove,
-) -> Result<()> {
+) -> Result<WhereTheReplayLeftIt> {
     let Some(destination) = waiting.what.destination() else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::NowhereToHoldIt);
     };
+    // A row already gone here holds nothing, and the next read of the
+    // destination brings the message as it would any other.
     let Some(message) = cache.get_message(waiting.message_row_id)? else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
     let Some(folder) = cache.get_folder(&waiting.account_id, destination)? else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
     match server
         .where_it_is(destination, &message.message_id)
         .await?
         .as_slice()
     {
-        [uid] => cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid),
-        _ => cache.let_the_next_read_bring_it(waiting.message_row_id),
+        [uid] => {
+            cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid)?;
+            Ok(WhereTheReplayLeftIt::HeldAs(*uid))
+        }
+        _ => {
+            cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+            Ok(WhereTheReplayLeftIt::TheNextReadBringsIt)
+        }
     }
 }
 
@@ -918,22 +1050,27 @@ pub(crate) async fn replay_the_crossings_waiting_for<O: OpensASession>(
         };
         let (answer, was_there_before) =
             one_crossing(accounts, cache, &waiting, &message.subject).await;
-        match &answer {
+        let left = match &answer {
             Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
-                settle_the_crossed_row(accounts, cache, &waiting, was_there_before.as_deref())
-                    .await?;
+                let left =
+                    settle_the_crossed_row(accounts, cache, &waiting, was_there_before.as_deref())
+                        .await?;
                 cache.the_move_is_over(waiting.message_row_id)?;
                 cache.stop_waiting_for_a_move(waiting.message_row_id)?;
+                Some(left)
             }
             // The undo is the window's, so the sentence is said beside it
             // and the bytes go there.
-            Replayed::Refused(_) => {}
-            Replayed::NotReached => {
-                replayed.push((waiting, answer));
-                break;
-            }
+            Replayed::Refused(_) | Replayed::NotReached => None,
+        };
+        if let Some(line) = the_line_about_a_crossing(&waiting, &answer, left) {
+            tracing::info!("{line}");
         }
+        let reached = answer != Replayed::NotReached;
         replayed.push((waiting, answer));
+        if !reached {
+            break;
+        }
     }
     Ok(replayed)
 }
@@ -1047,23 +1184,30 @@ async fn one_crossing<O: OpensASession>(
 /// crossing is done: under the number the destination folder holds the
 /// identifier under and did not before, unmarked, or gone for the next read
 /// of that folder to bring down when it cannot be told.
+///
+/// Hands back where it left the message, for the crossing's line in the log.
 async fn settle_the_crossed_row<O: OpensASession>(
     accounts: &O,
     cache: &MessageCache,
     waiting: &AWaitingMove,
     was_there_before: Option<&[u32]>,
-) -> Result<()> {
+) -> Result<WhereTheReplayLeftIt> {
     let (Some(other), Some(into)) = (waiting.what.crosses_to(), waiting.what.destination()) else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::NowhereToHoldIt);
     };
     let Some(message) = cache.get_message(waiting.message_row_id)? else {
-        return Ok(());
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
+    };
+    let the_next_read_brings_it = || {
+        cache
+            .let_the_next_read_bring_it(waiting.message_row_id)
+            .map(|()| WhereTheReplayLeftIt::TheNextReadBringsIt)
     };
     let Some(folder) = cache.get_folder(&other.id, into)? else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        return the_next_read_brings_it();
     };
     let ASessionFor::Open(destination) = accounts.session_for(&other.id).await else {
-        return cache.let_the_next_read_bring_it(waiting.message_row_id);
+        return the_next_read_brings_it();
     };
     let now = destination
         .which_messages_carry(into, &message.message_id)
@@ -1074,8 +1218,10 @@ async fn settle_the_crossed_row<O: OpensASession>(
         .filter(|uid| !was_there_before.is_some_and(|before| before.contains(uid)))
         .collect();
     match arrived.as_slice() {
-        [uid] => cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid),
-        _ => cache.let_the_next_read_bring_it(waiting.message_row_id),
+        [uid] => cache
+            .the_server_holds_it_at(waiting.message_row_id, folder.id, *uid)
+            .map(|()| WhereTheReplayLeftIt::HeldAs(*uid)),
+        _ => the_next_read_brings_it(),
     }
 }
 
@@ -1086,6 +1232,7 @@ mod tests {
     use crate::common::answering::{Conversation, Turn, conversing};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
     use crate::service::protocols::imap::ImapSession;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, signed_in_to,
@@ -1236,22 +1383,23 @@ mod tests {
     }
 
     impl ReplaysAMove for ASessionOfItsOwn {
-        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(from).await?;
-            session.move_message(uid, into).await.map(|_| ())
+            Ok(session.move_message(uid, into).await?.spoken(into))
         }
 
-        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(folder).await?;
-            session.delete_message(uid, trash).await.map(|_| ())
+            Ok(session.delete_message(uid, trash).await?.spoken())
         }
 
-        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             let mut session = self.0.lock().await;
             session.select_folder(from).await?;
-            session.copy_message(uid, into).await
+            session.copy_message(uid, into).await?;
+            Ok(copied_to(into))
         }
 
         async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
@@ -2222,6 +2370,196 @@ mod tests {
         );
     }
 
+    /// The Info lines naming the row, in the order they were written, none of
+    /// them carrying the test message's subject or its sender.
+    fn the_lines_naming(captured: &CapturedLogs, row: i64) -> Vec<String> {
+        let lines: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| *level == tracing::Level::INFO && names_the_row(line, row))
+            .map(|(_, line)| line)
+            .collect();
+        for line in &lines {
+            for private in ["Lunch", "ada@example.com"] {
+                assert!(!line.contains(private), "a line carries {private}: {line}");
+            }
+        }
+        lines
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        let [fetched, appended, removed, arrived] = lines.as_slice() else {
+            panic!("not four lines, one per step and the outcome: {lines:?}");
+        };
+        assert!(
+            fetched.contains("fetched")
+                && fetched.contains(&format!("{} bytes", THE_MESSAGE.len()))
+                && fetched.contains("from INBOX")
+                && fetched.contains("kept here"),
+            "{fetched}"
+        );
+        assert!(appended.contains("taken into Work"), "{appended}");
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(
+            arrived.contains("replayed") && arrived.contains("in Work as 9"),
+            "{arrived}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_copy_across_writes_no_removal() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let copy = what_happens_here(
+            &home,
+            &a_move_of(row, THE_UID, a_copy_into_the_other_accounts_work()),
+            "Lunch",
+        )
+        .expect("copied here")
+        .kept;
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, copy.message_row_id);
+        let [fetched, appended, arrived] = lines.as_slice() else {
+            panic!("not three lines, the fetch, the append and the outcome: {lines:?}");
+        };
+        assert!(fetched.contains("fetched"), "{fetched}");
+        assert!(appended.contains("taken into Work"), "{appended}");
+        assert!(
+            arrived.contains("copy to another account") && arrived.contains("in Work as 9"),
+            "{arrived}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_append_writes_the_destinations_words() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        assert!(lines.len() <= 4, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("refused by the other account")
+                    && line.contains("could not append")),
+            "the append's refusal in the server's words: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("gone from")),
+            "{lines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_append_never_answered_writes_what_the_other_account_was_asked() {
+        for (afterwards, written) in [
+            (Ok(vec![9]), "was asked and holds it"),
+            (Ok(vec![]), "was asked and does not hold it"),
+            (
+                Err(Error::Protocol("no search here".to_string())),
+                "could not be asked",
+            ),
+        ] {
+            let captured = CapturedLogs::default();
+            let _logging = captured.as_the_default();
+            let source = a_source_server(ASourceServer::default()).await;
+            let accounts = a_source_and_a_scripted_destination(
+                &source,
+                AScriptedDestination::that_hangs_up_and_then(vec![Ok(vec![]), afterwards]),
+            )
+            .await;
+            let home = a_cache();
+            let row = a_message_in_the_inbox(&home, THE_UID);
+            a_crossing_made_here(&home, row);
+
+            replay_the_crossings_waiting_for(&accounts, &home, "an account")
+                .await
+                .expect("the replay");
+
+            let lines = the_lines_naming(&captured, row);
+            assert!(lines.len() <= 4, "{lines:?}");
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.contains("not answered") && line.contains(written)),
+                "{written}: {lines:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_crossing_writes_no_fetch() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+        home.keep_the_message_while_it_moves(
+            &crate::data::message_cache::moves_in_flight::AMoveStarting {
+                message_row_id: row,
+                to_account_id: "another account",
+                to_folder: "Work",
+                flags: Some("(\\Seen)"),
+                arrived: None,
+                was_there_before: Some(&[]),
+                raw: THE_MESSAGE.as_bytes(),
+            },
+        )
+        .expect("the bytes held from the earlier run");
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        let [resumed, removed, arrived] = lines.as_slice() else {
+            panic!("not three lines, the resume, the removal and the outcome: {lines:?}");
+        };
+        assert!(
+            resumed.contains("resumed") && resumed.contains("taken into Work"),
+            "{resumed}"
+        );
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(arrived.contains("in Work as 9"), "{arrived}");
+    }
+
     #[tokio::test]
     async fn test_two_crossings_are_replayed_in_the_order_they_were_asked() {
         // Two source accounts, each holding its message, both going to the
@@ -3136,6 +3474,207 @@ mod tests {
         );
     }
 
+    /// The lines a replay wrote about its rows.
+    fn the_replay_lines(captured: &CapturedLogs) -> Vec<String> {
+        captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| *level == tracing::Level::INFO && line.starts_with("A waiting"))
+            .map(|(_, line)| line)
+            .collect()
+    }
+
+    /// The one line a replay wrote, which names the message by its row and
+    /// carries nothing a person wrote: the test message's subject and its
+    /// sender are both refused, since the tree-wide guard reads five names
+    /// and lets a subject through by its own account.
+    fn the_one_replay_line(captured: &CapturedLogs) -> String {
+        let lines = the_replay_lines(captured);
+        let [line] = lines.as_slice() else {
+            panic!("not one line about the replay: {lines:?}");
+        };
+        for private in ["Lunch", "ada@example.com"] {
+            assert!(
+                !line.contains(private),
+                "the line carries {private}: {line}"
+            );
+        }
+        line.clone()
+    }
+
+    fn names_the_row(line: &str, row: i64) -> bool {
+        line.contains(&format!("message {row} "))
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_copy_names_its_row_and_where_the_server_holds_the_copy() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let copy = a_copy_made_here(&home, row);
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("copy"), "{line}");
+        assert!(names_the_row(&line, copy.message_row_id), "{line}");
+        assert!(line.contains("INBOX"), "the folder it came from: {line}");
+        assert!(line.contains("Copied to Archive"), "{line}");
+        assert!(line.contains("in Archive as 4"), "where it is held: {line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_move_names_its_row_and_how_the_server_moved_it() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("move"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("Moved to Archive"), "{line}");
+        assert!(line.contains("in Archive as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_delete_to_the_trash_names_its_row_and_the_trashs_number() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(
+            &home,
+            &a_move_of(
+                row,
+                42,
+                WhatAWaitingMoveDoes::DeleteToTrash {
+                    trash_path: "Trash".to_string(),
+                },
+            ),
+            "Lunch",
+        )
+        .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("delete"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("Moved to Trash"), "{line}");
+        assert!(line.contains("in Trash as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_delete_outright_names_its_row_and_no_number() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_can("UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(
+            &home,
+            &a_move_of(row, 42, WhatAWaitingMoveDoes::DeleteOutright),
+            "Lunch",
+        )
+        .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("delete"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.ends_with("Deleted"), "{line}");
+        assert!(!line.contains("holds"), "a removal is held nowhere: {line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_replay_names_its_row_and_the_servers_words() {
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_refuses_and_holds_nothing("UID MOVE").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("refused"), "{line}");
+        assert!(
+            line.contains("would not do it"),
+            "the server's words: {line}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_already_done_replay_writes_its_line_too() {
+        // The answer the two deletes waiting since 2026-09-20 meet at their
+        // first check against Gmail, which wrote nothing at all until now.
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_refuses("MOVE UIDPLUS", "UID MOVE").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("already"), "{line}");
+        assert!(line.contains("in Archive as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replay_that_never_reached_the_server_writes_no_line_of_its_own() {
+        // Both callers already write a server never reached, with the row or
+        // the account, so a second line here would be the same fact twice.
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let server = a_server_that_hangs_up_on_the_change().await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(the_replay_lines(&captured), Vec::<String>::new());
+    }
+
     #[tokio::test]
     async fn test_two_waiting_moves_are_replayed_in_the_order_they_were_asked() {
         let server = a_server_that_can("MOVE UIDPLUS").await;
@@ -3291,16 +3830,21 @@ mod tests {
     /// What a check asks to carry out a rule's Delete. These cases hold no
     /// rule, so nothing here is asked.
     impl ReplaysAMove for AServerThatLists {
-        async fn move_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(format!("Moved to {into}"))
         }
 
-        async fn delete_it(&self, _folder: &str, _uid: u32, _trash: Option<&str>) -> Result<()> {
-            Ok(())
+        async fn delete_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _trash: Option<&str>,
+        ) -> Result<String> {
+            Ok("Deleted".to_string())
         }
 
-        async fn copy_it(&self, _from: &str, _uid: u32, _into: &str) -> Result<()> {
-            Ok(())
+        async fn copy_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(copied_to(into))
         }
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
