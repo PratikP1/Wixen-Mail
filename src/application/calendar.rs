@@ -144,6 +144,14 @@ pub struct CalendarSyncResult {
     /// Whether any pass asked anybody, and why Google was not asked (#22), so
     /// a sync that asked nobody says why instead of "0 created".
     pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
+    /// How many Google calendars were read, said when more than one was.
+    pub calendars_read: usize,
+    /// Calendars on Google's list that show only when their owner is free or
+    /// busy, passed over and said (14-04 choice 3).
+    pub calendars_showing_only_free_and_busy: usize,
+    /// Calendars Google stopped listing, taken off this computer and said
+    /// (14-04 choice 4).
+    pub calendars_put_away: usize,
     pub errors: Vec<String>,
 }
 
@@ -11359,6 +11367,9 @@ mod tests {
                     .to_string(),
             ],
             what_was_asked: Default::default(),
+            calendars_read: 0,
+            calendars_showing_only_free_and_busy: 0,
+            calendars_put_away: 0,
             errors: vec!["the server said no".to_string()],
         });
 
