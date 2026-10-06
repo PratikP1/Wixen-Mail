@@ -5178,16 +5178,19 @@ mod tests {
             .split_once("refresh_subscription(")
             .map(|(before, _)| before)
             .unwrap_or(arm);
+        // Read with the white space taken out, so a line the formatter
+        // decides to wrap does not turn this into a failure about nothing.
+        let arm: String = arm.chars().filter(|c| !c.is_whitespace()).collect();
 
-        for counted in ["total_sent += result.sent", "total_waiting += result"] {
-            assert!(
-                arm.contains(counted),
-                "{path} does not count {counted} for a calendar server, so a \
-                 change that reached one is never mentioned"
-            );
-        }
+        // Every count a pass makes is folded by `absorb` since 14-01, which
+        // the calendar's own cases hold to carrying every field.
         assert!(
-            arm.contains("total_errors.push"),
+            arm.contains("Ok(result)=>total.absorb(result)"),
+            "{path} does not fold what a calendar server's pass counted, so a \
+             change that reached one is never mentioned"
+        );
+        assert!(
+            arm.contains("total.errors.push("),
             "{path} passes over a calendar whose sign-in it cannot read without \
              a word, so a change waits for ever with no explanation"
         );

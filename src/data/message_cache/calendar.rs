@@ -5,6 +5,27 @@ use crate::application::invitations::Answer;
 use crate::common::{Error, Result};
 use rusqlite::params;
 
+/// One calendar at a provider, as a read of it finds the events it owns.
+#[derive(Debug, Clone, Copy)]
+pub struct OneProvidersCalendar<'a> {
+    pub account_id: &'a str,
+    pub calendar_id: &'a str,
+    /// The provider's word, which the calendar's own row carries.
+    pub provider: &'a str,
+}
+
+/// Which rows a read of one calendar owns, with the account, the provider's
+/// name for the event, the calendar and the provider as `?1` to `?4`.
+///
+/// The rows in that calendar, and any row of the account's in no calendar of
+/// that provider's: one stored before events were filed under a calendar, or
+/// one somebody moved by hand into a calendar of their own, which a read
+/// updates where it is. Never a row in another of the provider's calendars,
+/// which is that calendar's own copy.
+const A_ROW_ONE_CALENDARS_READ_OWNS: &str = "account_id = ?1 AND provider_event_id = ?2
+     AND (calendar_id = ?3 OR calendar_id IS NULL OR calendar_id NOT IN
+          (SELECT id FROM calendars WHERE account_id = ?1 AND source_provider = ?4))";
+
 /// What an answer given on this computer last filed against one meeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnsweredHere {
@@ -1020,6 +1041,70 @@ impl MessageCache {
                 params![account_id, provider_event_id],
             )
             .map_err(|e| Error::Other(format!("Failed to delete calendar event: {}", e)))?;
+        Ok(())
+    }
+
+    /// The event a read of one calendar at a provider holds under the
+    /// provider's name for it, if any.
+    ///
+    /// Asked of one calendar rather than of the account, because a provider
+    /// gives one meeting the same name in every calendar it sits in: asked of
+    /// the account, a meeting in two calendars moved between them on every
+    /// read, and a cancellation in one took the other's copy (14-04).
+    pub fn event_in(
+        &self,
+        calendar: OneProvidersCalendar<'_>,
+        provider_event_id: &str,
+    ) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {} FROM calendar_events WHERE {A_ROW_ONE_CALENDARS_READ_OWNS}
+             ORDER BY calendar_id = ?3 DESC LIMIT 1",
+            EVENT_COLS
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
+        let mut rows = stmt
+            .query_map(
+                params![
+                    calendar.account_id,
+                    provider_event_id,
+                    calendar.calendar_id,
+                    calendar.provider
+                ],
+                map_event_row,
+            )
+            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete the event a read of one calendar holds under the provider's name
+    /// for it, because the provider said it was cancelled.
+    ///
+    /// Unguarded for the reason [`Self::delete_calendar_event_by_provider_id`]
+    /// gives, and narrowed to one calendar for the reason [`Self::event_in`]
+    /// gives.
+    pub fn delete_event_in(
+        &self,
+        calendar: OneProvidersCalendar<'_>,
+        provider_event_id: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                &format!("DELETE FROM calendar_events WHERE {A_ROW_ONE_CALENDARS_READ_OWNS}"),
+                params![
+                    calendar.account_id,
+                    provider_event_id,
+                    calendar.calendar_id,
+                    calendar.provider
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete a cancelled event: {}", e)))?;
         Ok(())
     }
 

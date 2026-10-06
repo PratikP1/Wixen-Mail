@@ -607,7 +607,7 @@ impl SmtpClient {
             .await
             .map_err(|e| Error::Protocol(format!("Failed to send email: {}", e)))?;
 
-        tracing::info!("Email sent successfully");
+        tracing::info!("Email sent, signed in {}", auth.how_it_signs_in());
         Ok(sent)
     }
 

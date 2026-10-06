@@ -959,14 +959,14 @@ mod tests {
     }
 
     impl ReplaysAMove for AServerThatHoldsTheTrash {
-        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             self.log
                 .borrow_mut()
                 .push(format!("MOVE {uid} in {from} into {into}"));
-            Ok(())
+            Ok(format!("Moved to {into}"))
         }
 
-        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<()> {
+        async fn delete_it(&self, folder: &str, uid: u32, trash: Option<&str>) -> Result<String> {
             self.log.borrow_mut().push(match trash {
                 Some(trash) => format!("DELETE {uid} in {folder} into {trash}"),
                 None => format!("DELETE {uid} in {folder} off the server"),
@@ -980,14 +980,14 @@ mod tests {
             if let Some(held) = self.folders.borrow_mut().get_mut(folder) {
                 held.retain(|(held_uid, _)| *held_uid != uid);
             }
-            Ok(())
+            Ok("Deleted".to_string())
         }
 
-        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<()> {
+        async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             self.log
                 .borrow_mut()
                 .push(format!("COPY {uid} in {from} into {into}"));
-            Ok(())
+            Ok(format!("Copied to {into}"))
         }
 
         async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {

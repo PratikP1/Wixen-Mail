@@ -175,6 +175,14 @@ no period before or after, so both buttons are unavailable and your screen
 reader says so. Which view the calendar opens on is on the Calendar section of
 the Calendar and PIM tab in Settings.
 
+`F5` in Contacts, Calendar, Tasks or Notes syncs that module for the account
+you are in, the same as Sync Now on the sidebar's menu: you hear "Syncing
+contacts..." if you chose to hear every step, then one sentence when the sync
+finishes. In Reminders it says the module does not sync anywhere yet. In Mail
+it reads the open folder again, as before. Until 2026-10-05 `F5` read the mail
+folder in every module, so in Contacts it said "Refreshed" with a mail
+folder's name.
+
 ### The Due Now Window
 
 Opens on its own when a reminder comes due, a task reaches its due date, or a
@@ -616,7 +624,7 @@ nothing landed a row when focus arrived.
 | Next unread | `Ctrl+U` | Go to the next message you have not read |
 | Previous unread | `Ctrl+Shift+U` | Go to the previous message you have not read |
 | Star or unstar | `Ctrl+Shift+S` | Star the selected message, or take the star off |
-| Refresh folder | `F5` | Read this folder again from the server |
+| Refresh folder | `F5` | Read this folder again from the server. With Contacts, Calendar, Tasks or Notes showing, `F5` syncs that module instead, as its Sync Now does. Since 2026-10-05; until then it read the mail folder whatever was showing |
 | Get older messages | `Shift+F9` | Carry on downloading everything, with this folder first. Every message of every kept folder comes down on its own after a check; this puts the folder you are in at the front of the queue |
 | Open a draft | `Ctrl+Shift+O` | Reopen a message saved to finish later |
 | Delete permanently | `Shift+Del` | Remove without putting it in the Trash. Not asked about first. On a POP account this takes it off this computer, and mail stays on the server until that account's own removal setting takes it |
@@ -648,10 +656,12 @@ first, since 2026-09-19.** The row leaves the list the moment you choose the
 folder or press `Delete`, the cursor lands on the next message, and the
 server is told in the background and again at the next check for mail. If
 the server refuses, the message comes back where it was and the refusal is
-spoken with the reason. A move to a folder on another account still waits
-for both servers before the row leaves. Until 2026-09-19 every move and
-delete waited for the server before the row left, and `Enter` on the chosen
-folder in this window did nothing.
+spoken with the reason. A move to a folder on another account leaves the row
+at once too, since later on 2026-09-19, and finishes at the next check of
+either account from the copy kept on this computer. Until 2026-10-06 this page
+said such a move still waited for both servers before the row left. Until
+2026-09-19 every move and delete waited for the server before the row left,
+and `Enter` on the chosen folder in this window did nothing.
 
 ### File Menu
 
@@ -876,6 +886,8 @@ In the account editor, Check Interval and the days before POP mail is removed ar
 On the account editor's first page, `Alt+F` reaches Signature for this account: the signature messages from this account start with. Its first entry is the default, which names the signature it is; the Signature Manager can choose the same thing, and each shows what the other chose.
 
 Every letter on a page of the account editor is its own. On the first page: `Alt+A` Account Name, `Alt+E` Email Address, `Alt+M` the name people see, `Alt+F` Signature for this account, `Alt+N` Next. On the second: `Alt+R` How to read your mail; `Alt+I` IMAP Server, `Alt+P` IMAP Port, `Alt+L` its Use TLS, or for POP `Alt+P` POP Server, `Alt+O` POP Port, `Alt+F` Use TLS for POP, `Alt+L` Leave mail on the server, `Alt+D` the days, `Alt+C` Let me delete mail on this computer; `Alt+S` SMTP Server, `Alt+T` SMTP Port, `Alt+E` its Use TLS; `Alt+N` Sign in with the provider in a browser, `Alt+U` Username, `Alt+W` Password, `Alt+G` Get an app password; `Alt+V` Check Interval, `Alt+A` Enable this account, `Alt+Y` Empty the Trash (experimental) for a POP account, and for an IMAP account whose provider does not empty its Trash itself; `Alt+M`, `Alt+K` and `Alt+X` the three boxes for what this account may change; `Alt+B` Back. Until 2026-09-24 five letters were each claimed by two or three labels on one page, so the letter moved between them rather than choosing one. Until 2026-09-28 the second page also held `Alt+Y` Directory address and `Alt+H` Where in it to look; both moved to Look People Up at Work, below. Since 2026-10-02 `Alt+Y` is Empty the Trash, and `Alt+H` is still free on that page.
+
+On the Account Manager, `Alt+T` is Sign In for Calendars, Contacts and Tasks, since 2026-10-05: for the chosen Gmail account whose mail signs in with an app password, it signs in to Google through the browser for its calendars, contacts and tasks alone, and the three are brought once when the Account Manager closes. On any other account it says why it is not needed, and with no account chosen it says so, as Edit does. The Account Manager's letters are `Alt+A` Add Account, `Alt+E` Edit, `Alt+L` Look People Up at Work, `Alt+O` Other Addresses to Send From, `Alt+D` Delete, `Alt+V` Set Active, `Alt+U` Set as Default, `Alt+S` Sign In Again, `Alt+T` Sign In for Calendars, Contacts and Tasks, and `Alt+C` Close. **Experimental.** It has not been tried against a real Google account.
 
 On the Account Manager, `Alt+L` is Look People Up at Work: the window for the chosen account's directory, where its organisation keeps its list of people, and how to sign in to it. With no account chosen it says so, as Edit does. In the window: `Alt+D` Directory address, `Alt+W` Where in it to look, `Alt+N` Sign-in name, `Alt+P` Password. `Enter` is OK and `Escape` is Cancel. The password box opens empty; when a password is saved, the box and the line under it say so, and leaving the box empty keeps it. Clearing the sign-in name and pressing OK forgets it. **Experimental.** Looking people up in a directory has not been tried against a real directory.
 
@@ -1356,7 +1368,7 @@ and it is not in the tab order while it is empty.
 |--------|----------|-------------|
 | Select Folder | `↑` `↓` | Navigate folder list |
 | Open Folder | `Enter` | Load messages from selected folder |
-| Refresh Folder | `F5` | Reload current folder |
+| Refresh Folder | `F5` | Reload current folder. In the other modules `F5` syncs the module instead; see The Sidebars |
 | Move Up | `Alt+Shift+Up` | Move the account, the pinned folder or the saved search the cursor is on one place up. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
 | Move Down | `Alt+Shift+Down` | Move the account, the pinned folder or the saved search the cursor is on one place down. A saved search moves among its own account's searches. Nothing is sent to any server. See the warning below |
 | Pin Folder | none | On the Action menu. Put the folder the cursor is on in Favourites, at the top of the tree. The folder also stays where it was |

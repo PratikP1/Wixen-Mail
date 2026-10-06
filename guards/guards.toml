@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 640 records have arrived since and have not been through it.
+# 691 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -897,7 +897,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
@@ -919,7 +919,7 @@ red = [
     "application::allowed::tests::test_a_removal_held_back_says_the_mail_is_still_on_the_server",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
 ]
 
 [[guard]]
@@ -2979,7 +2979,7 @@ red = [
     "presentation::first_run::tests::test_the_screen_puts_focus_on_the_answer_it_ticks",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -3106,7 +3106,7 @@ red = [
     "presentation::first_run::tests::test_what_each_answer_costs_rides_on_the_button_and_on_the_screen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -3984,7 +3984,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
@@ -4954,29 +4954,55 @@ tests_last_seen = [
     { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
 ]
 
-# ── The download's warning says no real account has met it ──────────────────
+# ── The download's warning says what Gmail did, not that it never ran ────────
 #
 # One sentence replaced two on 2026-09-17, when the download of everything
 # took the place of Fetch Missing Message Text and Download This Whole
-# Folder, and it carries the one risk no test here can settle. The break
-# keeps the sentence and drops the clause saying no real account has met the
-# download, which leaves a warning that reads as ordinary caution. One test
-# goes red out of the twenty-seven in the file.
+# Folder, and it carries the one risk no test here can settle. Until 14-07
+# the record was "the download's warning says no real account has met it",
+# and its break dropped that clause. Gmail met the download on 18 to 20
+# September 2026, so on 2026-10-06 the sentence was rewritten to say what
+# Gmail did and the record with it: the break now puts back the claim that
+# it has never been run against a real account, in place of the day it ran.
 #
-# Measured 2026-09-17 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the whole library.
+# Measured on the 14-07 branch through `scripts/guards.sh --remeasure`, the
+# whole library.
 [[guard]]
-name = "the download's warning says no real account has met it"
+name = "the download's warning says what Gmail did rather than that it never ran"
 file = "src/application/allowed.rs"
-before = """     its own after every check for mail, and it is experimental: it has never been run against \\
-     a real account. Asking your provider for a whole mailbox chunk after chunk is something \\"""
-after = """     its own after every check for mail, and it is experimental. \\
-     Asking your provider for a whole mailbox chunk after chunk is something \\"""
+before = """     its own after every check for mail, and it is experimental. \\
+     It ran against a Gmail account on 18 to 20 September 2026: Gmail closed the connection \\"""
+after = """     its own after every check for mail, and it is experimental: it has never been run \\
+     against a real account. Gmail closed the connection \\"""
 red = [
     "application::allowed::tests::test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
+]
+
+# ── The settings warning says sending was proven, and when ──────────────────
+#
+# Sending met Pratik's Gmail account on 18 September 2026 (#63), and until
+# 14-07 the warning beside the two Allow Changes boxes still opened by saying
+# none of it had been run against a real account. The break puts that old
+# opening back, word for word, which is the edit most likely to arrive from a
+# revert or a careless merge.
+#
+# Measured on the 14-07 branch through `scripts/guards.sh --remeasure`, the
+# whole library.
+[[guard]]
+name = "the settings warning says sending was proven on a Gmail account and when"
+file = "src/application/allowed.rs"
+before = """pub const EXPERIMENTAL_WARNING: &str = "Both are experimental. Sending was proven once, on a \\
+     Gmail account on 18 September 2026; the rest has not been proven against a real account \\"""
+after = """pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has been run \\
+     against a real account \\"""
+red = [
+    "application::allowed::tests::test_the_write_warnings_say_sending_was_proven_and_when",
+]
+tests_last_seen = [
+    { file = "src/application/allowed.rs", tests = 28 },
 ]
 
 # ── A deletion that stops being noticed because nobody looks any more ────────
@@ -5293,10 +5319,17 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_refuses_the_append_answers_refused_and_the_undo_puts_the_row_back",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
     "application::moves_waiting::tests::test_two_crossings_are_replayed_in_the_order_they_were_asked",
+    # Added 2026-10-06 by 14-05: a crossing's steps write their lines, and a
+    # fetch that hands nothing over writes none of them.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
+    "application::moves_waiting::tests::test_a_copy_across_writes_no_removal",
+    "application::moves_waiting::tests::test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived",
+    "application::moves_waiting::tests::test_a_refused_append_writes_the_destinations_words",
+    "application::moves_waiting::tests::test_an_append_never_answered_writes_what_the_other_account_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -5653,11 +5686,18 @@ tests_last_seen = [
 # What this record cannot see. It is a source read, so it can tell that the arm
 # calls the routine that starts a sync. It cannot tell whether that sync then
 # reaches a server, and nothing here has ever run against a real account.
+#
+# Re-anchored on 2026-10-05 by 14-02, when the sync started taking the account
+# it syncs rather than reading the window's open one, and measured again.
 
 [[guard]]
 name = "the sync button in the calendar window really starts a sync"
 file = "src/presentation/managers.rs"
-before = """                crate::presentation::wx_app::spawn_calendar_sync(state, tx, rt);
+before = """                crate::presentation::wx_app::spawn_calendar_sync(
+                    tx,
+                    rt,
+                    crate::presentation::wx_app::the_active_account(state),
+                );
                 done.push("A calendar sync has started.".to_string());"""
 after = """                send_status(tx, rt, "Calendar sync requested");"""
 red = [
@@ -7622,13 +7662,13 @@ tests_last_seen = [
 name = "a Google day moved and then cancelled loses its appointment as well as its place"
 file = "src/application/calendar.rs"
 before = """        if existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
             (series, the_day_a_google_instance_replaces(event))"""
 after = """        if false && existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
@@ -10924,7 +10964,7 @@ before = """    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {"""
 after = """    if tidy.chars().count() >= MOST_CHARACTERS_FROM_A_REPLY {"""
 red = ["service::oauth::tests::test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more"]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 56 },
+    { file = "src/service/oauth.rs", tests = 59 },
 ]
 
 [[guard]]
@@ -10937,7 +10977,7 @@ red = [
     "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 56 },
+    { file = "src/service/oauth.rs", tests = 59 },
 ]
 
 # ── calendar.rs, contacts_sync.rs, tasks_sync.rs, message_cache/tasks.rs, ──
@@ -12836,7 +12876,7 @@ red = [
     "service::oauth::when_the_credential_store_refuses::test_nothing_keeps_going_after_a_token_it_could_not_keep",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 56 },
+    { file = "src/service/oauth.rs", tests = 59 },
 ]
 
 # The first measurement of this one reddened nothing, which is the whole reason
@@ -13679,13 +13719,25 @@ red = [
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
     "data::message_cache::shared_folders::tests::test_afterwards_no_account_keeps_a_copy_of_a_folder_that_is_shared",
     "data::message_cache::shared_folders::tests::test_two_messages_numbered_the_same_both_survive_and_one_records_its_old_number",
+    # Added 2026-10-06 by 14-05, whose re-measure found five more, none of
+    # them that plan's: an emptying of the Trash and a message taken off this
+    # computer both move rows through this function, and neither module was
+    # named here, so no count check fired when their tests arrived.
+    "application::emptying_the_trash::tests::test_a_pop_accounts_emptying_leaves_another_accounts_messages_in_the_shared_trash",
+    "data::message_cache::taken_off_this_computer::tests::test_a_file_another_message_carries_stays_when_one_is_taken_off",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_during_a_compaction_keeps_it_owed",
+    "data::message_cache::taken_off_this_computer::tests::test_a_message_taken_off_leaves_the_search_index_as_full_as_the_mail",
+    "data::message_cache::what_forgetting_costs::tests::test_every_forgetting_row_has_the_pages_shape_and_names_what_it_timed",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
+    { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
+    { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 # Re-measured 2026-09-20 by 11-11.1.3 when the count check named it for a
 # test added to `messages.rs`: three short, none of them that plan's. All
@@ -14395,10 +14447,10 @@ red = [
     "presentation::first_run::tests::test_the_choice_that_says_read_my_mail_reads_mail",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/presentation/command_line.rs", tests = 28 },
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/command_line.rs", tests = 29 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
 ]
 
 # ── The settings file every machine already has ────────────────────────────
@@ -14426,7 +14478,7 @@ red = [
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/data/config.rs", tests = 68 },
 ]
 
@@ -16070,7 +16122,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
@@ -16564,10 +16616,17 @@ red = [
     # And task 3's: a rule's Delete is read through the waiting move's own
     # answer, so a lost connection leaves it waiting in the menu's store.
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
+    # Added 2026-10-06 by 14-05. A replay that never reached the server
+    # writes no line of its own, and under the break it reads as refused and
+    # writes one; an emptying of the Trash goes through the same replay, so a
+    # server never reached is put back rather than left waiting.
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
+    "application::moves_waiting::tests::test_a_replay_that_never_reached_the_server_writes_no_line_of_its_own",
 ]
 tests_last_seen = [
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -17790,7 +17849,7 @@ red = [
     "application::forget::tests::test_the_private_key_entry_is_one_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
 ]
 
 # ── An encrypted message opened as a blank message with nothing said ────────
@@ -18912,7 +18971,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_in_the_same_account_and_one_in_another_are_not_the_same_answer",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── Every account built, and all but one thrown away ─────────────────────────
@@ -19055,9 +19114,11 @@ red = [
     "application::mail_across_accounts::tests::test_a_folder_that_could_not_be_read_beforehand_settles_nothing_afterwards",
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_that_is_not_found_removes_nothing",
     "application::mail_across_accounts::tests::test_an_append_with_no_answer_about_a_message_with_no_identifier_removes_nothing",
+    # Added 2026-10-06 by 14-05: the removal sent first writes a fifth line.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── An append nobody answered, counted as one that landed ────────────────────
@@ -19121,10 +19182,14 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_already_held_the_identifier_reads_only_a_new_number_as_the_arrival",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_does_not_hold_it_answers_refused",
+    # Added 2026-10-06 by 14-05: what asking found is written in the append's
+    # line and in the resume's, so a wrong answer writes the wrong words.
+    "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
+    "application::moves_waiting::tests::test_an_append_never_answered_writes_what_the_other_account_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -19165,7 +19230,7 @@ red = [
     "application::mail_across_accounts::tests::test_a_resumed_move_whose_folder_nobody_read_settles_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── A finished move leaving its message on the disk ──────────────────────────
@@ -19199,7 +19264,7 @@ red = [
     "application::mail_across_accounts::tests::test_no_way_a_crossed_move_can_end_leaves_the_bytes_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
 ]
 
 # ── A moved day of a series showing on both dates ────────────────────────────
@@ -20531,17 +20596,19 @@ tests_last_seen = [
 # wording moved again on 2026-09-23 (12-03, #75): "Notes sync requested..."
 # used sync as a noun and said what had been asked for rather than what was
 # happening, and the step is "Syncing notes..." now. Re-anchored and
-# re-measured in the commit that moved it.
+# re-measured in the commit that moved it. Moved again on 2026-10-05 by 14-02,
+# out of the Sync Now arm into `sync_the_module`, which `F5` reaches too;
+# re-anchored there and measured again.
 [[guard]]
 name = "asking for a notes sync reaches the sync rather than reporting one"
 file = "src/presentation/wx_app.rs"
-before = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
-                                    spawn_notes_sync(app);
-                                }'''
-after = '''                                PimModule::Notes => {
-                                    send_progress(&ui_tx, &runtime, "Syncing notes...");
-                                }'''
+before = '''        PimModule::Notes => {
+            send_progress(tx, rt, "Syncing notes...");
+            spawn_notes_sync(app);
+        }'''
+after = '''        PimModule::Notes => {
+            send_progress(tx, rt, "Syncing notes...");
+        }'''
 red = [
     "application::notes_backend::tests::test_asking_for_a_notes_sync_reaches_the_sync_rather_than_reporting_one",
 ]
@@ -26526,7 +26593,7 @@ red = [
     "common::logging::tests::test_the_default_level_is_debug_under_alpha_and_beta_and_info_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
 ]
 
 # ── The log filter names this crate and no library ──────────────────────────
@@ -26555,7 +26622,7 @@ red = [
     "service::outward::completeness::test_every_module_that_names_a_way_out_is_on_one_of_these_lists",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
     { file = "src/service/outward.rs", tests = 38 },
 ]
 
@@ -26587,7 +26654,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26614,7 +26681,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 13 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -27482,9 +27549,12 @@ red = [
     "application::moves_waiting::tests::test_a_refusal_for_a_message_already_where_it_was_going_is_already_done",
     "application::moves_waiting::tests::test_a_refusal_for_a_message_the_destination_already_holds_is_already_done",
     "application::moves_waiting::tests::test_a_refused_copy_the_destination_already_holds_is_already_done",
+    # Added 2026-10-06 by 14-05: the already-done answer writes its own line,
+    # which a refusal does not.
+    "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27643,10 +27713,13 @@ red = [
     "application::mail_across_accounts::tests::test_the_message_is_already_on_the_disk_when_the_append_goes_out",
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+    # Added 2026-10-06 by 14-05: the fetch's line says what the store did with
+    # the bytes, and with no store asked it says they were not kept.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27667,7 +27740,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27687,10 +27760,13 @@ red = [
     "data::message_cache::moves_in_flight::tests::test_a_message_too_large_to_keep_leaves_nothing_to_resume_from",
     "application::mail_across_accounts::tests::test_a_message_too_large_to_keep_still_moves",
     "application::moves_waiting::tests::test_a_message_too_large_to_hold_is_fetched_and_the_store_says_so",
+    # Added 2026-10-06 by 14-05: the fetch's line says the message was too
+    # large to keep, and under the break it says it was kept.
+    "application::mail_across_accounts::tests::test_a_message_too_large_to_hold_writes_its_steps",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_across_accounts.rs", tests = 43 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/mail_across_accounts.rs", tests = 44 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27766,7 +27842,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 16 },
 ]
 
@@ -29738,7 +29814,7 @@ red = [
     "presentation::command_line::tests::test_show_page_with_no_address_is_refused_rather_than_opening_a_window",
 ]
 tests_last_seen = [
-    { file = "src/presentation/command_line.rs", tests = 28 },
+    { file = "src/presentation/command_line.rs", tests = 29 },
 ]
 
 # T-12-05: a page process opens no database, prepares no data folder, opens
@@ -32585,7 +32661,7 @@ red = [
     "service::pgp::tests::test_the_entries_uninstalling_erases_name_the_private_key",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
     { file = "src/service/pgp/mod.rs", tests = 6 },
 ]
 
@@ -34033,7 +34109,7 @@ red = [
     "application::forget::tests::test_the_directory_password_is_an_entry_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
 ]
 
 # Removing an account leaves its directory password behind, where
@@ -34121,7 +34197,7 @@ red = [
     "service::oauth::tests::test_the_shared_graph_token_asks_for_no_permission_an_older_sign_in_never_granted",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 56 },
+    { file = "src/service/oauth.rs", tests = 59 },
 ]
 
 # The tasks sync sent back to the shared Graph token, which has never carried
@@ -35737,7 +35813,7 @@ red = [
     "application::moves_waiting::tests::test_a_quick_step_that_labels_and_moves_sends_the_label_before_the_move",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -36259,9 +36335,15 @@ after = '''        if let Err(why) = Ok::<(), Error>(()) {'''
 red = [
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_refuses_is_put_back_where_it_arrived",
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_this_computers_gate_refuses_is_put_back_and_said_as_not_allowed",
+    # Added 2026-10-06 by 14-05, whose re-measure found them: an emptying of
+    # the Trash puts a refused delete back through the same undo since
+    # 13-44.6, and nothing had named it here.
+    "application::emptying_the_trash::tests::test_a_delete_the_server_refuses_is_put_back_in_the_trash",
+    "application::emptying_the_trash::tests::test_this_computers_gate_refusing_at_the_session_puts_it_back_and_says_so",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
 
@@ -36295,7 +36377,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/moves_waiting.rs", tests = 52 },
+    { file = "src/application/moves_waiting.rs", tests = 64 },
 ]
 
 # Labelling's do-half sending a run's label on its own worker rather than
@@ -38179,4 +38261,988 @@ red = [
 tests_last_seen = [
     { file = "src/application/import_tree.rs", tests = 40 },
     { file = "src/application/importing_messages.rs", tests = 51 },
+]
+
+# ── Why nothing came from Google (#22, 14-01) ───────────────────────────────
+#
+# Each sync skipped Google inside its own check on the key and then said "0
+# created, 0 updated, 0 deleted" with the success cue. One answer now says
+# whether an account may ask Google and why not, and the calendar's summary,
+# its log line and its finish say the reason. Written 2026-10-05 by 14-01, each
+# break measured with `scripts/guards.sh` against the whole library.
+
+# A Gmail account on an app password is never asked of Google: Google gives
+# calendars, contacts and tasks only to a browser sign-in. Pratik's account.
+# Re-anchored by 14-03, when the arm gained "and no separate browser sign-in
+# held for them" (route B); the break removes the arm as before.
+[[guard]]
+name = "a gmail account on an app password is not asked of google"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''        Some(_) if !account.use_oauth && !holds_the_separate_sign_in => {
+            MayGoogleBeAsked::No(WhyNothingWasAsked::SignsInWithAnAppPassword)
+        }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_gmail_account_asks_google_only_with_a_key_and_a_browser_sign_in",
+    "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
+    "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# When a calendar server or a feed was asked, its counts are said and the
+# reason Google was not asked follows them (D-08). The break drops it.
+[[guard]]
+name = "the calendar summary says why google was not asked after the counts"
+file = "src/application/calendar.rs"
+before = '''    // Last, after what the passes that ran did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Calendar, nothing_went_wrong)
+    {
+        said.sentence(why);
+    }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_calendar_summary_says_the_reason_after_the_counts_when_a_server_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# The calendar sync asks the one answer and spells no Google sign-in of its
+# own, which is how it came to skip Google in silence. The break builds one
+# beside the question; the reading in the log's file catches the spelling, and
+# its companion goes red too, because its plants of the answer's log line are
+# read against a window that already fails the reading's first half.
+[[guard]]
+name = "the calendar sync builds no google sign-in of its own"
+file = "src/presentation/wx_app.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        // is said and written to the log (#22).
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);'''
+after = '''        // is said and written to the log (#22).
+        let _ = crate::service::oauth_credentials::credentials_for("gmail");
+        let google_client = crate::service::google_api::GoogleApiClient::for_account(aid);'''
+red = [
+    "test_a_sync_says_in_the_log_why_google_was_not_asked",
+    "test_the_reading_complains_when_a_sync_skips_the_answer_or_the_reason_goes_unwritten",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
+]
+
+# A calendar sync that could not ask Google finishes with the cue for an
+# account needing attention, never the success cue (D-07). The break
+# signals it as a sync that completed.
+[[guard]]
+name = "a calendar sync that asked google nothing is signalled as needing attention"
+file = "src/presentation/wx_app.rs"
+before = '''                // pressed, so it is said whatever level was chosen.
+                let _ = a11y.signal(FeedbackEvent::AccountNeedsAttention, &msg);'''
+after = '''                // pressed, so it is said whatever level was chosen.
+                let _ = a11y.signal(FeedbackEvent::SyncComplete, &msg);'''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# An item held for a choice is counted once when the passes are folded: the
+# window added the Google and Microsoft passes' counts twice. The break adds
+# it twice in `absorb`.
+[[guard]]
+name = "a calendar item held for a choice is folded once"
+file = "src/application/calendar.rs"
+before = '''        self.held_for_you_to_choose += pass.held_for_you_to_choose;'''
+after = '''        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;'''
+red = [
+    "application::who_holds_the_calendars::tests::test_an_item_held_for_a_choice_is_counted_once_when_two_passes_are_folded",
+    "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# The contacts and tasks syncs say the same reason (14-01 task 2): after the
+# counts when an address book or provider was asked, and kept by `absorb`,
+# which also notes that somebody answered. Without that note a sync whose
+# other pass ran would say the reason alone and drop the counts.
+[[guard]]
+name = "the contacts summary says why google was not asked after the counts"
+file = "src/application/contacts_sync.rs"
+before = '''    // Last, after what the address books that were asked did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Contacts, nothing_went_wrong)
+    {
+        said.sentence(why);
+    }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+[[guard]]
+name = "the tasks summary says why google was not asked after the counts"
+file = "src/application/tasks_sync.rs"
+before = '''        // Last, after what the providers that were asked did (D-08).
+        if let Some(why) = self
+            .what_was_asked
+            .after_the_counts(Module::Tasks, nothing_went_wrong)
+        {
+            said.sentence(why);
+        }
+'''
+after = ''''''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+[[guard]]
+name = "folding contacts results keeps the reason and notes somebody answered"
+file = "src/application/contacts_sync.rs"
+before = '''        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);
+        self.errors.extend(other.errors);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_contacts_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+[[guard]]
+name = "folding tasks results keeps the reason and notes somebody answered"
+file = "src/application/tasks_sync.rs"
+before = '''        self.errors.extend(other.errors);
+        self.what_was_asked = self.what_was_asked.with_a_pass(other.what_was_asked);'''
+after = '''        self.errors.extend(other.errors);'''
+red = [
+    "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
+    "application::who_holds_the_calendars::tests::test_folding_tasks_results_keeps_the_first_reason_and_says_somebody_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# ── Each request a sync sends, written down (#22, 14-02) ───────────────────
+#
+# No request a calendar, contacts or tasks sync sent wrote a line at any
+# level, so a report about a Refresh could not say what was asked or what
+# came back. Each helper now writes one line per request at info, built from
+# parts. Written 2026-10-05 by 14-02, each break measured with
+# `scripts/guards.sh` against the whole library.
+
+# The query carries the sync marker and the page marker, so it never reaches
+# the line. The break keeps it.
+[[guard]]
+name = "a request's line cuts the query off the address"
+file = "src/service/asked_and_answered.rs"
+before = '''    let path: Vec<String> = url.path().split('/').map(masked).collect();'''
+after = '''    let path: Vec<String> = url[url::Position::BeforePath..]
+        .split('/')
+        .map(masked)
+        .collect();'''
+red = [
+    "service::asked_and_answered::tests::test_the_line_names_who_the_method_the_path_and_the_status_and_cuts_the_query",
+    "service::asked_and_answered::tests::test_a_path_segment_holding_an_address_is_masked_and_googles_word_for_me_is_kept",
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+    "service::asked_and_answered::tests::test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker",
+    "service::asked_and_answered::tests::test_a_google_tasks_read_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+]
+
+# Only a word of letters and underscores is taken from a refusal's body, so a
+# message, an address or a token cannot pass through as the reason. The break
+# accepts anything printable.
+[[guard]]
+name = "a refusal's reason word is letters and underscores only"
+file = "src/service/asked_and_answered.rs"
+before = '''            .all(|letter| letter.is_ascii_alphabetic() || letter == '_')'''
+after = '''            .all(|letter| !letter.is_control())'''
+red = [
+    "service::asked_and_answered::tests::test_the_reason_word_refuses_anything_but_a_short_word",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+]
+
+# A Google request that was answered writes its line at info, the level a
+# stored profile keeps (D-01). The break writes it at debug, where Pratik's
+# log never reaches.
+[[guard]]
+name = "an answered google request writes its line at info"
+file = "src/service/google_api.rs"
+before = '''        tracing::info!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+after = '''        tracing::debug!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_calendar_read_writes_one_line_and_nothing_private",
+    "service::asked_and_answered::tests::test_a_refused_google_read_writes_its_status_and_reason_and_nothing_else_of_the_body",
+    "service::asked_and_answered::tests::test_a_changed_google_event_writes_its_line",
+    "service::asked_and_answered::tests::test_a_google_delete_answered_gone_counts_as_done_and_writes_the_status_it_was",
+    "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# A change sent to Google writes its line through the same helper the reads
+# use (14-02 task 2). The break has the create read its answer by hand, as
+# every write did before, so a new event is sent and nothing is written.
+[[guard]]
+name = "a change sent to google writes its line"
+file = "src/service/google_api.rs"
+before = '''        let (status, body) = Self::the_answer_written_down("POST", url, sent).await?;'''
+after = '''        let response = sent.map_err(|e| Error::Network(e.without_url().to_string()))?;
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();'''
+red = [
+    "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# The retry writes the error's text to the log at warn, and a transport
+# error's text names the whole address with its sync marker. The break keeps
+# the address in it.
+[[guard]]
+name = "a google request nobody answered keeps its address out of the error"
+file = "src/service/google_api.rs"
+before = '''                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e.without_url()
+                )));'''
+after = '''                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e
+                )));'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# Every request the tasks client sends writes its line at info, Google's and
+# Microsoft's alike. The break writes it at debug.
+[[guard]]
+name = "the tasks client writes each request's line at info"
+file = "src/service/tasks_api.rs"
+before = '''        tracing::info!(
+            "{}",
+            the_line(
+                who,'''
+after = '''        tracing::debug!(
+            "{}",
+            the_line(
+                who,'''
+red = [
+    "service::asked_and_answered::tests::test_a_google_tasks_read_writes_its_line",
+    "service::asked_and_answered::tests::test_a_microsoft_to_do_read_is_written_under_microsofts_name",
+    "service::asked_and_answered::tests::test_a_refused_task_change_writes_its_reason_and_keeps_no_body",
+    "service::asked_and_answered::tests::test_a_task_delete_answered_not_found_writes_the_status_it_was",
+]
+tests_last_seen = [
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/tasks_api.rs", tests = 62 },
+]
+
+# Only an account whose mail is at Microsoft asks Microsoft. The break lets
+# any account not at neither ask it, so a Gmail account on a copy holding a
+# Microsoft key asks Microsoft again (RESEARCH-2 defect 1).
+[[guard]]
+name = "a gmail account never asks microsoft"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    if WhoRunsTheMail::of(account) != WhoRunsTheMail::Microsoft {'''
+after = '''    if WhoRunsTheMail::of(account) == WhoRunsTheMail::SomebodyElse {'''
+red = [
+    "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# An account at neither provider with nothing of its own hears why there is
+# nothing to bring, rather than "0 created". The break drops the reason.
+[[guard]]
+name = "an account at neither provider says why there is nothing to bring"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    (at_neither && !has_something_of_its_own).then_some(WhyNothingWasAsked::AtNeitherProvider)'''
+after = '''    let _ = (at_neither, has_something_of_its_own);
+    None'''
+red = [
+    "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# A finished calendar sync writes its line at info, the level a stored
+# profile keeps. The break writes it at debug.
+[[guard]]
+name = "a finished calendar sync writes its line at info"
+file = "src/presentation/wx_app.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        tracing::info!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,'''
+after = '''        tracing::debug!(
+            "{}",
+            who_holds_the_calendars::the_finish_line(
+                Module::Calendar,'''
+red = [
+    "test_each_sync_writes_its_finish_line_at_info",
+    "test_the_reading_complains_when_a_finish_line_is_missing_at_debug_or_says_the_sentence",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
+]
+
+# ── An added account's first sync, and F5 in a module (14-02 task 3) ───────
+
+# Each account added in a visit to the Account Manager has its calendars,
+# contacts and tasks brought once (REAL-01: "the sync run on account
+# creation"). The break starts nothing; the companion goes red too, because
+# its plant looks for the call the break took out.
+[[guard]]
+name = "an account added in the account manager has its first sync started"
+file = "src/presentation/wx_app.rs"
+before = '''            bring_what_a_new_account_holds(AppHandles { state, tx, rt }, a11y, account);'''
+after = '''            let _ = (state, tx, rt, a11y, account);'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_account_manager_starts_the_first_sync_of_an_added_account",
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# A reason known before anything is asked is said once for all three modules
+# when an account is added (D-10). The break starts the three syncs instead,
+# so each says the reason in turn.
+[[guard]]
+name = "a reason known on adding an account is said once, not per module"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''            MayGoogleBeAsked::No(why) => OneReason(why),'''
+after = '''            MayGoogleBeAsked::No(_) => TheThreeSyncs,'''
+red = [
+    "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# F5 with a module other than Mail showing syncs that module (D-11). The
+# break has it read the mail folder whatever is showing.
+[[guard]]
+name = "f5 in a module other than mail syncs that module"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''        | PimModule::Notes => WhatRefreshDoes::SyncsTheModule,'''
+after = '''        | PimModule::Notes => WhatRefreshDoes::ReadsTheFolder,'''
+red = [
+    "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# The window's first F5 arm syncs only when the answer says the module
+# showing syncs. The break inverts the comparison, so F5 in Contacts reads a
+# mail folder and F5 in Mail says Mail does not sync.
+[[guard]]
+name = "the f5 arm syncs only the modules the answer says sync"
+file = "src/presentation/wx_app.rs"
+before = '''                            ) == crate::application::who_holds_the_calendars::WhatRefreshDoes::SyncsTheModule =>'''
+after = '''                            ) == crate::application::who_holds_the_calendars::WhatRefreshDoes::ReadsTheFolder =>'''
+red = [
+    "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# ── The separate Google sign-in for calendars, contacts and tasks (14-03) ───
+#
+# Route B of #22, on Pratik's answer of 2026-10-05: mail keeps its app
+# password, and Google is signed in to through the browser for calendars,
+# contacts and tasks alone, under a credential store entry of its own.
+# Written 2026-10-05 by 14-03, each break measured with `scripts/guards.sh`
+# against the whole library.
+
+# The separate sign-in asks for the calendar, contacts and tasks permissions
+# and never for mail (T-14-12). The break adds mail to its list.
+[[guard]]
+name = "the separate google sign-in never asks for mail"
+file = "src/service/oauth.rs"
+before = '''                default_scopes: vec![
+                    GOOGLES_CONTACTS.to_string(),'''
+after = '''                default_scopes: vec![
+                    "https://mail.google.com/".to_string(),
+                    GOOGLES_CONTACTS.to_string(),'''
+red = [
+    "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
+]
+tests_last_seen = [
+    { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# The separate sign-in's token has an entry of its own, so signing in for
+# calendars never overwrites the mail sign-in's (T-14-11). The break gives
+# it the mail sign-in's name.
+[[guard]]
+name = "the separate google sign-in keeps an entry of its own"
+file = "src/service/oauth.rs"
+before = '''pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "google-calendars-contacts-tasks";'''
+after = '''pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "gmail";'''
+red = [
+    "application::forget::tests::test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks",
+    "application::who_holds_the_calendars::tests::test_a_browser_gmail_account_asks_google_with_its_mail_sign_in",
+    "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
+    "service::oauth::which_entries_belong_to_an_account::test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/forget.rs", tests = 27 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# An account whose mail signs in with an app password asks Google for its
+# calendars, contacts and tasks with the separate sign-in. The break hands it
+# the mail sign-in, which holds nothing for such an account.
+[[guard]]
+name = "an account on an app password takes the separate google sign-in"
+file = "src/service/oauth.rs"
+before = '''        false => GOOGLE_CALENDARS_CONTACTS_AND_TASKS,'''
+after = '''        false => "gmail",'''
+red = [
+    "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_holding_the_separate_sign_in_asks_google_with_it",
+    "service::oauth::tests::test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# The Account Manager's Sign In for Calendars, Contacts and Tasks signs a
+# Gmail account on an app password in. The break has it say, for every Gmail
+# account, that the mail sign-in already covers the three.
+[[guard]]
+name = "the separate sign-in button signs an app-password gmail account in"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    if account.use_oauth {
+        return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;'''
+after = '''    if true || account.use_oauth {
+        return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_separate_sign_in_button_answers_each_kind_of_account",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# Removing an account, and uninstalling, erase the separate sign-in's token,
+# because the list of an account's entries is read off the providers
+# (T-14-11). The break takes the separate sign-in off that list.
+[[guard]]
+name = "removing an account erases its separate google sign-in"
+file = "src/service/oauth.rs"
+before = '''            // The separate sign-in of an account whose mail keeps its app
+            // password: the same three as above and never mail, which the
+            // app password already does, on the same rule about asking for
+            // nothing that is not used.
+            OAuthProvider {
+                name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
+                default_scopes: vec![
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
+                    GOOGLES_TASKS.to_string(),
+                ],
+            },
+'''
+after = ''''''
+red = [
+    "application::forget::tests::test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks",
+    "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
+    "service::oauth::which_entries_belong_to_an_account::test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/forget.rs", tests = 27 },
+    { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# An account signed in for its calendars, contacts and tasks is carried out
+# of the Account Manager when nothing else changed, so the window brings its
+# three once (D-13). The break carries it only when something else changed.
+[[guard]]
+name = "an account signed in for calendars is carried out of the account manager"
+file = "src/presentation/wx_account_manager.rs"
+before = '''    if outcome.changed || !signed_in_for_calendars.is_empty() {'''
+after = '''    if outcome.changed {'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_account_manager_carries_out_an_account_signed_in_for_calendars",
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# A Gmail account's calendars other than its main one were never read: the
+# sync asked Google for `primary` and nothing asked its list (REAL-01, 14-04).
+# The break files nothing from the list, which is the sync as it was.
+[[guard]]
+name = "a google calendar sync files every calendar on the account's list"
+file = "src/application/every_google_calendar.rs"
+before = '''        Ok(list) => file_the_list(cache, account_id, &list, &mut result)?,'''
+after = '''        Ok(_list) => {}'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+    "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar Google's list named is filed under `google:`, the account and
+# Google's own id, which is what its reads and its changes are addressed by.
+# The break mints a plain id, the shape of a calendar made here.
+[[guard]]
+name = "a calendar google listed is filed under an id saying so"
+file = "src/application/every_google_calendar.rs"
+before = '''        a_calendar_google_listed(account_id, &listed.id)'''
+after = '''        uuid::Uuid::new_v4().to_string()'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# The main calendar's row is the provider's row with a plain id, so an event
+# made in no calendar goes there and not to a calendar somebody shared. The
+# break takes any row of the provider's.
+[[guard]]
+name = "the main google calendar's row is the one with a plain id"
+file = "src/data/message_cache/calendars.rs"
+before = '''            .find(|c| c.source_provider.as_deref() == Some(provider) && !a_server_named_it(&c.id))'''
+after = '''            .find(|c| c.source_provider.as_deref() == Some(provider))'''
+red = [
+    "data::message_cache::calendars::tests::test_the_main_calendar_is_found_by_its_plain_identity_beside_a_listed_one",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendars.rs", tests = 10 },
+]
+
+# A calendar shared with the account to be read is filed read-only, so a
+# change made in it is said as one nothing will send rather than refused by
+# Google on every sync (14-04). The break files every calendar writable.
+[[guard]]
+name = "a google calendar the account may only read is filed read-only"
+file = "src/application/every_google_calendar.rs"
+before = '''        read_only: !listed.access_role.may_write(),'''
+after = '''        read_only: false,'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar that shows only when its owner is free or busy is passed over and
+# said, not filed and read (14-04 choice 3). The break files it.
+[[guard]]
+name = "a google calendar showing only free and busy times is passed over"
+file = "src/application/every_google_calendar.rs"
+before = '''        if listed.access_role == GoogleAccessRole::FreeBusyReader {'''
+after = '''        if false {'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Whether a listed calendar is shown follows Google only the first time; no
+# read turns back what the person chose (14-04 choice 2). The break sets it
+# from Google's own view on every read.
+[[guard]]
+name = "a read never turns back whether a listed calendar is shown"
+file = "src/data/message_cache/calendars.rs"
+before = '''                name: listed.name.to_string(),
+                is_read_only: listed.read_only,
+                updated_at: now,
+                ..held'''
+after = '''                name: listed.name.to_string(),
+                is_read_only: listed.read_only,
+                is_visible: listed.starts_shown,
+                updated_at: now,
+                ..held'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/data/message_cache/calendars.rs", tests = 10 },
+]
+
+# A Google read looks an event up within its own calendar, because Google gives
+# one meeting the same identity in every calendar it sits in (14-04). The
+# break looks it up across the account, as the read did before.
+[[guard]]
+name = "a google read finds an event within its own calendar"
+file = "src/application/calendar.rs"
+before = '''        let existing = cache.event_in(its_rows, &event.id)?;'''
+after = '''        let existing = cache.get_event_by_provider_id(account_id, &event.id)?;'''
+red = [
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A meeting Google cancels in one calendar goes from that calendar only. The
+# break deletes every row of the account's holding its identity.
+[[guard]]
+name = "a cancellation in one google calendar leaves another calendar's copy"
+file = "src/application/calendar.rs"
+before = '''                cache.delete_event_in(its_rows, &event.id)?;'''
+after = '''                cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;'''
+red = [
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar Google stopped listing is put away, and a change made in it and
+# not yet sent is kept and said rather than deleted with it (14-04 choice 4).
+# The break keeps nothing.
+[[guard]]
+name = "a google calendar put away keeps a change waiting in it"
+file = "src/application/every_google_calendar.rs"
+before = '''            .filter(|event| event.pending)'''
+after = '''            .filter(|_| false)'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Google's calendar list is the whole list or an error, because a calendar
+# missing from a list cut short would be put away with its events. The break
+# keeps what the pages before a failure named and carries on.
+[[guard]]
+name = "a google calendar list cut short is never read as the whole list"
+file = "src/service/google_api.rs"
+before = '''            let resp: GoogleCalendarListResponse =
+                with_retry(3, || self.api_get(&url, token)).await?;'''
+after = '''            let Ok(resp) = with_retry(3, || self.api_get::<GoogleCalendarListResponse>(&url, token)).await else {
+                break;
+            };'''
+red = [
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# A change made here to an event in a second Google calendar is sent to that
+# calendar, read off the row's id (14-04). The break answers the main calendar
+# for every row, as the function did before.
+[[guard]]
+name = "a change in a second google calendar is sent to that calendar"
+file = "src/application/calendar.rs"
+before = '''    container.its_id_at_google().map(str::to_string)'''
+after = '''    container.its_id_at_google().and(None)'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Each listed Google calendar is read from its own marker, kept on its row. The
+# break reads every listed calendar whole each time.
+[[guard]]
+name = "each listed google calendar is read from its own marker"
+file = "src/application/calendar.rs"
+before = '''        let its_marker = listed.sync_token.as_deref();'''
+after = '''        let its_marker = None;'''
+red = [
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# More than one calendar read is counted in what the calendar sync says, and
+# one is not. The break never counts them.
+[[guard]]
+name = "the calendar summary counts the calendars read when there is more than one"
+file = "src/application/calendar.rs"
+before = '''    if result.calendars_read > 1 {'''
+after = '''    if false {'''
+red = [
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# The calendars read are folded into the running total with every other count.
+# The break drops them between a pass and the window.
+[[guard]]
+name = "folding calendar results keeps the calendars read"
+file = "src/application/calendar.rs"
+before = '''        self.calendars_read += pass.calendars_read;'''
+after = ''''''
+red = [
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# A change replayed within one account writes one line naming the message by
+# its row, so two copies made in one minute can be told apart in the log
+# (14-05). The break leaves the row out of both the replayed line and the
+# refused one.
+[[guard]]
+name = "a replayed change within one account names its row in the log"
+file = "src/application/moves_waiting.rs"
+before = '''    let kind = the_kind_of(&waiting.what);
+    let row = waiting.message_row_id;'''
+after = '''    let kind = the_kind_of(&waiting.what);
+    let row = "";'''
+red = [
+    "application::moves_waiting::tests::test_a_replayed_copy_names_its_row_and_where_the_server_holds_the_copy",
+    "application::moves_waiting::tests::test_a_replayed_move_names_its_row_and_how_the_server_moved_it",
+    "application::moves_waiting::tests::test_a_replayed_delete_to_the_trash_names_its_row_and_the_trashs_number",
+    "application::moves_waiting::tests::test_a_replayed_delete_outright_names_its_row_and_no_number",
+    "application::moves_waiting::tests::test_a_refused_replay_names_its_row_and_the_servers_words",
+    "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 64 },
+]
+
+# A crossing that lands writes where the other account holds the message,
+# after its steps have written theirs, so a sitting can read the new number
+# that answers ledger 187's questions (14-05). The break writes no outcome.
+[[guard]]
+name = "a crossing writes where the other account holds the message"
+file = "src/application/moves_waiting.rs"
+before = '''        if let Some(line) = the_line_about_a_crossing(&waiting, &answer, left) {'''
+after = '''        if let Some(line) = None::<String> {'''
+red = [
+    "application::moves_waiting::tests::test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived",
+    "application::moves_waiting::tests::test_a_copy_across_writes_no_removal",
+    "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 64 },
+]
+
+# The IMAP sign-in line says whether a password or a browser sign-in was
+# used, so the record of a sitting cannot name the wrong one, as the comment
+# on #63 did (14-05, answer 4). The break writes the server alone. Two
+# records for one break, because the capture runs in the library and the
+# reading in the log target, and a record runs one suite.
+[[guard]]
+name = "the imap sign-in line says how the account signed in"
+file = "src/service/protocols/imap.rs"
+before = '''        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            auth.how_it_signs_in()
+        );'''
+after = '''        tracing::info!("Signed in to {}", self.config.server);'''
+red = [
+    "service::protocols::tests::test_signing_in_with_a_password_says_so_in_the_log",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+    { file = "src/service/protocols/mod.rs", tests = 4 },
+]
+
+# The same break, read from the text: the reading names the IMAP line, and
+# its companion goes red with it because the reading complains of the real
+# IMAP line before it reaches the POP and send lines the companion plants.
+[[guard]]
+name = "the reading of the sign-in lines sees an imap line that does not say how"
+file = "src/service/protocols/imap.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            auth.how_it_signs_in()
+        );'''
+after = '''        tracing::info!("Signed in to {}", self.config.server);'''
+red = [
+    "test_each_sign_in_and_the_send_line_say_how_the_account_signed_in",
+    "test_the_reading_complains_when_a_sign_in_or_the_send_line_does_not_say_how",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
+]
+
+# ── The proof reader and the one crash writer (14-06) ───────────────────────
+#
+# scripts/read-a-proof.py reads the tester's profile after each sitting of
+# phase 14, and its rule is that no subject is printed unless it begins
+# "Wixen proof" and no address unmasked. Its two records couple the script
+# to the target that feeds it a private subject and address, so a commit
+# changing the script runs that target. Measured by hand on 2026-10-06.
+[[guard]]
+name = "the proof reader withholds a spoken subject that is not a proof's"
+file = "scripts/read-a-proof.py"
+suite = "the_proof_reader_prints_no_private_mail"
+before = '''            shown = subject if subject.startswith(PROOF) else SUBJECT_WITHHELD'''
+after = '''            shown = subject'''
+red = [
+    "test_it_prints_no_private_subject_address_body_or_secret",
+]
+tests_last_seen = [
+    { file = "tests/the_proof_reader_prints_no_private_mail.rs", tests = 12 },
+]
+
+# The masking the reader shares with the feedback report: taken out, the
+# case comparing the two goes red, and so do the two that read a masked
+# address in the reader's own output.
+[[guard]]
+name = "the proof reader masks every address the feedback report masks"
+file = "scripts/read-a-proof.py"
+suite = "the_proof_reader_prints_no_private_mail"
+before = '''    return without_addresses(without_subject(line))'''
+after = '''    return without_subject(line)'''
+red = [
+    "test_it_masks_the_addresses_the_feedback_report_masks",
+    "test_it_prints_the_lines_by_template_from_both_days_in_both_shapes",
+    "test_it_prints_no_private_subject_address_body_or_secret",
+]
+tests_last_seen = [
+    { file = "tests/the_proof_reader_prints_no_private_mail.rs", tests = 12 },
+]
+
+# The page window's refusal with its write taken out, so its test goes red
+# without writing anywhere. A break pointing the refusal back at
+# default_log_dir() would write three lines into the tester's crash file
+# each time this record is measured, which is what 14-06 stopped (ledger
+# 828), so it is not used.
+[[guard]]
+name = "the page window writes its refusal into the folder it is given"
+file = "src/presentation/page_window.rs"
+before = '''    may_be_followed(address).ok_or_else(|| {
+        say_why_the_start_stopped(
+            folder,'''
+after = '''    may_be_followed(address).ok_or_else(|| {
+        (
+            folder,'''
+red = [
+    "presentation::page_window::tests::test_an_address_that_is_not_a_page_opens_no_window",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_window.rs", tests = 4 },
+]
+
+# The binary has no test module, so only the log target's reading sees the
+# panic hook. Its companion goes red with it, because the break leaves no
+# version::current() in the hook for the companion to plant over.
+[[guard]]
+name = "the panic hook names the whole build in its crash entry"
+file = "src/main.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        let entry = logging::crash_entry(&version::current(), &location, &payload);'''
+after = '''        let entry = logging::crash_entry(env!("CARGO_PKG_VERSION"), &location, &payload);'''
+red = [
+    "test_the_panic_hook_names_the_build_a_crash_came_from",
+    "test_the_reading_complains_when_the_panic_hook_names_the_crate_version",
+]
+tests_last_seen = [
+    { file = "src/main.rs", tests = 0 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]

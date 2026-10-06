@@ -50,7 +50,9 @@ to be wrong, so a refused change is put back and the reason said. `wx_app.rs`
 does this in one place for flags, and `spawn_server_change` does it for the
 server.
 
-**None of it has run against a real account.** The protocol code is tested
+**Of the changes it makes at a server, only sending has been proven against a
+real account,** a Gmail account on 18 September 2026; until 2026-10-06 this
+said none of it had run against one. The protocol code is tested
 against parsing and against loopback servers, which is why coverage in
 `service/protocols` and the provider clients is low. That is tracked as work,
 not as a gap in the tests.

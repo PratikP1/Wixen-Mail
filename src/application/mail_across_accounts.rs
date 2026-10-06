@@ -495,6 +495,14 @@ pub(crate) async fn move_it_across(
         )
     }
     .await;
+    let ending = match &ended {
+        Ok(across) => format!("ended: {}", what_it_came_to(across, from)),
+        Err(why) => format!("changed nothing at either server: {why}"),
+    };
+    tracing::info!(
+        "A move of message {} to another account {ending}",
+        recording.row
+    );
 
     // Once, on the way out, rather than in each of the six endings and the two
     // early returns above them. An arm that forgot would leave a whole
@@ -570,6 +578,12 @@ pub(crate) async fn fetch_and_keep(
             })
             .ok()
     });
+    tracing::info!(
+        "A crossing of message {} fetched {} bytes from {from}, {}",
+        recording.row,
+        raw.len(),
+        what_was_kept(held)
+    );
 
     Ok(Fetched {
         message: AMoveLeftUnfinished {
@@ -601,6 +615,7 @@ pub(crate) async fn append_and_ask(
     the_account_it_is_going_to: &impl TheAccountItIsGoingTo,
     kept: &AMoveLeftUnfinished,
 ) -> Appended {
+    let row = kept.message_row_id;
     let Err(why) = the_account_it_is_going_to
         .take_this_message(
             &kept.to_folder,
@@ -610,19 +625,28 @@ pub(crate) async fn append_and_ask(
         )
         .await
     else {
+        tracing::info!(
+            "A crossing of message {row} was taken into {} by the other account",
+            kept.to_folder
+        );
         return Appended::ItLanded;
     };
     if !the_destination_never_answered(&why) {
+        tracing::info!("A crossing of message {row} was refused by the other account: {why}");
         return Appended::ItDidNot(MovedAcross::TheDestinationRefusedIt(why.to_string()));
     }
-    match whether_the_destination_has_it(
+    let landed = whether_the_destination_has_it(
         the_account_it_is_going_to,
         &kept.to_folder,
         the_identifier_to_ask_about(Some(&kept.identifier)),
         kept.was_there_before.as_deref(),
     )
-    .await
-    {
+    .await;
+    tracing::info!(
+        "A crossing of message {row} was not answered, and the other account {}",
+        what_asking_found(&landed)
+    );
+    match landed {
         // It landed after all, and the removal may go for the same reason it
         // would have gone had the answer arrived.
         WhetherItLanded::ItIsThere => Appended::ItLanded,
@@ -645,7 +669,57 @@ pub(crate) async fn remove_at_the_source(
     the_account_it_is_leaving: &impl TheAccountItIsLeaving,
     kept: &AMoveLeftUnfinished,
 ) -> MovedAcross {
-    the_removal(the_account_it_is_leaving, &kept.from_folder, kept.uid).await
+    let removed = the_removal(the_account_it_is_leaving, &kept.from_folder, kept.uid).await;
+    tracing::info!(
+        "A crossing of message {} asked the source to let it go: {}",
+        kept.message_row_id,
+        what_it_came_to(&removed, &kept.from_folder)
+    );
+    removed
+}
+
+/// What the store did with a crossing's bytes, for the fetch's line.
+fn what_was_kept(held: Option<Held>) -> &'static str {
+    match held {
+        Some(Held::Kept) => "kept here until it lands",
+        Some(Held::TooLargeToHold) => "too large to keep here",
+        None => "not kept here",
+    }
+}
+
+/// What asking the other account found after an append it never answered.
+fn what_asking_found(landed: &WhetherItLanded) -> String {
+    match landed {
+        WhetherItLanded::ItIsThere => "was asked and holds it".to_string(),
+        WhetherItLanded::ItIsNotThere => "was asked and does not hold it".to_string(),
+        WhetherItLanded::ItCannotBeAsked(why) => format!("could not be asked: {why}"),
+    }
+}
+
+/// Where a crossing left the message, in the program's words and without
+/// its subject, for the log.
+fn what_it_came_to(across: &MovedAcross, from: &str) -> String {
+    match across {
+        MovedAcross::ItArrivedAndTheSourceLetItGo => {
+            format!("it arrived and is gone from {from} at the source")
+        }
+        MovedAcross::ItArrivedAndIsStillHereMarked(why) => format!(
+            "it arrived and is still in {from} at the source, marked for removal, because {}",
+            why.spoken()
+        ),
+        MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(said) => {
+            format!(
+                "it arrived and is still in {from} at the source, which would not let it go: {said}"
+            )
+        }
+        MovedAcross::TheDestinationRefusedIt(why) => format!("the other account refused it: {why}"),
+        MovedAcross::ItNeverArrivedSoNothingWasRemoved(why) => format!(
+            "the other account stopped answering and does not hold it, so nothing was removed: {why}"
+        ),
+        MovedAcross::ItIsNotKnownWhereItIs(why) => {
+            format!("nobody can say where it is, so nothing was removed: {why}")
+        }
+    }
 }
 
 /// Ask the source to let the message go, and say what really happened.
@@ -734,8 +808,11 @@ pub(crate) async fn resume_the_append(
     )
     .await;
 
-    match how_to_finish(&landed) {
-        FinishingIt::TakeItOffTheSource => Appended::ItLanded,
+    let (appended, said) = match how_to_finish(&landed) {
+        FinishingIt::TakeItOffTheSource => (
+            Appended::ItLanded,
+            "the other account already holds it, so nothing was sent again".to_string(),
+        ),
         FinishingIt::SendItAgainThenTakeItOff => {
             match the_account_it_is_going_to
                 .take_this_message(
@@ -746,19 +823,33 @@ pub(crate) async fn resume_the_append(
                 )
                 .await
             {
-                Ok(()) => Appended::ItLanded,
-                Err(why) if the_destination_never_answered(&why) => {
-                    Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why.to_string()))
-                }
-                Err(why) => {
-                    Appended::ItDidNot(MovedAcross::TheDestinationRefusedIt(why.to_string()))
-                }
+                Ok(()) => (
+                    Appended::ItLanded,
+                    format!(
+                        "it was sent again and taken into {} by the other account",
+                        unfinished.to_folder
+                    ),
+                ),
+                Err(why) if the_destination_never_answered(&why) => (
+                    Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why.to_string())),
+                    format!("it was sent again and not answered: {why}"),
+                ),
+                Err(why) => (
+                    Appended::ItDidNot(MovedAcross::TheDestinationRefusedIt(why.to_string())),
+                    format!("it was sent again and refused by the other account: {why}"),
+                ),
             }
         }
-        FinishingIt::NothingCanBeSent(why) => {
-            Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why))
-        }
-    }
+        FinishingIt::NothingCanBeSent(why) => (
+            Appended::ItDidNot(MovedAcross::ItIsNotKnownWhereItIs(why.clone())),
+            format!("nothing could be sent: {why}"),
+        ),
+    };
+    tracing::info!(
+        "A crossing of message {} was resumed from the bytes kept here: {said}",
+        unfinished.message_row_id
+    );
+    appended
 }
 
 /// A move resumed from held bytes: the append step again, and the removal
@@ -1084,6 +1175,7 @@ mod tests {
     use super::*;
     use crate::common::answering::{Conversation, LONG_ENOUGH};
     use crate::common::temp_home::TempHome;
+    use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, reading_only_on,
     };
@@ -2453,6 +2545,53 @@ mod tests {
             "a message over the ceiling was kept anyway, so a row offering to \
              finish the move exists with no message in it"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_too_large_to_hold_writes_its_steps() {
+        // The path for a message over the store's ceiling, which the window
+        // runs through move_it_across rather than the queue: the same step
+        // lines, and its ending, naming the message by its row alone.
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+        let store = a_store_keeping_no_move_larger_than(1);
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])]);
+
+        waiting_for(a_move_across(
+            &store,
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("a message too large to keep still moves");
+
+        let lines: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| {
+                *level == tracing::Level::INFO && line.contains(&format!("message {} ", store.row))
+            })
+            .map(|(_, line)| line)
+            .collect();
+        let [fetched, appended, removed, ended] = lines.as_slice() else {
+            panic!("not four lines, one per step and the ending: {lines:?}");
+        };
+        assert!(
+            fetched.contains("fetched") && fetched.contains("too large to keep here"),
+            "{fetched}"
+        );
+        assert!(appended.contains("taken into Archive"), "{appended}");
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(ended.contains("ended"), "{ended}");
+        for line in &lines {
+            for private in ["Lunch", "ada@example.com"] {
+                assert!(!line.contains(private), "a line carries {private}: {line}");
+            }
+        }
     }
 
     // ── Finishing a move the program was stopped part way through ────────
