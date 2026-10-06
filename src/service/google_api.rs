@@ -431,6 +431,76 @@ pub struct GoogleEventsResponse {
     pub next_sync_token: Option<String>,
 }
 
+/// What somebody may do with one calendar on their list.
+///
+/// Google's own five words. A role this program has never heard of is read as
+/// one that may only be read, because sending a change to a calendar that
+/// refuses it fails on every sync, and a change kept here and said is the
+/// safer of the two mistakes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoogleAccessRole {
+    /// Only when its owner is free or busy, and nothing about the events.
+    FreeBusyReader,
+    Reader,
+    WriterWithoutPrivateAccess,
+    Writer,
+    Owner,
+    #[default]
+    #[serde(other)]
+    NotOneGoogleNames,
+}
+
+impl GoogleAccessRole {
+    /// Whether a change made here may be sent to the calendar.
+    pub const fn may_write(self) -> bool {
+        matches!(
+            self,
+            Self::WriterWithoutPrivateAccess | Self::Writer | Self::Owner
+        )
+    }
+}
+
+/// One calendar on somebody's Google calendar list.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleCalendarListEntry {
+    pub id: String,
+    /// Google's name for the calendar, which for somebody's main calendar is
+    /// usually their own address.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The name the person gave the calendar at Google, if they gave one.
+    #[serde(default)]
+    pub summary_override: Option<String>,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default)]
+    pub access_role: GoogleAccessRole,
+    /// Taken off the list in Google's own view.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Its events shown in Google's own view. Google leaves it out when false.
+    #[serde(default)]
+    pub selected: bool,
+}
+
+impl GoogleCalendarListEntry {
+    /// Whether Google's own view shows this calendar's events.
+    pub const fn shown_at_google(&self) -> bool {
+        self.selected && !self.hidden
+    }
+}
+
+/// Response from `calendarList.list`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleCalendarListResponse {
+    #[serde(default)]
+    items: Vec<GoogleCalendarListEntry>,
+    next_page_token: Option<String>,
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
@@ -476,6 +546,23 @@ fn connections_url(base: &str, sync_token: Option<&str>, page_token: Option<&str
 /// calendar identifier goes, so an account with one calendar addresses it the
 /// same way it always did.
 pub const THE_MAIN_CALENDAR: &str = "primary";
+
+/// How many calendars to ask for at a time, which is the most Google allows.
+const CALENDARS_PAGE_SIZE: u32 = 250;
+
+/// Where to ask for the account's list of calendars.
+///
+/// Hidden calendars are asked for too. Google leaves them out unless asked,
+/// and a calendar somebody hid in Google's own view is still theirs: it is
+/// brought hidden, and showing it here is their choice (14-04 choice 2).
+fn calendar_list_url(base: &str, page_token: Option<&str>) -> String {
+    let mut url =
+        format!("{base}/users/me/calendarList?maxResults={CALENDARS_PAGE_SIZE}&showHidden=true");
+    if let Some(page_token) = page_token {
+        url.push_str(&format!("&pageToken={}", in_a_query(page_token)));
+    }
+    url
+}
 
 /// The address of one calendar's events.
 fn calendar_events_url(base: &str, calendar_id: &str) -> String {
@@ -708,6 +795,27 @@ impl GoogleApiClient {
     }
 
     // ── Calendar ────────────────────────────────────────────────────────
+
+    /// Every calendar on the account's list, hidden ones included.
+    ///
+    /// The whole list or an error, never part of it: a calendar missing from
+    /// a list cut short would be read as one Google stopped listing, and put
+    /// away with its events.
+    pub async fn list_calendars(&self, token: &str) -> Result<Vec<GoogleCalendarListEntry>> {
+        let mut every_calendar = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let url = calendar_list_url(&self.calendar_base, page_token.as_deref());
+            let resp: GoogleCalendarListResponse =
+                with_retry(3, || self.api_get(&url, token)).await?;
+            every_calendar.extend(resp.items);
+            match resp.next_page_token {
+                Some(pt) => page_token = Some(pt),
+                None => break,
+            }
+        }
+        Ok(every_calendar)
+    }
 
     /// List calendar events with optional date range and incremental sync.
     ///

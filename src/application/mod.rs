@@ -46,6 +46,7 @@ pub mod emptying;
 pub mod emptying_the_trash;
 pub mod encrypted_mail;
 pub mod event_alerts;
+pub mod every_google_calendar;
 pub mod export_tree;
 pub mod exporting_mail;
 pub mod favourites;

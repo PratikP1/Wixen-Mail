@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 698
+open_count: 701
 waived_count: 0
-fixed_count: 122
-total_count: 820
-last_updated: 2026-10-05T23:30:00.000Z
+fixed_count: 124
+total_count: 825
+last_updated: 2026-10-06T04:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -835,6 +835,11 @@ last_updated: 2026-10-05T23:30:00.000Z
 | 818 | 14 | deviation | docs/installing.md |  | 14-03: docs/installing.md said oauth.toml "holds the sign-in keys this build was made with" and that "a build made without one cannot offer the browser sign-in at all", when no build has ever put the file there: it is read from the settings folder, put there by a person, at each sign-in and sync (src/service/oauth_credentials.rs, load_from_toml; src/common/paths.rs, oauth_toml). Fixed in 14-03's documents commit: the paragraph says the file is the person's own key, is read at each sign-in, and that a copy with none there and none built in cannot sign in through the browser, dated with what it said before | fixed |  | 2026-10-05T23:30:00.000Z | 2026-10-05T23:30:00.000Z |
 | 819 | 14 | todo | src/presentation/wx_account_manager.rs |  | 14-03, found reading premise 4: run_oauth_flow writes the account's whole address to the log at info, "OAuth authorized for {} ({})" with account.email, while every other line about an account names it by its id or masks the address. Not this plan's to change; the separate sign-in's own lines name the account by its id only. Closed when the line names the account by its id or masks the address, with a reading in tests/the_log_carries_what_a_report_needs.rs | open |  | 2026-10-05T23:30:00.000Z |  |
 | 820 | 14 | unrun-verify | src/presentation/wx_account_manager.rs |  | 14-03, for the tester in phase 14's sitting 1 (14-09): Sign In for Calendars, Contacts and Tasks heard under NVDA with its letter, Alt+T, on the Account Manager, and each of its sentences heard (an account not at Google, a Gmail account whose mail signs in through the browser, no key, signing in, signed in, a failure); and Setting up a provider's section on making a Google sign-in key followed by ear through Google's console, saying which steps read badly. No NVDA case presses the button, and the scan reads its name only. Closed when heard on a build holding 14-03's merge | open |  | 2026-10-05T23:30:00.000Z |  |
+| 821 | 14 | deviation | src/application/every_google_calendar.rs |  | 14-04: a Gmail account's calendars other than its main one were never read: calendar::sync_google_calendar asked Google for the calendar it calls primary and nothing else, filed everything under one row, and nothing asked Google's calendar list (REAL-01's "its calendars", research 2 section 1 defect 3, answer 3). Fixed in 14-04's c7ecab6e and 03a9111a: Sync Calendar, F5 in Calendar and an added account's first sync reach every_google_calendar::sync, which reads the list with showHidden=true, paged at 250, files each calendar as a row of its own (google:<account>:<Google's id>, the main calendar on its plain row, named Google Calendar unless named at Google), reads each from a marker kept on its row, files a reader's calendar read-only, passes over a free-and-busy one and says so, starts a calendar hidden at Google hidden and keeps the person's choice afterwards, and after a whole list puts away a calendar Google stopped listing, keeping a change waiting in it in no calendar, which each sync then says. A change made here to an event in any Google calendar is sent to that calendar. Held by the module's twelve cases against a loopback stand-in; nothing has met a real Google account | fixed |  | 2026-10-06T04:00:00.000Z | 2026-10-06T04:00:00.000Z |
+| 822 | 14 | deviation | src/data/message_cache/calendar.rs |  | 14-04, premise 4: a Google read found an event by Google's identity across every calendar of the account (get_event_by_provider_id, delete_calendar_event_by_provider_id), and Google gives one meeting the same identity in every calendar it sits in, so with more than one calendar read a meeting in two would have moved between them on every read and a cancellation in one would have deleted the other's copy. Fixed in 14-04's 03a9111a: the Google read and the read of a day of a Google series look up and cancel within their calendar (MessageCache::event_in and delete_event_in, which own the rows in that calendar and any row of the account's in no Google calendar); the Outlook read keeps its account-wide lookups (answer 11). Held by test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own and two guard records | fixed |  | 2026-10-06T04:00:00.000Z | 2026-10-06T04:00:00.000Z |
+| 823 | 14 | unrun-verify | src/presentation/wx_app.rs |  | 14-04, for the tester in phase 14's sitting 1 (14-09): the Calendar module's sidebar heard under NVDA with his own Google calendars after Sync Calendar, each by its own name, a calendar he may only read and one hidden in Google Calendar among them if he has them, Enter on a hidden one heard as showing, and the sync's sentence heard with its count of calendars read and, if he has one, the sentence about a calendar that shows only free and busy times. No NVDA case reaches a Google calendar, and the scan reads names only. Closed when heard on a build holding 14-04's merge | open |  | 2026-10-06T04:00:00.000Z |  |
+| 824 | 14 | todo | src/presentation/wx_app.rs |  | 14-04, found reading the sidebar's Enter handler: the Calendar module's sidebar finds the calendar a row stands for by matching the row's text (CalendarContainerItem::shown of the name and whether it is showing), so two calendars with the same name and the same visibility are one row to it, and Enter on the second shows or hides the first. Every Google calendar being brought makes that likelier: a Work calendar of one's own and one shared, or the same holiday calendar on two accounts. Not this plan's to change; closed when the sidebar keeps each row's calendar id, with a case of two calendars of one name | open |  | 2026-10-06T04:00:00.000Z |  |
+| 825 | 14 | todo | src/application/calendar.rs |  | 14-04: a meeting held in two Google calendars and deleted here from one of them is noted by Google's identity, and events_deleted_here is asked by that identity across the account, so the read of the other calendar leaves that calendar's copy as it was for as long as the note is kept, rather than updating it. Nothing is lost and the other copy stays; it is not brought up to date until the note is let go. Closed when a deletion note is asked within its calendar, as the lookups are since 14-04 | open |  | 2026-10-06T04:00:00.000Z |  |
 
 ````json
 [
@@ -10676,6 +10681,66 @@ last_updated: 2026-10-05T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-05T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 821,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/application/every_google_calendar.rs",
+    "line": null,
+    "description": "14-04: a Gmail account's calendars other than its main one were never read: calendar::sync_google_calendar asked Google for the calendar it calls primary and nothing else, filed everything under one row, and nothing asked Google's calendar list (REAL-01's \"its calendars\", research 2 section 1 defect 3, answer 3). Fixed in 14-04's c7ecab6e and 03a9111a: Sync Calendar, F5 in Calendar and an added account's first sync reach every_google_calendar::sync, which reads the list with showHidden=true, paged at 250, files each calendar as a row of its own (google:<account>:<Google's id>, the main calendar on its plain row, named Google Calendar unless named at Google), reads each from a marker kept on its row, files a reader's calendar read-only, passes over a free-and-busy one and says so, starts a calendar hidden at Google hidden and keeps the person's choice afterwards, and after a whole list puts away a calendar Google stopped listing, keeping a change waiting in it in no calendar, which each sync then says. A change made here to an event in any Google calendar is sent to that calendar. Held by the module's twelve cases against a loopback stand-in; nothing has met a real Google account",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-06T04:00:00.000Z",
+    "resolved_at": "2026-10-06T04:00:00.000Z"
+  },
+  {
+    "id": 822,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/data/message_cache/calendar.rs",
+    "line": null,
+    "description": "14-04, premise 4: a Google read found an event by Google's identity across every calendar of the account (get_event_by_provider_id, delete_calendar_event_by_provider_id), and Google gives one meeting the same identity in every calendar it sits in, so with more than one calendar read a meeting in two would have moved between them on every read and a cancellation in one would have deleted the other's copy. Fixed in 14-04's 03a9111a: the Google read and the read of a day of a Google series look up and cancel within their calendar (MessageCache::event_in and delete_event_in, which own the rows in that calendar and any row of the account's in no Google calendar); the Outlook read keeps its account-wide lookups (answer 11). Held by test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own and two guard records",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-06T04:00:00.000Z",
+    "resolved_at": "2026-10-06T04:00:00.000Z"
+  },
+  {
+    "id": 823,
+    "kind": "unrun-verify",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-04, for the tester in phase 14's sitting 1 (14-09): the Calendar module's sidebar heard under NVDA with his own Google calendars after Sync Calendar, each by its own name, a calendar he may only read and one hidden in Google Calendar among them if he has them, Enter on a hidden one heard as showing, and the sync's sentence heard with its count of calendars read and, if he has one, the sentence about a calendar that shows only free and busy times. No NVDA case reaches a Google calendar, and the scan reads names only. Closed when heard on a build holding 14-04's merge",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T04:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 824,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "14-04, found reading the sidebar's Enter handler: the Calendar module's sidebar finds the calendar a row stands for by matching the row's text (CalendarContainerItem::shown of the name and whether it is showing), so two calendars with the same name and the same visibility are one row to it, and Enter on the second shows or hides the first. Every Google calendar being brought makes that likelier: a Work calendar of one's own and one shared, or the same holiday calendar on two accounts. Not this plan's to change; closed when the sidebar keeps each row's calendar id, with a case of two calendars of one name",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T04:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 825,
+    "kind": "todo",
+    "phase": "14",
+    "file": "src/application/calendar.rs",
+    "line": null,
+    "description": "14-04: a meeting held in two Google calendars and deleted here from one of them is noted by Google's identity, and events_deleted_here is asked by that identity across the account, so the read of the other calendar leaves that calendar's copy as it was for as long as the note is kept, rather than updating it. Nothing is lost and the other copy stays; it is not brought up to date until the note is let go. Closed when a deletion note is asked within its calendar, as the lookups are since 14-04",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-06T04:00:00.000Z",
     "resolved_at": null
   }
 ]

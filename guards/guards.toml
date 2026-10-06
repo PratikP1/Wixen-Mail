@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 668 records have arrived since and have not been through it.
+# 682 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -7629,13 +7629,13 @@ tests_last_seen = [
 name = "a Google day moved and then cancelled loses its appointment as well as its place"
 file = "src/application/calendar.rs"
 before = """        if existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
             (series, the_day_a_google_instance_replaces(event))"""
 after = """        if false && existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
@@ -38764,4 +38764,251 @@ red = [
 tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# A Gmail account's calendars other than its main one were never read: the
+# sync asked Google for `primary` and nothing asked its list (REAL-01, 14-04).
+# The break files nothing from the list, which is the sync as it was.
+[[guard]]
+name = "a google calendar sync files every calendar on the account's list"
+file = "src/application/every_google_calendar.rs"
+before = '''        Ok(list) => file_the_list(cache, account_id, &list, &mut result)?,'''
+after = '''        Ok(_list) => {}'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+    "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar Google's list named is filed under `google:`, the account and
+# Google's own id, which is what its reads and its changes are addressed by.
+# The break mints a plain id, the shape of a calendar made here.
+[[guard]]
+name = "a calendar google listed is filed under an id saying so"
+file = "src/application/every_google_calendar.rs"
+before = '''        a_calendar_google_listed(account_id, &listed.id)'''
+after = '''        uuid::Uuid::new_v4().to_string()'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# The main calendar's row is the provider's row with a plain id, so an event
+# made in no calendar goes there and not to a calendar somebody shared. The
+# break takes any row of the provider's.
+[[guard]]
+name = "the main google calendar's row is the one with a plain id"
+file = "src/data/message_cache/calendars.rs"
+before = '''            .find(|c| c.source_provider.as_deref() == Some(provider) && !a_server_named_it(&c.id))'''
+after = '''            .find(|c| c.source_provider.as_deref() == Some(provider))'''
+red = [
+    "data::message_cache::calendars::tests::test_the_main_calendar_is_found_by_its_plain_identity_beside_a_listed_one",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendars.rs", tests = 10 },
+]
+
+# A calendar shared with the account to be read is filed read-only, so a
+# change made in it is said as one nothing will send rather than refused by
+# Google on every sync (14-04). The break files every calendar writable.
+[[guard]]
+name = "a google calendar the account may only read is filed read-only"
+file = "src/application/every_google_calendar.rs"
+before = '''        read_only: !listed.access_role.may_write(),'''
+after = '''        read_only: false,'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar that shows only when its owner is free or busy is passed over and
+# said, not filed and read (14-04 choice 3). The break files it.
+[[guard]]
+name = "a google calendar showing only free and busy times is passed over"
+file = "src/application/every_google_calendar.rs"
+before = '''        if listed.access_role == GoogleAccessRole::FreeBusyReader {'''
+after = '''        if false {'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Whether a listed calendar is shown follows Google only the first time; no
+# read turns back what the person chose (14-04 choice 2). The break sets it
+# from Google's own view on every read.
+[[guard]]
+name = "a read never turns back whether a listed calendar is shown"
+file = "src/data/message_cache/calendars.rs"
+before = '''                name: listed.name.to_string(),
+                is_read_only: listed.read_only,
+                updated_at: now,
+                ..held'''
+after = '''                name: listed.name.to_string(),
+                is_read_only: listed.read_only,
+                is_visible: listed.starts_shown,
+                updated_at: now,
+                ..held'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/data/message_cache/calendars.rs", tests = 10 },
+]
+
+# A Google read looks an event up within its own calendar, because Google gives
+# one meeting the same identity in every calendar it sits in (14-04). The
+# break looks it up across the account, as the read did before.
+[[guard]]
+name = "a google read finds an event within its own calendar"
+file = "src/application/calendar.rs"
+before = '''        let existing = cache.event_in(its_rows, &event.id)?;'''
+after = '''        let existing = cache.get_event_by_provider_id(account_id, &event.id)?;'''
+red = [
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A meeting Google cancels in one calendar goes from that calendar only. The
+# break deletes every row of the account's holding its identity.
+[[guard]]
+name = "a cancellation in one google calendar leaves another calendar's copy"
+file = "src/application/calendar.rs"
+before = '''                cache.delete_event_in(its_rows, &event.id)?;'''
+after = '''                cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;'''
+red = [
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# A calendar Google stopped listing is put away, and a change made in it and
+# not yet sent is kept and said rather than deleted with it (14-04 choice 4).
+# The break keeps nothing.
+[[guard]]
+name = "a google calendar put away keeps a change waiting in it"
+file = "src/application/every_google_calendar.rs"
+before = '''            .filter(|event| event.pending)'''
+after = '''            .filter(|_| false)'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Google's calendar list is the whole list or an error, because a calendar
+# missing from a list cut short would be put away with its events. The break
+# keeps what the pages before a failure named and carries on.
+[[guard]]
+name = "a google calendar list cut short is never read as the whole list"
+file = "src/service/google_api.rs"
+before = '''            let resp: GoogleCalendarListResponse =
+                with_retry(3, || self.api_get(&url, token)).await?;'''
+after = '''            let Ok(resp) = with_retry(3, || self.api_get::<GoogleCalendarListResponse>(&url, token)).await else {
+                break;
+            };'''
+red = [
+    "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/service/google_api.rs", tests = 39 },
+]
+
+# A change made here to an event in a second Google calendar is sent to that
+# calendar, read off the row's id (14-04). The break answers the main calendar
+# for every row, as the function did before.
+[[guard]]
+name = "a change in a second google calendar is sent to that calendar"
+file = "src/application/calendar.rs"
+before = '''    container.its_id_at_google().map(str::to_string)'''
+after = '''    container.its_id_at_google().and(None)'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# Each listed Google calendar is read from its own marker, kept on its row. The
+# break reads every listed calendar whole each time.
+[[guard]]
+name = "each listed google calendar is read from its own marker"
+file = "src/application/calendar.rs"
+before = '''        let its_marker = listed.sync_token.as_deref();'''
+after = '''        let its_marker = None;'''
+red = [
+    "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# More than one calendar read is counted in what the calendar sync says, and
+# one is not. The break never counts them.
+[[guard]]
+name = "the calendar summary counts the calendars read when there is more than one"
+file = "src/application/calendar.rs"
+before = '''    if result.calendars_read > 1 {'''
+after = '''    if false {'''
+red = [
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+]
+
+# The calendars read are folded into the running total with every other count.
+# The break drops them between a pass and the window.
+[[guard]]
+name = "folding calendar results keeps the calendars read"
+file = "src/application/calendar.rs"
+before = '''        self.calendars_read += pass.calendars_read;'''
+after = ''''''
+red = [
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]

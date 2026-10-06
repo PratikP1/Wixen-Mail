@@ -8,6 +8,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **Every calendar on a Gmail account comes, not only its main one (#22, REAL-01).** Sync
+  Calendar asked Google for the main calendar and nothing else, so a calendar of your own
+  beside it, or one somebody shared with you, never arrived. It now reads your Google
+  calendar list, hidden calendars included, and brings each calendar on it as a calendar of
+  its own in the Calendar module's sidebar, named as you named it at Google. The main one is
+  called Google Calendar unless you named it. A calendar shared with you to look at is
+  read-only here, so a change you make in it is kept and each sync says it cannot be sent. A
+  calendar that shows only when its owner is free or busy is not brought, and the sync says
+  how many were passed over. One you hid in Google Calendar arrives hidden, and showing or
+  hiding it with `Enter` in the sidebar is never undone by a sync. A calendar Google stops
+  listing is taken off this computer with its events, and the sync says so; a change you made
+  in it and had not sent is kept. One meeting in two of your calendars stays one in each, and
+  calling it off in one leaves the other. When more than one calendar was read, the sync says
+  how many. The version does not move: no build has been cut since 1.0.0-alpha.1. Known
+  limitations: nothing here has met a real Google account; two calendars with the same name
+  and the same visibility are one row to `Enter` in the sidebar, which shows or hides the
+  first of them; and Outlook still brings only its main calendar.
 - **A Gmail account on an app password can bring its calendars, contacts and tasks (#22,
   REAL-01).** Google gives those three only to a browser sign-in, so an account reading its
   mail with an app password never reached them. The Account Manager has a new button, Sign In

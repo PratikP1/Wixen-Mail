@@ -15,19 +15,24 @@
 //! calendar that gets deleted out from under them. The task lists already
 //! settle this with a prefix, and calendars use the same two words:
 //!
-//! - A calendar a server's own list named is written `google:<its id there>` or
-//!   `ms:<its id there>`.
+//! - A calendar a server's own list named is written `google:<the account>:<its
+//!   id there>` or `ms:<its id there>`.
 //! - Everything made here has an id with no server's name in it and no colon:
 //!   the default calendar, whatever the new-calendar screen makes, a calendar
 //!   added by its address, and a feed added by its web address. A
 //!   reconciliation must leave every one of them alone.
 //!
-//! Nothing carries a prefix today. `ensure_default_calendar` and
-//! `ensure_provider_calendar` both mint a plain unique value, so every calendar
-//! that exists reads as made here, and a reconciliation written today would
-//! correctly remove none of them. Once a second place needs the two words, move
-//! them somewhere both it and the task lists read; one use does not earn that
-//! yet.
+//! The account is in a Google calendar's id since 14-04, which is the first
+//! thing to write one. The same calendar is on two accounts' lists whenever
+//! one shares it with the other, and Google's holidays calendar is on nearly
+//! every account's, while the id is the whole of this table's key. Written as
+//! Google names it, the second account's row would be the first's.
+//!
+//! A Gmail account's main calendar keeps the plain id `ensure_provider_calendar`
+//! mints, because events made in no calendar go to it and stored ones already
+//! point at it; every other calendar on its list is written `google:`. Once a
+//! second place needs the two words, move them somewhere both it and the task
+//! lists read; one use does not earn that yet.
 //!
 //! No id is rewritten by any of this, and none should be. A CalDAV sign-in
 //! lives in the credential store under the calendar's own id, and every event
@@ -44,6 +49,43 @@ use rusqlite::OptionalExtension;
 /// each site that makes a calendar. Somebody who changes a calendar's colour
 /// changes their own copy and this is not consulted again.
 const A_CALENDAR_NOBODY_CHOSE_A_COLOUR_FOR: &str = "#4285F4";
+
+/// The id of a calendar Google's own list named, on one account.
+pub fn a_calendar_google_listed(account_id: &str, at_google: &str) -> String {
+    format!("google:{account_id}:{at_google}")
+}
+
+/// Whether a server's own list named this calendar, read off its id.
+fn a_server_named_it(id: &str) -> bool {
+    id.starts_with("google:") || id.starts_with("ms:")
+}
+
+impl CalendarContainer {
+    /// Google's own id for this calendar, when Google's list named it.
+    ///
+    /// Nothing for the main calendar's row, which is asked for by the word
+    /// Google keeps for it, and for every calendar made here.
+    pub fn its_id_at_google(&self) -> Option<&str> {
+        self.id
+            .strip_prefix("google:")?
+            .strip_prefix(self.account_id.as_str())?
+            .strip_prefix(':')
+    }
+}
+
+/// What a server's list says about one calendar, as it is filed here.
+#[derive(Debug, Clone, Copy)]
+pub struct ListedCalendar<'a> {
+    pub account_id: &'a str,
+    pub id: &'a str,
+    pub provider: &'a str,
+    pub name: &'a str,
+    /// The account may only read it, so a change made in it is kept here and
+    /// said rather than sent.
+    pub read_only: bool,
+    /// Shown in the server's own view, which is how it starts here.
+    pub starts_shown: bool,
+}
 
 impl MessageCache {
     /// Save (upsert) a calendar container.
@@ -239,17 +281,11 @@ impl MessageCache {
     /// combined view. Matched on the provider, so a sync that runs every few
     /// minutes finds the container it made last time instead of adding another.
     ///
-    /// One container per provider per account. That is enough while this client
-    /// asks each provider only for the calendar it treats as the main one; a
-    /// second Google calendar would need the container to hold the provider's
-    /// own identity for it, and asking for a second calendar at all is a change
-    /// to the client rather than to this.
-    ///
-    /// When that change comes, the identity goes in the id, written the way the
-    /// module note at the top of this file sets out. The plain unique value
-    /// minted here says the calendar was made on this computer, which is what
-    /// keeps a reconciliation off it, and the name is no longer part of what
-    /// tells two calendars apart, so a second one of the same name is fine.
+    /// One such container per provider per account, the main calendar's. Every
+    /// other calendar a provider's list names is filed by
+    /// [`Self::file_a_listed_calendar`] under an id saying so, the way the
+    /// module note at the top of this file sets out, so this finds the row
+    /// whose id is plain and never one of those.
     pub fn ensure_provider_calendar(
         &self,
         account_id: &str,
@@ -259,7 +295,7 @@ impl MessageCache {
         let existing = self.get_calendars_for_account(account_id)?;
         if let Some(theirs) = existing
             .iter()
-            .find(|c| c.source_provider.as_deref() == Some(provider))
+            .find(|c| c.source_provider.as_deref() == Some(provider) && !a_server_named_it(&c.id))
         {
             return Ok(theirs.clone());
         }
@@ -286,6 +322,60 @@ impl MessageCache {
         };
         self.save_calendar(&cal)?;
         Ok(cal)
+    }
+
+    /// File a calendar a server's own list named, made if it is not there.
+    ///
+    /// Its name and whether it may be written follow the server on every read,
+    /// so a calendar renamed or shared differently there is the same here.
+    /// Whether it is shown follows the server only the first time; after that
+    /// it is the person's, and no read turns it back (14-04 choice 2).
+    pub fn file_a_listed_calendar(&self, listed: &ListedCalendar<'_>) -> Result<CalendarContainer> {
+        let now = chrono::Utc::now().to_rfc3339();
+        let filed = match self.get_calendar(listed.id)? {
+            Some(held) => CalendarContainer {
+                name: listed.name.to_string(),
+                is_read_only: listed.read_only,
+                updated_at: now,
+                ..held
+            },
+            None => CalendarContainer {
+                id: listed.id.to_string(),
+                account_id: listed.account_id.to_string(),
+                name: listed.name.to_string(),
+                color: A_CALENDAR_NOBODY_CHOSE_A_COLOUR_FOR.to_string(),
+                source_provider: Some(listed.provider.to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: false,
+                is_visible: listed.starts_shown,
+                is_read_only: listed.read_only,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: now.clone(),
+                updated_at: now,
+            },
+        };
+        self.save_calendar(&filed)?;
+        Ok(filed)
+    }
+
+    /// Keep the marker a server gave for the next read of one calendar.
+    pub fn set_calendar_sync_token(
+        &self,
+        calendar_id: &str,
+        sync_token: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendars SET sync_token = ?1 WHERE id = ?2",
+                rusqlite::params![sync_token, calendar_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep a calendar's marker: {}", e)))?;
+        Ok(())
     }
 
     /// Toggle visibility of a calendar.
@@ -569,6 +659,52 @@ mod tests {
                 .len(),
             2,
         );
+    }
+
+    #[test]
+    fn test_the_main_calendar_is_found_by_its_plain_identity_beside_a_listed_one() {
+        // A Gmail account's other calendars are rows of the same provider,
+        // written `google:` and the account and Google's own identity. The
+        // main calendar's row is the one with a plain identity, and an event
+        // made in no calendar goes there, so finding a listed one instead
+        // would send it to a calendar somebody shared.
+        let cache = test_cache();
+        let now = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_calendar(&CalendarContainer {
+                id: "google:acct-1:team@group.calendar.google.com".to_string(),
+                account_id: "acct-1".to_string(),
+                name: "A".to_string(),
+                color: "#FF0000".to_string(),
+                source_provider: Some("gmail".to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: false,
+                is_visible: true,
+                is_read_only: false,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: now.clone(),
+                updated_at: now,
+            })
+            .expect("a listed calendar");
+
+        let main = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("the main calendar");
+
+        assert!(
+            !main.id.contains(':'),
+            "a listed calendar was taken: {main:?}"
+        );
+        assert_eq!(main.name, "Google Calendar");
+        let again = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("the same main calendar");
+        assert_eq!(again.id, main.id, "a second main calendar was made");
     }
 
     #[test]

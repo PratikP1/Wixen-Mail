@@ -1010,6 +1010,9 @@ mod tests {
             days_that_may_be_shown_twice: 6,
             held_for_you_to_choose: 7,
             what_was_asked: WhatWasAsked::default(),
+            calendars_read: 8,
+            calendars_showing_only_free_and_busy: 9,
+            calendars_put_away: 10,
             errors: vec!["first".to_string()],
         });
         total.absorb(CalendarSyncResult {
@@ -1025,6 +1028,9 @@ mod tests {
                 somebody: false,
                 why_not_asked: Some(WhyNothingWasAsked::TheBrowserSignInRanOut),
             },
+            calendars_read: 80,
+            calendars_showing_only_free_and_busy: 90,
+            calendars_put_away: 100,
             errors: vec!["second".to_string()],
         });
         assert_eq!(
@@ -1042,6 +1048,9 @@ mod tests {
                     somebody: true,
                     why_not_asked: Some(WhyNothingWasAsked::NoGoogleSignInKey),
                 },
+                calendars_read: 88,
+                calendars_showing_only_free_and_busy: 99,
+                calendars_put_away: 110,
                 errors: vec!["first".to_string(), "second".to_string()],
             }
         );
