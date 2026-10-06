@@ -59,6 +59,28 @@ struct TokenErrorResponse {
 
 // ── Provider Registry (OAuthService, backward compatible) ──────────────────
 
+/// The name a Gmail account's separate browser sign-in for its calendars,
+/// contacts and tasks is filed under, beside the mail sign-in's `gmail`.
+///
+/// Route B of #22, on Pratik's answer of 2026-10-05: mail keeps its app
+/// password, and Google, which gives calendars, contacts and tasks only to a
+/// browser sign-in, is signed in to for those three alone. A name of its own
+/// gives the token an entry of its own in the credential store, through
+/// [`keyring_service`], so nothing about the mail sign-in changes.
+pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "google-calendars-contacts-tasks";
+
+/// Google's sign-in page, where both of an account's Google sign-ins begin.
+const GOOGLES_SIGN_IN_PAGE: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+
+/// Where both of an account's Google sign-ins are exchanged and renewed.
+const GOOGLES_TOKEN_ADDRESS: &str = "https://oauth2.googleapis.com/token";
+
+/// Google's contacts, calendar and tasks permissions, which both of its
+/// sign-ins ask for.
+const GOOGLES_CONTACTS: &str = "https://www.googleapis.com/auth/contacts";
+const GOOGLES_CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
+const GOOGLES_TASKS: &str = "https://www.googleapis.com/auth/tasks";
+
 pub struct OAuthService;
 
 impl OAuthService {
@@ -67,12 +89,12 @@ impl OAuthService {
         vec![
             OAuthProvider {
                 name: "gmail".to_string(),
-                auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
-                token_url: "https://oauth2.googleapis.com/token".to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
                     "https://mail.google.com/".to_string(),
-                    "https://www.googleapis.com/auth/contacts".to_string(),
-                    "https://www.googleapis.com/auth/calendar".to_string(),
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
                     // Read and write, because the sync now does both:
                     // ticking a task off here reaches the phone. It was
                     // read-only while the sync only read, on the rule that
@@ -81,7 +103,21 @@ impl OAuthService {
                     //
                     // Widening a scope means new consent, so everybody signs in
                     // again once.
-                    "https://www.googleapis.com/auth/tasks".to_string(),
+                    GOOGLES_TASKS.to_string(),
+                ],
+            },
+            // The separate sign-in of an account whose mail keeps its app
+            // password: the same three as above and never mail, which the
+            // app password already does, on the same rule about asking for
+            // nothing that is not used.
+            OAuthProvider {
+                name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
+                default_scopes: vec![
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
+                    GOOGLES_TASKS.to_string(),
                 ],
             },
             OAuthProvider {
@@ -193,8 +229,9 @@ impl OAuthService {
             auth_request = auth_request.add_scope(Scope::new(scope.clone()));
         }
 
-        // Gmail requires access_type=offline for refresh tokens
-        if provider.eq_ignore_ascii_case("gmail") {
+        // Google hands back a refresh token only when asked for one, so both of
+        // its sign-ins ask, or each stops working an hour after it is made.
+        if p.auth_url == GOOGLES_SIGN_IN_PAGE {
             auth_request = auth_request.add_extra_param("access_type", "offline");
             auth_request = auth_request.add_extra_param("prompt", "consent");
         }
@@ -1015,6 +1052,48 @@ pub async fn a_tasks_token_for(account_id: &str) -> Result<String> {
     a_microsoft_sign_in_for(account_id)?.a_tasks_token().await
 }
 
+/// Which of an account's Google sign-ins its calendars, contacts and tasks
+/// use: the mail sign-in when mail signs in through the browser, since that
+/// one already carries all four permissions (D-14), and the separate one
+/// when mail signs in with an app password.
+pub fn the_google_sign_in_for(signs_in_to_mail_through_a_browser: bool) -> &'static str {
+    match signs_in_to_mail_through_a_browser {
+        true => "gmail",
+        false => GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+    }
+}
+
+/// Whether the credential store holds anything for this sign-in and account.
+///
+/// A store that cannot be read counts as holding it, so the token request
+/// that follows says what went wrong rather than this saying nothing was
+/// made.
+pub fn a_sign_in_is_held(sign_in: &str, account_id: &str) -> bool {
+    !matches!(
+        secret_store::read(&keyring_service(sign_in), account_id),
+        Ok(None)
+    )
+}
+
+/// A token from one of an account's Google sign-ins, with the key passed in.
+///
+/// The one place the syncs and the free time lookup get a Google token, so
+/// the two cannot come to read different entries.
+pub async fn a_google_token_from(
+    account_id: &str,
+    sign_in: &str,
+    key: &crate::service::oauth_credentials::ClientCredentials,
+) -> Result<String> {
+    AuthManager::new(
+        account_id,
+        sign_in,
+        &key.client_id,
+        key.client_secret.as_deref(),
+    )
+    .get_valid_token()
+    .await
+}
+
 /// A Google token for this account, or nothing at all.
 ///
 /// `None` for the reasons [`a_graph_token_for`] gives: this build holds no
@@ -1022,17 +1101,15 @@ pub async fn a_tasks_token_for(account_id: &str) -> Result<String> {
 /// refresh that had to happen did not work. The token carries the calendar
 /// permission every Google sign-in here already asks for, which is enough to
 /// ask when people are free.
-pub async fn a_google_token_for(account_id: &str) -> Option<String> {
-    let held = crate::service::oauth_credentials::credentials_for("gmail")?;
-    AuthManager::new(
-        account_id,
-        "gmail",
-        &held.client_id,
-        held.client_secret.as_deref(),
-    )
-    .get_valid_token()
-    .await
-    .ok()
+///
+/// From the sign-in the account's calendars use, the one the syncs read
+/// through [`the_google_sign_in_for`], so an account whose mail keeps its app
+/// password asks with its separate sign-in here too.
+pub async fn a_google_token_for(account: &crate::data::account::Account) -> Option<String> {
+    let key = crate::service::oauth_credentials::credentials_for("gmail")?;
+    a_google_token_from(&account.id, the_google_sign_in_for(account.use_oauth), &key)
+        .await
+        .ok()
 }
 
 /// This account's Microsoft sign-in, when this build can sign in to Microsoft.
@@ -1375,6 +1452,50 @@ mod tests {
         let scopes_str = p.default_scopes.join(" ");
         assert!(scopes_str.contains("auth/contacts"));
         assert!(scopes_str.contains("auth/calendar"));
+    }
+
+    #[test]
+    fn test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail() {
+        // Route B: mail keeps its app password, so this sign-in is never
+        // asked for mail. Asking for more than it uses is asking somebody to
+        // grant more than it does.
+        let separate = OAuthService::provider_by_name(GOOGLE_CALENDARS_CONTACTS_AND_TASKS)
+            .expect("the separate Google sign-in is a provider this program knows");
+        assert_eq!(
+            separate.default_scopes,
+            [
+                "https://www.googleapis.com/auth/contacts",
+                "https://www.googleapis.com/auth/calendar",
+                "https://www.googleapis.com/auth/tasks",
+            ]
+        );
+
+        // And it asks for a refresh token as the mail sign-in does, or it
+        // stops working an hour after it was made.
+        let (url, _state, _verifier) = OAuthService::build_authorization_url_pkce(
+            GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+            "client-123",
+            Some("secret"),
+            "http://localhost/callback",
+        )
+        .expect("an address to sign in at");
+        assert!(url.starts_with("https://accounts.google.com/"), "{url}");
+        assert!(url.contains("access_type=offline"), "{url}");
+        assert!(url.contains("prompt=consent"), "{url}");
+        assert!(url.contains("code_challenge"), "{url}");
+        for asked in ["auth%2Fcontacts", "auth%2Fcalendar", "auth%2Ftasks"] {
+            assert!(url.contains(asked), "{asked} is not asked for: {url}");
+        }
+        assert!(!url.contains("mail.google.com"), "mail is asked for: {url}");
+    }
+
+    #[test]
+    fn test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise() {
+        assert_eq!(the_google_sign_in_for(true), "gmail");
+        assert_eq!(
+            the_google_sign_in_for(false),
+            GOOGLE_CALENDARS_CONTACTS_AND_TASKS
+        );
     }
 
     #[test]
@@ -2185,6 +2306,25 @@ mod which_entries_belong_to_an_account {
                 provider.name
             );
         }
+    }
+
+    #[test]
+    fn test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own() {
+        // Spelled out, as forget.rs spells the mail sign-in's: changing the
+        // shape orphans every token already on a machine. And not the mail
+        // sign-in's entry, or signing in for calendars would overwrite it.
+        assert!(
+            entries_for_account("a1").contains(&(
+                "wixen-mail-google-calendars-contacts-tasks".to_string(),
+                "a1".to_string()
+            )),
+            "{:?}",
+            entries_for_account("a1")
+        );
+        assert_ne!(
+            keyring_service(super::GOOGLE_CALENDARS_CONTACTS_AND_TASKS),
+            keyring_service("gmail")
+        );
     }
 
     #[test]

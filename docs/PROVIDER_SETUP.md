@@ -17,18 +17,29 @@ Quick setup instructions for popular email providers with Wixen Mail.
 
 ## What syncs from which account
 
-One account does everything it can. There is no second account to set up for
-contacts, for the calendar or for tasks: they all use the sign-in you already
-gave for the mail.
+One account does everything it can. An Outlook or Office 365 account, and a
+Gmail account whose mail signs in through the browser, need nothing more:
+contacts, the calendar and tasks use the sign-in you already gave for the mail.
+
+**A Gmail account whose mail signs in with an app password needs one more
+sign-in.** Google gives calendars, contacts and tasks only to a browser sign-in,
+so that account signs in through the browser for those three alone, from the
+Account Manager, and keeps its app password for mail. That sign-in needs a
+Google sign-in key you make yourself: [Calendars, contacts and tasks for a
+Gmail account](#calendars-contacts-and-tasks-for-a-gmail-account) walks through
+it. Until 2026-10-05 this section said there was no second sign-in to set up
+for any account. That was untrue for every Gmail account on an app password,
+which could never reach its calendars, contacts or tasks, and for every copy of
+Wixen Mail made so far, none of which came with a Google sign-in key.
 
 What you get depends on what kind of account it is.
 
 | | Gmail | Outlook, Office 365 | Any other IMAP or POP account |
 |---|---|---|---|
 | Mail | Yes | Yes | Yes |
-| Contacts | Yes, both ways | Yes, both ways | No |
-| Calendar | Yes, both ways | Yes, both ways | No |
-| Tasks | Yes, both ways | Yes, both ways | No |
+| Contacts | Yes, both ways, with a browser sign-in | Yes, both ways | No |
+| Calendar | Yes, both ways, with a browser sign-in | Yes, both ways | No |
+| Tasks | Yes, both ways, with a browser sign-in | Yes, both ways | No |
 | Notes | No | No | No |
 | Reminders | No | No | No |
 
@@ -36,6 +47,9 @@ The Gmail and the Outlook, Office 365 columns include Google Workspace and
 Microsoft 365 accounts on their organisation's own domains, when the incoming
 server is Google's or Microsoft's and the account signed in through the
 browser.
+
+None of the Gmail column's contacts, calendar or tasks rows has yet been tried
+against a real Google account.
 
 **"Any other IMAP or POP account"** means a mail server and nothing else, which
 is what Yahoo, iCloud, ProtonMail Bridge and a self-hosted server are to Wixen
@@ -208,6 +222,11 @@ It works today, it does not expire, and it does not depend on Wixen Mail being
 registered with anybody. You need two-step verification turned on with your
 provider before they will give you one.
 
+On Gmail an app password carries mail and nothing else. A Gmail account on one
+signs in a second time, through the browser, for its calendars, contacts and
+tasks, as [Calendars, contacts and tasks for a Gmail
+account](#calendars-contacts-and-tasks-for-a-gmail-account) explains.
+
 Your ordinary password will not work. Google stopped accepting it for mail
 applications, and Microsoft has stopped accepting any password from a mail
 program. Typing it produces "authentication failed", which reads like a typo
@@ -238,6 +257,11 @@ password.
 
 Microsoft does not apply the same seven-day rule, so an Outlook browser sign-in
 keeps working until it is revoked.
+
+The separate browser sign-in a Gmail account on an app password makes for its
+calendars, contacts and tasks does not ask for mail, and it still runs out after
+seven days while the key it uses is in Testing. Mail on the app password is not
+affected when it does.
 
 ---
 
@@ -309,6 +333,176 @@ filled in for an address Wixen Mail does not recognise, so type
 From then on Wixen Mail treats the account as Gmail, by its server. Whether
 your organisation lets Wixen Mail sign in, with an app password or through the
 browser, is its administrator's decision.
+
+### Calendars, contacts and tasks for a Gmail account
+
+Google gives calendars, contacts and tasks only to a program you sign in to
+through the browser. An app password works for mail and never for these three.
+So a Gmail account that reads its mail with an app password needs a second
+sign-in, through the browser, for its calendars, contacts and tasks alone. Mail
+keeps its app password and nothing about it changes.
+
+That browser sign-in needs a Google sign-in key: a client ID and a client
+secret that tell Google which program is asking. Wixen Mail does not come with
+one, so you make your own in Google's console and keep it on your computer, in a
+file called `oauth.toml` that you put in your settings folder yourself. Nothing
+in Wixen Mail's own files carries a key, and Wixen Mail sends yours only to
+Google, when you sign in.
+
+Each step below is one action. The steps follow Google's own pages as they read
+on 2026-10-05:
+
+| Google's page | Last updated |
+|---|---|
+| Create a Google Cloud project (developers.google.com/workspace/guides/create-project) | 2026-09-03 |
+| Enable Google Workspace APIs (developers.google.com/workspace/guides/enable-apis) | 2026-09-03 |
+| Configure the OAuth consent screen (developers.google.com/workspace/guides/configure-oauth-consent) | 2026-09-03 |
+| Create access credentials (developers.google.com/workspace/guides/create-credentials) | 2026-09-03 |
+| Manage OAuth clients, on client secrets (support.google.com/cloud/answer/15549257) | no date shown |
+| Using OAuth 2.0 to Access Google APIs, on a project in Testing (developers.google.com, under Google Identity) | 2026-05-26 |
+| OAuth 2.0 Scopes for Google APIs, for what each permission is called (developers.google.com, under Google Identity) | 2026-09-14 |
+
+Google renames buttons from time to time. If a step names something you cannot
+find, the page in the table is where Google says what it is called now.
+
+**What has not been checked.** Nobody has yet followed these steps with a
+screen reader, so whether each page of Google's console reads well under NVDA
+or Narrator is not something this page can promise. If a step is hard to reach
+by keyboard, tell us which one.
+
+#### 1. Make a project
+
+1. Open https://console.cloud.google.com in your browser and sign in with your
+   Google account.
+2. Open the menu, then **IAM & Admin**, then **Create a Project**.
+3. In **Project Name**, type a name you will recognise, such as Wixen Mail.
+   Leave the other fields as they are.
+4. Choose **Create**. The console opens the new project.
+
+The rest of the steps happen inside that project. Its name is shown near the
+top of every page of the console, so check it there if you have more than one.
+
+#### 2. Turn on the three interfaces
+
+1. Open the menu, then **APIs & Services**, then **Library**. Google's page
+   adds **Google Workspace** after Library; that is the section of the library
+   the three below are listed in.
+2. Search for **Google Calendar API**, open it, and choose **Enable**.
+3. Go back to the library and do the same for **People API**, which is how
+   Google hands out contacts.
+4. Do the same for **Google Tasks API**.
+
+#### 3. Set up the consent screen, and add yourself as a tester
+
+1. Open the menu, then **Google Auth platform**, then **Branding**. If the page
+   says Google Auth platform is not configured yet, choose **Get Started**.
+2. In **App name**, type Wixen Mail. In **User support email**, choose your
+   address. Choose **Next**.
+3. Under **Audience**, choose **External**. Choose **Next**.
+4. Under **Contact Information**, type your address. Choose **Next**.
+5. Tick **I agree to the Google API Services: User Data Policy**, then choose
+   **Continue**, then **Create**.
+6. Open **Audience**. Leave the publishing status at **Testing**.
+7. Under **Test users**, choose **Add users**, type the Gmail address you read
+   mail with in Wixen Mail, and choose **Save**.
+
+#### 4. Add the three permissions
+
+1. Open **Data Access**, then choose **Add or Remove Scopes**.
+2. Find and tick these three. Typing the address into the filter box is the
+   quickest way to each:
+
+   | Address | What Google calls it |
+   |---|---|
+   | `https://www.googleapis.com/auth/calendar` | See, edit, share, and permanently delete all the calendars you can access using Google Calendar |
+   | `https://www.googleapis.com/auth/contacts` | See, edit, download, and permanently delete your contacts |
+   | `https://www.googleapis.com/auth/tasks` | Create, edit, organize, and delete all your tasks |
+
+3. Confirm your choice, then choose **Save**.
+
+Do not add mail, `https://mail.google.com/`. Your mail keeps its app password,
+and Wixen Mail never asks this sign-in for mail.
+
+#### 5. Make the client, and copy its two values straight away
+
+1. Open the menu, then **Google Auth platform**, then **Clients**.
+2. Choose **Create Client**.
+3. For **Application type**, choose **Desktop app**.
+4. In **Name**, type Wixen Mail. Only you see this name.
+5. Choose **Create**.
+6. Google shows the **client ID** and the **client secret**. Copy both now.
+
+**Google shows the secret only this once.** Its page says client secrets "are
+only visible and downloadable from the Google Cloud Console at the time of their
+creation", and afterwards it shows only the last four characters. If you lose
+it, open the client and choose **Add Secret** to make a new one, and use that.
+
+#### 6. Put oauth.toml in your settings folder
+
+1. Open Notepad.
+2. Type these three lines, putting your client ID and your client secret between
+   the quotation marks:
+
+   ```toml
+   [gmail]
+   client_id = "your client ID"
+   client_secret = "your client secret"
+   ```
+
+3. Choose **Save as**. In **Save as type**, choose **All files**, so Notepad
+   does not add `.txt` to the name.
+4. In **File name**, type the whole path below, including the quotation marks
+   at each end:
+
+   ```text
+   "%LOCALAPPDATA%\wixen-mail\config\oauth.toml"
+   ```
+
+5. Choose **Save**.
+
+If Notepad cannot find the folder, Wixen Mail has not run on this computer yet:
+start it once, close it, and save again. The file stays on your computer. Wixen
+Mail reads it each time it signs in or brings your calendars, contacts and
+tasks, so it does not need restarting.
+
+#### 7. Sign in for the calendars, contacts and tasks
+
+1. In Wixen Mail, press `Ctrl+Shift+A` to open the Account Manager.
+2. Choose your Gmail account in the list.
+3. Press `Alt+T`, **Sign In for Calendars, Contacts and Tasks**. Wixen Mail
+   says it is signing in and your browser opens at Google.
+4. Sign in with the Google account you added as a test user.
+5. Google shows a screen saying it has not verified this app. That is expected
+   for a key in Testing: the app it means is your own project. Choose to
+   continue.
+6. Google lists the three permissions. Allow them.
+7. Your browser says you can close it, and Wixen Mail says the account is signed
+   in for its calendars, contacts and tasks.
+8. Close the Account Manager. Wixen Mail brings that account's calendars,
+   contacts and tasks once, straight away.
+
+After that, Sync Calendar, Sync Contacts and Sync Tasks on the Tools menu, and
+`F5` in the Calendar, Contacts and Tasks modules, ask Google with this sign-in.
+
+#### While your key is in Testing
+
+- **The sign-in lasts seven days.** Google's page says a project in Testing "is
+  issued a refresh token expiring in 7 days". When it runs out, each sync says
+  so and names the button. Press `Alt+T` on the account again. Mail on its app
+  password is not affected.
+- **Only the test users you added can sign in**, so a second Google account
+  needs adding under **Test users** too.
+
+#### If it does not work
+
+- **A sync says this copy of Wixen Mail has no Google sign-in key.** The file is
+  missing, or is called `oauth.toml.txt`, or one of its two values is empty.
+  Open the settings folder in File Explorer, turn on **File name extensions**
+  under **View**, and check the name.
+- **Google says access is blocked or denied when you sign in.** The address you
+  signed in with is not under **Test users**.
+- **Calendars arrive and contacts or tasks do not.** Check that the People API
+  and the Google Tasks API are both turned on in step 2.
 
 ### How Gmail differs, and what Wixen Mail does about it
 

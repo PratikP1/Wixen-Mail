@@ -8,6 +8,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **A Gmail account on an app password can bring its calendars, contacts and tasks (#22,
+  REAL-01).** Google gives those three only to a browser sign-in, so an account reading its
+  mail with an app password never reached them. The Account Manager has a new button, Sign In
+  for Calendars, Contacts and Tasks (`Alt+T`), which signs the chosen Gmail account in to
+  Google through the browser for those three alone, asking Google for the calendar, contacts
+  and tasks permissions and never for mail. Mail keeps its app password. The sign-in is kept in
+  the Windows credential store under an entry of its own, and removing the account or
+  uninstalling erases it. When the Account Manager closes, that account's calendars, contacts
+  and tasks are brought once. On a Gmail account whose mail already signs in through the
+  browser, the button says that sign-in covers all three; on any other account, it says why it
+  is not needed. The sentences a sync says when Google was not asked now name the button, and
+  Find When Everyone Is Free asks Google with the same sign-in. Setting up a provider in Help
+  has a new section, Calendars, contacts and tasks for a Gmail account, which walks through
+  making your own Google sign-in key in Testing, turning on the Calendar, People and Tasks
+  interfaces, adding yourself as a test user, and putting `oauth.toml` in your settings folder,
+  checked against Google's pages read on 2026-10-05. The version does not move: no build has
+  been cut since 1.0.0-alpha.1. Known limitations: nothing here has met a real Google account;
+  while a key is in Testing, Google ends the sign-in after seven days and the button has to be
+  pressed again; nobody has followed the Help section through Google's console with a screen
+  reader; and nobody has heard the button or its sentences with one.
 - **Messages Outlook saved (`.msg`) come in through both imports (#53, point 5; GAP-13).**
   Issue 53 said: "`.msg` (Outlook's single-message file): nothing reads or writes it". File,
   Import Mailbox now takes one: its picker lists `.msg` beside the other kinds, and the

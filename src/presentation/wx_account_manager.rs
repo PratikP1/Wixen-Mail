@@ -25,6 +25,7 @@ use crate::application::directory_sign_in::{
 };
 use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
 use crate::application::status_sentences::{Thing, nothing_chosen};
+use crate::application::who_holds_the_calendars::{self, WhatTheSeparateSignInDoes};
 use crate::application::who_runs_the_mail::{WhatIsKnown, WhoRunsTheMail};
 use crate::common::types::Protocol;
 use crate::data::MessageCache;
@@ -83,6 +84,7 @@ const ID_NEXT: Id = ID_HIGHEST + 208;
 const ID_BACK: Id = ID_HIGHEST + 209;
 const ID_LOOK_PEOPLE_UP: Id = ID_HIGHEST + 211;
 const ID_OTHER_ADDRESSES: Id = ID_HIGHEST + 212;
+const ID_SIGN_IN_FOR_CALENDARS: Id = ID_HIGHEST + 213;
 
 #[derive(Debug, Clone)]
 pub enum AccountManagerAction {
@@ -98,6 +100,13 @@ pub enum AccountManagerAction {
         /// on the way out, so a multi-account user stayed pinned to whichever
         /// account came first at startup.
         active_id: Option<String>,
+        /// The accounts signed in for their calendars, contacts and tasks
+        /// in this visit, by id, so the window brings each once (D-13).
+        ///
+        /// Carried even when nothing else changed: that sign-in changes no
+        /// field of the account, and an update that waited for one would
+        /// have lost it on the way out.
+        signed_in_for_calendars: Vec<String>,
     },
 }
 
@@ -118,6 +127,7 @@ pub struct AccountManagerDialogHandles {
     look_people_up: Button,
     other_addresses: Button,
     reauthorize: Button,
+    sign_in_for_calendars: Button,
     delete: Button,
     set_default: Button,
     set_active: Button,
@@ -153,12 +163,14 @@ pub fn show_account_manager_dialog(
         default_id: default_account_id.map(|s| s.to_string()),
         changed: false,
     }));
+    let signed_in = Rc::new(RefCell::new(Vec::new()));
 
-    wire_account_manager_actions(&widgets, &state, a11y, palette, store.cloned());
+    wire_account_manager_actions(&widgets, &state, &signed_in, a11y, palette, store.cloned());
     run_account_manager_loop(&widgets, &state, a11y, palette, signatures);
 
     let outcome = state.borrow();
-    if outcome.changed {
+    let signed_in_for_calendars = signed_in.take();
+    if outcome.changed || !signed_in_for_calendars.is_empty() {
         AccountManagerAction::Updated {
             // Corrected against what is actually configured, in case the
             // default account was the one just deleted.
@@ -168,6 +180,7 @@ pub fn show_account_manager_dialog(
             ),
             accounts: outcome.working.clone(),
             active_id: outcome.active_id.clone(),
+            signed_in_for_calendars,
         }
     } else {
         AccountManagerAction::None
@@ -271,25 +284,37 @@ pub fn build_account_manager_dialog(
         .with_label("&Sign In Again")
         .with_id(ID_REAUTHORIZE)
         .build();
+    // Beside Sign In Again and after it in the tab order: the browser sign-in
+    // a Gmail account on an app password makes for its calendars, contacts
+    // and tasks alone, mail keeping its app password (14-03, route B of #22).
+    // T, which nothing here holds: A, E, L, O, D, V, U, S and C are taken,
+    // read again on 2026-10-05.
+    let sign_in_for_calendars = Button::builder(&dlg)
+        .with_label("Sign In for Calendars, Contacts and &Tasks")
+        .with_id(ID_SIGN_IN_FOR_CALENDARS)
+        .build();
     let close = Button::builder(&dlg)
         .with_label("&Close")
         .with_id(ID_OK)
         .build();
-    for b in [
-        &add,
-        &edit,
-        &look_people_up,
-        &other_addresses,
-        &del,
-        &active,
-        &set_default,
-        &reauth,
-    ] {
+    // Two rows rather than one since 14-03: ten buttons with Sign In for
+    // Calendars, Contacts and Tasks among them no longer fit one row of this
+    // window. The second row carries on where the first ends, so reading the
+    // rows left to right, top to bottom is the tab order. The second is filled
+    // first here only because `tests/wired.rs` reads the first row written
+    // for Set Active, Set as Default and Sign In Again; where each row sits
+    // is decided by the order the rows are added to the window, below.
+    let more_btns = BoxSizer::builder(Orientation::Horizontal).build();
+    for b in [&del, &active, &set_default, &reauth, &sign_in_for_calendars] {
+        more_btns.add(b, 0, SizerFlag::All, 4);
+    }
+    more_btns.add_spacer(16);
+    more_btns.add(&close, 0, SizerFlag::All, 4);
+    for b in [&add, &edit, &look_people_up, &other_addresses] {
         btns.add(b, 0, SizerFlag::All, 4);
     }
-    btns.add_spacer(16);
-    btns.add(&close, 0, SizerFlag::All, 4);
     sizer.add_sizer(&btns, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
+    sizer.add_sizer(&more_btns, 0, SizerFlag::AlignRight | SizerFlag::All, 4);
 
     // Empty until there is something to say, not a space: an empty label is
     // one line tall and reaches the accessibility tree with no name, where a
@@ -348,6 +373,7 @@ pub fn build_account_manager_dialog(
         look_people_up,
         other_addresses,
         reauthorize: reauth,
+        sign_in_for_calendars,
         delete: del,
         set_default,
         set_active: active,
@@ -400,6 +426,7 @@ pub struct AccountManagerState {
 fn wire_account_manager_actions(
     widgets: &AccountManagerDialogHandles,
     state: &Rc<RefCell<AccountManagerState>>,
+    signed_in_for_calendars: &Rc<RefCell<Vec<String>>>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
     store: Option<Arc<MessageCache>>,
@@ -439,6 +466,18 @@ fn wire_account_manager_actions(
         let a11y = Arc::clone(a11y);
         move |_| {
             reauthorize_selected(&mut state.borrow_mut(), &list, &status, &a11y);
+        }
+    });
+    // Never leaves this dialog either: it opens the browser and waits there.
+    widgets.sign_in_for_calendars.on_click({
+        let state = Rc::clone(state);
+        let signed_in = Rc::clone(signed_in_for_calendars);
+        let a11y = Arc::clone(a11y);
+        move |_| {
+            let chosen = get_selected(&list).and_then(|at| state.borrow().working.get(at).cloned());
+            if let Some(id) = sign_in_for_calendars_selected(chosen.as_ref(), &status, &a11y) {
+                signed_in.borrow_mut().push(id);
+            }
         }
     });
     widgets.delete.on_click({
@@ -695,11 +734,14 @@ pub fn reauthorize_selected(
             }
         }
         // Saying which of the two it is, because they need
-        // different things done about them.
-        Some(_) => said_and_shown(
+        // different things done about them. A Gmail account is pointed at
+        // the sign-in its calendars, contacts and tasks need (14-03).
+        Some(idx) => said_and_shown(
             status,
             a11y,
-            "This account signs in with a password, so there is nothing to authorise. Edit it to change its password.",
+            who_holds_the_calendars::what_sign_in_again_says_for_a_password_account(
+                &state.working[idx],
+            ),
             Priority::High,
         ),
         None => said_and_shown(
@@ -709,6 +751,79 @@ pub fn reauthorize_selected(
             Priority::High,
         ),
     }
+}
+
+/// Sign the chosen account in to Google through the browser for its
+/// calendars, contacts and tasks alone, and answer its id when that worked,
+/// so the Account Manager carries it out to have the three brought once
+/// (14-03, route B of #22; D-13).
+///
+/// Answers its own click, as [`reauthorize_selected`] does, for the same
+/// reason. What it says first is the answer's: the whole of it for an account
+/// the button is not for, or that signing in has begun.
+fn sign_in_for_calendars_selected(
+    chosen: Option<&Account>,
+    status: &StaticText,
+    a11y: &Accessibility,
+) -> Option<String> {
+    let answer = who_holds_the_calendars::what_the_separate_sign_in_does_here(chosen);
+    let begun = answer.sentence();
+    let (WhatTheSeparateSignInDoes::SignsIn(key), Some(account)) = (answer, chosen) else {
+        said_and_shown(status, a11y, &begun, Priority::High);
+        return None;
+    };
+    said_and_shown(status, a11y, &begun, Priority::Normal);
+    match sign_in_for_calendars(&account.id, &key) {
+        Ok(()) => {
+            // The account's id and the outcome, never its address.
+            tracing::info!(
+                "Sign-in for calendars, contacts and tasks: account {}, signed in",
+                account.id
+            );
+            said_and_shown(
+                status,
+                a11y,
+                who_holds_the_calendars::SIGNED_IN_FOR_CALENDARS,
+                Priority::Normal,
+            );
+            Some(account.id.clone())
+        }
+        Err(error) => {
+            tracing::info!(
+                "Sign-in for calendars, contacts and tasks: account {}, not signed in",
+                account.id
+            );
+            let said = match how_the_sign_in_failed(&error) {
+                OAuthFlowResult::NotSaved(said) => said,
+                _ => who_holds_the_calendars::signing_in_for_calendars_failed(&format!("{error}")),
+            };
+            // One notification, as Sign In Again's failures are.
+            shown_and_signalled(status, a11y, FeedbackEvent::AccountNeedsAttention, &said);
+            None
+        }
+    }
+}
+
+/// The browser sign-in for calendars, contacts and tasks, kept under its own
+/// name in the credential store and nowhere else: never on the account and
+/// never in the database.
+fn sign_in_for_calendars(
+    account_id: &str,
+    key: &oauth_credentials::ClientCredentials,
+) -> crate::common::Result<()> {
+    let sign_in = AuthManager::new(
+        account_id,
+        crate::service::oauth::GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+        &key.client_id,
+        key.client_secret.as_deref(),
+    );
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+        crate::common::Error::Other(format!(
+            "Signing in could not start on this computer: {e}. Try again, and see When \
+             something goes wrong in Help if it keeps happening."
+        ))
+    })?;
+    runtime.block_on(sign_in.authorize()).map(|_| ())
 }
 
 /// Delete the selected account, revoking its stored OAuth tokens first.

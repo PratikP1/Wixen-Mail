@@ -1206,6 +1206,13 @@ fn asking_when_people_are_free(
             .get_calendars_for_account(&account)
             .unwrap_or_default();
         let mine = the_events_that_could_block(&cache, &account, asking.inside);
+        // Whether its mail signs in through the browser decides which of its
+        // Google sign-ins its calendars use, as it does for the syncs.
+        let whose = cache
+            .load_accounts()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|held| held.id == account);
 
         let people = asking_when_free::people_to_ask_about(&invited);
         let (answered, coming) = async_channel::bounded(1);
@@ -1218,9 +1225,12 @@ fn asking_when_people_are_free(
             let token = a_microsoft_token(&asking_for).await;
             // Only for an account keeping a calendar at Google, so no other
             // account refreshes a Google token for nothing.
-            let google = match asking_when_free::holds_a_google_calendar(&calendars) {
-                true => crate::service::oauth::a_google_token_for(&asking_for).await,
-                false => None,
+            let google = match (
+                asking_when_free::holds_a_google_calendar(&calendars),
+                whose.as_ref(),
+            ) {
+                (true, Some(whose)) => crate::service::oauth::a_google_token_for(whose).await,
+                _ => None,
             };
             // Every place the account keeps a calendar, asked at once, and each
             // person's answer built from all of them in `free_busy`.

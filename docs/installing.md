@@ -87,8 +87,13 @@ Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.
 Mail empties it when the update is installed, when the installer is refused, and again the next
 time it starts, so a download cut short does not leave an installer behind.
 
-`oauth.toml` holds the sign-in keys this build was made with. It says nothing about you, and a
-build made without one cannot offer the browser sign-in at all.
+`oauth.toml` is a file you put there yourself, holding your own Google or Microsoft sign-in
+key, and Wixen Mail reads it each time it signs in through the browser or brings calendars,
+contacts and tasks. It says nothing about you. A copy with no `oauth.toml` in that folder and no
+key built in cannot sign in through the browser at all, and no copy made so far has a key built
+in. [Setting up a provider](PROVIDER_SETUP.md#calendars-contacts-and-tasks-for-a-gmail-account)
+says how to make a Google key and what goes in the file. Until 2026-10-05 this paragraph said the
+file held "the sign-in keys this build was made with", which no build has ever put there.
 
 `security.key` is there only if this computer ran an older version of Wixen Mail. Nothing
 creates it now. Older versions locked saved passwords in a file with it, and it is read once

@@ -22141,6 +22141,7 @@ fn handle_account_mgr(
         accounts: new,
         default_id: chosen,
         active_id: chosen_active,
+        signed_in_for_calendars,
     } = wx_account_manager::show_account_manager_dialog(
         frame,
         &accounts,
@@ -22157,11 +22158,21 @@ fn handle_account_mgr(
             .filter(|held| !new.iter().any(|kept| kept.id == held.id))
             .map(|held| held.id.clone())
             .collect();
-        let added: Vec<Account> =
-            crate::application::who_holds_the_calendars::added_in_this_visit(&accounts, &new)
-                .into_iter()
-                .cloned()
-                .collect();
+        // Each account added in the visit, and each signed in for its
+        // calendars, contacts and tasks in it (D-13), brought once.
+        let added: Vec<Account> = {
+            use crate::application::who_holds_the_calendars::{
+                added_in_this_visit, with_those_signed_in_for_calendars,
+            };
+            with_those_signed_in_for_calendars(
+                added_in_this_visit(&accounts, &new),
+                &new,
+                &signed_in_for_calendars,
+            )
+            .into_iter()
+            .cloned()
+            .collect()
+        };
         let mut s = lock_state(state);
         // What Set Active chose, when it named an account that is still
         // there. This used to be dropped on the way out of the dialog and
@@ -22228,7 +22239,9 @@ fn handle_account_mgr(
 }
 
 /// Bring a newly added account's calendars, contacts and tasks once, or say
-/// once why they cannot be brought (14-02 choice 3, D-10).
+/// once why they cannot be brought (14-02 choice 3, D-10). Since 14-03 the
+/// same for an account signed in for its calendars, contacts and tasks in the
+/// Account Manager (D-13), which holds that sign-in by the time this asks.
 ///
 /// Each sync says at most one sentence when it finishes, as it does from the
 /// Tools menu. A reason known before anything is asked is said once for all
