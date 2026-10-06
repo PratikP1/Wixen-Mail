@@ -123,14 +123,29 @@ pub const CRASH_FILE: &str = "crash.log";
 /// The build is handed in rather than read here, so the panic hook passes the
 /// whole build string, the one About and the log's first line show, and an
 /// entry can be tied to the code it came from.
-pub fn crash_entry(_build: &str, _location: &str, _payload: &str) -> String {
-    String::new()
+pub fn crash_entry(build: &str, location: &str, payload: &str) -> String {
+    format!("PANIC at {location}\n  {payload}\n  Wixen Mail v{build}")
 }
 
 /// Append `entry`, stamped in local time, to the crash file in `folder`,
 /// making the folder when it is missing.
-pub fn append_to_the_crash_file(_folder: &Path, _entry: &str) -> std::io::Result<()> {
-    Ok(())
+///
+/// The one writer of that file, for the panic hook and for a separate
+/// window's start that must stop. Each takes the folder, so a test hands it
+/// a temporary one and never the tester's own.
+pub fn append_to_the_crash_file(folder: &Path, entry: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    std::fs::create_dir_all(folder)?;
+    let stamped = format!(
+        "[{}] {entry}\n",
+        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
+    );
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(folder.join(CRASH_FILE))?
+        .write_all(stamped.as_bytes())
 }
 
 /// Initialize the logging system

@@ -26567,7 +26567,7 @@ red = [
     "common::logging::tests::test_the_default_level_is_debug_under_alpha_and_beta_and_info_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
 ]
 
 # ── The log filter names this crate and no library ──────────────────────────
@@ -26596,7 +26596,7 @@ red = [
     "service::outward::completeness::test_every_module_that_names_a_way_out_is_on_one_of_these_lists",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
     { file = "src/service/outward.rs", tests = 38 },
 ]
 
@@ -26628,7 +26628,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26655,7 +26655,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -38308,7 +38308,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # A calendar sync that could not ask Google finishes with the cue for an
@@ -38617,7 +38617,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── An added account's first sync, and F5 in a module (14-02 task 3) ───────
@@ -39141,5 +39141,5 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 102 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]

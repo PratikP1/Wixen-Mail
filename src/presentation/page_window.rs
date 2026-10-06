@@ -432,7 +432,10 @@ pub fn show(address: &str) -> i32 {
     match ran {
         Ok(()) => 0,
         Err(e) => {
-            crash_log(&format!("{FLAG} could not open a window: {e}"));
+            say_why_the_start_stopped(
+                &logging::default_log_dir(),
+                &format!("{FLAG} could not open a window: {e}"),
+            );
             1
         }
     }
@@ -441,27 +444,22 @@ pub fn show(address: &str) -> i32 {
 /// The address as a page may follow it, or the exit code of a start refused
 /// because it is not one, with the refusal written to the crash file in
 /// `folder`, which is how a start that must stop says why.
-fn refuse_unless_a_page(address: &str, _folder: &Path) -> Result<String, i32> {
-    may_be_followed(address).ok_or(NOT_A_PAGE)
+fn refuse_unless_a_page(address: &str, folder: &Path) -> Result<String, i32> {
+    may_be_followed(address).ok_or_else(|| {
+        say_why_the_start_stopped(
+            folder,
+            &format!("{FLAG} was given {address:?}, which is not a page. Nothing was opened."),
+        );
+        NOT_A_PAGE
+    })
 }
 
-/// Write a line to the crash file, which is how a start that must stop says
-/// why.
+/// Write why a page process stopped to the crash file in `folder`.
 ///
-/// Its own copy rather than `main`'s, because `main`'s is a binary's private
-/// function and this is the library half of the same start.
-fn crash_log(message: &str) {
-    let folder = crate::common::logging::default_log_dir();
-    let _ = std::fs::create_dir_all(&folder);
-    let line = format!(
-        "[{}] {message}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S")
-    );
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(folder.join("crash.log"))
-        .and_then(|mut file| std::io::Write::write_all(&mut file, line.as_bytes()));
+/// A file that cannot be written is let go: this process has no window, no
+/// log and nobody else to tell, and the exit code still says it stopped.
+fn say_why_the_start_stopped(folder: &Path, why: &str) {
+    let _ = logging::append_to_the_crash_file(folder, why);
 }
 
 #[cfg(test)]
