@@ -441,6 +441,22 @@ mod tests {
     }
 
     #[test]
+    fn test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks() {
+        // Route B (14-03): a Gmail account on an app password keeps a second
+        // Google token, for its calendars, contacts and tasks alone. Spelled
+        // out, as the mail sign-in's is above, for the same reason.
+        let entries = entries_for(&[account("a1", "me@gmail.com")], &[], &[]);
+
+        assert!(
+            entries.contains(&CredentialEntry {
+                service: "wixen-mail-google-calendars-contacts-tasks".to_string(),
+                user: "a1".to_string(),
+            }),
+            "{entries:?}"
+        );
+    }
+
+    #[test]
     fn test_an_account_that_no_longer_signs_in_with_oauth_is_still_forgotten() {
         // Switching an account to an app password leaves its token where it
         // was. That is the one nobody would think to remove by hand.

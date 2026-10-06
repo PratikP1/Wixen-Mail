@@ -4,6 +4,7 @@
 //! All methods take an OAuth access token and return deserialized results.
 
 use crate::common::{Error, Result};
+use crate::service::asked_and_answered::{WhatCameBack, WhoWasAsked, the_line, the_reason_word};
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
@@ -430,6 +431,76 @@ pub struct GoogleEventsResponse {
     pub next_sync_token: Option<String>,
 }
 
+/// What somebody may do with one calendar on their list.
+///
+/// Google's own five words. A role this program has never heard of is read as
+/// one that may only be read, because sending a change to a calendar that
+/// refuses it fails on every sync, and a change kept here and said is the
+/// safer of the two mistakes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoogleAccessRole {
+    /// Only when its owner is free or busy, and nothing about the events.
+    FreeBusyReader,
+    Reader,
+    WriterWithoutPrivateAccess,
+    Writer,
+    Owner,
+    #[default]
+    #[serde(other)]
+    NotOneGoogleNames,
+}
+
+impl GoogleAccessRole {
+    /// Whether a change made here may be sent to the calendar.
+    pub const fn may_write(self) -> bool {
+        matches!(
+            self,
+            Self::WriterWithoutPrivateAccess | Self::Writer | Self::Owner
+        )
+    }
+}
+
+/// One calendar on somebody's Google calendar list.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleCalendarListEntry {
+    pub id: String,
+    /// Google's name for the calendar, which for somebody's main calendar is
+    /// usually their own address.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The name the person gave the calendar at Google, if they gave one.
+    #[serde(default)]
+    pub summary_override: Option<String>,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default)]
+    pub access_role: GoogleAccessRole,
+    /// Taken off the list in Google's own view.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Its events shown in Google's own view. Google leaves it out when false.
+    #[serde(default)]
+    pub selected: bool,
+}
+
+impl GoogleCalendarListEntry {
+    /// Whether Google's own view shows this calendar's events.
+    pub const fn shown_at_google(&self) -> bool {
+        self.selected && !self.hidden
+    }
+}
+
+/// Response from `calendarList.list`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoogleCalendarListResponse {
+    #[serde(default)]
+    items: Vec<GoogleCalendarListEntry>,
+    next_page_token: Option<String>,
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
@@ -475,6 +546,23 @@ fn connections_url(base: &str, sync_token: Option<&str>, page_token: Option<&str
 /// calendar identifier goes, so an account with one calendar addresses it the
 /// same way it always did.
 pub const THE_MAIN_CALENDAR: &str = "primary";
+
+/// How many calendars to ask for at a time, which is the most Google allows.
+const CALENDARS_PAGE_SIZE: u32 = 250;
+
+/// Where to ask for the account's list of calendars.
+///
+/// Hidden calendars are asked for too. Google leaves them out unless asked,
+/// and a calendar somebody hid in Google's own view is still theirs: it is
+/// brought hidden, and showing it here is their choice (14-04 choice 2).
+fn calendar_list_url(base: &str, page_token: Option<&str>) -> String {
+    let mut url =
+        format!("{base}/users/me/calendarList?maxResults={CALENDARS_PAGE_SIZE}&showHidden=true");
+    if let Some(page_token) = page_token {
+        url.push_str(&format!("&pageToken={}", in_a_query(page_token)));
+    }
+    url
+}
 
 /// The address of one calendar's events.
 fn calendar_events_url(base: &str, calendar_id: &str) -> String {
@@ -708,6 +796,27 @@ impl GoogleApiClient {
 
     // ── Calendar ────────────────────────────────────────────────────────
 
+    /// Every calendar on the account's list, hidden ones included.
+    ///
+    /// The whole list or an error, never part of it: a calendar missing from
+    /// a list cut short would be read as one Google stopped listing, and put
+    /// away with its events.
+    pub async fn list_calendars(&self, token: &str) -> Result<Vec<GoogleCalendarListEntry>> {
+        let mut every_calendar = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let url = calendar_list_url(&self.calendar_base, page_token.as_deref());
+            let resp: GoogleCalendarListResponse =
+                with_retry(3, || self.api_get(&url, token)).await?;
+            every_calendar.extend(resp.items);
+            match resp.next_page_token {
+                Some(pt) => page_token = Some(pt),
+                None => break,
+            }
+        }
+        Ok(every_calendar)
+    }
+
     /// List calendar events with optional date range and incremental sync.
     ///
     /// Pages through all results automatically.
@@ -801,14 +910,62 @@ impl GoogleApiClient {
     // ── HTTP Helpers ────────────────────────────────────────────────────
 
     async fn api_get<T: serde::de::DeserializeOwned>(&self, url: &str, token: &str) -> Result<T> {
-        let resp = self
-            .http
-            .reading(url)
-            .bearer_auth(token)
-            .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API GET failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+        let sent = self.http.reading(url).bearer_auth(token).send().await;
+        let (status, body) = Self::the_answer_written_down("GET", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
+    }
+
+    /// What came back for one request, read whole, with the line saying what
+    /// was asked and what came back written to the log at info.
+    ///
+    /// One line per request sent, so a call `with_retry` sends again writes
+    /// one per try (D-09). Built from the method, the address and the status;
+    /// never from the error's text, which names the whole address.
+    async fn the_answer_written_down(
+        method: &str,
+        url: &str,
+        sent: reqwest::Result<reqwest::Response>,
+    ) -> Result<(u16, String)> {
+        let response = match sent {
+            Ok(response) => response,
+            Err(e) => {
+                tracing::info!(
+                    "{}",
+                    the_line(WhoWasAsked::Google, method, url, WhatCameBack::NoAnswer)
+                );
+                // Without the address: the retry writes this text to the log,
+                // and the address carries the sync marker.
+                return Err(Error::Network(format!(
+                    "Google API {method} failed: {}",
+                    e.without_url()
+                )));
+            }
+        };
+        let status = response.status().as_u16();
+        let body = response.text().await;
+        let reason = match &body {
+            Ok(body) if status >= 400 => the_reason_word(body),
+            _ => None,
+        };
+        tracing::info!(
+            "{}",
+            the_line(
+                WhoWasAsked::Google,
+                method,
+                url,
+                WhatCameBack::Answered {
+                    status,
+                    reason: reason.as_deref(),
+                },
+            )
+        );
+        let body = body.map_err(|e| {
+            Error::Network(format!(
+                "Failed to read google response: {}",
+                e.without_url()
+            ))
+        })?;
+        Ok((status, body))
     }
 
     async fn api_post<T: serde::de::DeserializeOwned>(
@@ -817,15 +974,15 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(reqwest::Method::POST, url, "add something to this account")?
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API POST failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("POST", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_patch<T: serde::de::DeserializeOwned>(
@@ -834,7 +991,7 @@ impl GoogleApiClient {
         token: &str,
         body: &impl Serialize,
     ) -> Result<T> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::PATCH,
@@ -844,13 +1001,13 @@ impl GoogleApiClient {
             .bearer_auth(token)
             .json(body)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API PATCH failed: {}", e)))?;
-        Self::parse_response(resp, "google").await
+            .await;
+        let (status, body) = Self::the_answer_written_down("PATCH", url, sent).await?;
+        Self::read_the_body(status, &body, "google")
     }
 
     async fn api_delete(&self, url: &str, token: &str) -> Result<()> {
-        let resp = self
+        let sent = self
             .http
             .changing(
                 reqwest::Method::DELETE,
@@ -859,9 +1016,8 @@ impl GoogleApiClient {
             )?
             .bearer_auth(token)
             .send()
-            .await
-            .map_err(|e| Error::Network(format!("Google API DELETE failed: {}", e)))?;
-        let status = resp.status().as_u16();
+            .await;
+        let (status, body) = Self::the_answer_written_down("DELETE", url, sent).await?;
         // Gone and Not Found both count as done: the event is not there, which
         // is the state that was asked for. Treating either as a failure meant
         // the tombstone never settled and the deletion was re-sent on every
@@ -872,7 +1028,6 @@ impl GoogleApiClient {
         if status == 204 || status == 200 || status == 404 || status == 410 {
             return Ok(());
         }
-        let body = resp.text().await.unwrap_or_default();
         Err(Error::Api {
             status,
             provider: "google".to_string(),
@@ -880,25 +1035,21 @@ impl GoogleApiClient {
         })
     }
 
-    async fn parse_response<T: serde::de::DeserializeOwned>(
-        resp: reqwest::Response,
+    /// The answer's body read as `T`, or the provider's refusal as an error.
+    fn read_the_body<T: serde::de::DeserializeOwned>(
+        status: u16,
+        body: &str,
         provider: &str,
     ) -> Result<T> {
-        let status = resp.status().as_u16();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| Error::Network(format!("Failed to read {} response: {}", provider, e)))?;
-
         if status >= 400 {
             return Err(Error::Api {
                 status,
                 provider: provider.to_string(),
-                message: crate::common::error::redact_provider_message(&body),
+                message: crate::common::error::redact_provider_message(body),
             });
         }
 
-        serde_json::from_str(&body).map_err(|e| {
+        serde_json::from_str(body).map_err(|e| {
             Error::Other(format!(
                 "Failed to parse {} API response: {} (body length: {})",
                 provider,

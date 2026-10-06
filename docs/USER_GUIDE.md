@@ -120,6 +120,15 @@ you have already added:
 - **Sign In Again** re-authorises an account using browser sign-in, for
   when a token has been revoked or Google's weekly expiry has caught up
   with you.
+- **Sign In for Calendars, Contacts and Tasks** (`Alt+T`) signs a Gmail
+  account whose mail uses an app password in to Google through the browser,
+  for its calendars, contacts and tasks alone. Mail keeps its app password.
+  When the Account Manager closes, that account's calendars, contacts and
+  tasks are brought once. It needs a Google sign-in key you make yourself:
+  see [Calendars, contacts and tasks for a Gmail
+  account](PROVIDER_SETUP.md#calendars-contacts-and-tasks-for-a-gmail-account).
+  On any other account it says why it is not needed. **Experimental.** It has
+  not been tried against a real Google account.
 - **Set as Default** chooses which account a new contact, event, task, or
   note is filed under when you make one from outside that account's own
   module.
@@ -253,7 +262,13 @@ The Tools menu also opens:
   waiting for the next automatic sync", and there is none; the three
   modules sync when you ask, from here or from each module's own Sync, and
   not on a schedule. Mail is the one thing that arrives on its own, as
-  [Getting your mail](#getting-your-mail) says.
+  [Getting your mail](#getting-your-mail) says. Corrected on 2026-10-05:
+  the three modules also sync once when you add an account, and `F5` in
+  Contacts, Calendar, Tasks or Notes syncs that module. An account whose
+  calendars, contacts and tasks cannot be asked for, such as a Gmail account
+  signing in with an app password, says why once instead. Each sync asks
+  only the account's own provider: Google for a Gmail account, Microsoft for
+  an Outlook.com or Microsoft 365 account.
 
 ### Offline Mode
 
@@ -2241,6 +2256,17 @@ is for; `Delete` removes the one you are on, asking first and naming what it
 will delete. [Keyboard shortcuts](KEYBOARD_SHORTCUTS.md) has every key for
 every module in full.
 
+### Your calendars in the Calendar module
+
+The Calendar module's sidebar lists each of your calendars. A Gmail account
+brings every calendar on its Google calendar list, each as a calendar of its
+own, and one you hid in Google Calendar arrives hidden here. To show or hide a
+calendar, go to it in the sidebar and press `Enter`; Wixen Mail says whether it
+is now showing or hidden, and a sync never changes it back. [Which of your
+Google calendars come](PROVIDER_SETUP.md#which-of-your-google-calendars-come)
+says how a read-only calendar and one that shows only free and busy times are
+handled.
+
 ### Undo in the other modules
 
 `Ctrl+Z` in a module's list takes back the last thing you did to an item
@@ -2527,7 +2553,7 @@ a screen reader says they are unavailable.
 
 ### Search & Mail
 - `Ctrl+F` - Open search
-- `F5` - Refresh folder
+- `F5` - Refresh folder; in Contacts, Calendar, Tasks or Notes, sync that module
 - `F9` - Check mail
 
 ## Accessibility Features

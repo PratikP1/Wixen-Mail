@@ -53,6 +53,14 @@ one.
 Your passwords and sign-in tokens are not in that folder. They are in the Windows credential
 store, protected per user by Windows itself.
 
+That includes the separate browser sign-in a Gmail account on an app password makes for its
+calendars, contacts and tasks, since 2026-10-05. Its token is kept under the name
+`wixen-mail-google-calendars-contacts-tasks`, beside the mail sign-in's `wixen-mail-gmail`,
+and nowhere else: not on the account, not in the mail database and never in the log.
+Removing the account erases it, and so does uninstalling. The Google sign-in key that
+sign-in uses is yours, in `oauth.toml` in the `config` folder, and Wixen Mail sends it only
+to Google, when it signs in or renews the sign-in.
+
 The PGP private keys you import are in the Windows credential store too, under the name
 `wixen-mail-pgp`. One entry there holds at most 1,280 characters and an ordinary key is
 longer, so each key is split across several entries named `key-1-part-1`, `key-1-part-2` and

@@ -51,12 +51,13 @@
 //! None of this has run against a live calendar.
 
 use crate::application::answered_meetings::{self, WhereTheCopyWent};
-use crate::application::summing_up::SummingUp;
 use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
 #[cfg(test)]
 use crate::data::message_cache::SyncState;
-use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::data::message_cache::{
+    CalendarContainer, CalendarEventEntry, MessageCache, OneProvidersCalendar,
+};
 use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
     GoogleApiClient, GoogleAttendee, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride,
@@ -79,7 +80,10 @@ pub const GOOGLE: &str = "gmail";
 const MICROSOFT: &str = "outlook";
 
 /// What the calendar holding a Google account's events is called in the list.
-const GOOGLE_CALENDAR_NAME: &str = "Google Calendar";
+///
+/// The main calendar's name unless somebody named it at Google, because the
+/// name Google gives a main calendar is usually the account's address.
+pub(crate) const GOOGLE_CALENDAR_NAME: &str = "Google Calendar";
 
 /// What the calendar holding a Microsoft account's events is called in the list.
 const MICROSOFT_CALENDAR_NAME: &str = "Outlook Calendar";
@@ -96,7 +100,7 @@ const CALDAV: &str = "caldav";
 const PROVIDERS_A_CHANGE_CAN_REACH: [&str; 3] = [GOOGLE, MICROSOFT, CALDAV];
 
 /// Result of a calendar sync operation.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct CalendarSyncResult {
     pub created: usize,
     pub updated: usize,
@@ -139,10 +143,43 @@ pub struct CalendarSyncResult {
     /// the server's copy was dropped with nothing said. Both copies are kept
     /// now. `application::calendar_conflict` raises them.
     pub held_for_you_to_choose: usize,
+    /// Whether any pass asked anybody, and why Google was not asked (#22), so
+    /// a sync that asked nobody says why instead of "0 created".
+    pub what_was_asked: crate::application::who_holds_the_calendars::WhatWasAsked,
+    /// How many Google calendars were read, said when more than one was.
+    pub calendars_read: usize,
+    /// Calendars on Google's list that show only when their owner is free or
+    /// busy, passed over and said (14-04 choice 3).
+    pub calendars_showing_only_free_and_busy: usize,
+    /// Calendars Google stopped listing, taken off this computer and said
+    /// (14-04 choice 4).
+    pub calendars_put_away: usize,
     pub errors: Vec<String>,
 }
 
 impl CalendarSyncResult {
+    /// Fold one pass's result into the running total.
+    ///
+    /// One method rather than the additions the window wrote out by hand for
+    /// each of four passes, which counted an item held for a choice twice for
+    /// Google and for Microsoft, and would drop any count added later.
+    pub fn absorb(&mut self, pass: CalendarSyncResult) {
+        self.created += pass.created;
+        self.updated += pass.updated;
+        self.deleted += pass.deleted;
+        self.sent += pass.sent;
+        self.waiting_on_the_setting += pass.waiting_on_the_setting;
+        self.days_that_may_be_shown_twice += pass.days_that_may_be_shown_twice;
+        self.held_for_you_to_choose += pass.held_for_you_to_choose;
+        self.changes_that_cannot_be_saved
+            .extend(pass.changes_that_cannot_be_saved);
+        self.what_was_asked = self.what_was_asked.with_a_pass(pass.what_was_asked);
+        self.calendars_read += pass.calendars_read;
+        self.calendars_showing_only_free_and_busy += pass.calendars_showing_only_free_and_busy;
+        self.calendars_put_away += pass.calendars_put_away;
+        self.errors.extend(pass.errors);
+    }
+
     /// Count a provider's copy of a meeting by where it went. A copy put on
     /// the row an answer filed first is an update, because the calendar
     /// already held the meeting.
@@ -166,10 +203,24 @@ impl CalendarSyncResult {
 /// one. It names the setting, because "nothing happened" sends somebody looking
 /// for a broken account.
 pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
-    let mut said = SummingUp::opening(format!(
+    use crate::application::who_holds_the_calendars::Module;
+    let nothing_went_wrong = result.errors.is_empty();
+    let counts = format!(
         "Calendar sync: {} created, {} updated, {} deleted",
         result.created, result.updated, result.deleted
-    ));
+    );
+    // A sync that asked nobody says why rather than "0 created" (#22).
+    let mut said = result
+        .what_was_asked
+        .opening(Module::Calendar, counts, nothing_went_wrong);
+    // Only when there is more than one, so an account with one calendar hears
+    // what it always heard.
+    if result.calendars_read > 1 {
+        said.count(format!(
+            "{} read",
+            crate::service::caldav::how_many(result.calendars_read, "calendar")
+        ));
+    }
     if result.sent > 0 {
         said.count(format!("{} sent", result.sent));
     }
@@ -212,6 +263,29 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
                 crate::application::conflict_choice::TheOtherCopy::ACalendar,
             ),
         );
+    }
+    // Said on every sync that finds them, once each, because a calendar that
+    // never arrives or one that leaves with nothing said looks like a fault.
+    if result.calendars_showing_only_free_and_busy > 0 {
+        said.sentence(
+            crate::application::every_google_calendar::only_free_and_busy(
+                result.calendars_showing_only_free_and_busy,
+            ),
+        );
+    }
+    if result.calendars_put_away > 0 {
+        said.sentence(
+            crate::application::every_google_calendar::taken_off_this_computer(
+                result.calendars_put_away,
+            ),
+        );
+    }
+    // Last, after what the passes that ran did (D-08).
+    if let Some(why) = result
+        .what_was_asked
+        .after_the_counts(Module::Calendar, nothing_went_wrong)
+    {
+        said.sentence(why);
     }
     said.spoken()
 }
@@ -733,7 +807,15 @@ fn the_repeat_outlook_could_not_be_told(how_many: usize) -> String {
 
 // ── Google Calendar Sync ────────────────────────────────────────────────────
 
-/// Sync calendar events with Google Calendar API.
+/// Send what was changed here to Google, then read every Google calendar
+/// filed for the account: the main one, and each one Google's list named.
+///
+/// The list itself is read first by
+/// [`crate::application::every_google_calendar::sync`], which is what the
+/// program calls; this reads the calendars already filed.
+///
+/// The main calendar's read failing fails the sync, as it always has. Another
+/// calendar's failing is said, naming the calendar, and the rest are read.
 pub async fn sync_google_calendar(
     cache: &MessageCache,
     google: &GoogleApiClient,
@@ -744,10 +826,100 @@ pub async fn sync_google_calendar(
     forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_to_google(cache, google, token, account_id, &mut result).await;
     let deleted_here = events_deleted_here(cache, account_id, &mut result);
+    let reading = TheGoogleRead {
+        cache,
+        google,
+        token,
+        account_id,
+    };
 
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
     let filed_under = cache.ensure_provider_calendar(account_id, GOOGLE, GOOGLE_CALENDAR_NAME)?;
+    let new_sync_token = read_one_google_calendar(
+        &reading,
+        &filed_under,
+        sync_token,
+        &deleted_here,
+        &mut result,
+    )
+    .await?;
+
+    // Save sync state
+    remember_this_syncs_marker(
+        cache,
+        state.as_ref(),
+        account_id,
+        "calendar",
+        GOOGLE,
+        SyncMarker {
+            sync_token: new_sync_token,
+            delta_link: None,
+        },
+        sync_token.is_none(),
+    )?;
+    result.calendars_read += 1;
+
+    // Each keeps its marker on its own row, so it goes when the row does.
+    for listed in the_calendars_google_listed(cache, account_id)? {
+        let its_marker = listed.sync_token.as_deref();
+        match read_one_google_calendar(&reading, &listed, its_marker, &deleted_here, &mut result)
+            .await
+        {
+            Ok(next) => {
+                cache.set_calendar_sync_token(&listed.id, next.as_deref())?;
+                result.calendars_read += 1;
+            }
+            Err(e) => result.errors.push(format!("{}: {e}", listed.name)),
+        }
+    }
+
+    Ok(result)
+}
+
+/// The Google calendars filed for an account other than its main one.
+fn the_calendars_google_listed(
+    cache: &MessageCache,
+    account_id: &str,
+) -> Result<Vec<CalendarContainer>> {
+    Ok(cache
+        .get_calendars_for_account(account_id)?
+        .into_iter()
+        .filter(|row| row.source_provider.as_deref() == Some(GOOGLE))
+        .filter(|row| row.its_id_at_google().is_some())
+        .collect())
+}
+
+/// What every read of one Google calendar in a sync shares.
+struct TheGoogleRead<'a> {
+    cache: &'a MessageCache,
+    google: &'a GoogleApiClient,
+    token: &'a str,
+    account_id: &'a str,
+}
+
+/// Read one Google calendar into the row it is filed under, and hand back the
+/// marker Google gave for the next read of it.
+async fn read_one_google_calendar(
+    reading: &TheGoogleRead<'_>,
+    filed_under: &CalendarContainer,
+    sync_token: Option<&str>,
+    deleted_here: &crate::application::deletions::DeletedHere,
+    result: &mut CalendarSyncResult,
+) -> Result<Option<String>> {
+    let TheGoogleRead {
+        cache,
+        google,
+        token,
+        account_id,
+    } = *reading;
+    // The rows this calendar's read owns, so one meeting in two calendars is
+    // two rows and a cancellation in one leaves the other (14-04).
+    let its_rows = OneProvidersCalendar {
+        account_id,
+        calendar_id: &filed_under.id,
+        provider: GOOGLE,
+    };
 
     // If no sync token, default time range: 6 months back, 12 months forward
     let (time_min, time_max) = if sync_token.is_none() {
@@ -822,17 +994,14 @@ pub async fn sync_google_calendar(
         // The event has gone at both ends and an edit to it was an edit to
         // something that no longer exists.
         if event.status.as_deref() == Some("cancelled") {
-            if cache
-                .get_event_by_provider_id(account_id, &event.id)?
-                .is_some()
-            {
-                cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            if cache.event_in(its_rows, &event.id)?.is_some() {
+                cache.delete_event_in(its_rows, &event.id)?;
                 result.deleted += 1;
             }
             continue;
         }
 
-        let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+        let existing = cache.event_in(its_rows, &event.id)?;
         if a_change_here_is_still_waiting(existing.as_ref()) {
             continue;
         }
@@ -874,26 +1043,12 @@ pub async fn sync_google_calendar(
             &filed_under.id,
             event,
             at_google,
-            &deleted_here,
-            &mut result,
+            deleted_here,
+            result,
         )?;
     }
 
-    // Save sync state
-    remember_this_syncs_marker(
-        cache,
-        state.as_ref(),
-        account_id,
-        "calendar",
-        GOOGLE,
-        SyncMarker {
-            sync_token: new_sync_token,
-            delta_link: None,
-        },
-        sync_token.is_none(),
-    )?;
-
-    Ok(result)
+    Ok(new_sync_token)
 }
 
 /// Save a meeting as Google sent it, with the UID an invitation names it by
@@ -1001,8 +1156,14 @@ fn one_day_of_a_google_series(
         return Ok(());
     }
 
-    let series = cache.get_event_by_provider_id(account_id, at_google)?;
-    let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+    // Within this calendar, as the whole series are read (14-04).
+    let its_rows = OneProvidersCalendar {
+        account_id,
+        calendar_id: filed_under,
+        provider: GOOGLE,
+    };
+    let series = cache.event_in(its_rows, at_google)?;
+    let existing = cache.event_in(its_rows, &event.id)?;
 
     if event.status.as_deref() == Some("cancelled") {
         let mut the_day_went = false;
@@ -1010,7 +1171,7 @@ fn one_day_of_a_google_series(
         // are needed: the appointment it became has to go, and the day has to
         // come off the series so the rule stops drawing it.
         if existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
@@ -1531,27 +1692,19 @@ pub async fn delete_ms_event(
 
 /// Which calendar at the provider a container of this account stands for.
 ///
-/// Nothing yet stores a provider's own identifier for a calendar: the calendars
-/// table has no column for one, and `ensure_provider_calendar` makes exactly one
-/// container per provider per account. So the answer today is always "whichever
-/// the provider treats as the main one", which is a correct answer rather than a
-/// stub, and the underscore says plainly that nothing here reads the container
-/// yet.
-///
-/// When a second calendar at a provider becomes reachable, this body is the only
-/// thing that changes. Everything from here to the address is already threaded.
-fn which_calendar_at_the_provider(_container: &CalendarContainer) -> Option<String> {
-    None
+/// Google's own id for a calendar its list named, read off the row's id since
+/// 14-04, so a change made in any Google calendar is sent to that calendar.
+/// Nothing for a provider's main calendar's row, which is asked for by the
+/// provider's word for it, and nothing for any Outlook row, because Outlook
+/// is still read one calendar per account (answer 11).
+fn which_calendar_at_the_provider(container: &CalendarContainer) -> Option<String> {
+    container.its_id_at_google().map(str::to_string)
 }
 
 /// The identifier a container of this account has at the provider, if any.
 ///
-/// `None` on every input today, because the function above returns `None` on
-/// every input today. The only thing this adds is that a calendar which cannot
-/// be read at all is reported rather than passed over, so it is not the same
-/// function as one that simply answers `None`, even though it gives the same
-/// answer. Mutation testing cannot tell them apart and should not be made to:
-/// no test can prove a difference in the answer while the stub above stands.
+/// A calendar which cannot be read at all is reported rather than passed over,
+/// which is the only thing this adds to the function above.
 fn at_the_provider(cache: &MessageCache, container_id: &str) -> Result<Option<String>> {
     Ok(cache
         .get_calendar(container_id)?
@@ -1571,7 +1724,7 @@ fn calendar_at_google(cache: &MessageCache, container_id: &str) -> Result<String
 /// mistake: Graph has no name for somebody's main calendar and addresses it by
 /// leaving the calendar out of the address, so
 /// [`crate::service::microsoft_graph::THE_MAIN_CALENDAR`] is empty and the
-/// stub above hands back `None` every time. A test cannot tell this apart from
+/// function above hands back `None` for every Outlook row. A test cannot tell this apart from
 /// a function that returns an empty string and nothing else, so do not write
 /// one that pretends to. The Google side differs only because its own constant
 /// is the word "primary".
@@ -11259,6 +11412,10 @@ mod tests {
                  is a calendar this program can only read."
                     .to_string(),
             ],
+            what_was_asked: Default::default(),
+            calendars_read: 0,
+            calendars_showing_only_free_and_busy: 0,
+            calendars_put_away: 0,
             errors: vec!["the server said no".to_string()],
         });
 
@@ -11305,17 +11462,19 @@ mod tests {
         // to wrap does not turn this into a failure about nothing.
         let packed: String = source.chars().filter(|c| !c.is_whitespace()).collect();
 
+        // Every pass folds through `absorb` and the window receives the
+        // result whole since 14-01, so these are the three hand-offs.
         for (carried, without_it) in [
             (
-                "total_cannot_be_saved.extend(result.changes_that_cannot_be_saved)",
+                "Ok(result)=>total.absorb(result)",
                 "the refresh works out the sentence and the window throws it away",
             ),
             (
-                "changes_that_cannot_be_saved:total_cannot_be_saved",
+                "UIUpdate::CalendarSyncComplete(Box::new(total))",
                 "the sentence never leaves the thread that made it",
             ),
             (
-                "changes_that_cannot_be_saved:changes_that_cannot_be_saved.clone()",
+                "what_the_calendar_sync_did(result)",
                 "the window has the sentence and never puts it in what it speaks",
             ),
         ] {
