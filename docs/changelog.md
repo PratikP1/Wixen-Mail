@@ -801,6 +801,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The warnings say sending was proven, and when.** Sending a message was proven on 18
+  September 2026, from a Gmail account signed in with an app password, and every warning
+  still said nothing that writes had been run against a real account. The warning beside
+  Allow Changes in Settings, the first-run screen's introduction and its choice that allows
+  everything, the end of `--help`, Undo's help on the Edit menu and the testing page now say
+  sending was proven on that day and that the rest has not been proven against a real
+  account. The safety switch itself is unchanged: changes to mail still start off, and the
+  warnings will move one path at a time as each is proven.
+- **The download of everything says what Gmail did to it.** The sentence on Pause
+  Downloading, and the testing page, said the download had never met a real account. It
+  met a Gmail account from 18 to 20 September 2026: Gmail closed the connection hundreds of
+  times while folders were opening and on 19 September refused new sign-ins for a while as
+  too many connections, and each time the download waited and tried again. Both now say so.
+- **The first-run screen says what a Google account needs before your tasks, contacts and
+  calendar go up.** Its second choice said those changes go up to your provider. From a
+  Google account they go only once it has a browser sign-in for them, and the choice now
+  names where that is: Sign In for Calendars, Contacts and Tasks in the Account Manager.
+- **The shortcuts page no longer says a move to another account waits for both servers.**
+  Since later on 2026-09-19 such a move leaves the row at once and finishes at the next
+  check of either account, from the copy kept on this computer; the page had not caught up.
 - **A crash entry names the build it came from.** When Wixen Mail stops on an error it writes
   an entry to `crash.log` in the log folder, and that entry named only the version,
   `1.0.0-alpha.1`, which every testing build shares. It now names the whole build, such as

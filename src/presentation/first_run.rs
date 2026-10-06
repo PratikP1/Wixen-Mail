@@ -90,16 +90,20 @@ impl Choice {
             }
             Choice::TasksAndContacts => {
                 "Sending, moving and deleting mail stay off. Changes to tasks, \
-                 contacts and the calendar go up to your provider. This has \
-                 never been run against a real account, so a task may end up in \
-                 the wrong place, but nothing here can lose an email."
+                 contacts and the calendar go up to your provider, and from a \
+                 Google account only once it has a browser sign-in for them: \
+                 Sign In for Calendars, Contacts and Tasks in the Account \
+                 Manager. This has never been run against a real account, so a \
+                 task may end up in the wrong place, but nothing here can lose \
+                 an email."
             }
             Choice::Everything => {
-                "Everything works, including sending. None of it has been run \
-                 against a real account. A message that goes out cannot be \
-                 recalled, and a message deleted from a server may have been \
-                 the only copy. Worth choosing on an account you do not mind \
-                 breaking, rather than on the one you rely on."
+                "Everything works, including sending. Sending was proven once, \
+                 on a Gmail account on 18 September 2026; the rest has not been \
+                 proven against a real account yet. A message that goes out \
+                 cannot be recalled, and a message deleted from a server may \
+                 have been the only copy. Worth choosing on an account you do \
+                 not mind breaking, rather than on the one you rely on."
             }
         }
     }
@@ -134,8 +138,8 @@ Settings, Reading changes what a folder you never set shows.
 
 Everything that writes is experimental: sending, moving, deleting, filing a \
 copy in Sent, and sending your changes to tasks, contacts and the calendar \
-back to your provider. None of that has been run against a real account yet, \
-so expect it to have bugs.
+back to your provider. Sending was proven on Gmail on 18 September 2026; the \
+rest is not proven yet, so expect it to have bugs.
 
 The mail it downloads is not encrypted on this computer. Windows keeps other \
 people who use this computer out of the folder, but anyone who takes the drive \
@@ -334,9 +338,67 @@ mod tests {
     }
 
     #[test]
+    fn test_the_choice_that_sends_says_sending_was_proven_and_when() {
+        // Sending met a real account once, a Gmail account on 18 September
+        // 2026 (#63). Until 14-07 this choice said none of it had been run,
+        // which was false from that day; the rest is still unproven.
+        let said = Choice::Everything.explanation();
+        assert!(
+            said.contains("Gmail account on 18 September 2026"),
+            "it does not say when sending was proven: {said}"
+        );
+        assert!(
+            said.contains("not been proven against a real account"),
+            "it does not say the rest is unproven: {said}"
+        );
+        assert!(
+            !said.contains("been run against a real account"),
+            "it still says nothing has run: {said}"
+        );
+    }
+
+    #[test]
+    fn test_the_tasks_choice_names_the_sign_in_a_google_account_needs() {
+        // Changes to tasks, contacts and the calendar reach Google only over
+        // a browser sign-in. A Gmail account on an app password has none until
+        // somebody presses the Account Manager's button for it (14-03), so
+        // "go up to your provider" alone promised what cannot happen.
+        let said = Choice::TasksAndContacts.explanation();
+        assert!(
+            said.contains("Google account") && said.contains("browser sign-in"),
+            "it does not say a Google account needs its browser sign-in: {said}"
+        );
+        assert!(
+            said.contains("Sign In for Calendars, Contacts and Tasks in the Account Manager"),
+            "it does not name where that sign-in is: {said}"
+        );
+        // The button's own label, read from the screen that builds it, so the
+        // name here cannot drift from the one somebody searches for.
+        assert!(
+            include_str!("wx_account_manager.rs")
+                .contains("\"Sign In for Calendars, Contacts and &Tasks\""),
+            "the Account Manager's button is no longer called what this choice names"
+        );
+    }
+
+    #[test]
     fn test_the_introduction_says_writing_is_experimental() {
         assert!(INTRODUCTION.contains("experimental"));
         assert!(INTRODUCTION.contains("expect it to have bugs"));
+    }
+
+    #[test]
+    fn test_the_introduction_says_sending_was_proven_and_when() {
+        // The same correction as the choice that sends, in the paragraph read
+        // before any button is reachable.
+        assert!(
+            INTRODUCTION.contains("Sending was proven on Gmail on 18 September 2026"),
+            "{INTRODUCTION}"
+        );
+        assert!(
+            !INTRODUCTION.contains("been run against a real account"),
+            "it still says nothing has run: {INTRODUCTION}"
+        );
     }
 
     #[test]

@@ -333,8 +333,16 @@ pub fn removals_waiting_here(count: usize) -> String {
 /// either of them to stay quiet, and no meeting made here has ever reached
 /// one. Telling somebody to expect the mail and try it on themselves first is
 /// the honest instruction under that uncertainty.
-pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has been run against a real account yet, \
-     so expect bugs. Reading your mail is the part that has been used. A meeting \
+///
+/// Sending is named as proven, with its day, and nothing else is: it met a
+/// Gmail account on 18 September 2026 (#63). Until 14-07 this opened by saying
+/// none of it had been run against a real account. The rest says "not proven"
+/// rather than "never run", because the deletes replayed against Gmail on 20
+/// September ran with nobody listening, which is evidence and not proof. Each
+/// path moves into the proven half on Pratik's word as its sitting proves it.
+pub const EXPERIMENTAL_WARNING: &str = "Both are experimental. Sending was proven once, on a \
+     Gmail account on 18 September 2026; the rest has not been proven against a real account \
+     yet, so expect bugs. Reading your mail is the part that has been used. A meeting \
      you make here takes its guest list to Google or Outlook, which may email the \
      guests to invite them, so try it with an address of your own first. A \
      message that has been sent cannot be recalled, and a message deleted from a \
@@ -358,25 +366,33 @@ pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has 
 /// word for word, which is the right way round: a warning about irreversible
 /// changes should be hard to edit by accident.
 ///
-/// What it has to carry is the one risk no test in this repository can settle.
-/// Every other experimental thing here is experimental because it has never
-/// run; this is experimental because of what a provider may do when it does.
-/// Asking for a whole mailbox chunk after chunk is a shape a mail server is
-/// entitled to refuse, throttle or disconnect, and nothing on this side can
-/// find out which without a real account. So it says four things: that the
-/// download runs on its own, that no real account has met it, whose decision
-/// the thing that could go wrong is, and where the hold is.
+/// What it has to carry is the one risk no test in this repository can settle:
+/// what a provider does when asked for a whole mailbox chunk after chunk, a
+/// shape a mail server is entitled to refuse, throttle or disconnect. So it
+/// says four things: that the download runs on its own, what Gmail did when it
+/// met it, whose decision the thing that could go wrong is, and where the hold
+/// is.
+///
+/// What Gmail did was read from the tester's logs of 18 to 20 September 2026
+/// by phase 14's first research, on 2026-10-04: the connection closed while a
+/// folder was opening 932 times, and on the 19th Gmail refused 118 sign-ins as
+/// too many simultaneous connections. The sentence says "hundreds of times"
+/// rather than a count that perishes; the ledger carries the counts. Until
+/// 14-07 it said the download had never been run against a real account.
 ///
 /// Second person and plain language, in the register of the warning above it.
 /// It says what could go wrong and what it costs, rather than only that the
 /// feature is new: "experimental" on its own tells somebody to be careful and
 /// not what to be careful of.
 pub const DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL: &str = "The download of everything runs on \
-     its own after every check for mail, and it is experimental: it has never been run against \
-     a real account. Asking your provider for a whole mailbox chunk after chunk is something \
-     they are entitled to refuse, to slow down, or to disconnect you for, and nothing here can \
-     find out which yours will do. Nothing is changed at the server and nothing is sent. If it \
-     stops, it says so and tries again later. Pause Downloading on the Tools menu holds it.";
+     its own after every check for mail, and it is experimental. \
+     It ran against a Gmail account on 18 to 20 September 2026: Gmail closed the connection \
+     hundreds of times while folders were opening, and on 19 September it refused new sign-ins \
+     for a while as too many connections. Each time the download waited and tried again. Asking \
+     your provider for a whole mailbox chunk after chunk is something they are entitled to \
+     refuse, to slow down, or to disconnect you for, and yours may do it differently from Gmail. \
+     Nothing is changed at the server and nothing is sent. If it stops, it says so and tries \
+     again later. Pause Downloading on the Tools menu holds it.";
 
 /// The warning shown beside the command that imports a PGP private key.
 ///
@@ -423,14 +439,17 @@ pub const SIGNING_AND_ENCRYPTING_IS_EXPERIMENTAL: &str = "Experimental: no other
 /// (13-09).
 ///
 /// An undo is a second change at somebody's account, sent the way the action
-/// was, and the action itself has never met a real account, so the undo is no
-/// less experimental than what it takes back. Said where the person choosing
-/// it reads, not in a changelog. The account rather than the mail server,
-/// since a calendar, an address book, a task list and a notes service are
-/// where the other five modules' changes go.
+/// was, and no action an undo takes back has been proven against a real
+/// account, so the undo is no less experimental than what it takes back. Said
+/// where the person choosing it reads, not in a changelog. The account rather
+/// than the mail server, since a calendar, an address book, a task list and a
+/// notes service are where the other five modules' changes go. Sending, the
+/// one change proven (#63), cannot be undone, and is named so the sentence
+/// stays true beside the warning on the settings screen; until 14-07 it said
+/// none of it had been run against a real account.
 pub const UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL: &str = "This is sent to your account the way the action was, \
-     and like every change Wixen Mail sends it is experimental, because none of it has been \
-     run against a real account yet.";
+     and it is experimental: sending mail was proven on a Gmail account on 18 September 2026, \
+     but the other changes Wixen Mail sends have not been proven against a real account yet.";
 
 /// What the account editor's choice of when the Trash is emptied says on
 /// itself (13-44.6, D10).
@@ -726,9 +745,9 @@ mod tests {
     #[test]
     fn test_anything_that_writes_says_it_is_experimental() {
         // The warning has to reach the person using it, not sit in a note.
-        // None of these paths has run against a real account, and this is the
-        // sentence beside the two boxes that turn them on. An undo of a mark
-        // is one more of them, said where Undo is chosen.
+        // Only sending has been proven against a real account, and this is the
+        // sentence beside the two boxes that turn the rest on. An undo of a
+        // mark is one more of them, said where Undo is chosen.
         for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
             assert!(said.contains("experimental"), "{said:?}");
             assert!(said.contains("real account"), "{said:?}");
@@ -746,6 +765,31 @@ mod tests {
             !UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("mail server"),
             "{UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
         );
+    }
+
+    #[test]
+    fn test_the_write_warnings_say_sending_was_proven_and_when() {
+        // Sending met a real account once: Pratik's Gmail account, signed in
+        // with an app password, on 18 September 2026 (#63). Until 14-07 both
+        // sentences said none of it had been run, which was false from that
+        // day. The rest is "not proven" rather than "never run", because the
+        // deletes replayed against Gmail on 20 September ran with nobody
+        // listening and are evidence, not proof.
+        for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
+            assert!(
+                said.contains("Gmail account on 18 September 2026"),
+                "it does not say when sending was proven: {said:?}"
+            );
+            assert!(
+                said.contains("not been proven against a real account"),
+                "it does not say the rest is unproven: {said:?}"
+            );
+            assert!(
+                !said.contains("been run against a real account"),
+                "it still says nothing has run, which stopped being true on \
+                 18 September 2026: {said:?}"
+            );
+        }
     }
 
     #[test]
@@ -824,14 +868,14 @@ mod tests {
 
     #[test]
     fn test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong() {
-        // Its own sentence, and it has to earn being a second one. Everything
-        // else here is experimental because it has never run; this is
-        // experimental because of what a provider may do when it does, and
-        // that is the risk no test in this repository can settle. A warning
-        // saying only "experimental" tells somebody to be careful and not what
-        // to be careful of. Four things it names: that it runs on its own
-        // after every check, that no real account has met it, whose decision
-        // the thing that could go wrong is, and where the hold is.
+        // Its own sentence, and it has to earn being a second one. It is
+        // experimental because of what a provider may do when asked for a
+        // whole mailbox, and that is the risk no test in this repository can
+        // settle. A warning saying only "experimental" tells somebody to be
+        // careful and not what to be careful of. Four things it names: that it
+        // runs on its own after every check, what Gmail did when it met it,
+        // whose decision the thing that could go wrong is, and where the hold
+        // is.
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("experimental"),
             "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
@@ -841,10 +885,31 @@ mod tests {
             "it does not say the download starts without being asked: \
              {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
+        // It met Gmail on 18 to 20 September 2026, read from the tester's
+        // logs by phase 14's first research on 2026-10-04: the connection
+        // closed while a folder was opening 932 times, and on the 19th Gmail
+        // refused 118 sign-ins as too many simultaneous connections. The
+        // sentence says "hundreds of times" rather than a count that perishes.
+        // Until 14-07 it said it had never been run against a real account.
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL
-                .contains("never been run against a real account"),
-            "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+                .contains("Gmail account on 18 to 20 September 2026"),
+            "it does not say when it met a real account: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("hundreds of times")
+                && DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("too many connections"),
+            "it does not say what Gmail did: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("waited and tried again"),
+            "it does not say what the download did about it: \
+             {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            !DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("never been run"),
+            "it still says it has never been run, which stopped being true on \
+             18 September 2026: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("provider"),

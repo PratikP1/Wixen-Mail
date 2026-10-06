@@ -46,21 +46,26 @@ over a built window, a fixture or a stand-in server, and the list further down
 says, one thing at a time, what nobody has heard.
 
 **Since the build of 2026-09-18, your mail comes down whole and keeps coming,
-and none of that has met a real account yet.** After every check for mail,
-every message of every folder you keep up to date comes down on its own, for
-every enabled IMAP account, and the text of each message with it unless the
-Message Text box on the Permissions tab is off or you chose a size there. A
-check is what `F9` runs and what happens when the server says something
-arrived, so the download starts on its own from the first check after you
-install this build. Pause Downloading on the Tools menu holds it. Each
-account's inbox is watched for as long as the program runs, the watch is
+and one real account has met it: a Gmail account, from 18 to 20 September
+2026.** Gmail closed the connection hundreds of times while folders were
+opening, and on 19 September it refused new sign-ins for a while as too many
+connections. Each time the download waited and tried again. Until 2026-10-06
+this paragraph said none of it had met a real account. After every check for
+mail, every message of every folder you keep up to date comes down on its
+own, for every enabled IMAP account, and the text of each message with it
+unless the Message Text box on the Permissions tab is off or you chose a size
+there. A check is what `F9` runs and what happens when the server says
+something arrived, so the download starts on its own from the first check
+after you install this build. Pause Downloading on the Tools menu holds it.
+Each account's inbox is watched for as long as the program runs, the watch is
 started again after a wait when it ends, and every account is checked on the
 interval its own editor sets. Until that build, 500 messages came down per
 folder, the text of a message came down when you opened it, and the watch
 ended the first time the connection dropped. Every part of the new behaviour
-has been driven against a stand-in written for the tests and none of it
-against a mail provider; the account you point it at is the first one it
-meets. The list further down says what nobody has seen it do.
+has been driven against a stand-in written for the tests, and that one Gmail
+account is the only mail provider it has met; any other provider you point it
+at is the first of its kind. The list further down says what nobody has seen
+it do.
 
 **Between 2026-09-22 and 2026-09-24 the editors, About and the ways to reach
 us changed, and none of it has been heard by anybody yet.** Every number in
@@ -118,7 +123,10 @@ ear, your account or your Outlook can settle.
 moving or copying one to another folder, marking one read on the server, filing
 a copy of what you send in Sent, changing which folders you are subscribed to,
 and sending changes to your tasks, contacts or calendar back to Google or
-Microsoft. None of that has run against a real account. Expect bugs.
+Microsoft. Sending was proven on 18 September 2026, from a Gmail account
+signed in with an app password; none of the rest has been proven against a
+real account. Expect bugs. Until 2026-10-06 this paragraph said none of it had
+run against a real account.
 
 Wixen Mail splits that answer in two, under a setting called Allow Changes.
 Mail starts switched off: a message that has been sent cannot be recalled.
@@ -301,9 +309,12 @@ In rough order of how useful it is to know.
 
 Written down so you do not spend time reporting things already on the list.
 
-- **Nothing that writes has run against a real account.** Sending, deleting,
-  moving, copying, filing a copy in Sent, sending a read receipt, changing
-  which folders you are subscribed to, and the three syncs that push changes.
+- **Of everything that writes, only sending has been proven against a real
+  account,** on 18 September 2026, from a Gmail account signed in with an app
+  password. Deleting, moving, copying, filing a copy in Sent, sending a read
+  receipt, changing which folders you are subscribed to, and the three syncs
+  that push changes have not been proven. Until 2026-10-06 this line said
+  nothing that writes had run against a real account.
 - **No Google Workspace or Microsoft 365 account on its own domain has been
   tried.** Wixen Mail now knows one as Gmail or Microsoft by its incoming
   server, such as `imap.gmail.com` or `outlook.office365.com`, but nobody has

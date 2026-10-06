@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 690 records have arrived since and have not been through it.
+# 691 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -897,7 +897,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_held_by_a_copy_is_said_apart_from_one_held_by_the_setting",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
@@ -919,7 +919,7 @@ red = [
     "application::allowed::tests::test_a_removal_held_back_says_the_mail_is_still_on_the_server",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
 ]
 
 [[guard]]
@@ -2979,7 +2979,7 @@ red = [
     "presentation::first_run::tests::test_the_screen_puts_focus_on_the_answer_it_ticks",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -3106,7 +3106,7 @@ red = [
     "presentation::first_run::tests::test_what_each_answer_costs_rides_on_the_button_and_on_the_screen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
     { file = "src/presentation/wx_first_run.rs", tests = 0 },
 ]
 
@@ -4954,29 +4954,55 @@ tests_last_seen = [
     { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
 ]
 
-# ── The download's warning says no real account has met it ──────────────────
+# ── The download's warning says what Gmail did, not that it never ran ────────
 #
 # One sentence replaced two on 2026-09-17, when the download of everything
 # took the place of Fetch Missing Message Text and Download This Whole
-# Folder, and it carries the one risk no test here can settle. The break
-# keeps the sentence and drops the clause saying no real account has met the
-# download, which leaves a warning that reads as ordinary caution. One test
-# goes red out of the twenty-seven in the file.
+# Folder, and it carries the one risk no test here can settle. Until 14-07
+# the record was "the download's warning says no real account has met it",
+# and its break dropped that clause. Gmail met the download on 18 to 20
+# September 2026, so on 2026-10-06 the sentence was rewritten to say what
+# Gmail did and the record with it: the break now puts back the claim that
+# it has never been run against a real account, in place of the day it ran.
 #
-# Measured 2026-09-17 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, the whole library.
+# Measured on the 14-07 branch through `scripts/guards.sh --remeasure`, the
+# whole library.
 [[guard]]
-name = "the download's warning says no real account has met it"
+name = "the download's warning says what Gmail did rather than that it never ran"
 file = "src/application/allowed.rs"
-before = """     its own after every check for mail, and it is experimental: it has never been run against \\
-     a real account. Asking your provider for a whole mailbox chunk after chunk is something \\"""
-after = """     its own after every check for mail, and it is experimental. \\
-     Asking your provider for a whole mailbox chunk after chunk is something \\"""
+before = """     its own after every check for mail, and it is experimental. \\
+     It ran against a Gmail account on 18 to 20 September 2026: Gmail closed the connection \\"""
+after = """     its own after every check for mail, and it is experimental: it has never been run \\
+     against a real account. Gmail closed the connection \\"""
 red = [
     "application::allowed::tests::test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
+]
+
+# ── The settings warning says sending was proven, and when ──────────────────
+#
+# Sending met Pratik's Gmail account on 18 September 2026 (#63), and until
+# 14-07 the warning beside the two Allow Changes boxes still opened by saying
+# none of it had been run against a real account. The break puts that old
+# opening back, word for word, which is the edit most likely to arrive from a
+# revert or a careless merge.
+#
+# Measured on the 14-07 branch through `scripts/guards.sh --remeasure`, the
+# whole library.
+[[guard]]
+name = "the settings warning says sending was proven on a Gmail account and when"
+file = "src/application/allowed.rs"
+before = """pub const EXPERIMENTAL_WARNING: &str = "Both are experimental. Sending was proven once, on a \\
+     Gmail account on 18 September 2026; the rest has not been proven against a real account \\"""
+after = """pub const EXPERIMENTAL_WARNING: &str = "Both are experimental: none of this has been run \\
+     against a real account \\"""
+red = [
+    "application::allowed::tests::test_the_write_warnings_say_sending_was_proven_and_when",
+]
+tests_last_seen = [
+    { file = "src/application/allowed.rs", tests = 28 },
 ]
 
 # ── A deletion that stops being noticed because nobody looks any more ────────
@@ -14421,10 +14447,10 @@ red = [
     "presentation::first_run::tests::test_the_choice_that_says_read_my_mail_reads_mail",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/presentation/command_line.rs", tests = 28 },
-    { file = "src/presentation/first_run.rs", tests = 16 },
+    { file = "src/presentation/command_line.rs", tests = 29 },
+    { file = "src/presentation/first_run.rs", tests = 19 },
 ]
 
 # ── The settings file every machine already has ────────────────────────────
@@ -14452,7 +14478,7 @@ red = [
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
 tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 27 },
+    { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/data/config.rs", tests = 68 },
 ]
 
@@ -29788,7 +29814,7 @@ red = [
     "presentation::command_line::tests::test_show_page_with_no_address_is_refused_rather_than_opening_a_window",
 ]
 tests_last_seen = [
-    { file = "src/presentation/command_line.rs", tests = 28 },
+    { file = "src/presentation/command_line.rs", tests = 29 },
 ]
 
 # T-12-05: a page process opens no database, prepares no data folder, opens
