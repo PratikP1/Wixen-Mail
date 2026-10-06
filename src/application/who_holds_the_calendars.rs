@@ -24,6 +24,7 @@
 //! of its own, hears why there is nothing to bring. Each finished sync writes
 //! one line built by [`the_finish_line`].
 
+use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::application::summing_up::SummingUp;
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::types::PimModule;
@@ -309,13 +310,14 @@ pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
     holds_the_separate_sign_in: bool,
 ) -> WhatAddingAnAccountStarts {
     use WhatAddingAnAccountStarts::{Nothing, OneReason, TheThreeSyncs};
-    let _ = holds_the_separate_sign_in;
     match WhoRunsTheMail::of(account) {
-        WhoRunsTheMail::Gmail => match may_google_be_asked(account, google_key, false) {
-            MayGoogleBeAsked::Yes(_) => TheThreeSyncs,
-            MayGoogleBeAsked::No(why) => OneReason(why),
-            MayGoogleBeAsked::NotGooglesToAsk => Nothing,
-        },
+        WhoRunsTheMail::Gmail => {
+            match may_google_be_asked(account, google_key, holds_the_separate_sign_in) {
+                MayGoogleBeAsked::Yes(_) => TheThreeSyncs,
+                MayGoogleBeAsked::No(why) => OneReason(why),
+                MayGoogleBeAsked::NotGooglesToAsk => Nothing,
+            }
+        }
         WhoRunsTheMail::Microsoft => match may_microsoft_be_asked(account, microsoft_key) {
             MayMicrosoftBeAsked::Yes(_) => TheThreeSyncs,
             MayMicrosoftBeAsked::No(why) => OneReason(why),
@@ -325,17 +327,20 @@ pub fn what_adding_an_account_starts<GoogleKey, MicrosoftKey>(
     }
 }
 
-/// What adding this account starts, with the keys this copy holds.
+/// What adding this account starts, with the keys this copy holds and the
+/// separate sign-in it holds, if any.
 ///
 /// Thin glue over [`what_adding_an_account_starts`]. A browser sign-in that
 /// has run out is learned only by asking, so an account whose sign-in has
-/// gone starts the three syncs and each says so.
+/// gone starts the three syncs and each says so. An account signed in for
+/// its calendars, contacts and tasks in the visit it was added in holds that
+/// sign-in by now, so its three are brought rather than the reason said.
 pub fn what_adding_this_account_starts(account: &Account) -> WhatAddingAnAccountStarts {
     what_adding_an_account_starts(
         account,
         crate::service::oauth_credentials::credentials_for(GOOGLE),
         crate::service::oauth_credentials::credentials_for(MICROSOFT),
-        false,
+        oauth::a_sign_in_is_held(oauth::GOOGLE_CALENDARS_CONTACTS_AND_TASKS, &account.id),
     )
 }
 
@@ -355,8 +360,13 @@ pub fn with_those_signed_in_for_calendars<'a>(
     after: &'a [Account],
     signed_in_for_calendars: &[String],
 ) -> Vec<&'a Account> {
-    let _ = (after, signed_in_for_calendars);
-    added
+    let signed_in = after.iter().filter(|account| {
+        signed_in_for_calendars.contains(&account.id)
+            && !added.iter().any(|held| held.id == account.id)
+    });
+    let mut to_bring = added.clone();
+    to_bring.extend(signed_in);
+    to_bring
 }
 
 /// What the Account Manager's Sign In for Calendars, Contacts and Tasks does
@@ -379,8 +389,19 @@ pub fn what_the_separate_sign_in_does<Key>(
     account: Option<&Account>,
     key: Option<Key>,
 ) -> WhatTheSeparateSignInDoes<Key> {
-    let _ = (account, key);
-    WhatTheSeparateSignInDoes::NothingChosen
+    let Some(account) = account else {
+        return WhatTheSeparateSignInDoes::NothingChosen;
+    };
+    if WhoRunsTheMail::of(account) != WhoRunsTheMail::Gmail {
+        return WhatTheSeparateSignInDoes::NotAtGoogle;
+    }
+    if account.use_oauth {
+        return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;
+    }
+    match key {
+        None => WhatTheSeparateSignInDoes::NoGoogleSignInKey,
+        Some(key) => WhatTheSeparateSignInDoes::SignsIn(key),
+    }
 }
 
 /// What the button does for this account, with the key this copy holds.
@@ -399,26 +420,56 @@ impl<Key> WhatTheSeparateSignInDoes<Key> {
     /// What the button says when it is pressed: the whole answer, or that
     /// signing in has begun.
     pub fn sentence(&self) -> String {
-        String::new()
+        match self {
+            WhatTheSeparateSignInDoes::NothingChosen => nothing_chosen(Thing::ACCOUNT),
+            WhatTheSeparateSignInDoes::NotAtGoogle => "This account's mail is not at Google, \
+                 so there is no Google sign-in to make for its calendars, contacts and tasks."
+                .to_string(),
+            WhatTheSeparateSignInDoes::TheMailSignInCoversIt => "This account already signs in \
+                 to Google through the browser, and that sign-in covers its calendars, contacts \
+                 and tasks. Choose Sign In Again to renew it."
+                .to_string(),
+            WhatTheSeparateSignInDoes::NoGoogleSignInKey => "This copy of Wixen Mail has no \
+                 Google sign-in key, so signing in through the browser cannot run. See Setting \
+                 up a provider in Help."
+                .to_string(),
+            WhatTheSeparateSignInDoes::SignsIn(_) => "Signing in to Google for the account's \
+                 calendars, contacts and tasks. Finish in the browser."
+                .to_string(),
+        }
     }
 }
 
 /// What the button says when signing in worked.
-pub const SIGNED_IN_FOR_CALENDARS: &str = "";
+pub const SIGNED_IN_FOR_CALENDARS: &str = "Signed in to Google for this account's calendars, \
+     contacts and tasks. They are brought when you close the Account Manager.";
 
 /// What the button says when signing in failed, after the reason the sign-in
-/// gave.
+/// gave, which is ended with a full stop when it has none.
 pub fn signing_in_for_calendars_failed(why: &str) -> String {
-    let _ = why;
-    String::new()
+    let why = why.trim_end();
+    let stop = match why.ends_with(['.', '?']) {
+        true => "",
+        false => ".",
+    };
+    format!("Signing in to Google for calendars, contacts and tasks failed. {why}{stop}")
 }
 
 /// What Sign In Again says for an account whose mail signs in with a
-/// password.
+/// password: there is nothing to sign in to again, and a Gmail account is
+/// pointed at the sign-in its calendars, contacts and tasks need.
 pub fn what_sign_in_again_says_for_a_password_account(account: &Account) -> &'static str {
-    let _ = account;
-    "This account signs in with a password, so there is nothing to authorise. Edit it to change \
-     its password."
+    match WhoRunsTheMail::of(account) {
+        WhoRunsTheMail::Gmail => {
+            "This account signs in to mail with a password, so there is nothing to authorise \
+             for mail. Edit it to change its password. For its calendars, contacts and tasks, \
+             choose Sign In for Calendars, Contacts and Tasks."
+        }
+        WhoRunsTheMail::Microsoft | WhoRunsTheMail::SomebodyElse => {
+            "This account signs in with a password, so there is nothing to authorise. Edit it \
+             to change its password."
+        }
+    }
 }
 
 /// What Refresh, `F5`, does with a module showing (D-11).

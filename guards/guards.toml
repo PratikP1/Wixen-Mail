@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 665 records have arrived since and have not been through it.
+# 668 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17797,7 +17797,7 @@ red = [
     "application::forget::tests::test_the_private_key_entry_is_one_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
 ]
 
 # ── An encrypted message opened as a blank message with nothing said ────────
@@ -32594,7 +32594,7 @@ red = [
     "service::pgp::tests::test_the_entries_uninstalling_erases_name_the_private_key",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
     { file = "src/service/pgp/mod.rs", tests = 6 },
 ]
 
@@ -34042,7 +34042,7 @@ red = [
     "application::forget::tests::test_the_directory_password_is_an_entry_uninstalling_erases",
 ]
 tests_last_seen = [
-    { file = "src/application/forget.rs", tests = 26 },
+    { file = "src/application/forget.rs", tests = 27 },
 ]
 
 # Removing an account leaves its directory password behind, where
@@ -38216,7 +38216,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -38238,7 +38238,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -38278,7 +38278,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38297,7 +38297,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # The contacts and tasks syncs say the same reason (14-01 task 2): after the
@@ -38321,7 +38321,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -38341,7 +38341,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -38357,7 +38357,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -38373,7 +38373,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # ── Each request a sync sends, written down (#22, 14-02) ───────────────────
@@ -38532,7 +38532,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # An account at neither provider with nothing of its own hears why there is
@@ -38547,7 +38547,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # A finished calendar sync writes its line at info, the level a stored
@@ -38589,7 +38589,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38605,7 +38605,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # F5 with a module other than Mail showing syncs that module (D-11). The
@@ -38619,7 +38619,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
 ]
 
 # The window's first F5 arm syncs only when the answer says the module
@@ -38634,7 +38634,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38672,12 +38672,14 @@ file = "src/service/oauth.rs"
 before = '''pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "google-calendars-contacts-tasks";'''
 after = '''pub const GOOGLE_CALENDARS_CONTACTS_AND_TASKS: &str = "gmail";'''
 red = [
+    "application::forget::tests::test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks",
     "application::who_holds_the_calendars::tests::test_a_browser_gmail_account_asks_google_with_its_mail_sign_in",
     "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
     "service::oauth::which_entries_belong_to_an_account::test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/forget.rs", tests = 27 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/service/oauth.rs", tests = 59 },
 ]
 
@@ -38694,6 +38696,72 @@ red = [
     "service::oauth::tests::test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 34 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# The Account Manager's Sign In for Calendars, Contacts and Tasks signs a
+# Gmail account on an app password in. The break has it say, for every Gmail
+# account, that the mail sign-in already covers the three.
+[[guard]]
+name = "the separate sign-in button signs an app-password gmail account in"
+file = "src/application/who_holds_the_calendars.rs"
+before = '''    if account.use_oauth {
+        return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;'''
+after = '''    if true || account.use_oauth {
+        return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_separate_sign_in_button_answers_each_kind_of_account",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+]
+
+# Removing an account, and uninstalling, erase the separate sign-in's token,
+# because the list of an account's entries is read off the providers
+# (T-14-11). The break takes the separate sign-in off that list.
+[[guard]]
+name = "removing an account erases its separate google sign-in"
+file = "src/service/oauth.rs"
+before = '''            // The separate sign-in of an account whose mail keeps its app
+            // password: the same three as above and never mail, which the
+            // app password already does, on the same rule about asking for
+            // nothing that is not used.
+            OAuthProvider {
+                name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
+                auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
+                token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
+                default_scopes: vec![
+                    GOOGLES_CONTACTS.to_string(),
+                    GOOGLES_CALENDAR.to_string(),
+                    GOOGLES_TASKS.to_string(),
+                ],
+            },
+'''
+after = ''''''
+red = [
+    "application::forget::tests::test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks",
+    "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
+    "service::oauth::which_entries_belong_to_an_account::test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/forget.rs", tests = 27 },
+    { file = "src/service/oauth.rs", tests = 59 },
+]
+
+# An account signed in for its calendars, contacts and tasks is carried out
+# of the Account Manager when nothing else changed, so the window brings its
+# three once (D-13). The break carries it only when something else changed.
+[[guard]]
+name = "an account signed in for calendars is carried out of the account manager"
+file = "src/presentation/wx_account_manager.rs"
+before = '''    if outcome.changed || !signed_in_for_calendars.is_empty() {'''
+after = '''    if outcome.changed {'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_account_manager_carries_out_an_account_signed_in_for_calendars",
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 14 },
 ]

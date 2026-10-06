@@ -120,6 +120,15 @@ you have already added:
 - **Sign In Again** re-authorises an account using browser sign-in, for
   when a token has been revoked or Google's weekly expiry has caught up
   with you.
+- **Sign In for Calendars, Contacts and Tasks** (`Alt+T`) signs a Gmail
+  account whose mail uses an app password in to Google through the browser,
+  for its calendars, contacts and tasks alone. Mail keeps its app password.
+  When the Account Manager closes, that account's calendars, contacts and
+  tasks are brought once. It needs a Google sign-in key you make yourself:
+  see [Calendars, contacts and tasks for a Gmail
+  account](PROVIDER_SETUP.md#calendars-contacts-and-tasks-for-a-gmail-account).
+  On any other account it says why it is not needed. **Experimental.** It has
+  not been tried against a real Google account.
 - **Set as Default** chooses which account a new contact, event, task, or
   note is filed under when you make one from outside that account's own
   module.
