@@ -2,7 +2,7 @@
 //!
 //! Provides structured logging with file rotation and privacy protection.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, Layer, Registry, fmt, layer::SubscriberExt};
 
@@ -111,6 +111,26 @@ pub fn default_log_dir() -> PathBuf {
     crate::common::paths::AppPaths::resolve()
         .map(|paths| paths.logs_dir())
         .unwrap_or_else(|_| std::env::temp_dir().join("wixen-mail").join("logs"))
+}
+
+/// The file in the log folder that a crash, or a start that must stop, is
+/// written to.
+pub const CRASH_FILE: &str = "crash.log";
+
+/// A crash entry: where the program stopped, what it said, and the build it
+/// came from.
+///
+/// The build is handed in rather than read here, so the panic hook passes the
+/// whole build string, the one About and the log's first line show, and an
+/// entry can be tied to the code it came from.
+pub fn crash_entry(_build: &str, _location: &str, _payload: &str) -> String {
+    String::new()
+}
+
+/// Append `entry`, stamped in local time, to the crash file in `folder`,
+/// making the folder when it is missing.
+pub fn append_to_the_crash_file(_folder: &Path, _entry: &str) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Initialize the logging system
@@ -301,6 +321,65 @@ mod tests {
 
         assert!(dir.is_absolute(), "the log folder is not an absolute path");
         assert!(dir.ends_with("logs"), "{dir:?} is not a logs folder");
+    }
+
+    #[test]
+    fn test_a_crash_entry_names_the_build_it_came_from() {
+        // 14-06: the hook wrote the crate's version, 1.0.0-alpha.1, so the
+        // one real panic in the tester's crash file could be tied to no
+        // build. The entry names whatever build it is handed, whole.
+        let entry = crash_entry(
+            "1.0.0-alpha.1+1071.g01ef4589",
+            "src\\presentation\\wx_app.rs:12:5",
+            "index out of bounds",
+        );
+
+        assert!(
+            entry.contains("Wixen Mail v1.0.0-alpha.1+1071.g01ef4589"),
+            "{entry:?} does not name the build"
+        );
+        assert!(
+            entry.contains("src\\presentation\\wx_app.rs:12:5"),
+            "{entry:?} does not say where"
+        );
+        assert!(
+            entry.contains("index out of bounds"),
+            "{entry:?} does not say what"
+        );
+    }
+
+    /// The stamp the crash file has always carried: local time, to the second.
+    fn is_stamped(line: &str) -> bool {
+        line.starts_with('[')
+            && line.get(20..22) == Some("] ")
+            && line.get(1..20).is_some_and(|stamp| {
+                chrono::NaiveDateTime::parse_from_str(stamp, "%Y-%m-%d %H:%M:%S").is_ok()
+            })
+    }
+
+    #[test]
+    fn test_the_crash_writer_appends_a_stamped_entry_in_the_folder_it_is_given() {
+        // A folder that does not exist yet, as on a first start that stops.
+        let profile = tempfile::tempdir().expect("a temporary folder");
+        let folder = profile.path().join("logs");
+
+        append_to_the_crash_file(&folder, "the first entry").expect("the first is written");
+        append_to_the_crash_file(&folder, "the second entry").expect("the second is written");
+
+        let written = std::fs::read_to_string(folder.join(CRASH_FILE))
+            .expect("the crash file is in the folder it was given");
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(lines.len(), 2, "{written:?}");
+        assert!(
+            is_stamped(lines[0]) && lines[0].ends_with("the first entry"),
+            "{:?}",
+            lines[0]
+        );
+        assert!(
+            is_stamped(lines[1]) && lines[1].ends_with("the second entry"),
+            "the second entry did not follow the first: {:?}",
+            lines[1]
+        );
     }
 
     #[test]

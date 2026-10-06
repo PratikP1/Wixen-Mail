@@ -92,6 +92,13 @@ const THE_SIGN_IN_LINES: [(&str, &str, &str); 3] = [
 /// the one kind POP has.
 const HOW_IT_SIGNED_IN: [&str; 2] = ["how_it_signs_in()", "WITH_A_PASSWORD"];
 
+/// The binary's start, where the panic hook is installed (14-06).
+const THE_START: &str = "src/main.rs";
+
+/// The whole build string, and the crate's version, which names no build.
+const THE_BUILD: &str = "version::current()";
+const THE_CRATE_VERSION: &str = "CARGO_PKG_VERSION";
+
 /// The five identifiers no log call may name as a value.
 const THE_SECRETS: [&str; 5] = [
     "body_plain",
@@ -776,6 +783,28 @@ fn each_sign_in_says_how_it_signed_in(read: impl Fn(&str) -> String) -> Result<(
     Ok(())
 }
 
+/// The panic hook names the whole build in its crash entry (14-06).
+///
+/// It named the crate's version, so the one real panic in the tester's crash
+/// file said `1.0.0-alpha.1` and could be tied to no build but by its date.
+/// Read rather than run, since the binary has no test module and a test
+/// cannot install a process's panic hook.
+fn the_panic_hook_names_the_build(start: &str) -> Result<(), String> {
+    let hook = body_of(start, "fn install_panic_hook(")?;
+    if hook.contains(THE_CRATE_VERSION) {
+        return Err(format!(
+            "install_panic_hook names {THE_CRATE_VERSION}, which is the version without the \
+             build, so a crash cannot be tied to the code it came from"
+        ));
+    }
+    if !hook.contains(THE_BUILD) {
+        return Err(format!(
+            "install_panic_hook does not name {THE_BUILD}, so its entry names no build"
+        ));
+    }
+    Ok(())
+}
+
 // ── The tests ───────────────────────────────────────────────────────────────
 
 #[test]
@@ -837,6 +866,11 @@ fn test_each_sign_in_and_the_send_line_say_how_the_account_signed_in() {
 fn test_each_sync_asks_before_building_a_microsoft_sign_in() {
     each_sync_asks_before_building_a_microsoft_sign_in(&shipped(THE_MAIN_WINDOW))
         .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_panic_hook_names_the_build_a_crash_came_from() {
+    the_panic_hook_names_the_build(&shipped(THE_START)).unwrap_or_else(|why| panic!("{why}"));
 }
 
 // ── The companions, each planting the opposite ──────────────────────────────
@@ -1099,6 +1133,20 @@ fn test_the_reading_complains_when_a_sign_in_or_the_send_line_does_not_say_how()
             "{why}"
         );
     }
+}
+
+#[test]
+fn test_the_reading_complains_when_the_panic_hook_names_the_crate_version() {
+    // Planted inside the hook's own body: `version::current()` is also what
+    // the start line and `--version` name, earlier in the file, so a plant
+    // on the first one in the file would land outside the hook.
+    let start = shipped(THE_START);
+    let hook = body_of(&start, "fn install_panic_hook(").expect("the hook");
+    let planted = hook.replacen(THE_BUILD, "env!(\"CARGO_PKG_VERSION\")", 1);
+    assert_ne!(planted, hook, "the hook names no build to plant over");
+    let why = the_panic_hook_names_the_build(&start.replacen(&hook, &planted, 1))
+        .expect_err("a hook naming the crate's version passed");
+    assert!(why.contains(THE_CRATE_VERSION), "{why}");
 }
 
 #[test]

@@ -43,6 +43,7 @@
 //! for this window to load instead.
 
 use std::cell::Cell;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -53,7 +54,7 @@ use wxdragon::prelude::*;
 use wxdragon::widgets::{WebView, WebViewBackend};
 
 use crate::application::opening_links;
-use crate::common::paths;
+use crate::common::{logging, paths};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::announcements::Priority;
 use crate::presentation::accessibility::names::set_accessible_name;
@@ -389,11 +390,9 @@ fn a_page_saying(sentence: &str) -> String {
 /// folder, opened a log file, claimed the single-copy marker or read a
 /// credential, and nothing here does either.
 pub fn show(address: &str) -> i32 {
-    let Some(safe) = may_be_followed(address) else {
-        crash_log(&format!(
-            "{FLAG} was given {address:?}, which is not a page. Nothing was opened."
-        ));
-        return NOT_A_PAGE;
+    let safe = match refuse_unless_a_page(address, &logging::default_log_dir()) {
+        Ok(safe) => safe,
+        Err(code) => return code,
     };
 
     let ran = wxdragon::main(move |app| {
@@ -437,6 +436,13 @@ pub fn show(address: &str) -> i32 {
             1
         }
     }
+}
+
+/// The address as a page may follow it, or the exit code of a start refused
+/// because it is not one, with the refusal written to the crash file in
+/// `folder`, which is how a start that must stop says why.
+fn refuse_unless_a_page(address: &str, _folder: &Path) -> Result<String, i32> {
+    may_be_followed(address).ok_or(NOT_A_PAGE)
 }
 
 /// Write a line to the crash file, which is how a start that must stop says
@@ -523,15 +529,39 @@ mod tests {
 
     #[test]
     fn test_an_address_that_is_not_a_page_opens_no_window() {
-        // `show` is the whole process: anything it refuses is refused before
-        // `wxdragon::main` is called at all, so nothing is on screen and
-        // nothing has been claimed. Asserted on the exit code rather than on
-        // a window, since a test cannot run two event loops.
-        for refused in ["mailto:somebody@example.com", "not-a-page", ""] {
+        // The refusal is decided before `wxdragon::main` is called at all, so
+        // nothing is on screen and nothing has been claimed. Asserted on the
+        // exit code rather than on a window, since a test cannot run two
+        // event loops.
+        //
+        // Into a folder of its own. Until 14-06 this asked the whole start,
+        // which wrote its three refusals into the tester's own crash file on
+        // every library run on this machine.
+        let logs = tempfile::tempdir().expect("a temporary folder");
+        assert_eq!(
+            refuse_unless_a_page("https://example.com/", logs.path()),
+            Ok("https://example.com/".to_string()),
+            "a page was refused"
+        );
+        let refused = ["mailto:somebody@example.com", "not-a-page", ""];
+        for address in refused {
             assert_eq!(
-                show(refused),
-                NOT_A_PAGE,
-                "{refused} did not stop the start"
+                refuse_unless_a_page(address, logs.path()),
+                Err(NOT_A_PAGE),
+                "{address} did not stop the start"
+            );
+        }
+
+        let written = std::fs::read_to_string(logs.path().join(logging::CRASH_FILE))
+            .expect("the refusals are in the folder they were given");
+        let lines: Vec<&str> = written.lines().collect();
+        assert_eq!(lines.len(), refused.len(), "{written:?}");
+        for (line, address) in lines.iter().zip(refused) {
+            assert!(
+                line.ends_with(&format!(
+                    "{FLAG} was given {address:?}, which is not a page. Nothing was opened."
+                )),
+                "{line:?}"
             );
         }
     }
