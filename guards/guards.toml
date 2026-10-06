@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 668 records have arrived since and have not been through it.
+# 671 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -38764,4 +38764,49 @@ red = [
 tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/wx_account_manager.rs", tests = 14 },
+]
+
+# A Gmail account's calendars other than its main one were never read: the
+# sync asked Google for `primary` and nothing asked its list (REAL-01, 14-04).
+# The break files nothing from the list, which is the sync as it was.
+[[guard]]
+name = "a google calendar sync files every calendar on the account's list"
+file = "src/application/every_google_calendar.rs"
+before = '''        Ok(list) => file_the_list(cache, account_id, &list, &mut result)?,'''
+after = '''        Ok(_list) => {}'''
+red = [
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 1 },
+]
+
+# A calendar Google's list named is filed under `google:`, the account and
+# Google's own id, which is what its reads and its changes are addressed by.
+# The break mints a plain id, the shape of a calendar made here.
+[[guard]]
+name = "a calendar google listed is filed under an id saying so"
+file = "src/application/every_google_calendar.rs"
+before = '''        a_calendar_google_listed(account_id, &listed.id)'''
+after = '''        uuid::Uuid::new_v4().to_string()'''
+red = [
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 1 },
+]
+
+# The main calendar's row is the provider's row with a plain id, so an event
+# made in no calendar goes there and not to a calendar somebody shared. The
+# break takes any row of the provider's.
+[[guard]]
+name = "the main google calendar's row is the one with a plain id"
+file = "src/data/message_cache/calendars.rs"
+before = '''            .find(|c| c.source_provider.as_deref() == Some(provider) && !a_server_named_it(&c.id))'''
+after = '''            .find(|c| c.source_provider.as_deref() == Some(provider))'''
+red = [
+    "data::message_cache::calendars::tests::test_the_main_calendar_is_found_by_its_plain_identity_beside_a_listed_one",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendars.rs", tests = 10 },
 ]

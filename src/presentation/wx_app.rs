@@ -31364,7 +31364,9 @@ pub(crate) fn spawn_calendar_sync(
             Module::Calendar,
         )) {
             Ok(GooglesAnswer::Token(token)) => {
-                match handle.block_on(crate::application::calendar::sync_google_calendar(
+                // Every calendar on the account's list, not only the main one
+                // (14-04).
+                match handle.block_on(crate::application::every_google_calendar::sync(
                     &cache,
                     &google_client,
                     &token,

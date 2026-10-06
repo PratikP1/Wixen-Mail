@@ -11,9 +11,10 @@
 //! it was, a read of the calendars already filed, which forty-odd cases drive
 //! against a stand-in that answers the events alone.
 
-use crate::application::calendar::{self, CalendarSyncResult};
+use crate::application::calendar::{self, CalendarSyncResult, GOOGLE, GOOGLE_CALENDAR_NAME};
 use crate::common::Result;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::calendars::{ListedCalendar, a_calendar_google_listed};
+use crate::data::message_cache::{CalendarContainer, MessageCache};
 use crate::service::google_api::{GoogleApiClient, GoogleCalendarListEntry};
 
 /// Read the account's calendar list, file each calendar on it, then read
@@ -38,12 +39,48 @@ pub async fn sync(
 
 /// File each calendar on a whole list as a row.
 fn file_the_list(
-    _cache: &MessageCache,
-    _account_id: &str,
-    _list: &[GoogleCalendarListEntry],
+    cache: &MessageCache,
+    account_id: &str,
+    list: &[GoogleCalendarListEntry],
     _result: &mut CalendarSyncResult,
 ) -> Result<()> {
+    for listed in list {
+        file_one(cache, account_id, listed)?;
+    }
     Ok(())
+}
+
+/// File one calendar from the list, the main one under the row every event
+/// made in no calendar goes to (14-04 choice 1).
+fn file_one(
+    cache: &MessageCache,
+    account_id: &str,
+    listed: &GoogleCalendarListEntry,
+) -> Result<CalendarContainer> {
+    let id = if listed.primary {
+        cache
+            .ensure_provider_calendar(account_id, GOOGLE, GOOGLE_CALENDAR_NAME)?
+            .id
+    } else {
+        a_calendar_google_listed(account_id, &listed.id)
+    };
+    cache.file_a_listed_calendar(&ListedCalendar {
+        account_id,
+        id: &id,
+        provider: GOOGLE,
+        name: its_name(listed),
+    })
+}
+
+/// What a listed calendar is called here: the person's own name for it, else
+/// Google's. The main calendar is "Google Calendar" unless they named it,
+/// because Google's name for it is usually the account's address.
+fn its_name(listed: &GoogleCalendarListEntry) -> &str {
+    let googles_own = match listed.primary {
+        true => GOOGLE_CALENDAR_NAME,
+        false => listed.summary.as_deref().unwrap_or(&listed.id),
+    };
+    listed.summary_override.as_deref().unwrap_or(googles_own)
 }
 
 #[cfg(test)]

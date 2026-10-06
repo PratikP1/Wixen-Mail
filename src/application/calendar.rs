@@ -78,7 +78,10 @@ pub const GOOGLE: &str = "gmail";
 const MICROSOFT: &str = "outlook";
 
 /// What the calendar holding a Google account's events is called in the list.
-const GOOGLE_CALENDAR_NAME: &str = "Google Calendar";
+///
+/// The main calendar's name unless somebody named it at Google, because the
+/// name Google gives a main calendar is usually the account's address.
+pub(crate) const GOOGLE_CALENDAR_NAME: &str = "Google Calendar";
 
 /// What the calendar holding a Microsoft account's events is called in the list.
 const MICROSOFT_CALENDAR_NAME: &str = "Outlook Calendar";
@@ -767,7 +770,15 @@ fn the_repeat_outlook_could_not_be_told(how_many: usize) -> String {
 
 // ── Google Calendar Sync ────────────────────────────────────────────────────
 
-/// Sync calendar events with Google Calendar API.
+/// Send what was changed here to Google, then read every Google calendar
+/// filed for the account: the main one, and each one Google's list named.
+///
+/// The list itself is read first by
+/// [`crate::application::every_google_calendar::sync`], which is what the
+/// program calls; this reads the calendars already filed.
+///
+/// The main calendar's read failing fails the sync, as it always has. Another
+/// calendar's failing is said, naming the calendar, and the rest are read.
 pub async fn sync_google_calendar(
     cache: &MessageCache,
     google: &GoogleApiClient,
@@ -778,10 +789,86 @@ pub async fn sync_google_calendar(
     forget_the_deletions_remembered_long_enough(cache, &mut result);
     push_to_google(cache, google, token, account_id, &mut result).await;
     let deleted_here = events_deleted_here(cache, account_id, &mut result);
+    let reading = TheGoogleRead {
+        cache,
+        google,
+        token,
+        account_id,
+    };
 
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
     let filed_under = cache.ensure_provider_calendar(account_id, GOOGLE, GOOGLE_CALENDAR_NAME)?;
+    let new_sync_token = read_one_google_calendar(
+        &reading,
+        &filed_under,
+        sync_token,
+        &deleted_here,
+        &mut result,
+    )
+    .await?;
+
+    // Save sync state
+    remember_this_syncs_marker(
+        cache,
+        state.as_ref(),
+        account_id,
+        "calendar",
+        GOOGLE,
+        SyncMarker {
+            sync_token: new_sync_token,
+            delta_link: None,
+        },
+        sync_token.is_none(),
+    )?;
+
+    for listed in the_calendars_google_listed(cache, account_id)? {
+        if let Err(e) =
+            read_one_google_calendar(&reading, &listed, None, &deleted_here, &mut result).await
+        {
+            result.errors.push(format!("{}: {e}", listed.name));
+        }
+    }
+
+    Ok(result)
+}
+
+/// The Google calendars filed for an account other than its main one.
+fn the_calendars_google_listed(
+    cache: &MessageCache,
+    account_id: &str,
+) -> Result<Vec<CalendarContainer>> {
+    Ok(cache
+        .get_calendars_for_account(account_id)?
+        .into_iter()
+        .filter(|row| row.source_provider.as_deref() == Some(GOOGLE))
+        .filter(|row| row.its_id_at_google().is_some())
+        .collect())
+}
+
+/// What every read of one Google calendar in a sync shares.
+struct TheGoogleRead<'a> {
+    cache: &'a MessageCache,
+    google: &'a GoogleApiClient,
+    token: &'a str,
+    account_id: &'a str,
+}
+
+/// Read one Google calendar into the row it is filed under, and hand back the
+/// marker Google gave for the next read of it.
+async fn read_one_google_calendar(
+    reading: &TheGoogleRead<'_>,
+    filed_under: &CalendarContainer,
+    sync_token: Option<&str>,
+    deleted_here: &crate::application::deletions::DeletedHere,
+    result: &mut CalendarSyncResult,
+) -> Result<Option<String>> {
+    let TheGoogleRead {
+        cache,
+        google,
+        token,
+        account_id,
+    } = *reading;
 
     // If no sync token, default time range: 6 months back, 12 months forward
     let (time_min, time_max) = if sync_token.is_none() {
@@ -908,26 +995,12 @@ pub async fn sync_google_calendar(
             &filed_under.id,
             event,
             at_google,
-            &deleted_here,
-            &mut result,
+            deleted_here,
+            result,
         )?;
     }
 
-    // Save sync state
-    remember_this_syncs_marker(
-        cache,
-        state.as_ref(),
-        account_id,
-        "calendar",
-        GOOGLE,
-        SyncMarker {
-            sync_token: new_sync_token,
-            delta_link: None,
-        },
-        sync_token.is_none(),
-    )?;
-
-    Ok(result)
+    Ok(new_sync_token)
 }
 
 /// Save a meeting as Google sent it, with the UID an invitation names it by
@@ -1565,27 +1638,19 @@ pub async fn delete_ms_event(
 
 /// Which calendar at the provider a container of this account stands for.
 ///
-/// Nothing yet stores a provider's own identifier for a calendar: the calendars
-/// table has no column for one, and `ensure_provider_calendar` makes exactly one
-/// container per provider per account. So the answer today is always "whichever
-/// the provider treats as the main one", which is a correct answer rather than a
-/// stub, and the underscore says plainly that nothing here reads the container
-/// yet.
-///
-/// When a second calendar at a provider becomes reachable, this body is the only
-/// thing that changes. Everything from here to the address is already threaded.
-fn which_calendar_at_the_provider(_container: &CalendarContainer) -> Option<String> {
-    None
+/// Google's own id for a calendar its list named, read off the row's id since
+/// 14-04, so a change made in any Google calendar is sent to that calendar.
+/// Nothing for a provider's main calendar's row, which is asked for by the
+/// provider's word for it, and nothing for any Outlook row, because Outlook
+/// is still read one calendar per account (answer 11).
+fn which_calendar_at_the_provider(container: &CalendarContainer) -> Option<String> {
+    container.its_id_at_google().map(str::to_string)
 }
 
 /// The identifier a container of this account has at the provider, if any.
 ///
-/// `None` on every input today, because the function above returns `None` on
-/// every input today. The only thing this adds is that a calendar which cannot
-/// be read at all is reported rather than passed over, so it is not the same
-/// function as one that simply answers `None`, even though it gives the same
-/// answer. Mutation testing cannot tell them apart and should not be made to:
-/// no test can prove a difference in the answer while the stub above stands.
+/// A calendar which cannot be read at all is reported rather than passed over,
+/// which is the only thing this adds to the function above.
 fn at_the_provider(cache: &MessageCache, container_id: &str) -> Result<Option<String>> {
     Ok(cache
         .get_calendar(container_id)?
@@ -1605,7 +1670,7 @@ fn calendar_at_google(cache: &MessageCache, container_id: &str) -> Result<String
 /// mistake: Graph has no name for somebody's main calendar and addresses it by
 /// leaving the calendar out of the address, so
 /// [`crate::service::microsoft_graph::THE_MAIN_CALENDAR`] is empty and the
-/// stub above hands back `None` every time. A test cannot tell this apart from
+/// function above hands back `None` for every Outlook row. A test cannot tell this apart from
 /// a function that returns an empty string and nothing else, so do not write
 /// one that pretends to. The Google side differs only because its own constant
 /// is the word "primary".
