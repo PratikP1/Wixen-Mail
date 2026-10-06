@@ -595,8 +595,25 @@ mod tests {
         // Somebody reading this is deciding whether to point it at their real
         // mail, so it has to say plainly that writing is unproven.
         assert!(HELP.contains("experimental"), "{HELP}");
-        assert!(HELP.contains("never been run against"), "{HELP}");
         assert!(HELP.contains("Reading is unaffected"), "{HELP}");
+    }
+
+    #[test]
+    fn test_the_help_says_sending_was_proven_and_when() {
+        // Sending met a real account once, a Gmail account on 18 September
+        // 2026 (#63). Until 14-07 this paragraph said it had never been run
+        // against one; the rest is still unproven.
+        let help = help_unwrapped();
+
+        assert!(
+            help.contains("Sending mail was proven once, on a Gmail account on 18 September 2026"),
+            "{HELP}"
+        );
+        assert!(
+            help.contains("not been proven against a real account"),
+            "{HELP}"
+        );
+        assert!(!help.contains("never been run against"), "{HELP}");
     }
 
     /// `HELP` with its wrapping taken out, so a phrase can be looked for.

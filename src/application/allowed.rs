@@ -726,9 +726,9 @@ mod tests {
     #[test]
     fn test_anything_that_writes_says_it_is_experimental() {
         // The warning has to reach the person using it, not sit in a note.
-        // None of these paths has run against a real account, and this is the
-        // sentence beside the two boxes that turn them on. An undo of a mark
-        // is one more of them, said where Undo is chosen.
+        // Only sending has been proven against a real account, and this is the
+        // sentence beside the two boxes that turn the rest on. An undo of a
+        // mark is one more of them, said where Undo is chosen.
         for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
             assert!(said.contains("experimental"), "{said:?}");
             assert!(said.contains("real account"), "{said:?}");
@@ -746,6 +746,31 @@ mod tests {
             !UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL.contains("mail server"),
             "{UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL:?}"
         );
+    }
+
+    #[test]
+    fn test_the_write_warnings_say_sending_was_proven_and_when() {
+        // Sending met a real account once: Pratik's Gmail account, signed in
+        // with an app password, on 18 September 2026 (#63). Until 14-07 both
+        // sentences said none of it had been run, which was false from that
+        // day. The rest is "not proven" rather than "never run", because the
+        // deletes replayed against Gmail on 20 September ran with nobody
+        // listening and are evidence, not proof.
+        for said in [EXPERIMENTAL_WARNING, UNDOING_AT_THE_SERVER_IS_EXPERIMENTAL] {
+            assert!(
+                said.contains("Gmail account on 18 September 2026"),
+                "it does not say when sending was proven: {said:?}"
+            );
+            assert!(
+                said.contains("not been proven against a real account"),
+                "it does not say the rest is unproven: {said:?}"
+            );
+            assert!(
+                !said.contains("been run against a real account"),
+                "it still says nothing has run, which stopped being true on \
+                 18 September 2026: {said:?}"
+            );
+        }
     }
 
     #[test]
@@ -824,14 +849,14 @@ mod tests {
 
     #[test]
     fn test_downloading_everything_says_it_is_experimental_and_says_what_could_go_wrong() {
-        // Its own sentence, and it has to earn being a second one. Everything
-        // else here is experimental because it has never run; this is
-        // experimental because of what a provider may do when it does, and
-        // that is the risk no test in this repository can settle. A warning
-        // saying only "experimental" tells somebody to be careful and not what
-        // to be careful of. Four things it names: that it runs on its own
-        // after every check, that no real account has met it, whose decision
-        // the thing that could go wrong is, and where the hold is.
+        // Its own sentence, and it has to earn being a second one. It is
+        // experimental because of what a provider may do when asked for a
+        // whole mailbox, and that is the risk no test in this repository can
+        // settle. A warning saying only "experimental" tells somebody to be
+        // careful and not what to be careful of. Four things it names: that it
+        // runs on its own after every check, what Gmail did when it met it,
+        // whose decision the thing that could go wrong is, and where the hold
+        // is.
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("experimental"),
             "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
@@ -841,10 +866,31 @@ mod tests {
             "it does not say the download starts without being asked: \
              {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
+        // It met Gmail on 18 to 20 September 2026, read from the tester's
+        // logs by phase 14's first research on 2026-10-04: the connection
+        // closed while a folder was opening 932 times, and on the 19th Gmail
+        // refused 118 sign-ins as too many simultaneous connections. The
+        // sentence says "hundreds of times" rather than a count that perishes.
+        // Until 14-07 it said it had never been run against a real account.
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL
-                .contains("never been run against a real account"),
-            "{DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+                .contains("Gmail account on 18 to 20 September 2026"),
+            "it does not say when it met a real account: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("hundreds of times")
+                && DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("too many connections"),
+            "it does not say what Gmail did: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("waited and tried again"),
+            "it does not say what the download did about it: \
+             {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
+        );
+        assert!(
+            !DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("never been run"),
+            "it still says it has never been run, which stopped being true on \
+             18 September 2026: {DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL}"
         );
         assert!(
             DOWNLOADING_EVERYTHING_IS_EXPERIMENTAL.contains("provider"),
