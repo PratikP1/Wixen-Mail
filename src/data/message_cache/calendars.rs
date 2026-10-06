@@ -572,6 +572,52 @@ mod tests {
     }
 
     #[test]
+    fn test_the_main_calendar_is_found_by_its_plain_identity_beside_a_listed_one() {
+        // A Gmail account's other calendars are rows of the same provider,
+        // written `google:` and the account and Google's own identity. The
+        // main calendar's row is the one with a plain identity, and an event
+        // made in no calendar goes there, so finding a listed one instead
+        // would send it to a calendar somebody shared.
+        let cache = test_cache();
+        let now = chrono::Utc::now().to_rfc3339();
+        cache
+            .save_calendar(&CalendarContainer {
+                id: "google:acct-1:team@group.calendar.google.com".to_string(),
+                account_id: "acct-1".to_string(),
+                name: "A".to_string(),
+                color: "#FF0000".to_string(),
+                source_provider: Some("gmail".to_string()),
+                caldav_url: None,
+                subscription_url: None,
+                is_default: false,
+                is_visible: true,
+                is_read_only: false,
+                display_order: 0,
+                etag: None,
+                ctag: None,
+                sync_token: None,
+                refresh_interval_minutes: None,
+                created_at: now.clone(),
+                updated_at: now,
+            })
+            .expect("a listed calendar");
+
+        let main = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("the main calendar");
+
+        assert!(
+            !main.id.contains(':'),
+            "a listed calendar was taken: {main:?}"
+        );
+        assert_eq!(main.name, "Google Calendar");
+        let again = cache
+            .ensure_provider_calendar("acct-1", "gmail", "Google Calendar")
+            .expect("the same main calendar");
+        assert_eq!(again.id, main.id, "a second main calendar was made");
+    }
+
+    #[test]
     fn test_a_calendar_made_here_carries_no_servers_name_in_its_id() {
         // Green before this change and green after it, and here to stay green:
         // the first reconciliation written for calendars will remove anything

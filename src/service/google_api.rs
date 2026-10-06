@@ -431,6 +431,67 @@ pub struct GoogleEventsResponse {
     pub next_sync_token: Option<String>,
 }
 
+/// What somebody may do with one calendar on their list.
+///
+/// Google's own five words. A role this program has never heard of is read as
+/// one that may only be read, because sending a change to a calendar that
+/// refuses it fails on every sync, and a change kept here and said is the
+/// safer of the two mistakes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum GoogleAccessRole {
+    /// Only when its owner is free or busy, and nothing about the events.
+    FreeBusyReader,
+    Reader,
+    WriterWithoutPrivateAccess,
+    Writer,
+    Owner,
+    #[default]
+    #[serde(other)]
+    NotOneGoogleNames,
+}
+
+impl GoogleAccessRole {
+    /// Whether a change made here may be sent to the calendar.
+    pub const fn may_write(self) -> bool {
+        matches!(
+            self,
+            Self::WriterWithoutPrivateAccess | Self::Writer | Self::Owner
+        )
+    }
+}
+
+/// One calendar on somebody's Google calendar list.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GoogleCalendarListEntry {
+    pub id: String,
+    /// Google's name for the calendar, which for somebody's main calendar is
+    /// usually their own address.
+    #[serde(default)]
+    pub summary: Option<String>,
+    /// The name the person gave the calendar at Google, if they gave one.
+    #[serde(default)]
+    pub summary_override: Option<String>,
+    #[serde(default)]
+    pub primary: bool,
+    #[serde(default)]
+    pub access_role: GoogleAccessRole,
+    /// Taken off the list in Google's own view.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Its events shown in Google's own view. Google leaves it out when false.
+    #[serde(default)]
+    pub selected: bool,
+}
+
+impl GoogleCalendarListEntry {
+    /// Whether Google's own view shows this calendar's events.
+    pub const fn shown_at_google(&self) -> bool {
+        self.selected && !self.hidden
+    }
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
@@ -708,6 +769,19 @@ impl GoogleApiClient {
     }
 
     // ── Calendar ────────────────────────────────────────────────────────
+
+    /// Every calendar on the account's list, hidden ones included.
+    pub async fn list_calendars(&self, _token: &str) -> Result<Vec<GoogleCalendarListEntry>> {
+        Ok(vec![GoogleCalendarListEntry {
+            id: THE_MAIN_CALENDAR.to_string(),
+            summary: None,
+            summary_override: None,
+            primary: true,
+            access_role: GoogleAccessRole::Owner,
+            hidden: false,
+            selected: true,
+        }])
+    }
 
     /// List calendar events with optional date range and incremental sync.
     ///
