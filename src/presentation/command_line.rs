@@ -144,9 +144,10 @@ any server.
 Neither --read-only nor --allow can permit anything the settings forbid. They
 only ever take permissions away, so leaving one in a shortcut is safe.
 
-Everything that writes is experimental. Sending mail, deleting mail, and
-syncing changes to tasks, contacts and the calendar have never been run against
-a real account, so expect them to have bugs and do not point them at anything
+Everything that writes is experimental. Sending mail was proven once, on a
+Gmail account on 18 September 2026. Moving and deleting mail, and syncing
+changes to tasks, contacts and the calendar, have not been proven against a
+real account yet, so expect them to have bugs and do not point them at anything
 you cannot afford to lose. Reading is the part that has been used.
 
 The mail this program downloads is not encrypted on this computer. Windows

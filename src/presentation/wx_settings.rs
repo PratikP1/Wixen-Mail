@@ -2355,8 +2355,8 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> PermissionsTabCon
 
     // This line was missing. The section was built, the two checkboxes and the
     // experimental warning were put into it, and the section itself was never
-    // put into the panel's layout, so the one place that says none of this has
-    // run against a real account had nowhere to appear.
+    // put into the panel's layout, so the one place on this screen that carries
+    // the experimental warning had nowhere to appear.
     sizer.add_sizer(&allowed_sec, 0, SizerFlag::Expand | SizerFlag::All, 8);
 
     // ── Message text ─────────────────────────────────────────────────────
@@ -2432,8 +2432,7 @@ fn build_permissions_tab(panel: &Panel, config: &AppConfig) -> PermissionsTabCon
     // ── Contacts ─────────────────────────────────────────────────────────
     //
     // Directly under the warning above, so somebody reading down the panel
-    // meets the sentence saying none of this has run against a real account
-    // before they meet this. The label says what happens rather than naming
+    // meets the experimental warning before they meet this. The label says what happens rather than naming
     // the machinery, and the sentence under it says what turning it off does,
     // because a checkbox alone cannot say what its unticked state means.
     let contacts_sec = section(panel, "Contacts");
