@@ -14,8 +14,8 @@
 use crate::application::calendar::{self, CalendarSyncResult, GOOGLE, GOOGLE_CALENDAR_NAME};
 use crate::common::Result;
 use crate::data::message_cache::calendars::{ListedCalendar, a_calendar_google_listed};
-use crate::data::message_cache::{CalendarContainer, MessageCache};
-use crate::service::google_api::{GoogleApiClient, GoogleCalendarListEntry};
+use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::service::google_api::{GoogleAccessRole, GoogleApiClient, GoogleCalendarListEntry};
 
 /// Read the account's calendar list, file each calendar on it, then read
 /// every calendar filed.
@@ -37,21 +37,70 @@ pub async fn sync(
     Ok(result)
 }
 
-/// File each calendar on a whole list as a row.
+/// File each calendar on a whole list as a row, and put away every calendar
+/// the list no longer names.
+///
+/// Only ever handed a whole list: a list cut short never reaches here, so a
+/// calendar missing from it is never read as one Google stopped listing.
 fn file_the_list(
     cache: &MessageCache,
     account_id: &str,
     list: &[GoogleCalendarListEntry],
-    _result: &mut CalendarSyncResult,
+    result: &mut CalendarSyncResult,
 ) -> Result<()> {
+    let mut still_listed = Vec::with_capacity(list.len());
     for listed in list {
-        file_one(cache, account_id, listed)?;
+        // Reading one would bring rows with nothing in them, or a refusal on
+        // every sync, so it is passed over and said (14-04 choice 3).
+        if listed.access_role == GoogleAccessRole::FreeBusyReader {
+            result.calendars_showing_only_free_and_busy += 1;
+            continue;
+        }
+        still_listed.push(file_one(cache, account_id, listed)?.id);
+    }
+    put_away_what_google_stopped_listing(cache, account_id, &still_listed, result)
+}
+
+/// Take off this computer every calendar Google's list named once and no
+/// longer names, keeping each change made in it here and not yet sent.
+///
+/// A kept change is moved out of the calendar rather than deleted with it,
+/// as the task lists keep a task made here when its list goes. In no calendar
+/// it is one nothing will send, which every sync then says, naming what to
+/// do (14-04 choice 4).
+fn put_away_what_google_stopped_listing(
+    cache: &MessageCache,
+    account_id: &str,
+    still_listed: &[String],
+    result: &mut CalendarSyncResult,
+) -> Result<()> {
+    let gone = cache
+        .get_calendars_for_account(account_id)?
+        .into_iter()
+        .filter(|row| row.its_id_at_google().is_some() && !still_listed.contains(&row.id));
+    for calendar in gone {
+        for waiting in cache
+            .get_events_for_calendar(&calendar.id)?
+            .into_iter()
+            .filter(|event| event.pending)
+        {
+            cache.save_calendar_event(&CalendarEventEntry {
+                calendar_id: None,
+                ..waiting
+            })?;
+        }
+        cache.delete_calendar(&calendar.id)?;
+        result.calendars_put_away += 1;
     }
     Ok(())
 }
 
 /// File one calendar from the list, the main one under the row every event
 /// made in no calendar goes to (14-04 choice 1).
+///
+/// The main calendar always starts shown, whatever Google's own view says of
+/// it, because an event made here in no calendar goes there and a hidden one
+/// would hide it.
 fn file_one(
     cache: &MessageCache,
     account_id: &str,
@@ -69,6 +118,8 @@ fn file_one(
         id: &id,
         provider: GOOGLE,
         name: its_name(listed),
+        read_only: !listed.access_role.may_write(),
+        starts_shown: listed.shown_at_google(),
     })
 }
 
@@ -85,14 +136,29 @@ fn its_name(listed: &GoogleCalendarListEntry) -> &str {
 
 /// What is said about calendars on the list that show only when their owner
 /// is free or busy, which are passed over (14-04 choice 3).
-pub fn only_free_and_busy(_how_many: usize) -> String {
-    String::new()
+pub fn only_free_and_busy(how_many: usize) -> String {
+    match how_many {
+        1 => "One of your Google calendars shows only when its owner is free or busy, \
+              so nothing in it was brought."
+            .to_string(),
+        many => format!(
+            "{many} of your Google calendars show only when their owners are free or \
+             busy, so nothing in them was brought."
+        ),
+    }
 }
 
 /// What is said about calendars Google stopped listing, which were taken off
 /// this computer (14-04 choice 4).
-pub fn taken_off_this_computer(_how_many: usize) -> String {
-    String::new()
+pub fn taken_off_this_computer(how_many: usize) -> String {
+    match how_many {
+        1 => "Google no longer lists one of your calendars, so it was taken off this computer."
+            .to_string(),
+        many => format!(
+            "Google no longer lists {many} of your calendars, so they were taken off this \
+             computer."
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -445,20 +511,20 @@ mod tests {
         assert_eq!(
             only_free_and_busy(1),
             "One of your Google calendars shows only when its owner is free or busy, \
-             so nothing in it was brought"
+             so nothing in it was brought."
         );
         assert_eq!(
             only_free_and_busy(3),
             "3 of your Google calendars show only when their owners are free or busy, \
-             so nothing in them was brought"
+             so nothing in them was brought."
         );
         assert_eq!(
             taken_off_this_computer(1),
-            "Google no longer lists one of your calendars, so it was taken off this computer"
+            "Google no longer lists one of your calendars, so it was taken off this computer."
         );
         assert_eq!(
             taken_off_this_computer(3),
-            "Google no longer lists 3 of your calendars, so they were taken off this computer"
+            "Google no longer lists 3 of your calendars, so they were taken off this computer."
         );
     }
 

@@ -80,6 +80,11 @@ pub struct ListedCalendar<'a> {
     pub id: &'a str,
     pub provider: &'a str,
     pub name: &'a str,
+    /// The account may only read it, so a change made in it is kept here and
+    /// said rather than sent.
+    pub read_only: bool,
+    /// Shown in the server's own view, which is how it starts here.
+    pub starts_shown: bool,
 }
 
 impl MessageCache {
@@ -321,13 +326,16 @@ impl MessageCache {
 
     /// File a calendar a server's own list named, made if it is not there.
     ///
-    /// Its name follows the server on every read, so a calendar renamed there
-    /// is renamed here.
+    /// Its name and whether it may be written follow the server on every read,
+    /// so a calendar renamed or shared differently there is the same here.
+    /// Whether it is shown follows the server only the first time; after that
+    /// it is the person's, and no read turns it back (14-04 choice 2).
     pub fn file_a_listed_calendar(&self, listed: &ListedCalendar<'_>) -> Result<CalendarContainer> {
         let now = chrono::Utc::now().to_rfc3339();
         let filed = match self.get_calendar(listed.id)? {
             Some(held) => CalendarContainer {
                 name: listed.name.to_string(),
+                is_read_only: listed.read_only,
                 updated_at: now,
                 ..held
             },
@@ -340,8 +348,8 @@ impl MessageCache {
                 caldav_url: None,
                 subscription_url: None,
                 is_default: false,
-                is_visible: true,
-                is_read_only: false,
+                is_visible: listed.starts_shown,
+                is_read_only: listed.read_only,
                 display_order: 0,
                 etag: None,
                 ctag: None,
@@ -353,6 +361,21 @@ impl MessageCache {
         };
         self.save_calendar(&filed)?;
         Ok(filed)
+    }
+
+    /// Keep the marker a server gave for the next read of one calendar.
+    pub fn set_calendar_sync_token(
+        &self,
+        calendar_id: &str,
+        sync_token: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE calendars SET sync_token = ?1 WHERE id = ?2",
+                rusqlite::params![sync_token, calendar_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to keep a calendar's marker: {}", e)))?;
+        Ok(())
     }
 
     /// Toggle visibility of a calendar.

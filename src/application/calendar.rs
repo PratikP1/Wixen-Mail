@@ -55,7 +55,9 @@ use crate::application::sync_marker::{SyncMarker, remember_this_syncs_marker};
 use crate::common::Result;
 #[cfg(test)]
 use crate::data::message_cache::SyncState;
-use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::data::message_cache::{
+    CalendarContainer, CalendarEventEntry, MessageCache, OneProvidersCalendar,
+};
 use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
     GoogleApiClient, GoogleAttendee, GoogleEvent, GoogleEventDateTime, GoogleReminderOverride,
@@ -172,6 +174,9 @@ impl CalendarSyncResult {
         self.changes_that_cannot_be_saved
             .extend(pass.changes_that_cannot_be_saved);
         self.what_was_asked = self.what_was_asked.with_a_pass(pass.what_was_asked);
+        self.calendars_read += pass.calendars_read;
+        self.calendars_showing_only_free_and_busy += pass.calendars_showing_only_free_and_busy;
+        self.calendars_put_away += pass.calendars_put_away;
         self.errors.extend(pass.errors);
     }
 
@@ -208,6 +213,14 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
     let mut said = result
         .what_was_asked
         .opening(Module::Calendar, counts, nothing_went_wrong);
+    // Only when there is more than one, so an account with one calendar hears
+    // what it always heard.
+    if result.calendars_read > 1 {
+        said.count(format!(
+            "{} read",
+            crate::service::caldav::how_many(result.calendars_read, "calendar")
+        ));
+    }
     if result.sent > 0 {
         said.count(format!("{} sent", result.sent));
     }
@@ -248,6 +261,22 @@ pub fn what_the_calendar_sync_did(result: &CalendarSyncResult) -> String {
             crate::application::conflict_choice::how_many_are_waiting_to_be_chosen(
                 result.held_for_you_to_choose,
                 crate::application::conflict_choice::TheOtherCopy::ACalendar,
+            ),
+        );
+    }
+    // Said on every sync that finds them, once each, because a calendar that
+    // never arrives or one that leaves with nothing said looks like a fault.
+    if result.calendars_showing_only_free_and_busy > 0 {
+        said.sentence(
+            crate::application::every_google_calendar::only_free_and_busy(
+                result.calendars_showing_only_free_and_busy,
+            ),
+        );
+    }
+    if result.calendars_put_away > 0 {
+        said.sentence(
+            crate::application::every_google_calendar::taken_off_this_computer(
+                result.calendars_put_away,
             ),
         );
     }
@@ -829,12 +858,19 @@ pub async fn sync_google_calendar(
         },
         sync_token.is_none(),
     )?;
+    result.calendars_read += 1;
 
+    // Each keeps its marker on its own row, so it goes when the row does.
     for listed in the_calendars_google_listed(cache, account_id)? {
-        if let Err(e) =
-            read_one_google_calendar(&reading, &listed, None, &deleted_here, &mut result).await
+        let its_marker = listed.sync_token.as_deref();
+        match read_one_google_calendar(&reading, &listed, its_marker, &deleted_here, &mut result)
+            .await
         {
-            result.errors.push(format!("{}: {e}", listed.name));
+            Ok(next) => {
+                cache.set_calendar_sync_token(&listed.id, next.as_deref())?;
+                result.calendars_read += 1;
+            }
+            Err(e) => result.errors.push(format!("{}: {e}", listed.name)),
         }
     }
 
@@ -877,6 +913,13 @@ async fn read_one_google_calendar(
         token,
         account_id,
     } = *reading;
+    // The rows this calendar's read owns, so one meeting in two calendars is
+    // two rows and a cancellation in one leaves the other (14-04).
+    let its_rows = OneProvidersCalendar {
+        account_id,
+        calendar_id: &filed_under.id,
+        provider: GOOGLE,
+    };
 
     // If no sync token, default time range: 6 months back, 12 months forward
     let (time_min, time_max) = if sync_token.is_none() {
@@ -951,17 +994,14 @@ async fn read_one_google_calendar(
         // The event has gone at both ends and an edit to it was an edit to
         // something that no longer exists.
         if event.status.as_deref() == Some("cancelled") {
-            if cache
-                .get_event_by_provider_id(account_id, &event.id)?
-                .is_some()
-            {
-                cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            if cache.event_in(its_rows, &event.id)?.is_some() {
+                cache.delete_event_in(its_rows, &event.id)?;
                 result.deleted += 1;
             }
             continue;
         }
 
-        let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+        let existing = cache.event_in(its_rows, &event.id)?;
         if a_change_here_is_still_waiting(existing.as_ref()) {
             continue;
         }
@@ -1116,8 +1156,14 @@ fn one_day_of_a_google_series(
         return Ok(());
     }
 
-    let series = cache.get_event_by_provider_id(account_id, at_google)?;
-    let existing = cache.get_event_by_provider_id(account_id, &event.id)?;
+    // Within this calendar, as the whole series are read (14-04).
+    let its_rows = OneProvidersCalendar {
+        account_id,
+        calendar_id: filed_under,
+        provider: GOOGLE,
+    };
+    let series = cache.event_in(its_rows, at_google)?;
+    let existing = cache.event_in(its_rows, &event.id)?;
 
     if event.status.as_deref() == Some("cancelled") {
         let mut the_day_went = false;
@@ -1125,7 +1171,7 @@ fn one_day_of_a_google_series(
         // are needed: the appointment it became has to go, and the day has to
         // come off the series so the rule stops drawing it.
         if existing.is_some() {
-            cache.delete_calendar_event_by_provider_id(account_id, &event.id)?;
+            cache.delete_event_in(its_rows, &event.id)?;
             the_day_went = true;
         }
         if let (Some(series), Some(the_day_it_was)) =
