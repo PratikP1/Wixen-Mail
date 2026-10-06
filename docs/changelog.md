@@ -801,6 +801,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **A crash entry names the build it came from.** When Wixen Mail stops on an error it writes
+  an entry to `crash.log` in the log folder, and that entry named only the version,
+  `1.0.0-alpha.1`, which every testing build shares. It now names the whole build, such as
+  `1.0.0-alpha.1+1071.g01ef4589`, the same string About and the first line of the log show,
+  so a crash file attached to a report can be matched to the code it came from. The line
+  holding the time as the computer stores it is gone, because the stamp at the start of the
+  entry already gives it in words. Running the program's own tests no longer adds lines to
+  that file either: a test of the separate page window used to write three refusals into it
+  on every run on the computer it ran on, and now writes into a folder of its own. The lines
+  already in a crash file stay there; nothing deletes them.
 - **Every write to the mail database overwrites what it frees (GAP-14, ledger 788).**
   Pratik's answer of 2026-10-03, from 13-44.9's measurement: SQLite's secure delete is now on
   for every connection Wixen Mail opens to the mail database, not only while a message is

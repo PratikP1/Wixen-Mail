@@ -138,7 +138,7 @@ the_inputs_of_a_suite[check]="scripts/check.test.sh scripts/check.sh guards/guar
 the_inputs_of_a_suite[red-commit]="scripts/red-commit.test.sh scripts/red-commit.sh"
 the_inputs_of_a_suite[which-checks]="scripts/which-checks.test.sh scripts/which-checks.sh scripts/red-commit.sh"
 what_every_suite_is_owed_for=(scripts/shell-suite.sh .githooks/commit-msg)
-what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scripts/mutants_report.py scripts/build-installer.sh scripts/make-brand.py scripts/make-icon.py scripts/render_svg.py scripts/msaa-names.ps1 scripts/uia-events.ps1)
+what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scripts/mutants_report.py scripts/read-a-proof.py scripts/build-installer.sh scripts/make-brand.py scripts/make-icon.py scripts/render_svg.py scripts/msaa-names.ps1 scripts/uia-events.ps1)
 
 # Which integration targets guard a changed source file.
 #

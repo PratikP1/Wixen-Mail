@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 686 records have arrived since and have not been through it.
+# 690 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26567,7 +26567,7 @@ red = [
     "common::logging::tests::test_the_default_level_is_debug_under_alpha_and_beta_and_info_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
 ]
 
 # ── The log filter names this crate and no library ──────────────────────────
@@ -26596,7 +26596,7 @@ red = [
     "service::outward::completeness::test_every_module_that_names_a_way_out_is_on_one_of_these_lists",
 ]
 tests_last_seen = [
-    { file = "src/common/logging.rs", tests = 10 },
+    { file = "src/common/logging.rs", tests = 12 },
     { file = "src/service/outward.rs", tests = 38 },
 ]
 
@@ -26628,7 +26628,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26655,7 +26655,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -38308,7 +38308,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # A calendar sync that could not ask Google finishes with the cue for an
@@ -38617,7 +38617,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]
 
 # ── An added account's first sync, and F5 in a module (14-02 task 3) ───────
@@ -39141,5 +39141,82 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/imap.rs", tests = 102 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
+]
+
+# ── The proof reader and the one crash writer (14-06) ───────────────────────
+#
+# scripts/read-a-proof.py reads the tester's profile after each sitting of
+# phase 14, and its rule is that no subject is printed unless it begins
+# "Wixen proof" and no address unmasked. Its two records couple the script
+# to the target that feeds it a private subject and address, so a commit
+# changing the script runs that target. Measured by hand on 2026-10-06.
+[[guard]]
+name = "the proof reader withholds a spoken subject that is not a proof's"
+file = "scripts/read-a-proof.py"
+suite = "the_proof_reader_prints_no_private_mail"
+before = '''            shown = subject if subject.startswith(PROOF) else SUBJECT_WITHHELD'''
+after = '''            shown = subject'''
+red = [
+    "test_it_prints_no_private_subject_address_body_or_secret",
+]
+tests_last_seen = [
+    { file = "tests/the_proof_reader_prints_no_private_mail.rs", tests = 12 },
+]
+
+# The masking the reader shares with the feedback report: taken out, the
+# case comparing the two goes red, and so do the two that read a masked
+# address in the reader's own output.
+[[guard]]
+name = "the proof reader masks every address the feedback report masks"
+file = "scripts/read-a-proof.py"
+suite = "the_proof_reader_prints_no_private_mail"
+before = '''    return without_addresses(without_subject(line))'''
+after = '''    return without_subject(line)'''
+red = [
+    "test_it_masks_the_addresses_the_feedback_report_masks",
+    "test_it_prints_the_lines_by_template_from_both_days_in_both_shapes",
+    "test_it_prints_no_private_subject_address_body_or_secret",
+]
+tests_last_seen = [
+    { file = "tests/the_proof_reader_prints_no_private_mail.rs", tests = 12 },
+]
+
+# The page window's refusal with its write taken out, so its test goes red
+# without writing anywhere. A break pointing the refusal back at
+# default_log_dir() would write three lines into the tester's crash file
+# each time this record is measured, which is what 14-06 stopped (ledger
+# 828), so it is not used.
+[[guard]]
+name = "the page window writes its refusal into the folder it is given"
+file = "src/presentation/page_window.rs"
+before = '''    may_be_followed(address).ok_or_else(|| {
+        say_why_the_start_stopped(
+            folder,'''
+after = '''    may_be_followed(address).ok_or_else(|| {
+        (
+            folder,'''
+red = [
+    "presentation::page_window::tests::test_an_address_that_is_not_a_page_opens_no_window",
+]
+tests_last_seen = [
+    { file = "src/presentation/page_window.rs", tests = 4 },
+]
+
+# The binary has no test module, so only the log target's reading sees the
+# panic hook. Its companion goes red with it, because the break leaves no
+# version::current() in the hook for the companion to plant over.
+[[guard]]
+name = "the panic hook names the whole build in its crash entry"
+file = "src/main.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        let entry = logging::crash_entry(&version::current(), &location, &payload);'''
+after = '''        let entry = logging::crash_entry(env!("CARGO_PKG_VERSION"), &location, &payload);'''
+red = [
+    "test_the_panic_hook_names_the_build_a_crash_came_from",
+    "test_the_reading_complains_when_the_panic_hook_names_the_crate_version",
+]
+tests_last_seen = [
+    { file = "src/main.rs", tests = 0 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
 ]

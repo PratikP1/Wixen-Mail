@@ -2,7 +2,7 @@
 
 use wixen_mail::application::handover::{HowToStart, how_to_start};
 use wixen_mail::application::running::Claim;
-use wixen_mail::common::logging::{LogLevel, LoggerConfig, init_logging};
+use wixen_mail::common::logging::{self, LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::common::{started, version};
 use wixen_mail::presentation::WxMailApp;
@@ -173,7 +173,7 @@ fn main() {
             // watching, and a modal error box there does not report a failure,
             // it hangs the job until its timeout and reports that instead.
             tracing::error!("{}", e);
-            log_crash(&e.to_string());
+            write_to_the_crash_file(&e.to_string());
             std::process::exit(2);
         }
     };
@@ -188,14 +188,14 @@ fn main() {
         Ok(app) => {
             if let Err(e) = app.run(scan_target, open) {
                 tracing::error!("UI error: {}", e);
-                log_crash(&format!("UI run error: {}", e));
+                write_to_the_crash_file(&format!("UI run error: {}", e));
                 show_error_dialog(&format!("Wixen Mail failed to run:\n{}", e));
                 std::process::exit(1);
             }
         }
         Err(e) => {
             tracing::error!("Failed to initialize Wixen Mail: {}", e);
-            log_crash(&format!("Init error: {}", e));
+            write_to_the_crash_file(&format!("Init error: {}", e));
             show_error_dialog(&format!("Wixen Mail failed to start:\n{}", e));
             std::process::exit(1);
         }
@@ -379,12 +379,12 @@ fn prepare_data_folder() -> Option<MigrationReport> {
     let paths = match AppPaths::resolve() {
         Ok(paths) => paths,
         Err(e) => {
-            log_crash(&format!("Could not work out where to keep data: {e}"));
+            write_to_the_crash_file(&format!("Could not work out where to keep data: {e}"));
             return None;
         }
     };
     if let Err(e) = paths.create() {
-        log_crash(&format!("Could not create the data folder: {e}"));
+        write_to_the_crash_file(&format!("Could not create the data folder: {e}"));
         return None;
     }
     // The third of the three places a downloaded installer is cleared away, and
@@ -433,38 +433,25 @@ fn install_panic_hook() {
             .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
             .unwrap_or_else(|| "unknown location".to_string());
 
-        let message = format!(
-            "PANIC at {}\n  {}\n  Wixen Mail v{}\n  Time: {:?}",
-            location,
-            payload,
-            env!("CARGO_PKG_VERSION"),
-            std::time::SystemTime::now(),
-        );
+        // The whole build, as About and the log's first line name it, so a
+        // crash can be tied to the code it came from.
+        let entry = logging::crash_entry(&version::current(), &location, &payload);
 
         // Try logging via tracing (may not be initialized yet)
-        tracing::error!("{}", message);
+        tracing::error!("{}", entry);
 
-        // Always write to crash file
-        log_crash(&message);
+        // Always written to the crash file.
+        write_to_the_crash_file(&entry);
     }));
 }
 
-/// Write a crash/error message to a persistent log file.
-fn log_crash(message: &str) {
-    let crash_dir = wixen_mail::common::logging::default_log_dir();
-    let _ = std::fs::create_dir_all(&crash_dir);
-    let crash_file = crash_dir.join("crash.log");
-    let timestamped = format!(
-        "[{}] {}\n",
-        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-        message
-    );
-    // Append to crash log
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&crash_file)
-        .and_then(|mut f| std::io::Write::write_all(&mut f, timestamped.as_bytes()));
+/// Append `entry` to the crash file in the profile's log folder, through the
+/// one writer in `logging`.
+///
+/// A failure is let go: every caller is a start that is stopping or a process
+/// that is panicking, and neither has anywhere left to say it.
+fn write_to_the_crash_file(entry: &str) {
+    let _ = logging::append_to_the_crash_file(&logging::default_log_dir(), entry);
 }
 
 /// Whether what is being said is an answer or a complaint.

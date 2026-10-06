@@ -2,8 +2,8 @@
 schema_version: 1
 open_count: 703
 waived_count: 0
-fixed_count: 124
-total_count: 827
+fixed_count: 125
+total_count: 828
 last_updated: 2026-10-06T12:00:00.000Z
 ---
 
@@ -842,6 +842,7 @@ last_updated: 2026-10-06T12:00:00.000Z
 | 825 | 14 | todo | src/application/calendar.rs |  | 14-04: a meeting held in two Google calendars and deleted here from one of them is noted by Google's identity, and events_deleted_here is asked by that identity across the account, so the read of the other calendar leaves that calendar's copy as it was for as long as the note is kept, rather than updating it. Nothing is lost and the other copy stays; it is not brought up to date until the note is let go. Closed when a deletion note is asked within its calendar, as the lookups are since 14-04 | open |  | 2026-10-06T04:00:00.000Z |  |
 | 826 | 14 | todo | src/application/mail_across_accounts.rs | 293 | 14-05, found reading the window's crossing arms: a copy to another account of a message over 25 MB goes through copy_it_across (called from wx_app.rs's copy arm), not the step functions, so it writes no line at all, done or refused, while a move of the same message writes its steps and its ending. copy_it_across takes no row, so a line naming the message as the others do needs one more parameter and the window's call changed. Closed when copy_it_across writes its fetch, its append's answer and its ending with the row, with a case on its loopback servers | open |  | 2026-10-06T12:00:00.000Z |  |
 | 827 | 14 | todo | src/presentation/accessibility/screen_reader.rs |  | 14-05: a case capturing log lines with tracing::subscriber::set_default hears nothing when it is the only dispatcher in the process and other cases reach the same call sites on other threads first, since tracing-core 0.1.36 then asks only that thread's default (Rebuilder::JustOne); a move_it_across case passed alone and failed three runs in three beside its module. CapturedLogs::as_the_default holds a second dispatcher and rebuilds the interest cache; 14-05's cases use it, and the earlier capturing cases in asked_and_answered.rs, feedback.rs, screen_reader.rs and elsewhere still call set_default directly and pass today because several capture at once. Closed when every capturing case uses as_the_default | open |  | 2026-10-06T12:00:00.000Z |  |
+| 828 | 14 | deviation | src/presentation/page_window.rs |  | 14-06: test_an_address_that_is_not_a_page_opens_no_window called show, whose refusal wrote three lines into the real profile's logs\crash.log on every library run on this machine (--show-page was given "mailto:somebody@example.com", "not-a-page" and "", each "which is not a page. Nothing was opened."), 1,515 of each between 2026-09-22 and 2026-10-04 by research 3's count, beside one real panic of 2026-09-18. Fixed in 14-06: the refusal is decided and written by refuse_unless_a_page, which takes the folder, and the test hands it a temporary one; show passes default_log_dir(). The lines already in the tester's file stay, because nothing here edits his files; scripts/read-a-proof.py drops them and says how many. The other sites resolving the profile in src were read the same day: no test builds the main window (WxMailApp::new is in no target), the integration targets that build windows set WIXEN_MAIL_DATA, and one library test, test_the_key_path_names_the_file_the_service_reads_and_writes in service::security, resolves the real profile and creates its root folder when it is missing, which writes no file and on this machine changes nothing | fixed |  | 2026-10-06T09:00:00.000Z | 2026-10-06T09:00:00.000Z |
 
 ````json
 [
@@ -10768,6 +10769,18 @@ last_updated: 2026-10-06T12:00:00.000Z
     "reason": "",
     "recorded_at": "2026-10-06T12:00:00.000Z",
     "resolved_at": null
+  },
+  {
+    "id": 828,
+    "kind": "deviation",
+    "phase": "14",
+    "file": "src/presentation/page_window.rs",
+    "line": null,
+    "description": "14-06: test_an_address_that_is_not_a_page_opens_no_window called show, whose refusal wrote three lines into the real profile's logs\\crash.log on every library run on this machine (--show-page was given \"mailto:somebody@example.com\", \"not-a-page\" and \"\", each \"which is not a page. Nothing was opened.\"), 1,515 of each between 2026-09-22 and 2026-10-04 by research 3's count, beside one real panic of 2026-09-18. Fixed in 14-06: the refusal is decided and written by refuse_unless_a_page, which takes the folder, and the test hands it a temporary one; show passes default_log_dir(). The lines already in the tester's file stay, because nothing here edits his files; scripts/read-a-proof.py drops them and says how many. The other sites resolving the profile in src were read the same day: no test builds the main window (WxMailApp::new is in no target), the integration targets that build windows set WIXEN_MAIL_DATA, and one library test, test_the_key_path_names_the_file_the_service_reads_and_writes in service::security, resolves the real profile and creates its root folder when it is missing, which writes no file and on this machine changes nothing",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-06T09:00:00.000Z",
+    "resolved_at": "2026-10-06T09:00:00.000Z"
   }
 ]
 ````
