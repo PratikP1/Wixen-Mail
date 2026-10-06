@@ -1084,6 +1084,7 @@ mod tests {
     use super::*;
     use crate::common::answering::{Conversation, LONG_ENOUGH};
     use crate::common::temp_home::TempHome;
+    use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, reading_only_on,
     };
@@ -2453,6 +2454,53 @@ mod tests {
             "a message over the ceiling was kept anyway, so a row offering to \
              finish the move exists with no message in it"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_message_too_large_to_hold_writes_its_steps() {
+        // The path for a message over the store's ceiling, which the window
+        // runs through move_it_across rather than the queue: the same step
+        // lines, and its ending, naming the message by its row alone.
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let store = a_store_keeping_no_move_larger_than(1);
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = ADestinationThat::takes_the_append(TheAppend::Lands, vec![Ok(vec![])]);
+
+        waiting_for(a_move_across(
+            &store,
+            &the_account_it_is_leaving(&source).await,
+            "INBOX",
+            THE_UID,
+            &destination,
+            "Archive",
+        ))
+        .await
+        .expect("a message too large to keep still moves");
+
+        let lines: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| {
+                *level == tracing::Level::INFO && line.contains(&format!("message {} ", store.row))
+            })
+            .map(|(_, line)| line)
+            .collect();
+        let [fetched, appended, removed, ended] = lines.as_slice() else {
+            panic!("not four lines, one per step and the ending: {lines:?}");
+        };
+        assert!(
+            fetched.contains("fetched") && fetched.contains("too large to keep here"),
+            "{fetched}"
+        );
+        assert!(appended.contains("taken into Archive"), "{appended}");
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(ended.contains("ended"), "{ended}");
+        for line in &lines {
+            for private in ["Lunch", "ada@example.com"] {
+                assert!(!line.contains(private), "a line carries {private}: {line}");
+            }
+        }
     }
 
     // ── Finishing a move the program was stopped part way through ────────

@@ -2311,6 +2311,196 @@ mod tests {
         );
     }
 
+    /// The Info lines naming the row, in the order they were written, none of
+    /// them carrying the test message's subject or its sender.
+    fn the_lines_naming(captured: &CapturedLogs, row: i64) -> Vec<String> {
+        let lines: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| *level == tracing::Level::INFO && names_the_row(line, row))
+            .map(|(_, line)| line)
+            .collect();
+        for line in &lines {
+            for private in ["Lunch", "ada@example.com"] {
+                assert!(!line.contains(private), "a line carries {private}: {line}");
+            }
+        }
+        lines
+    }
+
+    #[tokio::test]
+    async fn test_a_crossing_that_lands_writes_its_fetch_append_removal_and_where_it_arrived() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        let [fetched, appended, removed, arrived] = lines.as_slice() else {
+            panic!("not four lines, one per step and the outcome: {lines:?}");
+        };
+        assert!(
+            fetched.contains("fetched")
+                && fetched.contains(&format!("{} bytes", THE_MESSAGE.len()))
+                && fetched.contains("from INBOX")
+                && fetched.contains("kept here"),
+            "{fetched}"
+        );
+        assert!(appended.contains("taken into Work"), "{appended}");
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(
+            arrived.contains("replayed") && arrived.contains("in Work as 9"),
+            "{arrived}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_copy_across_writes_no_removal() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        let copy = what_happens_here(
+            &home,
+            &a_move_of(row, THE_UID, a_copy_into_the_other_accounts_work()),
+            "Lunch",
+        )
+        .expect("copied here")
+        .kept;
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, copy.message_row_id);
+        let [fetched, appended, arrived] = lines.as_slice() else {
+            panic!("not three lines, the fetch, the append and the outcome: {lines:?}");
+        };
+        assert!(fetched.contains("fetched"), "{fetched}");
+        assert!(appended.contains("taken into Work"), "{appended}");
+        assert!(
+            arrived.contains("copy to another account") && arrived.contains("in Work as 9"),
+            "{arrived}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_append_writes_the_destinations_words() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        assert!(lines.len() <= 4, "{lines:?}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("refused by the other account")
+                    && line.contains("could not append")),
+            "the append's refusal in the server's words: {lines:?}"
+        );
+        assert!(
+            !lines.iter().any(|line| line.contains("gone from")),
+            "{lines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_append_never_answered_writes_what_the_other_account_was_asked() {
+        for (afterwards, written) in [
+            (Ok(vec![9]), "was asked and holds it"),
+            (Ok(vec![]), "was asked and does not hold it"),
+            (
+                Err(Error::Protocol("no search here".to_string())),
+                "could not be asked",
+            ),
+        ] {
+            let captured = CapturedLogs::default();
+            let _logging = tracing::subscriber::set_default(captured.clone());
+            let source = a_source_server(ASourceServer::default()).await;
+            let accounts = a_source_and_a_scripted_destination(
+                &source,
+                AScriptedDestination::that_hangs_up_and_then(vec![Ok(vec![]), afterwards]),
+            )
+            .await;
+            let home = a_cache();
+            let row = a_message_in_the_inbox(&home, THE_UID);
+            a_crossing_made_here(&home, row);
+
+            replay_the_crossings_waiting_for(&accounts, &home, "an account")
+                .await
+                .expect("the replay");
+
+            let lines = the_lines_naming(&captured, row);
+            assert!(lines.len() <= 4, "{lines:?}");
+            assert!(
+                lines
+                    .iter()
+                    .any(|line| line.contains("not answered") && line.contains(written)),
+                "{written}: {lines:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_crossing_writes_no_fetch() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let source = a_source_server(ASourceServer::default()).await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_made_here(&home, row);
+        home.keep_the_message_while_it_moves(
+            &crate::data::message_cache::moves_in_flight::AMoveStarting {
+                message_row_id: row,
+                to_account_id: "another account",
+                to_folder: "Work",
+                flags: Some("(\\Seen)"),
+                arrived: None,
+                was_there_before: Some(&[]),
+                raw: THE_MESSAGE.as_bytes(),
+            },
+        )
+        .expect("the bytes held from the earlier run");
+
+        replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let lines = the_lines_naming(&captured, row);
+        let [resumed, removed, arrived] = lines.as_slice() else {
+            panic!("not three lines, the resume, the removal and the outcome: {lines:?}");
+        };
+        assert!(
+            resumed.contains("resumed") && resumed.contains("taken into Work"),
+            "{resumed}"
+        );
+        assert!(removed.contains("gone from INBOX"), "{removed}");
+        assert!(arrived.contains("in Work as 9"), "{arrived}");
+    }
+
     #[tokio::test]
     async fn test_two_crossings_are_replayed_in_the_order_they_were_asked() {
         // Two source accounts, each holding its message, both going to the
