@@ -17,11 +17,20 @@ pub enum MailAuth {
     OAuth2(String),
 }
 
+/// How a sign-in with a password is said in the log. POP has no other kind.
+pub const WITH_A_PASSWORD: &str = "with a password";
+
+/// How a sign-in through the browser is said in the log.
+pub const THROUGH_A_BROWSER_SIGN_IN: &str = "through a browser sign-in";
+
 impl MailAuth {
     /// How the account signs in, in words a log line can carry, and never
     /// what it signs in with.
-    pub fn how_it_signs_in(&self) -> &'static str {
-        ""
+    pub const fn how_it_signs_in(&self) -> &'static str {
+        match self {
+            MailAuth::Password(_) => WITH_A_PASSWORD,
+            MailAuth::OAuth2(_) => THROUGH_A_BROWSER_SIGN_IN,
+        }
     }
 }
 

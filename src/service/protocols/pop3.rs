@@ -203,7 +203,11 @@ impl Pop3Client {
             .await
             .map_err(|e| Error::Authentication(redact_provider_message(&e.to_string())))?;
 
-        tracing::info!("Signed in to {}", self.config.server);
+        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            super::WITH_A_PASSWORD
+        );
         Ok(session)
     }
 

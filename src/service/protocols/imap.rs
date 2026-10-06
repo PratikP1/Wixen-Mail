@@ -645,7 +645,11 @@ impl ImapClient {
             }
         };
 
-        tracing::info!("Signed in to {}", self.config.server);
+        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            auth.how_it_signs_in()
+        );
         let mut session = ImapSession {
             session,
             selected: None,

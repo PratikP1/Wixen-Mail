@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 684 records have arrived since and have not been through it.
+# 686 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26628,7 +26628,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
 ]
 
 # ── Content held back by mute is written to the log by its length ───────────
@@ -26655,7 +26655,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/accessibility/announcements.rs", tests = 25 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
 ]
 
 # ── The page's script posts the attachments jump for Alt+A ──────────────────
@@ -38308,7 +38308,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
 ]
 
 # A calendar sync that could not ask Google finishes with the cue for an
@@ -38617,7 +38617,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 19 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
 ]
 
 # ── An added account's first sync, and F5 in a module (14-02 task 3) ───────
@@ -39098,4 +39098,48 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 64 },
+]
+
+# The IMAP sign-in line says whether a password or a browser sign-in was
+# used, so the record of a sitting cannot name the wrong one, as the comment
+# on #63 did (14-05, answer 4). The break writes the server alone. Two
+# records for one break, because the capture runs in the library and the
+# reading in the log target, and a record runs one suite.
+[[guard]]
+name = "the imap sign-in line says how the account signed in"
+file = "src/service/protocols/imap.rs"
+before = '''        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            auth.how_it_signs_in()
+        );'''
+after = '''        tracing::info!("Signed in to {}", self.config.server);'''
+red = [
+    "service::protocols::tests::test_signing_in_with_a_password_says_so_in_the_log",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+    { file = "src/service/protocols/mod.rs", tests = 4 },
+]
+
+# The same break, read from the text: the reading names the IMAP line, and
+# its companion goes red with it because the reading complains of the real
+# IMAP line before it reaches the POP and send lines the companion plants.
+[[guard]]
+name = "the reading of the sign-in lines sees an imap line that does not say how"
+file = "src/service/protocols/imap.rs"
+suite = "the_log_carries_what_a_report_needs"
+before = '''        tracing::info!(
+            "Signed in to {} {}",
+            self.config.server,
+            auth.how_it_signs_in()
+        );'''
+after = '''        tracing::info!("Signed in to {}", self.config.server);'''
+red = [
+    "test_each_sign_in_and_the_send_line_say_how_the_account_signed_in",
+    "test_the_reading_complains_when_a_sign_in_or_the_send_line_does_not_say_how",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+    { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 21 },
 ]
