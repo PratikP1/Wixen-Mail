@@ -656,10 +656,12 @@ first, since 2026-09-19.** The row leaves the list the moment you choose the
 folder or press `Delete`, the cursor lands on the next message, and the
 server is told in the background and again at the next check for mail. If
 the server refuses, the message comes back where it was and the refusal is
-spoken with the reason. A move to a folder on another account still waits
-for both servers before the row leaves. Until 2026-09-19 every move and
-delete waited for the server before the row left, and `Enter` on the chosen
-folder in this window did nothing.
+spoken with the reason. A move to a folder on another account leaves the row
+at once too, since later on 2026-09-19, and finishes at the next check of
+either account from the copy kept on this computer. Until 2026-10-06 this page
+said such a move still waited for both servers before the row left. Until
+2026-09-19 every move and delete waited for the server before the row left,
+and `Enter` on the chosen folder in this window did nothing.
 
 ### File Menu
 
