@@ -1086,6 +1086,7 @@ mod tests {
     use crate::common::answering::{Conversation, Turn, conversing};
     use crate::common::temp_home::TempHome;
     use crate::data::message_cache::{CachedFolder, CachedMessage};
+    use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
     use crate::service::protocols::imap::ImapSession;
     use crate::service::protocols::imap::against_a_server_that_answers::{
         a_server_that_can, a_server_that_refuses, signed_in_to,
@@ -3134,6 +3135,207 @@ mod tests {
                 .any(|line| line.to_uppercase().contains("UID EXPUNGE 42")),
             "the delete did not reach the server: {transcript:?}"
         );
+    }
+
+    /// The lines a replay wrote about its rows.
+    fn the_replay_lines(captured: &CapturedLogs) -> Vec<String> {
+        captured
+            .events()
+            .into_iter()
+            .filter(|(level, line)| *level == tracing::Level::INFO && line.starts_with("A waiting"))
+            .map(|(_, line)| line)
+            .collect()
+    }
+
+    /// The one line a replay wrote, which names the message by its row and
+    /// carries nothing a person wrote: the test message's subject and its
+    /// sender are both refused, since the tree-wide guard reads five names
+    /// and lets a subject through by its own account.
+    fn the_one_replay_line(captured: &CapturedLogs) -> String {
+        let lines = the_replay_lines(captured);
+        let [line] = lines.as_slice() else {
+            panic!("not one line about the replay: {lines:?}");
+        };
+        for private in ["Lunch", "ada@example.com"] {
+            assert!(
+                !line.contains(private),
+                "the line carries {private}: {line}"
+            );
+        }
+        line.clone()
+    }
+
+    fn names_the_row(line: &str, row: i64) -> bool {
+        line.contains(&format!("message {row} "))
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_copy_names_its_row_and_where_the_server_holds_the_copy() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        let copy = a_copy_made_here(&home, row);
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("copy"), "{line}");
+        assert!(names_the_row(&line, copy.message_row_id), "{line}");
+        assert!(line.contains("INBOX"), "the folder it came from: {line}");
+        assert!(line.contains("Copied to Archive"), "{line}");
+        assert!(line.contains("in Archive as 4"), "where it is held: {line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_move_names_its_row_and_how_the_server_moved_it() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("move"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("Moved to Archive"), "{line}");
+        assert!(line.contains("in Archive as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_delete_to_the_trash_names_its_row_and_the_trashs_number() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_can("MOVE UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(
+            &home,
+            &a_move_of(
+                row,
+                42,
+                WhatAWaitingMoveDoes::DeleteToTrash {
+                    trash_path: "Trash".to_string(),
+                },
+            ),
+            "Lunch",
+        )
+        .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("delete"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("Moved to Trash"), "{line}");
+        assert!(line.contains("in Trash as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replayed_delete_outright_names_its_row_and_no_number() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_can("UIDPLUS").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(
+            &home,
+            &a_move_of(row, 42, WhatAWaitingMoveDoes::DeleteOutright),
+            "Lunch",
+        )
+        .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(line.contains("delete"), "{line}");
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.ends_with("Deleted"), "{line}");
+        assert!(!line.contains("holds"), "a removal is held nowhere: {line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_refused_replay_names_its_row_and_the_servers_words() {
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_refuses_and_holds_nothing("UID MOVE").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("refused"), "{line}");
+        assert!(
+            line.contains("would not do it"),
+            "the server's words: {line}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_already_done_replay_writes_its_line_too() {
+        // The answer the two deletes waiting since 2026-09-20 meet at their
+        // first check against Gmail, which wrote nothing at all until now.
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_refuses("MOVE UIDPLUS", "UID MOVE").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let line = the_one_replay_line(&captured);
+        assert!(names_the_row(&line, row), "{line}");
+        assert!(line.contains("already"), "{line}");
+        assert!(line.contains("in Archive as 4"), "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_replay_that_never_reached_the_server_writes_no_line_of_its_own() {
+        // Both callers already write a server never reached, with the row or
+        // the account, so a second line here would be the same fact twice.
+        let captured = CapturedLogs::default();
+        let _logging = tracing::subscriber::set_default(captured.clone());
+        let server = a_server_that_hangs_up_on_the_change().await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        what_happens_here(&home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here");
+
+        replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(the_replay_lines(&captured), Vec::<String>::new());
     }
 
     #[tokio::test]
