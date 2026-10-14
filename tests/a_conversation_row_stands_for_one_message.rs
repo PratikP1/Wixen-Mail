@@ -66,6 +66,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use wixen_mail::application::conversations::{
     AConversationReaches, ConversationItem, ReadIn, RowMessage,
@@ -78,7 +79,9 @@ use wixen_mail::presentation::message_columns::{MessageColumn, Sort, SortDirecti
 use wixen_mail::presentation::message_rows::conversation_cell_text;
 use wixen_mail::presentation::ui_types::MessageItem;
 use wixen_mail::presentation::view_state::{self, Showing};
-use wixen_mail::presentation::wx_app::WxUIState;
+use wixen_mail::presentation::wx_app::{
+    WhatEnterOpens, WxUIState, apply_threading, what_enter_opens_on_a_conversation_row,
+};
 use wixen_mail::presentation::wx_thread_view::{self, ThreadNode};
 use wixen_mail::service::safety::Verdict;
 
@@ -324,6 +327,192 @@ fn test_a_conversation_of_one_stands_for_its_one_message() {
     assert_eq!(conversation.stands_for.uid, only.uid);
     assert_eq!(conversation.stands_for.from, only.from);
     assert_eq!(conversation.snippet.as_deref(), Some(only.first_line));
+}
+
+// ── What Enter opens on a conversation row ─────────────────────────────────
+//
+// Pratik, 2026-10-14: "Pressing enter on a mail doesn't open a message any
+// more." Under conversation view the handler found a lone message by
+// conversation membership, and `apply_threading` empties the conversation id
+// of every message alone in its conversation among the loaded rows, so the
+// join was empty and Enter did nothing. The cases build the loaded rows the
+// way `load_folder_messages` does, because the fault lived in the join
+// between the two producers and a row built by hand hid it.
+
+/// What Enter opened, by row ids.
+#[derive(Debug, PartialEq)]
+enum Opened {
+    TheMessage(i64),
+    TheConversation { holding: Vec<i64>, on: Option<i64> },
+    Nothing,
+}
+
+/// The window's state after INBOX opens under conversation view: the loaded
+/// rows read, made and threaded as `load_folder_messages` does it, and the
+/// conversation rows the listing gives.
+fn the_window_after_opening(cache: &MessageCache, inbox: i64) -> Arc<Mutex<WxUIState>> {
+    let rows = cache
+        .get_message_list_sorted(inbox, THE_ACCOUNT, None, None)
+        .expect("the folder read");
+    let mut messages: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+    apply_threading(&rows, &mut messages);
+    Arc::new(Mutex::new(WxUIState {
+        messages,
+        conversations: the_listing(cache, inbox, None),
+        showing: Showing::Conversations,
+        ..WxUIState::default()
+    }))
+}
+
+fn what_enter_opens(window: &Arc<Mutex<WxUIState>>, cache: &MessageCache, row: usize) -> Opened {
+    match what_enter_opens_on_a_conversation_row(window, Some(cache), row) {
+        WhatEnterOpens::TheMessage(message) => Opened::TheMessage(message.message_id),
+        WhatEnterOpens::TheConversation(conversation) => Opened::TheConversation {
+            holding: conversation
+                .nodes
+                .iter()
+                .map(|node| node.message_id)
+                .collect(),
+            on: conversation.open_on,
+        },
+        WhatEnterOpens::Nothing => Opened::Nothing,
+    }
+}
+
+/// The row of the window whose conversation is `thread_id`.
+fn the_row_of(window: &Arc<Mutex<WxUIState>>, thread_id: &str) -> usize {
+    let state = window.lock().expect("the state");
+    state
+        .conversations
+        .iter()
+        .position(|conversation| conversation.thread_id == thread_id)
+        .unwrap_or_else(|| panic!("no row for {thread_id}: {:#?}", state.conversations))
+}
+
+#[test]
+fn test_enter_on_a_conversation_of_one_opens_that_message() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let only = &THE_CONVERSATION_OF_FOUR[0];
+    let alone = IncomingMessage {
+        refs_header: None,
+        ..as_incoming(inbox, "alone@example.com", only, false)
+    };
+    let id = cache.upsert_message(&alone).expect("the row written");
+
+    let window = the_window_after_opening(&cache, inbox);
+    let stands_for = window.lock().expect("the state").conversations[0]
+        .stands_for
+        .id;
+    assert_eq!(stands_for, id);
+    assert_eq!(what_enter_opens(&window, &cache, 0), Opened::TheMessage(id));
+}
+
+/// The originator in INBOX and its reply filed in a second folder, read or
+/// not as `read` says, A first; the window after INBOX opens, and the two
+/// row ids.
+fn split_across_folders(
+    cache: &MessageCache,
+    read: [bool; 2],
+) -> (Arc<Mutex<WxUIState>>, i64, i64) {
+    let inbox = a_folder(cache, "INBOX");
+    let elsewhere = a_folder(cache, "Sent");
+    let [originator, reply] = [&THE_CONVERSATION_OF_FOUR[0], &THE_CONVERSATION_OF_FOUR[1]];
+    let here = cache
+        .upsert_message(&as_incoming(inbox, THE_CONVERSATION, originator, read[0]))
+        .expect("the originator written");
+    let there = cache
+        .upsert_message(&as_incoming(elsewhere, THE_CONVERSATION, reply, read[1]))
+        .expect("the reply written");
+    let window = the_window_after_opening(cache, inbox);
+    {
+        let state = window.lock().expect("the state");
+        assert_eq!(state.messages.len(), 1, "INBOX holds the originator alone");
+        assert_eq!(
+            state.conversations[0].messages, 2,
+            "the row counts the whole account"
+        );
+    }
+    (window, here, there)
+}
+
+#[test]
+fn test_enter_on_a_conversation_split_across_folders_opens_the_message_here() {
+    // Nothing read: the row stands for the originator, which INBOX holds.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let (window, here, _) = split_across_folders(&cache, [false, false]);
+    assert_eq!(
+        what_enter_opens(&window, &cache, 0),
+        Opened::TheMessage(here)
+    );
+
+    // The originator read: the row stands for the reply, the first unread,
+    // which the loaded rows do not hold, so it is read from the store.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let (window, _, there) = split_across_folders(&cache, [true, false]);
+    let stands_for = window.lock().expect("the state").conversations[0]
+        .stands_for
+        .id;
+    assert_eq!(stands_for, there, "the row stands for the reply elsewhere");
+    assert_eq!(
+        what_enter_opens(&window, &cache, 0),
+        Opened::TheMessage(there)
+    );
+}
+
+#[test]
+fn test_enter_on_a_conversation_of_two_here_opens_the_tree_on_the_row_message() {
+    // A and B of one conversation in INBOX, and a message alone in another.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let [a, b] = [&THE_CONVERSATION_OF_FOUR[0], &THE_CONVERSATION_OF_FOUR[1]];
+    let first = cache
+        .upsert_message(&as_incoming(inbox, THE_CONVERSATION, a, false))
+        .expect("A written");
+    let second = cache
+        .upsert_message(&as_incoming(inbox, THE_CONVERSATION, b, false))
+        .expect("B written");
+    let lone = Message {
+        uid: 9,
+        received: "2026-09-05T09:00:00Z",
+        from: "Dee <dee@example.com>",
+        first_line: "Unrelated",
+    };
+    cache
+        .upsert_message(&as_incoming(inbox, "alone@example.com", &lone, false))
+        .expect("the lone message written");
+
+    let window = the_window_after_opening(&cache, inbox);
+    let two = the_row_of(&window, THE_CONVERSATION);
+    let stands_for = window.lock().expect("the state").conversations[two]
+        .stands_for
+        .id;
+    assert_eq!(
+        what_enter_opens(&window, &cache, two),
+        Opened::TheConversation {
+            holding: vec![first, second],
+            on: Some(stands_for),
+        }
+    );
+
+    // A row past the end opens nothing.
+    let past_the_end = window.lock().expect("the state").conversations.len();
+    assert_eq!(
+        what_enter_opens(&window, &cache, past_the_end),
+        Opened::Nothing
+    );
+
+    // A lone row standing for a message the store never issued opens
+    // nothing: neither the loaded rows nor the store hold it.
+    let one = the_row_of(&window, "alone@example.com");
+    window.lock().expect("the state").conversations[one]
+        .stands_for
+        .id = 999_999;
+    assert_eq!(what_enter_opens(&window, &cache, one), Opened::Nothing);
 }
 
 // ── The cell and the sort ──────────────────────────────────────────────────
