@@ -12662,7 +12662,10 @@ fn send_the_marks_on_their_own(
 /// what it will do to the messages that need it. The rows on screen and
 /// nothing read from the cache, because this is asked on every arrow key.
 /// `None` when nothing is selected.
-fn the_chosen_rows_have_unread(s: &WxUIState, rows: &[usize]) -> Option<bool> {
+///
+/// Public so `tests/a_change_made_here_reaches_the_conversation_rows.rs` can
+/// ask it of a conversation row a mark has just reached (13.2-02).
+pub fn the_chosen_rows_have_unread(s: &WxUIState, rows: &[usize]) -> Option<bool> {
     let rows = if rows.is_empty() {
         s.selected_message_index.into_iter().collect()
     } else {
@@ -21670,7 +21673,7 @@ fn move_back_or_again(
             (OneChange::EndTheWaitingRow(waiting), _) => {
                 match undo_here(cache, &waiting) {
                     Ok(()) => {
-                        take_row_out_of_the_list(state, list, waiting.message_row_id);
+                        take_row_out_of_the_list(state, list, cache, waiting.message_row_id);
                         came_back.push((
                             waiting.account_id,
                             waiting.from_folder_path,
@@ -21699,7 +21702,7 @@ fn move_back_or_again(
             (OneChange::MoveOnThisComputer { row_id, to }, Some(account)) => {
                 match moved_on_this_computer(cache, &account, row_id, &to) {
                     Ok(()) => {
-                        take_row_out_of_the_list(state, list, row_id);
+                        take_row_out_of_the_list(state, list, cache, row_id);
                         came_back.push((account.id, to, row_id));
                         back.done += 1;
                     }
@@ -21750,7 +21753,7 @@ fn move_back_or_again(
                         cache, &account, row.row_id, deleting,
                     ) {
                         Ok(Some(outcome)) if outcome.message_left_the_folder => {
-                            take_row_out_of_the_list(state, list, row.row_id);
+                            take_row_out_of_the_list(state, list, cache, row.row_id);
                             back.done += 1;
                         }
                         Ok(Some(outcome)) => back.refused.push(outcome.said),
@@ -24195,10 +24198,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // The row leaves the list here rather than when Delete was pressed,
             // because this is the point at which the server has agreed. If it
             // refuses, no row was removed and nothing has to be put back.
-            take_row_out_of_the_list(state, msg_list, *cache_id);
+            if let Some(cache) = message_cache.as_deref() {
+                take_row_out_of_the_list(state, msg_list, cache, *cache_id);
+            }
         }
         UIUpdate::MessageLeftTheFolder(cache_id) => {
-            take_row_out_of_the_list(state, msg_list, *cache_id);
+            if let Some(cache) = message_cache.as_deref() {
+                take_row_out_of_the_list(state, msg_list, cache, *cache_id);
+            }
         }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
             // The row on screen as well as the row in the database. Writing
@@ -25792,7 +25799,7 @@ fn complete_here_then_tell_the_server(
                             send_status(tx, rt, &made.shown);
                         }
                     } else {
-                        take_row_out_of_the_list(state, list, ask.asked.message_row_id);
+                        take_row_out_of_the_list(state, list, cache, ask.asked.message_row_id);
                         send_shown(tx, rt, &made.shown);
                     }
                     changed.push(ChangedHere {
@@ -26842,7 +26849,16 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
 /// the key, and the cursor lands once, after the last of them, on the row
 /// after the set as the rule numbers it, so a delete over five is heard as
 /// "Delete" and the row after the five rather than five landings.
-fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl, cache_id: i64) {
+///
+/// Public, with the store it reads, so
+/// `tests/a_change_made_here_reaches_the_conversation_rows.rs` can take a row
+/// out of a list it built (13.2-02).
+pub fn take_row_out_of_the_list(
+    state: &Arc<StdMutex<WxUIState>>,
+    msg_list: &ListCtrl,
+    _cache: &MessageCache,
+    cache_id: i64,
+) {
     let removed = {
         let mut s = lock_state(state);
         let Some(idx) = s.messages.iter().position(|m| m.message_id == cache_id) else {
@@ -26887,6 +26903,19 @@ fn take_row_out_of_the_list(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtr
     };
     let landed = land_the_cursor_after(msg_list, &removed, len_after);
     lock_state(state).selected_message_index = landed;
+}
+
+/// Bring the conversation rows on screen up to date after a change made here
+/// to the messages `touched` (13.2-02).
+///
+/// Public so `tests/a_change_made_here_reaches_the_conversation_rows.rs` can
+/// run it over a list it built.
+pub fn bring_the_conversation_rows_up_to_date(
+    _state: &Arc<StdMutex<WxUIState>>,
+    _cache: &MessageCache,
+    _list: &ListCtrl,
+    _touched: &[i64],
+) {
 }
 
 /// A refusal has arrived while a set was leaving the list (#30): the rows
