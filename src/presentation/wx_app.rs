@@ -519,6 +519,13 @@ pub struct WxUIState {
     /// the list selects more than one, and the set is read from the control
     /// at the key rather than kept here; this stays the cursor.
     pub selected_message_index: Option<usize>,
+    /// The message a command run from an opened conversation names, by its
+    /// row id (13.2-03). Set only while that command runs and cleared by a
+    /// guard whatever it did, so every other command reads the list's cursor
+    /// and selection as it always did. The commands ask
+    /// [`Self::the_message_a_command_is_for`] and `chosen_messages`, which
+    /// read this before the cursor.
+    pub acting_on: Option<i64>,
     /// A set of messages a delete or a move over a selection is taking out
     /// of the list, so the cursor lands once, after the last of them has
     /// left, rather than after each (#30). Nothing between sets.
@@ -798,6 +805,7 @@ impl Default for WxUIState {
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
             selected_message_index: None,
+            acting_on: None,
             a_set_leaving: None,
             conversations_being_fetched: std::collections::HashSet::new(),
             message_preview: MessageBody::default(),
@@ -884,6 +892,32 @@ impl WxUIState {
         self.messages
             .iter()
             .find(|message| message.message_id == stands_for)
+    }
+
+    /// The message a command over one message is for (13.2-03): the one an
+    /// opened conversation named, while its command runs, and otherwise the
+    /// message the cursor row stands for, as the loaded rows hold it.
+    ///
+    /// A conversation's tree is built from the loaded rows, so the message
+    /// it names is always among them.
+    pub fn the_message_a_command_is_for(&self) -> Option<&MessageItem> {
+        match self.acting_on {
+            Some(named) => self
+                .messages
+                .iter()
+                .find(|message| message.message_id == named),
+            None => self
+                .selected_message_index
+                .and_then(|row| self.the_loaded_message_the_row_stands_for(row)),
+        }
+    }
+
+    /// Its row id, for a command that needs no more than that: the one an
+    /// opened conversation named, else the message the cursor row stands
+    /// for, wherever it is filed.
+    pub fn the_id_a_command_is_for(&self) -> Option<i64> {
+        self.acting_on
+            .or_else(|| self.what_the_cursor_stands_for().map(|row| row.id))
     }
 }
 
@@ -3591,7 +3625,14 @@ impl WxMailApp {
             // the tree first, because that is the only place the structure
             // exists: the list stays one row per message so arrowing never
             // walks branches nobody asked for.
+            //
+            // A command chosen in the conversation runs through the dispatch
+            // the menu bar reaches (13.2-03), which is built after this, so
+            // the conversation reads it from this cell, as the tray's icon
+            // does, and the cell is filled where the dispatch is built.
+            let runs_a_command: RunsACommand = std::rc::Rc::new(RefCell::new(None));
             msg_list.on_item_activated({
+                let runs_a_command = std::rc::Rc::clone(&runs_a_command);
                 let state = state.clone();
                 let a11y = a11y.clone();
                 let thread_cache = message_cache.clone();
@@ -3644,10 +3685,18 @@ impl WxMailApp {
                                     &thread_cache,
                                     &a11y,
                                     &msg_list,
-                                    named,
-                                    conversation.nodes,
-                                    conversation.open_on,
+                                    AConversationWindow {
+                                        whose: crate::application::conversations::WhoseConversation {
+                                            account_id: conversation.read_in.account_id,
+                                            thread_id: conversation.thread_id,
+                                        },
+                                        subject: named,
+                                        nodes: conversation.nodes,
+                                        open_on: conversation.open_on,
+                                        arrival: wx_thread_view::Arrival::FirstOpening,
+                                    },
                                     state.clone(),
+                                    &runs_a_command,
                                 );
                             }
                             // Neither the loaded rows nor the store hold
@@ -3739,10 +3788,18 @@ impl WxMailApp {
                         &thread_cache,
                         &a11y,
                         &msg_list,
-                        named,
-                        nodes,
-                        open_on,
+                        AConversationWindow {
+                            whose: crate::application::conversations::WhoseConversation {
+                                account_id: message.account_id.clone(),
+                                thread_id,
+                            },
+                            subject: named,
+                            nodes,
+                            open_on,
+                            arrival: wx_thread_view::Arrival::FirstOpening,
+                        },
                         state.clone(),
+                        &runs_a_command,
                     );
                 }
             });
@@ -3763,7 +3820,7 @@ impl WxMailApp {
             // not hand it up from a native list or tree. A handler on the
             // frame was written first and never once fired.
             {
-                use crate::application::context_menu::{Focus, entries_for, entries_for_messages};
+                use crate::application::context_menu::{Focus, entries_for};
                 use crate::application::new_item::{ContainerKind, ItemKind};
 
                 // Asked at the moment the key is pressed, because the Mark
@@ -3775,8 +3832,6 @@ impl WxMailApp {
                     let message_cache = message_cache.clone();
                     let list = msg_list;
                     move || {
-                        use crate::application::context_menu::entries_for_a_message_carrying_an_invitation;
-                        use crate::application::reading_a_message::carries_a_calendar_part;
                         let rows = chosen_rows(&list);
                         let (any_unread, under_the_cursor) = {
                             let held = lock_state(&state);
@@ -3785,17 +3840,13 @@ impl WxMailApp {
                                 held.what_the_cursor_stands_for().map(|row| row.id),
                             )
                         };
-                        // The three answers on a message with a calendar part
-                        // recorded, read by its kind and not parsed: pressing
-                        // one on a cancellation says why it cannot be answered.
-                        let carries_an_invitation = under_the_cursor
-                            .zip(message_cache.as_deref())
-                            .is_some_and(|(row, cache)| carries_a_calendar_part(cache, row));
-                        Some(if carries_an_invitation {
-                            entries_for_a_message_carrying_an_invitation(any_unread)
-                        } else {
-                            entries_for_messages(any_unread)
-                        })
+                        Some(the_menu_a_message_offers(
+                            any_unread,
+                            the_message_carries_an_invitation(
+                                message_cache.as_deref(),
+                                under_the_cursor,
+                            ),
+                        ))
                     }
                 });
                 // The one control here holding twelve kinds of row. Which menu
@@ -4812,10 +4863,9 @@ impl WxMailApp {
                                 Answer::Declined
                             };
                             // The row under the cursor, which the menu and
-                            // the list's context menu both act on.
-                            let under_the_cursor = lock_state(&state)
-                                .what_the_cursor_stands_for()
-                                .map(|row| row.id);
+                            // the list's context menu both act on, or the
+                            // message an opened conversation named.
+                            let under_the_cursor = lock_state(&state).the_id_a_command_is_for();
                             answer_the_invitation(app, &message_cache, under_the_cursor, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
@@ -4847,12 +4897,7 @@ impl WxMailApp {
                                 ItemKind::Note
                             };
 
-                            let chosen = {
-                                let s = lock_state(&state);
-                                s.selected_message_index
-                                    .and_then(|at| s.the_loaded_message_the_row_stands_for(at))
-                                    .cloned()
-                            };
+                            let chosen = lock_state(&state).the_message_a_command_is_for().cloned();
                             let Some(message) = chosen else {
                                 send_refusal(&ui_tx, &runtime, &nothing_chosen(Thing::MESSAGE));
                                 return;
@@ -5408,7 +5453,7 @@ impl WxMailApp {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
-                            let (_to, subj, body) = msg_info(&state);
+                            let (_to, subj, body) = msg_info(&state, message_cache.as_deref());
                             open_compose(
                                 app,
                                 &frame,
@@ -6220,6 +6265,7 @@ impl WxMailApp {
             // reach it, and the icon itself can be brought into line with the
             // setting for the first time.
             *answers_the_tray.borrow_mut() = Some(std::rc::Rc::clone(&dispatch));
+            *runs_a_command.borrow_mut() = Some(std::rc::Rc::clone(&dispatch));
             follow_the_tray_setting();
 
             // The menu bar's own events, handed to the same dispatch.
@@ -12157,7 +12203,11 @@ fn apply_columns(list: &ListCtrl, layout: &ColumnLayout) {
 /// the four rows of that tree that name no account and hold nothing of their
 /// own, and the reminders sidebar makes the same call by having no menu at all
 /// rather than an empty one.
-fn wire_context_menu<W, F>(control: &W, what_to_offer: F)
+///
+/// Crate-visible since 13.2-03, when the conversation window's tree became
+/// the twelfth control to take the key, from `wx_thread_view`. It stays in
+/// this file because `tests/wired.rs` reads it here.
+pub(crate) fn wire_context_menu<W, F>(control: &W, what_to_offer: F)
 where
     W: WxWidget + WxEvtHandler + Copy + 'static,
     F: Fn() -> Option<&'static [crate::application::context_menu::Entry]> + 'static,
@@ -12183,6 +12233,33 @@ where
             crate::presentation::wx_context_menu::show(&owner, entries);
         }
     });
+}
+
+/// What a message's menu offers, for the message list and for a message in
+/// an opened conversation alike (13.2-03), so one message offers one menu
+/// wherever it is listed: Mark says which way it will go, and a message with
+/// a calendar part offers the three answers.
+fn the_menu_a_message_offers(
+    any_unread: bool,
+    carries_an_invitation: bool,
+) -> &'static [crate::application::context_menu::Entry] {
+    use crate::application::context_menu::{
+        entries_for_a_message_carrying_an_invitation, entries_for_messages,
+    };
+    if carries_an_invitation {
+        entries_for_a_message_carrying_an_invitation(any_unread)
+    } else {
+        entries_for_messages(any_unread)
+    }
+}
+
+/// Whether `message` has a calendar part recorded, read by its kind and not
+/// parsed: pressing one of the three answers on a cancellation says why it
+/// cannot be answered.
+fn the_message_carries_an_invitation(cache: Option<&MessageCache>, message: Option<i64>) -> bool {
+    message.zip(cache).is_some_and(|(row, cache)| {
+        crate::application::reading_a_message::carries_a_calendar_part(cache, row)
+    })
 }
 
 /// Space and Shift+Space on a list read the row under the cursor aloud.
@@ -12274,7 +12351,7 @@ fn chosen_messages(
     list: &ListCtrl,
     reach: crate::application::conversations::AConversationReaches,
 ) -> std::result::Result<crate::application::choosing_messages::Chosen, String> {
-    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
+    use crate::application::choosing_messages::{Members, MessageRef, what_the_command_is_for};
     let rows = {
         let rows = chosen_rows(list);
         if rows.is_empty() {
@@ -12287,8 +12364,14 @@ fn chosen_messages(
         }
     };
     let s = lock_state(state);
+    // A command from an opened conversation names one message (13.2-03),
+    // which is the whole set however many rows the list has selected.
+    let named = match s.acting_on {
+        Some(named) => Some(the_named_message(&s, cache.as_deref(), named)?),
+        None => None,
+    };
     if !s.showing.showing_conversations() {
-        return Ok(what_the_selection_holds(&rows, |row| {
+        return Ok(what_the_command_is_for(named, &rows, |row| {
             s.messages.get(row).map(|message| {
                 Members::AMessage(MessageRef {
                     row_id: message.message_id,
@@ -12309,7 +12392,7 @@ fn chosen_messages(
     // several accounts' at once, and a read against the open folder, which
     // there is none of, or the active account, which is one of them, would
     // act on the wrong mail or refuse (T-11-113).
-    let chosen = what_the_selection_holds(&rows, |row| {
+    let chosen = what_the_command_is_for(named, &rows, |row| {
         let conversation = s.conversations.get(row)?;
         let ids = match cache.messages_in_conversation(
             &conversation.thread_id,
@@ -12342,6 +12425,34 @@ fn chosen_messages(
     match trouble {
         Some(why) => Err(why),
         None => Ok(chosen),
+    }
+}
+
+/// The one message an opened conversation named, as a command over a set
+/// meets it: from the loaded rows, which hold every message a conversation's
+/// tree lists, else from the store, as a conversation's messages are read.
+/// A sentence when neither has it, for the command to refuse with.
+fn the_named_message(
+    s: &WxUIState,
+    cache: Option<&MessageCache>,
+    named: i64,
+) -> std::result::Result<crate::application::choosing_messages::MessageRef, String> {
+    use crate::application::choosing_messages::MessageRef;
+    if let Some(message) = s.messages.iter().find(|m| m.message_id == named) {
+        return Ok(MessageRef {
+            row_id: message.message_id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            read: message.read,
+            starred: message.starred,
+        });
+    }
+    let gone = || "That message is no longer on this computer.".to_string();
+    let cache = cache.ok_or_else(gone)?;
+    match cache.get_message(named) {
+        Ok(Some(message)) => Ok(MessageRef::from(&message)),
+        Ok(None) => Err(gone()),
+        Err(e) => Err(format!("The message could not be read: {e}")),
     }
 }
 
@@ -18898,16 +19009,14 @@ fn start_reply(
     mode: ReplyMode,
 ) {
     let AppHandles { state, .. } = app;
-    let (selected, accounts, preview) = {
+    let (selected, accounts) = {
         let s = lock_state(state);
         (
-            s.selected_message_index
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
-                .cloned(),
+            s.the_message_a_command_is_for().cloned(),
             s.accounts.clone(),
-            s.message_preview.clone(),
         )
     };
+    let preview = the_body_a_command_quotes(state, cache.as_deref());
     let Some(message) = selected else {
         let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
         return;
@@ -19140,24 +19249,51 @@ fn file_name_of(path: &std::path::Path) -> String {
 }
 
 /// Extract selected message info for reply/forward.
-fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
-    state
+fn msg_info(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> (String, String, MessageBody) {
+    let addressed = state
         .lock()
         .map(|s| {
-            s.selected_message_index
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
+            s.the_message_a_command_is_for()
                 // The reply address, not the sender: a mailing list sets
                 // Reply-To so a reply reaches the list rather than one member.
-                .map(|m| {
-                    (
-                        m.reply_address().to_string(),
-                        m.subject.clone(),
-                        s.message_preview.clone(),
-                    )
-                })
-                .unwrap_or_default()
+                .map(|m| (m.reply_address().to_string(), m.subject.clone()))
         })
-        .unwrap_or_default()
+        .ok()
+        .flatten();
+    match addressed {
+        Some((to, subject)) => (to, subject, the_body_a_command_quotes(state, cache)),
+        None => Default::default(),
+    }
+}
+
+/// The text a reply or a forward quotes: the message an opened conversation
+/// named, read from the store, while its command runs (13.2-03); otherwise
+/// the preview, which holds the message the cursor row stands for.
+///
+/// Never the preview while a message is named, because the preview holds
+/// the list row's message and a reply would quote a message nobody chose.
+/// With no store open the named message quotes nothing rather than that.
+fn the_body_a_command_quotes(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> MessageBody {
+    let (named, preview) = {
+        let s = lock_state(state);
+        (s.acting_on, s.message_preview.clone())
+    };
+    match named {
+        Some(named) => body_as_written(cache.and_then(|cache| {
+            cache
+                .get_message_body(named)
+                .map_err(|e| tracing::warn!("The text of message {named} could not be read: {e}"))
+                .ok()
+                .flatten()
+        })),
+        None => preview,
+    }
 }
 
 /// The other addresses each account sends from, as the store keeps them,
@@ -19307,9 +19443,8 @@ fn open_compose(
             // The To and Cc of the message answered or forwarded, which is
             // the one selected, as `start_reply` and Forward read it.
             let answered = s
-                .selected_message_index
+                .the_message_a_command_is_for()
                 .filter(|_| replying)
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
                 .map(|message| (message.to.clone(), message.cc.clone()))
                 .unwrap_or_default();
             (s.accounts.clone(), sender, answered)
@@ -20273,6 +20408,8 @@ fn open_for_scanning(
                 &scan_fixtures::conversation(),
                 None,
                 a11y,
+                wx_thread_view::Arrival::FirstOpening,
+                |_| Some(the_menu_a_message_offers(true, false)),
             );
             OnReturn::WindowClosed
         }
@@ -20789,6 +20926,11 @@ pub fn fill_the_tree(
 /// The slot is empty until the thing that answers commands has been built,
 /// which is after the icon needs to be able to reach it.
 type AnswersTheTray = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(i32)>>>>;
+
+/// What runs a command chosen in an opened conversation: the same dispatch,
+/// through a slot for the same reason as [`AnswersTheTray`]. Enter on the
+/// message list is wired before the dispatch exists (13.2-03).
+type RunsACommand = AnswersTheTray;
 
 /// What opens a link or a file another copy of Wixen Mail handed over.
 ///
@@ -28667,6 +28809,42 @@ fn spawn_server_change(
     });
 }
 
+/// One opening of the conversation window: whose conversation, what it is
+/// called, the messages it lists, where its cursor starts, and whether it
+/// says "Conversation, N messages" as it arrives.
+struct AConversationWindow {
+    whose: crate::application::conversations::WhoseConversation,
+    subject: String,
+    nodes: Vec<wx_thread_view::ThreadNode>,
+    open_on: Option<i64>,
+    arrival: wx_thread_view::Arrival,
+}
+
+/// The message a command from an opened conversation is for, named in the
+/// state for as long as this lives (13.2-03).
+///
+/// Cleared when it is dropped, whatever the command did, so no path through
+/// a command can leave a later command from the list acting on a message
+/// the conversation named.
+struct ActingOn {
+    state: Arc<StdMutex<WxUIState>>,
+}
+
+impl ActingOn {
+    fn begin(state: &Arc<StdMutex<WxUIState>>, message: i64) -> Self {
+        lock_state(state).acting_on = Some(message);
+        Self {
+            state: state.clone(),
+        }
+    }
+}
+
+impl Drop for ActingOn {
+    fn drop(&mut self) {
+        lock_state(&self.state).acting_on = None;
+    }
+}
+
 /// Show a conversation, and come back to it when the reading window closes.
 ///
 /// Calls itself. Opening a conversation is not a one-way trip: somebody reads a
@@ -28688,6 +28866,13 @@ fn spawn_server_change(
 /// `open_on` is the message the list row stood for (#31), which the tree
 /// puts the cursor on so Enter on arrival opens it; nothing opens on the
 /// root. Coming back after a message closes opens on the same one.
+///
+/// A command chosen on a message in it runs through `runs_a_command`, the
+/// main window's dispatch, on that message alone (13.2-03), and the
+/// conversation comes back listing what is true now, with the cursor where
+/// [`wx_thread_view::where_the_cursor_comes_back`] says. Every return reads
+/// the conversation's messages again rather than the ones it first opened
+/// with, so its "Unread." labels are true.
 #[allow(clippy::too_many_arguments)]
 fn open_conversation_again(
     frame: &Frame,
@@ -28695,14 +28880,37 @@ fn open_conversation_again(
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
     msg_list: &ListCtrl,
-    subject: String,
-    nodes: Vec<wx_thread_view::ThreadNode>,
-    open_on: Option<i64>,
+    window: AConversationWindow,
     state: Arc<StdMutex<WxUIState>>,
+    runs_a_command: &RunsACommand,
 ) {
-    let choice = wx_thread_view::show_thread_dialog(frame, &subject, &nodes, open_on, a11y);
+    let AConversationWindow {
+        whose,
+        subject,
+        nodes,
+        open_on,
+        arrival,
+    } = window;
+    let offers = {
+        let state = state.clone();
+        let cache = cache.clone();
+        move |message: i64| {
+            let unread = lock_state(&state)
+                .messages
+                .iter()
+                .find(|m| m.message_id == message)
+                .is_some_and(|m| !m.read);
+            Some(the_menu_a_message_offers(
+                unread,
+                the_message_carries_an_invitation(cache.as_deref(), Some(message)),
+            ))
+        }
+    };
+    let choice =
+        wx_thread_view::show_thread_dialog(frame, &subject, &nodes, open_on, a11y, arrival, offers);
 
-    // What to do when the window this opens is closed: come back here.
+    // What to do when the window this opens is closed: come back here, to
+    // the conversation as it stands now.
     let again = {
         let frame = *frame;
         let reader = reader.clone();
@@ -28710,8 +28918,9 @@ fn open_conversation_again(
         let a11y = a11y.clone();
         let msg_list = *msg_list;
         let subject = subject.clone();
-        let nodes = nodes.clone();
+        let whose = whose.clone();
         let state = state.clone();
+        let runs_a_command = Rc::clone(runs_a_command);
         Rc::new(move || {
             open_conversation_again(
                 &frame,
@@ -28719,10 +28928,15 @@ fn open_conversation_again(
                 &cache,
                 &a11y,
                 &msg_list,
-                subject.clone(),
-                nodes.clone(),
-                open_on,
+                AConversationWindow {
+                    nodes: conversation_nodes(&state, &whose.account_id, &whose.thread_id),
+                    whose: whose.clone(),
+                    subject: subject.clone(),
+                    open_on,
+                    arrival: wx_thread_view::Arrival::FirstOpening,
+                },
                 state.clone(),
+                &runs_a_command,
             );
         }) as Rc<dyn Fn()>
     };
@@ -28772,6 +28986,51 @@ fn open_conversation_again(
                 }
                 None => msg_list.set_focus(),
             }
+        }
+        wx_thread_view::ThreadChoice::Act { command, message } => {
+            // The command runs as the menu bar runs it, on this message
+            // alone: the guard names it to the command for as long as the
+            // command runs and clears it whatever the command did, so a
+            // later command from the list acts on the list again.
+            reader.on_closed(None);
+            let run = runs_a_command.borrow().clone();
+            {
+                let _acting = ActingOn::begin(&state, message);
+                if let Some(run) = run {
+                    run(command);
+                }
+            }
+            // A reply, a forward or a copy to a new item opened a window of
+            // its own, which has closed by now; the list is where that
+            // leaves somebody, as it would from the list.
+            if !wx_thread_view::brings_the_conversation_back(command) {
+                msg_list.set_focus();
+                return;
+            }
+            let now = conversation_nodes(&state, &whose.account_id, &whose.thread_id);
+            if now.is_empty() {
+                // Its last message here has left, and 13.2-02's catch-up
+                // has put the list's cursor on the next conversation.
+                msg_list.set_focus();
+                return;
+            }
+            let back_on = wx_thread_view::where_the_cursor_comes_back(&nodes, message, &now);
+            open_conversation_again(
+                frame,
+                reader,
+                cache,
+                a11y,
+                msg_list,
+                AConversationWindow {
+                    whose,
+                    subject,
+                    nodes: now,
+                    open_on: back_on,
+                    arrival: wx_thread_view::Arrival::AfterACommand,
+                },
+                state,
+                runs_a_command,
+            );
         }
         wx_thread_view::ThreadChoice::Cancelled => {
             // Out of the conversation and back to the mailbox, which is the

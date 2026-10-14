@@ -1427,6 +1427,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Inside an opened conversation, the menu key, Delete, Shift+Delete and M act on the
+  message the cursor is on (2026-10-14, LIST-05).** In the conversation window, the one place a
+  conversation's messages are listed one by one, none of these did anything, so a message
+  could only be acted on together with its whole conversation, from the list. Now the menu key
+  (`Applications` or `Shift+F10`) on a message offers the same menu the message list offers,
+  and what you choose from it acts on that message alone; `Delete` and `Shift+Del` delete it
+  and `M` marks it read or unread, as they do on a row in the list. Afterwards the conversation
+  comes back by itself, listing what is true now, with the cursor on the same message, or on
+  the one after it when that message has gone, and nothing is said beyond the command's own
+  words. When the last message of the conversation here has gone, you are back in the list on
+  the next conversation. Reply, Reply All, Forward and the three Copy to commands open their
+  own window, and closing it takes you back to the list. On the first row, the whole
+  conversation, these keys do nothing. Also fixed: pressing `Esc` just after `Enter` in that
+  window could cancel what `Enter` had opened. Known limitations: `Ctrl+R` and the other
+  message keys are not answered in the conversation window yet, and a message you read from it
+  is not marked read unless it is the one the conversation's row stands for; both are the next
+  change. The version does not move.
 - **A mark or a delete shows on a conversation's row at once (2026-10-14, LIST-04,
   LIST-21).** When messages are shown as conversations, marking a conversation read or
   unread said it was done while its row went on saying Unread until the next check for mail.

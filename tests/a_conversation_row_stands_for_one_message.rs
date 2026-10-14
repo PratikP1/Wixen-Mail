@@ -873,6 +873,17 @@ fn body_of(source: &str, signature: &str) -> Result<String, String> {
     Ok(rest[..ends].to_string())
 }
 
+/// One method's text, from its signature to the brace that closes it at the
+/// method's own indent, or a complaint when the signature is gone.
+fn method_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n    }\n").map_or(rest.len(), |end| end + 6);
+    Ok(rest[..ends].to_string())
+}
+
 /// The text between two anchors, or a complaint naming the one that is gone.
 fn between<'a>(text: &'a str, from: &str, to: &str) -> Result<&'a str, String> {
     let start = text
@@ -948,6 +959,14 @@ const THE_CURSOR_COMMANDS: [&str; 7] = [
     "fn mark_what_was_read(",
     "fn block_the_sender(",
 ];
+
+/// The cursor commands an opened conversation can run (13.2-03), which ask
+/// the accessor, and the accessor, which reads the message the conversation
+/// named before the message the row stands for.
+const THROUGH_THE_ACCESSOR: [&str; 2] = ["fn start_reply(", "fn msg_info("];
+const THE_ACCESSOR: &str = "pub fn the_message_a_command_is_for(";
+const ASKS_THE_ACCESSOR: &str = "the_message_a_command_is_for(";
+const THE_NAMED_MESSAGE: &str = "acting_on";
 
 /// The cursor handler asks which message the row stands for, previews
 /// that, and under conversation view starts the conversation's fetch;
@@ -1105,12 +1124,32 @@ fn the_cursor_commands_act_on_the_row_message(app: &str) -> Result<(), String> {
                  which under conversation view is a message unrelated to the row"
             ));
         }
-        if !body.contains(THE_LOADED_ROW_MESSAGE) {
+        let asks = if THROUGH_THE_ACCESSOR.contains(&command) {
+            ASKS_THE_ACCESSOR
+        } else {
+            THE_LOADED_ROW_MESSAGE
+        };
+        if !body.contains(asks) {
             return Err(format!(
-                "{command} does not ask {THE_LOADED_ROW_MESSAGE}, so it does not act on the \
-                 message the row stands for"
+                "{command} does not ask {asks}, so it does not act on the message the row \
+                 stands for or the one an opened conversation named"
             ));
         }
+    }
+    let accessor = method_of(app, THE_ACCESSOR)?;
+    let named = accessor.find(THE_NAMED_MESSAGE).ok_or(format!(
+        "{THE_ACCESSOR} does not read {THE_NAMED_MESSAGE}, so a command from an opened \
+         conversation acts on the row's message instead of the one it named"
+    ))?;
+    let row = accessor.find(THE_LOADED_ROW_MESSAGE).ok_or(format!(
+        "{THE_ACCESSOR} does not ask {THE_LOADED_ROW_MESSAGE}, so a command from the list does \
+         not act on the message the row stands for"
+    ))?;
+    if row < named {
+        return Err(format!(
+            "{THE_ACCESSOR} asks {THE_LOADED_ROW_MESSAGE} before it reads {THE_NAMED_MESSAGE}, \
+             so the row's message wins over the one an opened conversation named"
+        ));
     }
     let fetch = body_of(app, THE_BODY_FETCH)?;
     if !fetch.contains(THE_CURSOR_STANDS_FOR) {
@@ -1197,10 +1236,22 @@ fn a_window_as_it_should_be() -> String {
     );
     for command in THE_CURSOR_COMMANDS {
         snippet.push_str(command);
-        snippet.push_str(
-            ") {\n    s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))\n}\n",
-        );
+        if THROUGH_THE_ACCESSOR.contains(&command) {
+            snippet.push_str(") {\n    s.the_message_a_command_is_for()\n}\n");
+        } else {
+            snippet.push_str(
+                ") {\n    s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))\n}\n",
+            );
+        }
     }
+    snippet.push_str("impl WxUIState {\n    ");
+    snippet.push_str(THE_ACCESSOR);
+    snippet.push_str(
+        "&self) -> Option<&MessageItem> {\n        match self.acting_on {\n            \
+         Some(named) => self.messages.iter().find(|m| m.message_id == named),\n            \
+         None => self.selected_message_index.and_then(|at| self.the_loaded_message_the_row_stands_for(at)),\n        \
+         }\n    }\n}\n",
+    );
     snippet.push_str(THE_BODY_FETCH);
     snippet.push_str(") {\n    let still = s.what_the_cursor_stands_for().is_some_and(|row| row.id == message_row_id);\n}\n");
     snippet
@@ -1268,13 +1319,20 @@ fn test_the_readings_complain_when_the_preview_or_space_reads_the_flat_list_agai
     assert!(why.contains("still reads messages.get("), "{why}");
 
     let reply_reads_the_flat_row = app.replacen(
-        "fn start_reply() {\n    s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))",
+        "fn start_reply() {\n    s.the_message_a_command_is_for()",
         "fn start_reply() {\n    s.selected_message_index.and_then(|at| s.messages.get(at))",
         1,
     );
     let why = the_cursor_commands_act_on_the_row_message(&reply_reads_the_flat_row)
         .expect_err("Reply on the flat row");
     assert!(why.contains("fn start_reply( still reads"), "{why}");
+
+    // 13.2-03: an accessor that never reads the message an opened
+    // conversation named answers the row's message for a command run there.
+    let the_named_message_ignored = app.replacen("match self.acting_on {", "match None {", 1);
+    let why = the_cursor_commands_act_on_the_row_message(&the_named_message_ignored)
+        .expect_err("the accessor ignoring acting_on");
+    assert!(why.contains("does not read acting_on"), "{why}");
 }
 
 #[test]

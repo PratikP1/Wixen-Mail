@@ -654,6 +654,10 @@ const THE_CONTEXT_WIRING: (&str, &str) = (
     "wire_context_menu(&msg_list,",
     "wire_context_menu(&folder_tree",
 );
+/// The one rule for what a message's menu offers, which the list and the
+/// conversation window both ask (13.2-03), and how a wiring asks it.
+const THE_MESSAGE_MENU: &str = "fn the_menu_a_message_offers(";
+const THE_MESSAGE_MENU_ASKED: &str = "the_menu_a_message_offers(";
 /// Where the main toolbar's tool is added, and the end of that call.
 const THE_TOOL_ADDED: (&str, &str) = ("toolbar.add_tool(\n                    ID_MARK_READ,", ");");
 const THE_ITEM: &str = ".append_item(ID_MARK_READ, ";
@@ -755,16 +759,29 @@ fn the_wording_follows_the_state_everywhere_it_can_change(app: &str) -> Result<(
 
 /// The message list's context menu is answered from the state at the moment
 /// the key is pressed, and no longer from the focus alone.
+///
+/// The rule for what a message offers is one function since 13.2-03, which
+/// the list's wiring and the conversation window's both call, so the reading
+/// follows the wiring into it.
 fn the_context_menu_asks_the_state(app: &str) -> Result<(), String> {
     let wiring = between(app, THE_CONTEXT_WIRING.0, THE_CONTEXT_WIRING.1)?;
-    if !wiring.contains("entries_for_messages(") {
+    if !wiring.contains(THE_MESSAGE_MENU_ASKED) {
+        return Err(format!(
+            "the message list's context menu does not ask {THE_MESSAGE_MENU_ASKED}, so the list \
+             and the conversation window can offer two different menus for one message"
+        ));
+    }
+    let rule = body_of(app, THE_MESSAGE_MENU)?;
+    if !rule.contains("entries_for_messages(") {
         return Err(
             "the message list's context menu is not built from entries_for_messages, so it says \
              Mark as read whatever the message's state"
                 .to_string(),
         );
     }
-    if wiring.contains("entries_for(Focus::Messages)") {
+    if wiring.contains("entries_for(Focus::Messages)")
+        || rule.contains("entries_for(Focus::Messages)")
+    {
         return Err(
             "the message list's context menu still answers the focus form beside the state's"
                 .to_string(),
@@ -830,7 +847,8 @@ fn test_the_tool_and_the_item_are_built_with_the_rules_words() {
 fn a_window_as_it_should_be() -> String {
     format!(
         "{}\n    refresh_mark_read_wording(&frame, toolbar_handle, &state);\n{}\n\
-         {} Some(entries_for_messages(any_unread)){}\n\
+         {} Some(the_menu_a_message_offers(any_unread, carries_an_invitation)){}\n\
+         fn the_menu_a_message_offers(any_unread: bool) {{\n    Some(entries_for_messages(any_unread))\n}}\n\
          {}\n    what_the_command_says(true).spoken,\n{}\n\
          {}\"Mark as R&ead\", \"Mark the selected message as read\")\n\
          {}\n    toggle_read_state(app, &a11y, How::TheKey, &frame, toolbar_handle);\n{}\n\
@@ -919,6 +937,20 @@ fn test_the_reading_complains_when_the_context_menu_answers_the_focus_alone() {
     let why = the_context_menu_asks_the_state(&app)
         .expect_err("a context menu answering the focus alone was passed over");
     assert!(why.contains("not built from entries_for_messages"), "{why}");
+
+    // 13.2-03: a list that builds its menu itself, beside the one rule the
+    // conversation window asks, can offer two menus for one message.
+    let app = a_window_as_it_should_be().replacen(
+        "Some(the_menu_a_message_offers(any_unread, carries_an_invitation))",
+        "Some(entries_for_messages(any_unread))",
+        1,
+    );
+    let why = the_context_menu_asks_the_state(&app)
+        .expect_err("a list building its own menu was passed over");
+    assert!(
+        why.contains("does not ask the_menu_a_message_offers("),
+        "{why}"
+    );
 }
 
 #[test]

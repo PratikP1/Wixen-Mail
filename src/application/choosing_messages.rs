@@ -151,6 +151,28 @@ pub fn what_the_selection_holds(
     chosen
 }
 
+/// The set a command acts on: the one message it was told it is for, when
+/// it was told one, and otherwise what the selection holds.
+///
+/// A command run from inside an opened conversation names the message under
+/// that window's cursor (13.2-03, Pratik's fourth report of 2026-10-14), and
+/// acts on that message alone even though the list row behind the window
+/// stands for the whole conversation. With nothing named, a conversation row
+/// still contributes every message of it, which is #27's rule.
+pub fn what_the_command_is_for(
+    named: Option<MessageRef>,
+    rows: &[usize],
+    members_of: impl FnMut(usize) -> Option<Members>,
+) -> Chosen {
+    match named {
+        Some(message) => Chosen {
+            messages: vec![message],
+            ..Chosen::default()
+        },
+        None => what_the_selection_holds(rows, members_of),
+    }
+}
+
 /// The commands that act on the whole selection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SetCommand {
@@ -436,6 +458,50 @@ mod tests {
                 .the_one_message()
                 .is_none(),
             "a conversation row is a set even from one row"
+        );
+    }
+
+    // ── what_the_command_is_for ─────────────────────────────────────────
+
+    /// Row 0 is a conversation of 11, 22 and 33, as the list holds the
+    /// conversation an opened conversation window was opened from.
+    fn a_conversation_row(row: usize) -> Option<Members> {
+        (row == 0).then(|| Members::AConversation {
+            name: "Quarterly report".to_string(),
+            messages: vec![
+                a_message(11, true, false),
+                a_message(22, false, false),
+                a_message(33, false, true),
+            ],
+        })
+    }
+
+    #[test]
+    fn test_a_message_chosen_inside_a_conversation_is_the_whole_set() {
+        let chosen =
+            what_the_command_is_for(Some(a_message(33, false, true)), &[0], a_conversation_row);
+        assert_eq!(ids(&chosen), vec![33]);
+        assert!(
+            chosen.conversations.is_empty(),
+            "the one message named is not a conversation"
+        );
+        assert_eq!(chosen.from_conversations, 0);
+        assert_eq!(
+            chosen.the_one_message().map(|message| message.row_id),
+            Some(33),
+            "the commands that say one message's line say this one's"
+        );
+    }
+
+    #[test]
+    fn test_with_no_message_named_the_set_is_what_the_selection_holds() {
+        assert_eq!(
+            what_the_command_is_for(None, &[0], a_conversation_row),
+            what_the_selection_holds(&[0], a_conversation_row)
+        );
+        assert_eq!(
+            what_the_command_is_for(None, &[3, 0], the_rows),
+            what_the_selection_holds(&[3, 0], the_rows)
         );
     }
 
