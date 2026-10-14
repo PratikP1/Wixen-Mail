@@ -358,19 +358,28 @@ menu_ids!(
 /// were numbered before any left. Each row that leaves moves from `still_to_leave`
 /// to `left`, and when nothing is still to leave, or a refusal ends the wait,
 /// the cursor lands once, after the rows that left.
+///
+/// Under conversation view a message is not a row, so it has no index here;
+/// the set's messages are what the conversation rows are brought up to date
+/// from, once, after the last of them (13.2-02).
 #[derive(Debug, Default)]
 pub struct ASetLeaving {
-    /// Row id to the row's index at the key.
-    pub still_to_leave: std::collections::HashMap<i64, usize>,
+    /// Row id to the row's index at the key, when the list shows messages.
+    pub still_to_leave: std::collections::HashMap<i64, Option<usize>>,
     /// The indices at the key of the rows that have left.
     pub left: Vec<usize>,
+    /// Every message of the set, by row id.
+    pub messages: Vec<i64>,
 }
 
 impl ASetLeaving {
-    /// The set, from the rows and ids it holds on screen.
-    pub fn of(rows: impl IntoIterator<Item = (i64, usize)>) -> Self {
+    /// The set, from its messages' ids and their rows on screen.
+    pub fn of(rows: impl IntoIterator<Item = (i64, Option<usize>)>) -> Self {
+        let still_to_leave: std::collections::HashMap<i64, Option<usize>> =
+            rows.into_iter().collect();
         Self {
-            still_to_leave: rows.into_iter().collect(),
+            messages: still_to_leave.keys().copied().collect(),
+            still_to_leave,
             left: Vec::new(),
         }
     }
@@ -381,9 +390,34 @@ impl ASetLeaving {
         let Some(index) = self.still_to_leave.remove(&row_id) else {
             return (false, false);
         };
-        self.left.push(index);
+        self.left.extend(index);
         (true, self.still_to_leave.is_empty())
     }
+
+    /// The set's messages that have left so far.
+    pub fn the_messages_that_left(&self) -> Vec<i64> {
+        self.messages
+            .iter()
+            .copied()
+            .filter(|id| !self.still_to_leave.contains_key(id))
+            .collect()
+    }
+}
+
+/// The set a command over `leaving` is taking out of the list, when it is a
+/// set: by row under the message view, by message under conversation view,
+/// where the rows that leave are worked out from the store (13.2-02).
+fn the_set_leaving(s: &WxUIState, leaving: &[i64]) -> Option<ASetLeaving> {
+    let by_message = s.showing.showing_conversations();
+    (leaving.len() > 1).then(|| {
+        ASetLeaving::of(leaving.iter().filter_map(|row_id| {
+            let row = s.messages.iter().position(|row| row.message_id == *row_id);
+            match by_message {
+                true => Some((*row_id, None)),
+                false => row.map(|row| (*row_id, Some(row))),
+            }
+        }))
+    })
 }
 
 #[derive(Debug)]
@@ -5508,6 +5542,13 @@ impl WxMailApp {
                             // route a single message always went down: cancel
                             // it if it is queued, delete it here if it lives
                             // here, ask the server otherwise.
+                            //
+                            // Corrected 2026-10-14 (13.2-02): the server has
+                            // not been asked first since 2caa5111 (11-07.1).
+                            // A delete within an account is made here first
+                            // and kept waiting for the server, so its row
+                            // leaves at once; the server is asked first only
+                            // when this computer could not record the change.
                             use crate::application::choosing_messages::{
                                 deleting_asks, too_many, what_is_being_done,
                             };
@@ -5561,21 +5602,18 @@ impl WxMailApp {
                             // The set's rows on screen, remembered so the
                             // cursor lands once, after the last of them has
                             // left, rather than after each (#30, on #76's
-                            // rule). One row is today's path; under
-                            // conversation view nothing lands, 11-06.1's
-                            // decision, so nothing is remembered there.
+                            // rule). One row is today's path. Under
+                            // conversation view nothing landed until
+                            // 2026-10-14 (13.2-02, 11-06.1's decision until
+                            // then); the set's messages are remembered there
+                            // now, so the rows are brought up to date and the
+                            // cursor lands once, after the last.
                             {
+                                let leaving: Vec<i64> =
+                                    chosen.messages.iter().map(|message| message.row_id).collect();
                                 let mut s = lock_state(&state);
-                                s.a_set_leaving = (chosen.messages.len() > 1
-                                    && !s.showing.showing_conversations())
-                                .then(|| {
-                                    ASetLeaving::of(chosen.messages.iter().filter_map(|message| {
-                                        s.messages
-                                            .iter()
-                                            .position(|row| row.message_id == message.row_id)
-                                            .map(|row| (message.row_id, row))
-                                    }))
-                                });
+                                let set = the_set_leaving(&s, &leaving);
+                                s.a_set_leaving = set;
                             }
                             // One word at the key and the fuller line for
                             // the eye (#83). The subject was just read on
@@ -8117,13 +8155,7 @@ fn load_every_inbox_conversations(
     let Some(cache) = cache.as_ref() else {
         return;
     };
-    let reach = crate::data::config::ConfigManager::load_stored()
-        .map(|stored| {
-            crate::application::conversations::AConversationReaches::from_stored(
-                &stored.app_config().a_conversation_reaches,
-            )
-        })
-        .unwrap_or_default();
+    let reach = the_conversation_reach();
     let order = the_sort_as(view_state::Showing::Conversations);
 
     match cache.conversations_in_every_inbox(reach, order.as_deref()) {
@@ -12400,6 +12432,16 @@ fn toggle_read_state(
     refresh_mark_read_wording(frame, toolbar, state, list);
 }
 
+/// The row ids of the chosen messages, which is what a change made to them
+/// hands to `bring_the_conversation_rows_up_to_date`.
+fn the_row_ids(chosen: &crate::application::choosing_messages::Chosen) -> Vec<i64> {
+    chosen
+        .messages
+        .iter()
+        .map(|message| message.row_id)
+        .collect()
+}
+
 /// A do-half stopped at a write this computer refused. The row is put back
 /// and the reason said where the write was refused, and the list is
 /// refreshed, so the command that called it says nothing more.
@@ -12468,6 +12510,9 @@ fn mark_these_read(
             before: as_they_were(&chosen.messages, &[]),
         },
     );
+    if let Some(cache) = cache.as_deref() {
+        bring_the_conversation_rows_up_to_date(state, cache, list, &the_row_ids(chosen));
+    }
     list.refresh(true, None);
     Ok(match read {
         true => Outcome::MarkedRead,
@@ -12540,6 +12585,9 @@ fn star_these(
             before: as_they_were(&chosen.messages, &[]),
         },
     );
+    if let Some(cache) = cache.as_deref() {
+        bring_the_conversation_rows_up_to_date(state, cache, list, &the_row_ids(chosen));
+    }
     list.refresh(true, None);
     Ok(match starred {
         true => Outcome::Starred,
@@ -13124,6 +13172,7 @@ fn label_the_message(
         Ok(outcome) => outcome,
         Err(why) => return send_status(tx, rt, &why),
     };
+    bring_the_conversation_rows_up_to_date(state, cache_handle, list, &the_row_ids(&chosen));
 
     // Spoken rather than left in the status line. A label is not visible from
     // the row it is on, so somebody who pressed the wrong number has no other
@@ -17863,6 +17912,23 @@ fn the_sort_as(showing: view_state::Showing) -> Option<String> {
         .map(|layout| view_state::order_by(showing, &layout.sort))
 }
 
+/// How far a conversation row counts, read the one way every reader of the
+/// rows reads it.
+///
+/// It is the same answer the conversation window already uses, so a row's
+/// counts and an opened conversation's cannot disagree (D-08). One function since
+/// 2026-10-14 (13.2-02), when a third reader joined the folder's and every
+/// inbox's.
+fn the_conversation_reach() -> crate::application::conversations::AConversationReaches {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|stored| {
+            crate::application::conversations::AConversationReaches::from_stored(
+                &stored.app_config().a_conversation_reaches,
+            )
+        })
+        .unwrap_or_default()
+}
+
 /// Read the open folder's conversations, one per collapsed row.
 ///
 /// Alongside [`load_folder_messages`] rather than instead of it: a collapsed
@@ -17885,16 +17951,7 @@ fn load_folder_conversations(
     else {
         return;
     };
-    // How far a conversation reaches is the fourth of this phase's settings,
-    // and it is the same answer the conversation window already uses, so a
-    // row's counts and an opened conversation's cannot disagree (D-08).
-    let reach = crate::data::config::ConfigManager::load_stored()
-        .map(|stored| {
-            crate::application::conversations::AConversationReaches::from_stored(
-                &stored.app_config().a_conversation_reaches,
-            )
-        })
-        .unwrap_or_default();
+    let reach = the_conversation_reach();
     let order = the_sort_as(view_state::Showing::Conversations);
 
     match cache.conversations_in(folder_id, &account_id, reach, order.as_deref()) {
@@ -21410,14 +21467,17 @@ fn take_back_or_do_again(
         Ok(taken) => taken,
         Err(why) => return say_what_the_undo_did(frame, a11y, why, Priority::High),
     };
+    let marked: Vec<i64> = changes.iter().map(|(message, _)| message.row_id).collect();
     for (message, mark) in &changes {
         // A write this computer refused has put its row back and said why;
         // the rest would be refused the same way.
         if !put_a_mark_on(app, cache, message, mark) {
+            bring_the_conversation_rows_up_to_date(app.state, cache, list, &marked);
             list.refresh(true, None);
             return;
         }
     }
+    bring_the_conversation_rows_up_to_date(app.state, cache, list, &marked);
     list.refresh(true, None);
     refresh_mark_read_wording(frame, toolbar, app.state, list);
     say_what_the_undo_did(frame, a11y, &said, Priority::Normal);
@@ -23143,14 +23203,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // reader's cursor with it, which is the fault the folder tree
                 // already had to be fixed for.
                 WhyTheRowsWereRead::MailArrived => {
-                    if repaint.count_changed() {
-                        tell_the_list_how_many(state, msg_list);
-                    }
-                    match repaint.run() {
-                        Some((row, last)) if row == last => msg_list.refresh_item(row as i64),
-                        Some((from, to)) => msg_list.refresh_items(from as i64, to as i64),
-                        None => {}
-                    }
+                    repaint_the_rows_that_changed(state, msg_list, &repaint);
                 }
             }
 
@@ -23257,7 +23310,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             let msg = format!("Error: {}", error);
             frame.set_status_text(&msg, 0);
             let _ = a11y.announce(&msg, Priority::High);
-            a_refusal_ends_the_wait_for_a_set(state, msg_list);
+            a_refusal_ends_the_wait_for_a_set(state, msg_list, message_cache.as_deref());
         }
         UIUpdate::StatusUpdated(status) => {
             {
@@ -23530,7 +23583,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // is the answer to a key somebody just pressed and the one thing
             // they cannot be left to miss.
             let _ = a11y.announce_topic(why, Priority::High, "refusal");
-            a_refusal_ends_the_wait_for_a_set(state, msg_list);
+            a_refusal_ends_the_wait_for_a_set(state, msg_list, message_cache.as_deref());
         }
         UIUpdate::FolderWasRenumbered(said) => {
             // Its own topic rather than "status", and the precedent is the
@@ -24198,6 +24251,11 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // The row leaves the list here rather than when Delete was pressed,
             // because this is the point at which the server has agreed. If it
             // refuses, no row was removed and nothing has to be put back.
+            //
+            // Corrected 2026-10-14 (13.2-02): since 2caa5111 (11-07.1) this is
+            // the fallback, reached when this computer could not record the
+            // change; a delete within an account is made here first and its
+            // row leaves at the key.
             if let Some(cache) = message_cache.as_deref() {
                 take_row_out_of_the_list(state, msg_list, cache, *cache_id);
             }
@@ -24243,6 +24301,10 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     (*new_read, starred),
                     (!*new_read, starred),
                 );
+                // The automatic mark after reading and a refused change put
+                // back both land here, so a conversation row shows them too
+                // (13.2-02).
+                bring_the_conversation_rows_up_to_date(state, cache, msg_list, &[*cache_id]);
             }
             msg_list.refresh(true, None);
             // The flag may have landed on the message under the cursor, from
@@ -24300,14 +24362,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // the one place that knows what actually stuck, and sending the
             // names alongside would be a second answer able to disagree with
             // the first.
-            if let Some(cache) = &message_cache
-                && let Ok(tags) = cache.get_tags_for_message(*cache_id)
-            {
-                let names: Vec<String> = tags.into_iter().map(|tag| tag.name).collect();
-                let mut s = lock_state(state);
-                if let Some(row) = s.messages.iter_mut().find(|m| m.message_id == *cache_id) {
-                    row.labels = names;
+            if let Some(cache) = &message_cache {
+                if let Ok(tags) = cache.get_tags_for_message(*cache_id) {
+                    let names: Vec<String> = tags.into_iter().map(|tag| tag.name).collect();
+                    let mut s = lock_state(state);
+                    if let Some(row) = s.messages.iter_mut().find(|m| m.message_id == *cache_id) {
+                        row.labels = names;
+                    }
                 }
+                bring_the_conversation_rows_up_to_date(state, cache, msg_list, &[*cache_id]);
             }
         }
         UIUpdate::MessageStarredToggled(cache_id, new_starred) => {
@@ -24338,6 +24401,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     (read, *new_starred),
                     (read, !*new_starred),
                 );
+                bring_the_conversation_rows_up_to_date(state, cache, msg_list, &[*cache_id]);
             }
             msg_list.refresh(true, None);
         }
@@ -25709,8 +25773,8 @@ fn move_what_was_reported(
 }
 
 /// The set's rows on screen, remembered so the cursor lands once, after the
-/// last of them has left (#30, on #76's rule). Under conversation view
-/// nothing lands.
+/// last of them has left (#30, on #76's rule). Under conversation view the
+/// set's messages, so its rows are brought up to date once (13.2-02).
 fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessageMoving]) {
     let rows: Vec<i64> = moving.iter().map(|message| message.row_id).collect();
     remember_these_rows_leaving(state, &rows);
@@ -25721,14 +25785,8 @@ fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessage
 /// messages moving to hand over (13-24.1).
 fn remember_these_rows_leaving(state: &Arc<StdMutex<WxUIState>>, leaving: &[i64]) {
     let mut s = lock_state(state);
-    s.a_set_leaving = (leaving.len() > 1 && !s.showing.showing_conversations()).then(|| {
-        ASetLeaving::of(leaving.iter().filter_map(|row_id| {
-            s.messages
-                .iter()
-                .position(|row| row.message_id == *row_id)
-                .map(|row| (*row_id, row))
-        }))
-    });
+    let set = the_set_leaving(&s, leaving);
+    s.a_set_leaving = set;
 }
 
 /// One change to make here first: what to do with which message, and the
@@ -26635,6 +26693,7 @@ fn run_these_actions_over(
                 on: true,
             };
             label_these(app, cache, those, &on_them, change).map_err(stopped)?;
+            bring_the_conversation_rows_up_to_date(app.state, cache, list, &the_row_ids(those));
             done.labelled(&label.name, those.messages.len());
         }
         if let Some((phrase, those)) = &work.say_first {
@@ -26643,6 +26702,7 @@ fn run_these_actions_over(
                     .set_says_first(message.row_id, Some(phrase))
                     .map_err(|e| stopped(format!("{STOPPED} {e}.")))?;
             }
+            bring_the_conversation_rows_up_to_date(app.state, cache, list, &the_row_ids(those));
             done.said_first(phrase, those.messages.len());
         }
         match &work.then {
@@ -26850,93 +26910,201 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
 /// after the set as the rule numbers it, so a delete over five is heard as
 /// "Delete" and the row after the five rather than five landings.
 ///
+/// Under conversation view the rows on screen are conversations, so what a
+/// message leaving does to them is read from `cache`, which already holds the
+/// change, once for a set (13.2-02). Until 2026-10-14 this returned there and
+/// a conversation row stayed until the next check, with nothing landing when
+/// it went.
+///
 /// Public, with the store it reads, so
 /// `tests/a_change_made_here_reaches_the_conversation_rows.rs` can take a row
 /// out of a list it built (13.2-02).
 pub fn take_row_out_of_the_list(
     state: &Arc<StdMutex<WxUIState>>,
     msg_list: &ListCtrl,
-    _cache: &MessageCache,
+    cache: &MessageCache,
     cache_id: i64,
 ) {
     let removed = {
         let mut s = lock_state(state);
-        let Some(idx) = s.messages.iter().position(|m| m.message_id == cache_id) else {
+        let idx = s.messages.iter().position(|m| m.message_id == cache_id);
+        if let Some(idx) = idx {
+            s.messages.remove(idx);
+        }
+        // A message the loaded rows never held, one filed in another folder,
+        // still changes its conversation's row.
+        if idx.is_none() && !s.showing.showing_conversations() {
             return;
-        };
-        s.messages.remove(idx);
+        }
         let len_after = s.messages.len();
         let of_a_set = match s.a_set_leaving.as_mut() {
             Some(set) => match set.one_left(cache_id) {
                 (true, true) => {
-                    let rows = std::mem::take(&mut set.left);
+                    let whole = std::mem::take(set);
                     s.a_set_leaving = None;
-                    Some(Some(rows))
+                    Some(Some(whole))
                 }
                 (true, false) => Some(None),
                 (false, _) => None,
             },
             None => None,
         };
-        (idx, len_after, s.showing.showing_conversations(), of_a_set)
+        (idx, len_after, s.showing, of_a_set)
     };
-    let (idx, len_after, showing_conversations, of_a_set) = removed;
+    let (idx, len_after, showing, of_a_set) = removed;
     tell_the_list_how_many(state, msg_list);
     msg_list.refresh(true, None);
-    // Under conversation view the rows on screen are conversations and the
-    // index is one of theirs, so a message's row is nowhere to land; which
-    // message a conversation row stands for is 11-08's. The record is left
-    // as it was there.
-    if showing_conversations {
-        return;
-    }
-    let removed: Vec<usize> = match of_a_set {
+    let (removed, messages): (Vec<usize>, Vec<i64>) = match of_a_set {
         // Not of a set: one row, landed after as it always was.
-        None => vec![idx],
+        None => (idx.into_iter().collect(), vec![cache_id]),
         // Of a set with rows still to leave: nothing lands yet.
         Some(None) => return,
-        // The last of the set: the set's rows, numbered as they were.
-        Some(Some(mut rows)) => {
+        // The last of the set: the set's rows, numbered as they were, and
+        // its messages.
+        Some(Some(set)) => {
+            let mut rows = set.left;
             rows.sort_unstable();
-            rows
+            (rows, set.messages)
         }
     };
-    let landed = land_the_cursor_after(msg_list, &removed, len_after);
-    lock_state(state).selected_message_index = landed;
+    match showing {
+        view_state::Showing::Messages => {
+            let landed = land_the_cursor_after(msg_list, &removed, len_after);
+            lock_state(state).selected_message_index = landed;
+        }
+        view_state::Showing::Conversations => {
+            bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages);
+        }
+    }
+}
+
+/// Which conversations the list is showing: one folder's, or every inbox's.
+enum ConversationsOnScreen {
+    Folder { folder_id: i64, account_id: String },
+    EveryInbox,
+}
+
+/// The conversations on screen, or nothing when the list shows messages.
+fn the_conversations_on_screen(s: &WxUIState) -> Option<ConversationsOnScreen> {
+    if !s.showing.showing_conversations() {
+        return None;
+    }
+    match s.selected_folder.as_ref()? {
+        folder_tree::WhichRow::AllInboxes => Some(ConversationsOnScreen::EveryInbox),
+        row => match row.opens()? {
+            folder_tree::WhichRow::Folder { account, .. } => Some(ConversationsOnScreen::Folder {
+                folder_id: folder_on_screen(s)?,
+                account_id: account,
+            }),
+            _ => None,
+        },
+    }
 }
 
 /// Bring the conversation rows on screen up to date after a change made here
 /// to the messages `touched` (13.2-02).
 ///
+/// Pratik, 2026-10-14: "Read/unread status change doesn't apply immediately.
+/// While the announcement says it does, the change only takes place when
+/// message sync occurs." And: "Delete is the same as 2." The rows are a
+/// summary the listing works out from the read flags, so they are read again
+/// from the store, which already holds the change, for the conversations it
+/// touched and nothing else, with the reach and the sort the loaders use.
+/// A row is replaced where it stands and never moves, a row whose
+/// conversation has nothing left here leaves, and only the rows that changed
+/// are repainted. When rows left the cursor lands after them, which is what
+/// a screen reader reads next.
+///
+/// Says nothing: the word at the key stands (#83, guardrail 5). Does nothing
+/// under the message view, whose rows are the messages already changed.
+///
 /// Public so `tests/a_change_made_here_reaches_the_conversation_rows.rs` can
 /// run it over a list it built.
 pub fn bring_the_conversation_rows_up_to_date(
-    _state: &Arc<StdMutex<WxUIState>>,
-    _cache: &MessageCache,
-    _list: &ListCtrl,
-    _touched: &[i64],
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    list: &ListCtrl,
+    touched: &[i64],
 ) {
+    let Some(on_screen) = the_conversations_on_screen(&lock_state(state)) else {
+        return;
+    };
+    let named = match cache.conversations_holding(touched) {
+        Ok(named) if named.is_empty() => return,
+        Ok(named) => named,
+        Err(why) => {
+            tracing::warn!("The conversation rows were not brought up to date: {why}");
+            return;
+        }
+    };
+    let reach = the_conversation_reach();
+    let order = the_sort_as(view_state::Showing::Conversations);
+    let fresh = match &on_screen {
+        ConversationsOnScreen::Folder {
+            folder_id,
+            account_id,
+        } => cache.conversations_named_in(*folder_id, account_id, reach, order.as_deref(), &named),
+        ConversationsOnScreen::EveryInbox => {
+            cache.conversations_named_in_every_inbox(reach, order.as_deref(), &named)
+        }
+    };
+    let fresh = match fresh {
+        Ok(fresh) => fresh,
+        Err(why) => {
+            tracing::warn!("The conversation rows were not brought up to date: {why}");
+            return;
+        }
+    };
+    let (repainting, left, len_after) = {
+        let mut s = lock_state(state);
+        let brought = view_state::bring_rows_up_to_date(&s.conversations, &named, &fresh);
+        s.conversations = brought.rows;
+        (brought.repainting, brought.left, s.conversations.len())
+    };
+    repaint_the_rows_that_changed(state, list, &repainting);
+    if !left.is_empty() {
+        let landed = land_the_cursor_after(list, &left, len_after);
+        lock_state(state).selected_message_index = landed;
+    }
 }
 
 /// A refusal has arrived while a set was leaving the list (#30): the rows
 /// that left are landed after now, and the wait ends, so a server that
 /// refused one message of five does not leave the cursor waiting for a row
-/// that will never go.
-fn a_refusal_ends_the_wait_for_a_set(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl) {
-    let left = {
+/// that will never go. Under conversation view the messages that did leave
+/// bring their rows up to date instead (13.2-02).
+fn a_refusal_ends_the_wait_for_a_set(
+    state: &Arc<StdMutex<WxUIState>>,
+    msg_list: &ListCtrl,
+    cache: Option<&MessageCache>,
+) {
+    let ended = {
         let mut s = lock_state(state);
-        let Some(mut set) = s.a_set_leaving.take() else {
+        let Some(set) = s.a_set_leaving.take() else {
             return;
         };
-        if set.left.is_empty() || s.showing.showing_conversations() {
-            return;
-        }
-        set.left.sort_unstable();
-        (set.left, s.messages.len())
+        (set, s.showing, s.messages.len())
     };
-    let (rows, len_after) = left;
-    let landed = land_the_cursor_after(msg_list, &rows, len_after);
-    lock_state(state).selected_message_index = landed;
+    let (set, showing, len_after) = ended;
+    match showing {
+        view_state::Showing::Messages => {
+            if set.left.is_empty() {
+                return;
+            }
+            let mut rows = set.left;
+            rows.sort_unstable();
+            let landed = land_the_cursor_after(msg_list, &rows, len_after);
+            lock_state(state).selected_message_index = landed;
+        }
+        view_state::Showing::Conversations => {
+            let gone = set.the_messages_that_left();
+            if let Some(cache) = cache
+                && !gone.is_empty()
+            {
+                bring_the_conversation_rows_up_to_date(state, cache, msg_list, &gone);
+            }
+        }
+    }
 }
 
 /// Put the message list's cursor on `row`: selected, focused, in view, and
@@ -27047,6 +27215,28 @@ fn tell_the_list_how_many(state: &Arc<StdMutex<WxUIState>>, msg_list: &ListCtrl)
         )
     };
     msg_list.set_item_count(count as i64);
+}
+
+/// Paint the conversation rows that changed and no others, and tell the
+/// control its size only when the size moved (THREAD-02).
+///
+/// Refreshing the list would re-announce every row, and telling the control
+/// its size again is a change of set size a screen reader may report, so
+/// neither happens unless it has to. Mail arriving and a change made here
+/// both repaint through this, since 2026-10-14 (13.2-02).
+fn repaint_the_rows_that_changed(
+    state: &Arc<StdMutex<WxUIState>>,
+    msg_list: &ListCtrl,
+    repaint: &view_state::Repainting,
+) {
+    if repaint.count_changed() {
+        tell_the_list_how_many(state, msg_list);
+    }
+    match repaint.run() {
+        Some((row, last)) if row == last => msg_list.refresh_item(row as i64),
+        Some((from, to)) => msg_list.refresh_items(from as i64, to as i64),
+        None => {}
+    }
 }
 
 /// What `delete_if_local` did with a message.
