@@ -914,6 +914,9 @@ const OPEN_AGAIN: &str = "fn open_conversation_again(";
 const THE_BODY_FETCH: &str = "fn spawn_body_fetch(";
 const THE_TREE_BUILT: &str = "pub fn build_thread_dialog(";
 
+const THE_CHOOSER: &str = "what_enter_opens_on_a_conversation_row(";
+const THE_CHOOSERS_NOTHING: &str = "WhatEnterOpens::Nothing";
+const THE_REFUSAL: &str = "send_refusal(";
 const THE_ROW_STANDS_FOR: &str = "the_row_stands_for(";
 const THE_CURSOR_STANDS_FOR: &str = "what_the_cursor_stands_for()";
 const THE_LOADED_ROW_MESSAGE: &str = "the_loaded_message_the_row_stands_for(";
@@ -1008,13 +1011,34 @@ fn the_fetch_is_one_bounded_chunk_under_the_gate(app: &str) -> Result<(), String
 }
 
 /// The activation handler hands the conversation window the message the
-/// row stands for, and the window passes it on.
+/// row stands for, and the window passes it on. Under conversation view it
+/// asks the chooser the cases above hold, and says why when the chooser
+/// finds nothing to open (13.2-01): a key that does nothing in silence
+/// sounds the same as a broken key.
 fn the_window_opens_on_the_row_message(app: &str) -> Result<(), String> {
     let handler = between(app, THE_ACTIVATION_HANDLER.0, THE_ACTIVATION_HANDLER.1)?;
     if !handler.contains(THE_ROW_STANDS_FOR) {
         return Err(format!(
             "the activation handler does not ask {THE_ROW_STANDS_FOR}, so Enter opens the \
              conversation on the root whatever row it was pressed on"
+        ));
+    }
+    if !handler.contains(THE_CHOOSER) {
+        return Err(format!(
+            "the activation handler does not ask {THE_CHOOSER}, so the choice Enter makes on a \
+             conversation row is not the one the cases hold"
+        ));
+    }
+    let nothing = between(handler, THE_CHOOSERS_NOTHING, "}").map_err(|_| {
+        format!(
+            "the activation handler has no arm for {THE_CHOOSERS_NOTHING}, so this cannot see \
+             what Enter says when there is nothing to open"
+        )
+    })?;
+    if !nothing.contains(THE_REFUSAL) {
+        return Err(format!(
+            "the activation handler does not reach {THE_REFUSAL} on {THE_CHOOSERS_NOTHING}, so \
+             Enter on a row whose message cannot be found does nothing in silence"
         ));
     }
     let again = body_of(app, OPEN_AGAIN)?;
@@ -1145,7 +1169,10 @@ fn a_window_as_it_should_be() -> String {
     snippet.push_str(THE_ACTIVATION_HANDLER.0);
     snippet.push_str(
         "\n    let open_on = s.the_row_stands_for(index).map(|row| row.id);\n    \
-         open_conversation_again(&frame, named, nodes, open_on, state.clone());\n});\n",
+         match what_enter_opens_on_a_conversation_row(&state, cache, index) {\n        \
+         WhatEnterOpens::TheConversation(c) => open_conversation_again(&frame, named, c.nodes, c.open_on, state.clone()),\n        \
+         WhatEnterOpens::Nothing => send_refusal(&ui_tx, &runtime, \"It could not be opened.\"),\n    \
+         }\n});\n",
     );
     snippet.push_str(THE_ACTIVATION_HANDLER.1);
     snippet.push_str(", entries_for};\n");
@@ -1277,6 +1304,26 @@ fn test_the_readings_complain_when_the_fetch_or_the_window_is_wrong() {
     );
     let why = the_window_opens_on_the_row_message(&opens_on_the_root).expect_err("the root");
     assert!(why.contains("does not hand open_on"), "{why}");
+
+    let chooses_by_itself = app.replacen(
+        "    match what_enter_opens_on_a_conversation_row(&state, cache, index) {\n",
+        "    match choose_in_the_closure(index) {\n",
+        1,
+    );
+    let why =
+        the_window_opens_on_the_row_message(&chooses_by_itself).expect_err("no chooser asked");
+    assert!(
+        why.contains("does not ask what_enter_opens_on_a_conversation_row("),
+        "{why}"
+    );
+
+    let silent = app.replacen(
+        "        WhatEnterOpens::Nothing => send_refusal(&ui_tx, &runtime, \"It could not be opened.\"),\n",
+        "        WhatEnterOpens::Nothing => {}\n",
+        1,
+    );
+    let why = the_window_opens_on_the_row_message(&silent).expect_err("nothing said");
+    assert!(why.contains("does not reach send_refusal("), "{why}");
 
     let view = a_thread_view_as_it_should_be();
     let root_whatever_was_asked = view.replacen(
