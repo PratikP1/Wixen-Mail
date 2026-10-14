@@ -3562,6 +3562,8 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let thread_cache = message_cache.clone();
                 let reader = reader.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |event| {
                     let index = event.get_item_index();
                     if index < 0 {
@@ -3581,54 +3583,48 @@ impl WxMailApp {
                     // a flat virtual list, which is what keeps UI Automation
                     // from reporting a set size anybody can trust.
                     if lock_state(&state).showing.showing_conversations() {
-                        let opening = lock_state(&state)
-                            .conversations
-                            .get(index as usize)
-                            .map(|c| (c.thread_id.clone(), c.subject.clone(), c.read_in.clone()));
-                        let Some((thread_id, subject, read_in)) = opening else {
-                            return;
-                        };
-                        let nodes = conversation_nodes(&state, &read_in.account_id, &thread_id);
-                        let named = how_a_conversation_reads(
-                            &thread_cache,
-                            Some(&read_in),
-                            &thread_id,
-                            &subject,
-                        );
-                        if nodes.len() < 2 {
-                            // One message, so there is nothing to choose
-                            // between. Straight into the reader, the same
-                            // answer a lone message gets in the flat view.
-                            if let Some(only) = nodes.first().and_then(|node| {
-                                let s = lock_state(&state);
-                                s.messages
-                                    .iter()
-                                    .find(|m| m.message_id == node.message_id)
-                                    .cloned()
-                            }) {
-                                open_single_message(
+                        match what_enter_opens_on_a_conversation_row(
+                            &state,
+                            thread_cache.as_deref(),
+                            index as usize,
+                        ) {
+                            WhatEnterOpens::TheMessage(only) => open_single_message(
+                                &frame,
+                                &reader,
+                                &a11y,
+                                &state,
+                                &thread_cache,
+                                &only,
+                                None,
+                            ),
+                            WhatEnterOpens::TheConversation(conversation) => {
+                                let named = how_a_conversation_reads(
+                                    &thread_cache,
+                                    Some(&conversation.read_in),
+                                    &conversation.thread_id,
+                                    &conversation.subject,
+                                );
+                                open_conversation_again(
                                     &frame,
                                     &reader,
-                                    &a11y,
-                                    &state,
                                     &thread_cache,
-                                    &only,
-                                    None,
+                                    &a11y,
+                                    &msg_list,
+                                    named,
+                                    conversation.nodes,
+                                    conversation.open_on,
+                                    state.clone(),
                                 );
                             }
-                            return;
+                            // Neither the loaded rows nor the store hold
+                            // the row's message. Said, because a key that
+                            // does nothing sounds like a broken key.
+                            WhatEnterOpens::Nothing => send_refusal(
+                                &ui_tx,
+                                &runtime,
+                                "That message is no longer on this computer, so it could not be opened.",
+                            ),
                         }
-                        open_conversation_again(
-                            &frame,
-                            &reader,
-                            &thread_cache,
-                            &a11y,
-                            &msg_list,
-                            named,
-                            nodes,
-                            open_on,
-                            state.clone(),
-                        );
                         return;
                     }
                     let (thread_id, subject, message) = {
@@ -16334,13 +16330,109 @@ pub fn conversation_nodes(
     nodes
 }
 
+/// What Enter on a conversation row opens.
+#[derive(Debug, Clone)]
+pub enum WhatEnterOpens {
+    /// One message, straight into the reader, the answer a lone message gets
+    /// in the flat view.
+    TheMessage(Box<MessageItem>),
+    /// The conversation window, its cursor on the row's message.
+    TheConversation(ConversationToOpen),
+    /// Nothing the row names could be found.
+    Nothing,
+}
+
+/// A conversation window to open, and where its cursor starts.
+#[derive(Debug, Clone)]
+pub struct ConversationToOpen {
+    pub nodes: Vec<wx_thread_view::ThreadNode>,
+    /// The message the row stands for (#31).
+    pub open_on: Option<i64>,
+    pub thread_id: String,
+    pub subject: String,
+    pub read_in: crate::application::conversations::ReadIn,
+}
+
+/// What Enter on conversation row `row` opens (13.2-01).
+///
+/// Two or more of the conversation's messages among the loaded rows open the
+/// conversation window on the row's message. Fewer open the row's own message
+/// straight into the reader, found by id the way Space finds it: by
+/// membership it could not be found, because `apply_threading` empties the
+/// conversation id of a message alone among the loaded rows, and until
+/// 2026-10-14 Enter on such a row did nothing (Pratik's first report). A row
+/// message filed in another folder, such as a reply in Sent, is read from the
+/// store, one row by id. `Nothing` when neither holds it.
+///
+/// Out of the activation handler so the choice can be held by cases built
+/// through the real producers: the handler needs a frame and a reader, and
+/// this needs only the state and the store. The state is locked in turns and
+/// never across [`conversation_nodes`], which locks it too.
+pub fn what_enter_opens_on_a_conversation_row(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+    row: usize,
+) -> WhatEnterOpens {
+    let the_row = lock_state(state).conversations.get(row).map(|c| {
+        (
+            c.thread_id.clone(),
+            c.subject.clone(),
+            c.read_in.clone(),
+            c.stands_for.id,
+        )
+    });
+    let Some((thread_id, subject, read_in, stands_for)) = the_row else {
+        return WhatEnterOpens::Nothing;
+    };
+    let nodes = conversation_nodes(state, &read_in.account_id, &thread_id);
+    if nodes.len() < 2 {
+        let loaded = lock_state(state)
+            .the_loaded_message_the_row_stands_for(row)
+            .cloned();
+        return loaded
+            .or_else(|| the_stored_message(cache?, stands_for))
+            .map_or(WhatEnterOpens::Nothing, |message| {
+                WhatEnterOpens::TheMessage(Box::new(message))
+            });
+    }
+    WhatEnterOpens::TheConversation(ConversationToOpen {
+        nodes,
+        open_on: Some(stands_for),
+        thread_id,
+        subject,
+        read_in,
+    })
+}
+
+/// One message read from the store by its row id, as a list row.
+///
+/// A read that fails is logged and answers `None`, which the caller says as
+/// a refusal: the message cannot be opened either way.
+fn the_stored_message(cache: &MessageCache, message_id: i64) -> Option<MessageItem> {
+    match cache.message_rows_for(&[message_id], None) {
+        Ok(rows) => rows.first().map(MessageItem::from_row),
+        Err(e) => {
+            tracing::warn!("Message {message_id} could not be read: {e}");
+            None
+        }
+    }
+}
+
 /// Group a folder's messages into conversations and mark the list rows.
 ///
 /// A conversation of one is not a conversation, so a message with no relatives
 /// is left with no thread at all. Reporting one would put a thread indicator
 /// and an earcon on every ordinary message, which is the fastest way to make
 /// someone switch the indicator off.
-fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &mut [MessageItem]) {
+///
+/// Public so `tests/a_conversation_row_stands_for_one_message.rs` builds the
+/// loaded rows through it, the way `load_folder_messages` does, rather than
+/// by hand: a lone message with its conversation id still set is a shape this
+/// never makes, and cases built that way passed over a dead arm.
+pub fn apply_threading(
+    rows: &[crate::data::message_cache::MessageListRow],
+    items: &mut [MessageItem],
+) {
     use crate::application::threading::{ThreadInput, thread_messages};
 
     let inputs: Vec<ThreadInput> = rows
@@ -33815,14 +33907,24 @@ mod tests {
 
     #[test]
     fn test_a_conversation_ignores_messages_from_other_threads() {
+        // Two messages in each conversation. Until 2026-10-14 each held one
+        // with its conversation id set, a shape `apply_threading` never
+        // makes, since it empties the id of a message alone among the loaded
+        // rows; the one-node arm of the Enter handler passed over that shape
+        // and never met it in the program (13.2-01). This is about the
+        // filter, so it is built the way the program leaves the rows.
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         lock_state(&state).messages = vec![
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 0, "t2"),
+            threaded(3, 3, "2026-07-26 12:00", 1, "t1"),
+            threaded(4, 4, "2026-07-26 13:00", 1, "t2"),
         ];
         let nodes = conversation_nodes(&state, "acc", "t1");
-        assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].message_id, 1);
+        assert_eq!(
+            nodes.iter().map(|n| n.message_id).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
     }
 
     #[test]

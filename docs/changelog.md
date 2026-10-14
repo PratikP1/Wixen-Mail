@@ -1427,6 +1427,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Enter opens a message again when messages are shown as conversations (2026-10-14,
+  LIST-06).** On a conversation row whose message is the only one of its conversation in the
+  folder, `Enter` did nothing and said nothing, which in a large Inbox is about half the rows or
+  more. The same happened on a row whose replies are filed in another folder, such as an Inbox
+  message you answered from Sent. `Enter` on such a row now opens the row's own message in the reader, the
+  one its sender and preview show, even when that message is filed in another folder. A row
+  with two or more of its messages in the folder still opens the conversation window, on the
+  row's message. When the message is no longer on this computer, `Enter` says "That message
+  is no longer on this computer, so it could not be opened." instead of doing nothing. The
+  fix to `Space` and `Shift+Space` did not cause this; it began when folders started showing
+  conversations on 20 September 2026. The version does not move.
 - **The HTML cleaner and the secure connection library are updated for published security
   advisories (2026-10-14).** The cleaner that makes a stranger's message safe to show,
   `ammonia`, goes from 4.1.4 to 4.1.7: the older version could let a crafted SVG animation

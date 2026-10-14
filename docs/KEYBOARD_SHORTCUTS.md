@@ -559,6 +559,8 @@ other two surfaces. Nobody has heard any of this in a screen reader yet.
 |-------|-----|--------|
 | A message with no conversation | `Enter` | Opens that message in the preview. No tree in the way. |
 | A message in a conversation | `Enter` | Opens the conversation tree |
+| A conversation row, two or more of its messages in this folder | `Enter` | Opens the conversation tree, on the message the row stands for |
+| A conversation row, one of its messages in this folder | `Enter` | Opens the row's own message, the one its sender and preview show, even when that message is filed in another folder. If it is no longer on this computer, Enter says so |
 | Conversation tree, first row | `Enter` | The whole conversation in one document, every message in order |
 | Conversation tree, any message | `Enter` | That message alone |
 | Conversation tree | `Esc` | Back to the list, focus on the row it came from |
@@ -961,7 +963,7 @@ field's and P the pattern's. Since 2026-09-19.
 | Columns | `F8` | Choose which message list columns are shown and in what order |
 | Next Pane | `F6` | Move focus between the folder tree and the message list |
 | Mute Message Reading | `Ctrl+M` | Stop what is being read aloud |
-| Thread View | `Ctrl+T` | Collapse the list to one row per conversation, or go back to one row per message. Kept per folder, and for All Inboxes; a folder never set follows Show conversations by default under Settings, Reading, on unless you turn it off. A label and a saved search stay one row per message, and `Ctrl+T` there says so. `Enter` on a conversation row opens the conversation window |
+| Thread View | `Ctrl+T` | Collapse the list to one row per conversation, or go back to one row per message. Kept per folder, and for All Inboxes; a folder never set follows Show conversations by default under Settings, Reading, on unless you turn it off. A label and a saved search stay one row per message, and `Ctrl+T` there says so. `Enter` on a conversation row opens the conversation window when two or more of its messages are in this folder, and opens the row's own message when only one is. Until 2026-10-14 `Enter` did nothing on a row with only one, and said nothing |
 | Apply View To Other Folders | (no shortcut) | Give the view this folder is in to other folders. Asks first |
 | Sort Messages | (submenu) | Date, sender, subject, or unread first |
 | Offline Mode | (no shortcut) | Stop reaching the network |
