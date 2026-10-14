@@ -14,11 +14,56 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::theme;
 use crate::presentation::tree_walk;
+use crate::presentation::wx_app::{ID_DELETE, ID_DELETE_OUTRIGHT, ID_MARK_READ};
 use std::sync::Arc;
 use wxdragon::prelude::*;
 
 /// The dialog's third answer, alongside the stock OK and Cancel.
 const ID_PLAIN_TEXT: Id = ID_HIGHEST + 950;
+
+/// The dialog's answer when a command was chosen on a message in it
+/// (13.2-03): [`ThreadChoice::Act`] says which command and which message.
+pub const ID_ACT: Id = ID_HIGHEST + 951;
+
+/// One key the tree answers on a message, as the message list answers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TreeKey {
+    /// wxWidgets' code for the key: a letter's upper-case character, or
+    /// `WXK_DELETE`, which is 127.
+    pub key: u8,
+    /// Whether Shift is held, which makes Delete delete permanently.
+    pub shift: bool,
+    /// How `docs/KEYBOARD_SHORTCUTS.md` writes the key.
+    pub written: &'static str,
+    /// The main window's command the key runs.
+    pub command: Id,
+}
+
+/// Every key the tree answers on a message, read by its one key handler
+/// and by the test that holds the keyboard page to it.
+///
+/// Delete, Shift+Delete and M (13.2-03). The other message keys, Ctrl+R and
+/// the rest, are 13.2-03.1's.
+pub const THE_TREES_KEYS: [TreeKey; 3] = [
+    TreeKey {
+        key: 127,
+        shift: false,
+        written: "Delete",
+        command: ID_DELETE,
+    },
+    TreeKey {
+        key: 127,
+        shift: true,
+        written: "Shift+Del",
+        command: ID_DELETE_OUTRIGHT,
+    },
+    TreeKey {
+        key: b'M',
+        shift: false,
+        written: "M",
+        command: ID_MARK_READ,
+    },
+];
 
 /// One message as the tree shows it.
 #[derive(Debug, Clone)]
@@ -54,8 +99,53 @@ pub enum ThreadChoice {
     AsHeadings,
     /// Show this message alone.
     Message(i64),
+    /// Run the main window's `command` on `message` alone (13.2-03): a key
+    /// or a line of the menu chosen on a message in the tree.
+    Act { command: Id, message: i64 },
     /// Nothing; go back to the list.
     Cancelled,
+}
+
+/// Which of the tree's keys a key-down is, if any.
+pub fn the_key_pressed(
+    pressed: Option<i32>,
+    control: bool,
+    alt: bool,
+    shift: bool,
+) -> Option<&'static TreeKey> {
+    let _ = (pressed, control, alt, shift);
+    None
+}
+
+/// What the dialog answered, from the code it ended with and the choice the
+/// tree kept current while it was open.
+pub fn what_the_dialog_answered(code: i32, chosen: &ThreadChoice) -> ThreadChoice {
+    match code {
+        ID_OK => chosen.clone(),
+        // Always the whole thread, whichever row the tree was on. The plain
+        // reading is of the conversation, and one message already has its own
+        // way in through Enter.
+        ID_PLAIN_TEXT => ThreadChoice::WholeConversation,
+        _ => ThreadChoice::Cancelled,
+    }
+}
+
+/// Where the cursor goes when the conversation comes back after a command
+/// on `acted_on`, given the tree before it, `before`, and the messages it
+/// lists now, `now`.
+pub fn where_the_cursor_comes_back(
+    before: &[ThreadNode],
+    acted_on: i64,
+    now: &[ThreadNode],
+) -> Option<i64> {
+    let _ = (before, acted_on, now);
+    None
+}
+
+/// Whether the conversation comes back after `command`.
+pub fn brings_the_conversation_back(command: Id) -> bool {
+    let _ = command;
+    false
 }
 
 /// How a message reads in the tree.
@@ -201,14 +291,8 @@ pub fn show_thread_dialog(
         Priority::Normal,
     );
 
-    match dlg.show_modal() {
-        ID_OK => chosen.borrow().clone(),
-        // Always the whole thread, whichever row the tree was on. The plain
-        // reading is of the conversation, and one message already has its own
-        // way in through Enter.
-        ID_PLAIN_TEXT => ThreadChoice::WholeConversation,
-        _ => ThreadChoice::Cancelled,
-    }
+    let code = dlg.show_modal();
+    what_the_dialog_answered(code, &chosen.borrow())
 }
 
 /// Build the Conversation tree dialog without showing it.
@@ -518,6 +602,135 @@ mod tests {
         let mut n = node("Ada", true);
         n.subject = "  ".to_string();
         assert!(node_label(&n).contains("No subject"));
+    }
+
+    // ── After a command, 13.2-03 ────────────────────────────────────────
+
+    /// The tree after a command, holding these of the fixture's messages in
+    /// the fixture's order.
+    fn still_listed(ids: &[i64]) -> Vec<ThreadNode> {
+        a_conversation_whose_two_orders_differ()
+            .into_iter()
+            .filter(|node| ids.contains(&node.message_id))
+            .collect()
+    }
+
+    #[test]
+    fn test_the_cursor_comes_back_to_the_message_when_it_is_still_listed() {
+        let before = a_conversation_whose_two_orders_differ();
+        assert_eq!(
+            where_the_cursor_comes_back(&before, 33, &still_listed(&[11, 22, 33, 44])),
+            Some(33),
+            "a mark or a star keeps the message where it was"
+        );
+    }
+
+    #[test]
+    fn test_the_cursor_comes_back_to_the_message_after_it_in_the_tree_when_it_left() {
+        // The tree walks 11, 33, 22, 44, so the message after 33 is 22, where
+        // the slice would say 44.
+        let before = a_conversation_whose_two_orders_differ();
+        assert_eq!(
+            where_the_cursor_comes_back(&before, 33, &still_listed(&[11, 22, 44])),
+            Some(22)
+        );
+        assert_eq!(
+            where_the_cursor_comes_back(&before, 33, &still_listed(&[11, 44])),
+            Some(44),
+            "the next one still listed, passing over one that also left"
+        );
+    }
+
+    #[test]
+    fn test_the_cursor_comes_back_to_the_one_before_when_the_last_left() {
+        let before = a_conversation_whose_two_orders_differ();
+        assert_eq!(
+            where_the_cursor_comes_back(&before, 44, &still_listed(&[11, 33, 22])),
+            Some(22)
+        );
+    }
+
+    #[test]
+    fn test_the_cursor_comes_back_to_nothing_when_nothing_is_listed() {
+        let before = a_conversation_whose_two_orders_differ();
+        assert_eq!(where_the_cursor_comes_back(&before, 44, &[]), None);
+    }
+
+    #[test]
+    fn test_a_command_over_the_message_brings_the_conversation_back() {
+        use crate::presentation::wx_app::{ID_COPY_TO_FOLDER, ID_MOVE_TO_FOLDER, ID_TOGGLE_STAR};
+        for command in [
+            ID_DELETE,
+            ID_DELETE_OUTRIGHT,
+            ID_MARK_READ,
+            ID_TOGGLE_STAR,
+            ID_MOVE_TO_FOLDER,
+            ID_COPY_TO_FOLDER,
+        ] {
+            assert!(brings_the_conversation_back(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn test_a_command_that_opens_a_window_of_its_own_does_not_bring_it_back() {
+        use crate::presentation::wx_app::{
+            ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK, ID_FORWARD,
+            ID_REPLY, ID_REPLY_ALL,
+        };
+        for command in [
+            ID_REPLY,
+            ID_REPLY_ALL,
+            ID_FORWARD,
+            ID_CONTEXT_COPY_TO_TASK,
+            ID_CONTEXT_COPY_TO_EVENT,
+            ID_CONTEXT_COPY_TO_NOTE,
+        ] {
+            assert!(!brings_the_conversation_back(command), "{command}");
+        }
+    }
+
+    #[test]
+    fn test_each_key_is_its_command_with_its_own_modifiers_and_no_other() {
+        let command = |code, control, alt, shift| {
+            the_key_pressed(Some(code), control, alt, shift).map(|key| key.command)
+        };
+        assert_eq!(command(127, false, false, false), Some(ID_DELETE));
+        assert_eq!(
+            command(385, false, false, false),
+            Some(ID_DELETE),
+            "the number pad's Del is Delete too"
+        );
+        assert_eq!(command(127, false, false, true), Some(ID_DELETE_OUTRIGHT));
+        assert_eq!(
+            command(i32::from(b'M'), false, false, false),
+            Some(ID_MARK_READ)
+        );
+        assert_eq!(
+            command(i32::from(b'M'), false, false, true),
+            None,
+            "a capital for the search"
+        );
+        assert_eq!(
+            command(i32::from(b'M'), true, false, false),
+            None,
+            "Ctrl+M is another command"
+        );
+        assert_eq!(command(127, false, true, false), None);
+        assert_eq!(command(i32::from(b'N'), false, false, false), None);
+        assert_eq!(the_key_pressed(None, false, false, false), None);
+    }
+
+    #[test]
+    fn test_the_dialog_answers_the_command_it_ended_with() {
+        let chosen = ThreadChoice::Act {
+            command: ID_DELETE,
+            message: 33,
+        };
+        assert_eq!(what_the_dialog_answered(ID_ACT, &chosen), chosen);
+        assert_eq!(
+            what_the_dialog_answered(ID_CANCEL, &chosen),
+            ThreadChoice::Cancelled
+        );
     }
 
     #[test]

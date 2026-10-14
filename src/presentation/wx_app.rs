@@ -28859,7 +28859,7 @@ fn open_conversation_again(
                 None => msg_list.set_focus(),
             }
         }
-        wx_thread_view::ThreadChoice::Cancelled => {
+        wx_thread_view::ThreadChoice::Cancelled | wx_thread_view::ThreadChoice::Act { .. } => {
             // Out of the conversation and back to the mailbox, which is the
             // one place Escape from here should go. Without this a dismissed
             // dialog leaves a keyboard user nowhere.
