@@ -1427,6 +1427,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The HTML cleaner and the secure connection library are updated for published security
+  advisories (2026-10-14).** The cleaner that makes a stranger's message safe to show,
+  `ammonia`, goes from 4.1.4 to 4.1.7: the older version could let a crafted SVG animation
+  or a CSS `url("")` through (RUSTSEC-2021-0157 and RUSTSEC-2021-0158). The library behind
+  every encrypted connection, `rustls`, goes from 0.23.45 to 0.23.46 for four advisories
+  (RUSTSEC-2026-0346 to 0349), and `quinn-proto`, which nothing here uses to connect but which
+  is in the build, from 0.11.16 to 0.11.19 (RUSTSEC-2026-0338 to 0342). The security audit
+  found them on 2026-10-14; each update stays within the version the program already asks for.
 - **Adding an account brings its calendars, contacts and tasks, and F5 syncs the module you
   are in (REAL-01, #22).** Until this build nothing ran when you added an account, and `F5`
   with Contacts, Calendar, Tasks or Notes showing read whatever mail folder the folder tree
