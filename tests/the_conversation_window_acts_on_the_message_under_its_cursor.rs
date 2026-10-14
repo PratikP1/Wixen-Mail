@@ -25,8 +25,10 @@
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::context_menu::Action;
+use wixen_mail::application::{quick_steps, tagging};
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::presentation::tree_walk;
+use wixen_mail::presentation::wx_app::{label_id_at, quick_step_id_at};
 use wixen_mail::presentation::wx_context_menu::command_for;
 use wixen_mail::presentation::wx_thread_view::{self, ThreadChoice, ThreadNode};
 use wxdragon::prelude::*;
@@ -36,17 +38,36 @@ use wxdragon::prelude::*;
 const ID_DELETE: i32 = command_for(Action::DeleteMessage);
 const ID_DELETE_OUTRIGHT: i32 = command_for(Action::DeleteMessageOutright);
 const ID_MARK_READ: i32 = command_for(Action::MarkRead);
+const ID_REPLY: i32 = command_for(Action::Reply);
+const ID_REPLY_ALL: i32 = command_for(Action::ReplyAll);
+const ID_FORWARD: i32 = command_for(Action::Forward);
+const ID_TOGGLE_STAR: i32 = command_for(Action::ToggleStar);
+const ID_MOVE_TO_FOLDER: i32 = command_for(Action::MoveToFolder);
 
 // ── The window, driven by posted messages ──────────────────────────────────
 
 const WM_KEYDOWN: u32 = 0x0100;
+/// A key pressed with Alt held arrives as a system key.
+const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_COMMAND: u32 = 0x0111;
 const VK_RETURN: usize = 0x0D;
 const VK_DELETE: usize = 0x2E;
 const VK_M: usize = 0x4D;
+const VK_R: usize = 0x52;
+const VK_V: usize = 0x56;
+const VK_1: usize = 0x31;
+const VK_7: usize = 0x37;
 const VK_SHIFT: usize = 0x10;
 const VK_LSHIFT: usize = 0xA0;
+const VK_CONTROL: usize = 0x11;
+const VK_LCONTROL: usize = 0xA2;
+const VK_MENU: usize = 0x12;
+const VK_LMENU: usize = 0xA4;
 const PM_REMOVE: u32 = 0x0001;
+
+/// The context-code bit of a system key-down's `lParam`, set when Alt is
+/// held.
+const ALT_IS_DOWN: isize = 1 << 29;
 const GENERIC_ALL: u32 = 0x1000_0000;
 
 /// A key-down's `lParam`: pressed once.
@@ -181,14 +202,45 @@ enum StartOn {
     Root,
 }
 
+/// Which modifiers a posted key is held with.
+#[derive(Clone, Copy)]
+enum Held {
+    Nothing,
+    Shift,
+    Ctrl,
+    CtrlShift,
+    AltShift,
+}
+
+impl Held {
+    /// The virtual keys held down, each with its left key.
+    fn keys(self) -> &'static [usize] {
+        match self {
+            Held::Nothing => &[],
+            Held::Shift => &[VK_SHIFT, VK_LSHIFT],
+            Held::Ctrl => &[VK_CONTROL, VK_LCONTROL],
+            Held::CtrlShift => &[VK_CONTROL, VK_LCONTROL, VK_SHIFT, VK_LSHIFT],
+            Held::AltShift => &[VK_MENU, VK_LMENU, VK_SHIFT, VK_LSHIFT],
+        }
+    }
+
+    /// The message a key held this way arrives as, and its `lParam` bits.
+    fn arrives_as(self) -> (u32, isize) {
+        match self {
+            Held::AltShift => (WM_SYSKEYDOWN, ALT_IS_DOWN),
+            _ => (WM_KEYDOWN, 0),
+        }
+    }
+}
+
 /// What is posted, and to which window.
 #[derive(Clone, Copy)]
 enum Posted {
     Nothing,
-    /// A key-down to the tree, with Shift held or not.
+    /// A key-down to the tree, with these modifiers held.
     AKey {
         key: usize,
-        shift: bool,
+        held: Held,
     },
     /// A menu line to the tree, where the menu key's popup delivers it.
     AMenuLine(i32),
@@ -234,11 +286,15 @@ fn one_case(frame: &Frame, start: StartOn, posted: Posted) -> Result<Found, Stri
         unsafe {
             match posted {
                 Posted::Nothing => {}
-                Posted::AKey { key, shift } => {
-                    if shift {
-                        only_these_modifiers_down(&[VK_SHIFT, VK_LSHIFT]);
-                    }
-                    PostMessageW(tree_window, WM_KEYDOWN, key, KEY_DOWN_ONCE | extended(key));
+                Posted::AKey { key, held } => {
+                    only_these_modifiers_down(held.keys());
+                    let (message, bits) = held.arrives_as();
+                    PostMessageW(
+                        tree_window,
+                        message,
+                        key,
+                        KEY_DOWN_ONCE | extended(key) | bits,
+                    );
                 }
                 Posted::AMenuLine(command) => {
                     PostMessageW(tree_window, WM_COMMAND, command as u16 as usize, 0);
@@ -288,6 +344,11 @@ struct Harvest {
     m_on_a_message: Found,
     a_menu_line_on_a_message: Found,
     a_menu_line_on_another_message: Found,
+    ctrl_r_on_a_message: Found,
+    ctrl_shift_v_on_a_message: Found,
+    ctrl_1_on_a_message: Found,
+    ctrl_shift_7_on_a_message: Found,
+    alt_shift_r_on_a_message: Found,
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -305,21 +366,24 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 // Never shown: the dialogs are shown modally on this run's
                 // own desktop, where nobody sees them.
                 let frame = Frame::builder().build();
-                let key = |key: usize| Posted::AKey { key, shift: false };
+                let key = |key: usize| Posted::AKey {
+                    key,
+                    held: Held::Nothing,
+                };
+                let held = |key: usize, held: Held| Posted::AKey { key, held };
+                let on_a_message = |posted: Posted| one_case(&frame, StartOn::RowMessage, posted);
                 let harvest = Harvest {
                     the_choice_on_arrival: one_case(&frame, StartOn::RowMessage, Posted::Nothing)?,
                     enter_on_the_root: one_case(&frame, StartOn::Root, key(VK_RETURN))?,
                     delete_on_the_root: one_case(&frame, StartOn::Root, key(VK_DELETE))?,
-                    delete_on_a_message: one_case(&frame, StartOn::RowMessage, key(VK_DELETE))?,
-                    shift_delete_on_a_message: one_case(
-                        &frame,
-                        StartOn::RowMessage,
-                        Posted::AKey {
-                            key: VK_DELETE,
-                            shift: true,
-                        },
-                    )?,
-                    m_on_a_message: one_case(&frame, StartOn::RowMessage, key(VK_M))?,
+                    delete_on_a_message: on_a_message(key(VK_DELETE))?,
+                    shift_delete_on_a_message: on_a_message(held(VK_DELETE, Held::Shift))?,
+                    m_on_a_message: on_a_message(key(VK_M))?,
+                    ctrl_r_on_a_message: on_a_message(held(VK_R, Held::Ctrl))?,
+                    ctrl_shift_v_on_a_message: on_a_message(held(VK_V, Held::CtrlShift))?,
+                    ctrl_1_on_a_message: on_a_message(held(VK_1, Held::Ctrl))?,
+                    ctrl_shift_7_on_a_message: on_a_message(held(VK_7, Held::CtrlShift))?,
+                    alt_shift_r_on_a_message: on_a_message(held(VK_R, Held::AltShift))?,
                     a_menu_line_on_a_message: one_case(
                         &frame,
                         StartOn::RowMessage,
@@ -438,6 +502,287 @@ fn test_a_line_from_the_menu_acts_on_whichever_message_the_cursor_is_on() {
         found.answered,
         acts(ID_MARK_READ, 22),
         "a window answering a constant message would name 33 here"
+    );
+}
+
+// ── The rest of the message keys, 13.2-03.1 ────────────────────────────────
+//
+// Pratik's "or other commands": each key the message list has for a message
+// command, answered on the message under the cursor. A key nothing answers
+// ends the case as Cancelled.
+
+/// The command the tree's list says a key, written as the page writes it,
+/// runs; a complaint when the list holds no such key.
+fn the_trees_command_for(written: &str) -> i32 {
+    wx_thread_view::THE_TREES_KEYS
+        .iter()
+        .find(|key| key.written == written)
+        .map(|key| key.command)
+        .unwrap_or_else(|| panic!("the tree's list holds no key written {written:?}"))
+}
+
+#[test]
+fn test_ctrl_r_on_a_message_replies_to_that_message() {
+    assert_eq!(
+        the_harvest().ctrl_r_on_a_message.answered,
+        acts(ID_REPLY, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_shift_v_on_a_message_moves_that_message() {
+    assert_eq!(
+        the_harvest().ctrl_shift_v_on_a_message.answered,
+        acts(ID_MOVE_TO_FOLDER, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_1_on_a_message_puts_the_first_label_on_that_message() {
+    let first_label = label_id_at(1).expect("the first label has an id");
+    assert_eq!(
+        the_harvest().ctrl_1_on_a_message.answered,
+        acts(first_label, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_shift_7_on_a_message_runs_the_first_quick_step_on_that_message() {
+    let first_step = quick_step_id_at(1).expect("the first Quick Step has an id");
+    assert_eq!(
+        the_harvest().ctrl_shift_7_on_a_message.answered,
+        acts(first_step, 33)
+    );
+}
+
+/// Alt held makes the key a system key, which the tree reads as it reads
+/// Shift. Which command it runs is the comparison's below, which holds the
+/// list's line for it to the main window's Reply to Sender Only.
+#[test]
+fn test_alt_shift_r_on_a_message_replies_to_its_sender_alone() {
+    assert_eq!(
+        the_harvest().alt_shift_r_on_a_message.answered,
+        acts(the_trees_command_for("Alt+Shift+R"), 33)
+    );
+}
+
+// ── The keys are the main window's ─────────────────────────────────────────
+//
+// Each key the tree answers is the key the main window gives the same
+// command. The menu labels stay literals, because `tests/wired.rs` finds a
+// bound key in their source text, so the tree's list is compared with them
+// rather than read from them: its lines in the tree's source are paired by
+// the command's name with the main window's label for that command.
+
+const THE_THREAD_VIEW: &str = "src/presentation/wx_thread_view.rs";
+/// The tree's list of message keys, one `("written", ID_NAME),` per line.
+const THE_LIST_OF_KEYS: &str = "const THE_MESSAGE_KEYS:";
+/// The keys the message list binds itself rather than through the menu,
+/// with the line that binds each.
+const THE_LISTS_OWN_LETTERS: [(&str, &str); 1] = [("M", "wire_letter(&msg_list, 'M'")];
+
+/// A key as written, read as which modifiers are held and which key: the
+/// page's `Delete` and the menu's `Del` are one key. `None` for a spelling
+/// this does not know.
+fn read_as_pressed(written: &str) -> Option<(bool, bool, bool, String)> {
+    let mut parts = written.split('+');
+    let key = parts.next_back()?;
+    let (mut control, mut alt, mut shift) = (false, false, false);
+    for modifier in parts {
+        match modifier {
+            "Ctrl" => control = true,
+            "Alt" => alt = true,
+            "Shift" => shift = true,
+            _ => return None,
+        }
+    }
+    let key = match key {
+        "Del" | "Delete" => "Delete".to_string(),
+        one if one.chars().count() == 1 => one.to_ascii_uppercase(),
+        _ => return None,
+    };
+    Some((control, alt, shift, key))
+}
+
+/// wxWidgets' code for a key as `read_as_pressed` names it.
+fn the_code_of(key: &str) -> Option<i32> {
+    match key {
+        "Delete" => Some(127),
+        one => one.bytes().next().map(i32::from),
+    }
+}
+
+/// The tree's list of message keys as its source writes them, as
+/// `(written, command name)`, or a complaint when the list is not there.
+fn the_trees_lines(view: &str) -> Result<Vec<(String, String)>, String> {
+    let listed = between(view, THE_LIST_OF_KEYS, "];").map_err(|_| {
+        format!("{THE_THREAD_VIEW} has no {THE_LIST_OF_KEYS}, so this compares nothing")
+    })?;
+    let lines: Vec<(String, String)> = listed
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim().strip_prefix("(\"")?;
+            let (written, command) = line.split_once("\", ")?;
+            Some((
+                written.to_string(),
+                command.trim_end_matches("),").to_string(),
+            ))
+        })
+        .collect();
+    if lines.is_empty() {
+        return Err(format!("{THE_LIST_OF_KEYS} lists nothing"));
+    }
+    Ok(lines)
+}
+
+/// The key the main window's menu writes after the tab in the label of
+/// `command`, by its name, when it writes one.
+fn the_menus_key_for(app: &str, command: &str) -> Option<String> {
+    let named = format!("{command},");
+    app.match_indices(&named).find_map(|(at, _)| {
+        let whole_name = !app[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|before| before.is_alphanumeric() || before == '_');
+        let label = app[at + named.len()..]
+            .trim_start()
+            .strip_prefix('"')
+            .filter(|_| whole_name)?;
+        let label = &label[..label.find('"')?];
+        label.split_once("\\t").map(|(_, key)| key.to_string())
+    })
+}
+
+/// Every line of the tree's list whose key is not the one the main window
+/// gives its command, each in a sentence.
+fn the_keys_the_menu_disagrees_with(lines: &[(String, String)], app: &str) -> Vec<String> {
+    lines
+        .iter()
+        .filter_map(|(written, command)| {
+            let ours = read_as_pressed(written);
+            match the_menus_key_for(app, command) {
+                Some(menu) if ours.is_some() && read_as_pressed(&menu) == ours => None,
+                Some(menu) => Some(format!(
+                    "{written} runs {command}, which the main window gives {menu}"
+                )),
+                None => {
+                    let bound_by_the_list = THE_LISTS_OWN_LETTERS
+                        .iter()
+                        .any(|(letter, binding)| letter == written && app.contains(binding));
+                    (!bound_by_the_list).then(|| {
+                        format!(
+                            "{written} runs {command}, which has no key on the main window's \
+                             menu and is not a letter the list binds itself"
+                        )
+                    })
+                }
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_key_the_tree_answers_is_the_key_the_main_window_gives_its_command() {
+    let view = fs::read_to_string(THE_THREAD_VIEW)
+        .unwrap_or_else(|why| panic!("{THE_THREAD_VIEW}: {why}"))
+        .replace("\r\n", "\n");
+    let lines = the_trees_lines(&what_ships(&view)).unwrap_or_else(|why| panic!("{why}"));
+    let differ = the_keys_the_menu_disagrees_with(&lines, &the_main_window());
+    assert!(differ.is_empty(), "{differ:#?}");
+
+    // Each line is in the list the handler reads, and the key it names
+    // finds it there.
+    let numbered = (1..=tagging::REACHABLE_BY_KEY)
+        .filter_map(|place| Some((tagging::key_for(place)?, label_id_at(place)?)))
+        .chain(
+            (1..=quick_steps::REACHABLE_BY_KEY)
+                .filter_map(|place| Some((quick_steps::key_for(place)?, quick_step_id_at(place)?))),
+        );
+    let lines = lines.iter().map(|(written, _)| (written.clone(), None));
+    for (written, command) in lines.chain(numbered.map(|(written, id)| (written, Some(id)))) {
+        let (control, alt, shift, key) = read_as_pressed(&written)
+            .unwrap_or_else(|| panic!("{written:?} is not a key this can read"));
+        let found = wx_thread_view::the_key_pressed(the_code_of(&key), control, alt, shift)
+            .unwrap_or_else(|| panic!("{written} finds nothing in the tree's list"));
+        assert_eq!(found.written, written, "{written} finds another key's line");
+        if let Some(command) = command {
+            assert_eq!(
+                found.command, command,
+                "{written} runs another command than the main window's"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_the_comparison_refuses_a_key_the_main_window_does_not_give_its_command() {
+    let app = "append_item(ID_REPLY, \"&Reply\\tCtrl+R\", \"\")\n\
+               append_item(ID_REPLY_ALL, \"Reply &All\\tCtrl+Shift+R\", \"\")\n\
+               append_item(\n    ID_DELETE,\n    \"&Delete\\tDel\",\n)\n\
+               append_item(ID_MARK_READ, \"Mark as R&ead\", \"\")\n\
+               wire_letter(&msg_list, 'M', {})\n";
+    let line = |written: &str, command: &str| (written.to_string(), command.to_string());
+    let right = [
+        line("Ctrl+R", "ID_REPLY"),
+        line("Ctrl+Shift+R", "ID_REPLY_ALL"),
+        line("Delete", "ID_DELETE"),
+        line("M", "ID_MARK_READ"),
+    ];
+    assert!(the_keys_the_menu_disagrees_with(&right, app).is_empty());
+    for (planted, said) in [
+        (
+            line("Ctrl+K", "ID_REPLY"),
+            "which the main window gives Ctrl+R",
+        ),
+        (line("Ctrl+R", "ID_REPLY_ALL"), "gives Ctrl+Shift+R"),
+        (line("Shift+Del", "ID_DELETE"), "gives Del"),
+        (
+            line("N", "ID_MARK_READ"),
+            "not a letter the list binds itself",
+        ),
+    ] {
+        let differ = the_keys_the_menu_disagrees_with(std::slice::from_ref(&planted), app);
+        assert!(
+            differ.len() == 1 && differ[0].contains(said),
+            "{planted:?}: {differ:?}"
+        );
+    }
+}
+
+/// Reply, Reply All, Reply to Sender Only and Forward open a window of their
+/// own, so the conversation does not come back over it; every other key the
+/// tree answers acts on the message and brings the conversation back.
+#[test]
+fn test_only_the_keys_that_open_a_window_leave_the_conversation_closed() {
+    let opens_a_window: Vec<i32> = ["Ctrl+R", "Ctrl+Shift+R", "Alt+Shift+R", "Ctrl+L"]
+        .into_iter()
+        .map(the_trees_command_for)
+        .collect();
+    for command in &opens_a_window {
+        assert!(
+            !wx_thread_view::brings_the_conversation_back(*command),
+            "{command} would bring the conversation back over the window it opens"
+        );
+    }
+    for key in wx_thread_view::THE_TREES_KEYS.iter() {
+        if !opens_a_window.contains(&key.command) {
+            assert!(
+                wx_thread_view::brings_the_conversation_back(key.command),
+                "{} leaves the conversation closed",
+                key.written
+            );
+        }
+    }
+    for command in [ID_REPLY, ID_REPLY_ALL, ID_FORWARD] {
+        assert!(!wx_thread_view::brings_the_conversation_back(command));
+    }
+    for command in [ID_TOGGLE_STAR, ID_MOVE_TO_FOLDER] {
+        assert!(wx_thread_view::brings_the_conversation_back(command));
+    }
+    assert_eq!(
+        wx_thread_view::THE_TREES_KEYS.len(),
+        3 + 8 + tagging::REACHABLE_BY_KEY + quick_steps::REACHABLE_BY_KEY,
+        "13.2-03's three, the eight with their own menu keys, the labels and the Quick Steps"
     );
 }
 

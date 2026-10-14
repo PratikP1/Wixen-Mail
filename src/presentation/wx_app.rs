@@ -11508,8 +11508,9 @@ const LABEL_IDS: [i32; 9] = [
 /// The menu id of the label at this place in the account's order.
 ///
 /// The first nine are the ids whose items carry Ctrl and the digit; the rest
-/// come from the block reserved for them. `None` past the block.
-fn label_id_at(position: usize) -> Option<Id> {
+/// come from the block reserved for them. `None` past the block. Public for
+/// the conversation tree's keys and the target that holds them (13.2-03.1).
+pub fn label_id_at(position: usize) -> Option<Id> {
     match position {
         0 => None,
         1..=9 => LABEL_IDS.get(position - 1).copied(),
@@ -11831,8 +11832,9 @@ pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position:
 }
 
 /// The menu id of the Quick Step at this place in the account's order,
-/// counted from one. `None` past the block reserved for them.
-fn quick_step_id_at(position: usize) -> Option<Id> {
+/// counted from one. `None` past the block reserved for them. Public for the
+/// conversation tree's keys and the target that holds them (13.2-03.1).
+pub fn quick_step_id_at(position: usize) -> Option<Id> {
     let past_the_first = i32::try_from(position.checked_sub(1)?).ok()?;
     (past_the_first < QUICK_STEPS_ON_THE_MENU).then_some(ID_QUICK_STEP_FIRST + past_the_first)
 }
