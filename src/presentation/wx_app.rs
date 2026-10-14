@@ -3581,54 +3581,41 @@ impl WxMailApp {
                     // a flat virtual list, which is what keeps UI Automation
                     // from reporting a set size anybody can trust.
                     if lock_state(&state).showing.showing_conversations() {
-                        let opening = lock_state(&state)
-                            .conversations
-                            .get(index as usize)
-                            .map(|c| (c.thread_id.clone(), c.subject.clone(), c.read_in.clone()));
-                        let Some((thread_id, subject, read_in)) = opening else {
-                            return;
-                        };
-                        let nodes = conversation_nodes(&state, &read_in.account_id, &thread_id);
-                        let named = how_a_conversation_reads(
-                            &thread_cache,
-                            Some(&read_in),
-                            &thread_id,
-                            &subject,
-                        );
-                        if nodes.len() < 2 {
-                            // One message, so there is nothing to choose
-                            // between. Straight into the reader, the same
-                            // answer a lone message gets in the flat view.
-                            if let Some(only) = nodes.first().and_then(|node| {
-                                let s = lock_state(&state);
-                                s.messages
-                                    .iter()
-                                    .find(|m| m.message_id == node.message_id)
-                                    .cloned()
-                            }) {
-                                open_single_message(
+                        match what_enter_opens_on_a_conversation_row(
+                            &state,
+                            thread_cache.as_deref(),
+                            index as usize,
+                        ) {
+                            WhatEnterOpens::TheMessage(only) => open_single_message(
+                                &frame,
+                                &reader,
+                                &a11y,
+                                &state,
+                                &thread_cache,
+                                &only,
+                                None,
+                            ),
+                            WhatEnterOpens::TheConversation(conversation) => {
+                                let named = how_a_conversation_reads(
+                                    &thread_cache,
+                                    Some(&conversation.read_in),
+                                    &conversation.thread_id,
+                                    &conversation.subject,
+                                );
+                                open_conversation_again(
                                     &frame,
                                     &reader,
-                                    &a11y,
-                                    &state,
                                     &thread_cache,
-                                    &only,
-                                    None,
+                                    &a11y,
+                                    &msg_list,
+                                    named,
+                                    conversation.nodes,
+                                    conversation.open_on,
+                                    state.clone(),
                                 );
                             }
-                            return;
+                            WhatEnterOpens::Nothing => {}
                         }
-                        open_conversation_again(
-                            &frame,
-                            &reader,
-                            &thread_cache,
-                            &a11y,
-                            &msg_list,
-                            named,
-                            nodes,
-                            open_on,
-                            state.clone(),
-                        );
                         return;
                     }
                     let (thread_id, subject, message) = {
@@ -16334,13 +16321,88 @@ pub fn conversation_nodes(
     nodes
 }
 
+/// What Enter on a conversation row opens.
+#[derive(Debug, Clone)]
+pub enum WhatEnterOpens {
+    /// One message, straight into the reader, the answer a lone message gets
+    /// in the flat view.
+    TheMessage(Box<MessageItem>),
+    /// The conversation window, its cursor on the row's message.
+    TheConversation(ConversationToOpen),
+    /// Nothing the row names could be found.
+    Nothing,
+}
+
+/// A conversation window to open, and where its cursor starts.
+#[derive(Debug, Clone)]
+pub struct ConversationToOpen {
+    pub nodes: Vec<wx_thread_view::ThreadNode>,
+    /// The message the row stands for (#31).
+    pub open_on: Option<i64>,
+    pub thread_id: String,
+    pub subject: String,
+    pub read_in: crate::application::conversations::ReadIn,
+}
+
+/// What Enter on conversation row `row` opens (13.2-01).
+///
+/// Out of the activation handler so the choice can be held by cases built
+/// through the real producers: the handler needs a frame and a reader, and
+/// this needs only the state and the store. The state is locked in turns and
+/// never across [`conversation_nodes`], which locks it too.
+pub fn what_enter_opens_on_a_conversation_row(
+    state: &Arc<StdMutex<WxUIState>>,
+    _cache: Option<&MessageCache>,
+    row: usize,
+) -> WhatEnterOpens {
+    let the_row = lock_state(state).conversations.get(row).map(|c| {
+        (
+            c.thread_id.clone(),
+            c.subject.clone(),
+            c.read_in.clone(),
+            c.stands_for.id,
+        )
+    });
+    let Some((thread_id, subject, read_in, stands_for)) = the_row else {
+        return WhatEnterOpens::Nothing;
+    };
+    let nodes = conversation_nodes(state, &read_in.account_id, &thread_id);
+    if nodes.len() < 2 {
+        let only = nodes.first().and_then(|node| {
+            lock_state(state)
+                .messages
+                .iter()
+                .find(|m| m.message_id == node.message_id)
+                .cloned()
+        });
+        return only.map_or(WhatEnterOpens::Nothing, |message| {
+            WhatEnterOpens::TheMessage(Box::new(message))
+        });
+    }
+    WhatEnterOpens::TheConversation(ConversationToOpen {
+        nodes,
+        open_on: Some(stands_for),
+        thread_id,
+        subject,
+        read_in,
+    })
+}
+
 /// Group a folder's messages into conversations and mark the list rows.
 ///
 /// A conversation of one is not a conversation, so a message with no relatives
 /// is left with no thread at all. Reporting one would put a thread indicator
 /// and an earcon on every ordinary message, which is the fastest way to make
 /// someone switch the indicator off.
-fn apply_threading(rows: &[crate::data::message_cache::MessageListRow], items: &mut [MessageItem]) {
+///
+/// Public so `tests/a_conversation_row_stands_for_one_message.rs` builds the
+/// loaded rows through it, the way `load_folder_messages` does, rather than
+/// by hand: a lone message with its conversation id still set is a shape this
+/// never makes, and cases built that way passed over a dead arm.
+pub fn apply_threading(
+    rows: &[crate::data::message_cache::MessageListRow],
+    items: &mut [MessageItem],
+) {
     use crate::application::threading::{ThreadInput, thread_messages};
 
     let inputs: Vec<ThreadInput> = rows
