@@ -279,6 +279,27 @@ pub struct ReadIn {
     pub folder_id: i64,
 }
 
+/// Which conversation, and whose: what a conversation row is known by.
+///
+/// The same identifier in two accounts is two conversations (T-01-47), so a
+/// row is matched by both halves together and never by the identifier alone;
+/// under All Inboxes the other would put one account's row where the other's
+/// stood.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WhoseConversation {
+    /// The account the conversation belongs to.
+    pub account_id: String,
+    /// The conversation, from `messages.thread_id`.
+    pub thread_id: String,
+}
+
+impl WhoseConversation {
+    /// Whether `row` is this conversation's row.
+    pub fn is(&self, row: &ConversationItem) -> bool {
+        self.account_id == row.read_in.account_id && self.thread_id == row.thread_id
+    }
+}
+
 /// The one message a conversation row stands for (#31).
 ///
 /// A row describes the whole conversation, but a person landing on it is

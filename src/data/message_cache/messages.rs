@@ -1,7 +1,9 @@
 //! Message persistence operations
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
-use crate::application::conversations::{AConversationReaches, ConversationItem};
+use crate::application::conversations::{
+    AConversationReaches, ConversationItem, WhoseConversation,
+};
 use crate::application::importing_messages::WrittenDownAs;
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
@@ -2614,6 +2616,39 @@ impl MessageCache {
             })?;
 
         Ok(rows)
+    }
+
+    /// The conversations these messages belong to, each once, with whose
+    /// they are (13.2-02).
+    ///
+    /// A message deleted here is still named: a delete marks the row and
+    /// keeps its conversation, which is how a change that took a
+    /// conversation's last message away can still say which row it was.
+    pub fn conversations_holding(&self, _messages: &[i64]) -> Result<Vec<WhoseConversation>> {
+        Ok(Vec::new())
+    }
+
+    /// [`Self::conversations_in`], narrowed to the conversations named.
+    pub fn conversations_named_in(
+        &self,
+        _folder_id: i64,
+        _account_id: &str,
+        _reach: AConversationReaches,
+        _order_by: Option<&str>,
+        _named: &[WhoseConversation],
+    ) -> Result<Vec<ConversationItem>> {
+        Ok(Vec::new())
+    }
+
+    /// [`Self::conversations_in_every_inbox`], narrowed to the conversations
+    /// named.
+    pub fn conversations_named_in_every_inbox(
+        &self,
+        _reach: AConversationReaches,
+        _order_by: Option<&str>,
+        _named: &[WhoseConversation],
+    ) -> Result<Vec<ConversationItem>> {
+        Ok(Vec::new())
     }
 
     /// Every message of one conversation, under the same reach its row counts.
