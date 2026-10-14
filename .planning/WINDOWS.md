@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 712
+open_count: 714
 waived_count: 0
 fixed_count: 126
-total_count: 838
+total_count: 840
 last_updated: 2026-10-14T20:00:00.000Z
 ---
 
@@ -853,6 +853,8 @@ last_updated: 2026-10-14T20:00:00.000Z
 | 836 | 13.2 | todo | src/presentation/wx_app.rs | 12841 | 13.2-02, question 2 of REGRESSIONS.md, waiting on Pratik's answer: the folder tree's unread count, as in "Inbox, 5 unread", shows the stored folders.unread_count, which only the mail check's set_folder_counts and Mark All as Read write, so a mark made here changes it at the next check in either view, though mark_what_was_read's doc comment says the count in the folder tree is where it shows. Recommended: the count from this computer at once, the next check correcting it, as a small plan of its own. Closed by his answer and, on a yes, that plan | open |  | 2026-10-14T20:00:00.000Z |  |
 | 837 | 13.2 | todo | src/data/message_cache/messages.rs | 437 | 13.2-02: the read a change made here runs on the interface thread takes 299 ms for one conversation at the size of Pratik's Inbox (34,407 messages, 22,503 conversations, an All Mail copy of each), measured on docs/development/measurements.md, against the 100 ms the plan set for a read on a key press; narrowing elsewhere and here and letting the thread index serve it brought it from 620 ms. Where the rest goes is not measured: the folder's listed set, the reach, or the column expressions reading here. Closed when EXPLAIN QUERY PLAN names the cost and the read is under 100 ms at that size, or Pratik accepts the figure after hearing M on his Inbox | open |  | 2026-10-14T20:00:00.000Z |  |
 | 838 | 13.2 | todo | src/data/message_cache/messages.rs |  | 13.2-02, found while building its timing fixture: writing 34,407 messages and an All Mail copy of each, 68,814 rows whose References name their conversation's root, through upsert_messages in batches of 2,000, took 2,012 s, 1,844 s and 1,582 s in three runs on 2026-10-14, the batches slowing as the store grew (the first 24,000 rows in about 270 s). The 200,000-row harness writes rows with no References at about 1,250 a second, so the cost is likely in what each insert does for its conversation (merge_what_this_message_connects or the search index), not measured. A first download of an Inbox that size may spend as long in the store. Closed when the cost per row is measured at that size and named, and either made flat or ledgered with its figure | open |  | 2026-10-14T20:00:00.000Z |  |
+| 839 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03, Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03's merge: the menu key on a message heard raising that message's menu; Delete heard deleting that message and the window coming back on its neighbour with no second Conversation sentence; M heard saying read or unread; and Delete on the last message left heard putting him in the list on the next conversation. The dialog is held on its own desktop in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the loop by a reading of its source. Closed when he has heard all four on his own mailbox | open |  | 2026-10-14T23:00:00.000Z |  |
+| 840 | 13.2 | todo | src/presentation/wx_app.rs |  | 13.2-03, carried from REGRESSIONS.md's investigation 4: the reader window and the headings window offer no message command of their own, for a message opened from a conversation and for a lone message too. In the flat view this is hidden, because closing returns to a row that is that message; from a conversation, closing returns to the tree, where 13.2-03 answers the menu key, Delete and M. Closed when a message's commands are reachable from the window it is read in, with a case, or Pratik decides the tree and the list are where they belong | open |  | 2026-10-14T23:00:00.000Z |  |
 
 ````json
 [
@@ -10910,6 +10912,30 @@ last_updated: 2026-10-14T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 839,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_thread_view.rs",
+    "line": null,
+    "description": "13.2-03, Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03's merge: the menu key on a message heard raising that message's menu; Delete heard deleting that message and the window coming back on its neighbour with no second Conversation sentence; M heard saying read or unread; and Delete on the last message left heard putting him in the list on the next conversation. The dialog is held on its own desktop in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the loop by a reading of its source. Closed when he has heard all four on his own mailbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 840,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-03, carried from REGRESSIONS.md's investigation 4: the reader window and the headings window offer no message command of their own, for a message opened from a conversation and for a lone message too. In the flat view this is hidden, because closing returns to a row that is that message; from a conversation, closing returns to the tree, where 13.2-03 answers the menu key, Delete and M. Closed when a message's commands are reachable from the window it is read in, with a case, or Pratik decides the tree and the list are where they belong",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:00:00.000Z",
     "resolved_at": null
   }
 ]

@@ -4339,6 +4339,17 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     Delete, Shift+Delete and M inside the conversation window act on the message under its
     cursor through the command code the list uses, and 13.2-03.1 gives the window the rest of
     the message keys (his fourth report). They add no `[D]` clause and the box stays ticked.
+  - 13.2-03 on 2026-10-14: a command from an opened conversation acts on the one message it
+    names. `WxUIState::acting_on` holds that message while the command runs, set and cleared
+    by a guard; `chosen_messages` answers through `choosing_messages::what_the_command_is_for`,
+    so the seven set commands take that message alone, and Reply, Forward, the composer's
+    lookup, Copy to and the invitation answer ask `the_message_a_command_is_for` or its id.
+    With nothing named, a conversation row in the list still contributes its whole
+    conversation. The conversation window answers the menu key, Delete, Shift+Delete and M on
+    a message, runs the command through the main window's dispatch, and comes back on the same
+    message or its neighbour. Held by the 20 cases of `application::choosing_messages`, the
+    two widened readings, and `tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs`.
+    Hearing it is ledger 839; the reader windows' own commands are 840.
 
 - [x] **LIST-06**: A conversation row stands for the originator when every message in it is
   unread and for the first unread message otherwise, reports that message's sender first,
@@ -7618,7 +7629,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause |
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836) |
-| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause |
+| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause; 13.2-03 done 2026-10-14, a command from an opened conversation acts on the one message it names, and the window answers the menu key, Delete, Shift+Delete and M (ledger 839, 840) |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
