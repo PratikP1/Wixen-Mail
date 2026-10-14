@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 702 records have arrived since and have not been through it.
+# 703 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -39492,7 +39492,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 21 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
 ]
 
 # The same break read by the library: the rule that tells a key-down which
@@ -39533,7 +39533,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 21 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
 ]
 
 # Ctrl+R in the conversation tree's keys given another command: inside an
@@ -39557,5 +39557,28 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 21 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
+]
+
+# The reading timer's answer back to the row's own message alone: a message
+# read from an opened conversation, a member of the cursor row and not its
+# message, is never marked read, and nor is the row's own message filed in
+# another folder, which to the ear sounds like the mark never applying
+# (13.2-03.1, LIST-03 for the conversation).
+#
+# Measured by hand on 2026-10-14: the target at 25 passed and 2 failed,
+# these two, and the whole library at 9,038 passed and 0 failed.
+[[guard]]
+name = "a message read from an opened conversation is what the reading timer may mark"
+file = "src/presentation/wx_app.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''        of_this_conversation.then_some(began)'''
+after = '''        of_this_conversation.then_some(began).filter(|_| false)'''
+red = [
+    "test_a_member_read_from_the_conversation_is_what_reading_may_mark",
+    "test_the_rows_own_message_filed_in_another_folder_is_what_reading_may_mark",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
 ]
