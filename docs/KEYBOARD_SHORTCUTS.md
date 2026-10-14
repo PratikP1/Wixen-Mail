@@ -573,20 +573,36 @@ other two surfaces. Nobody has heard any of this in a screen reader yet.
 | Conversation tree, any message | `Shift+Del` | Deletes that message permanently, as in the list. Not asked about first |
 | Conversation tree, any message | `M` | Marks that message read, or unread when it is read, and says which, as the Action menu's Mark as Read does |
 | Conversation tree, any message | `Applications` or `Shift+F10` | The message's menu, the same one the message list offers. What you choose acts on that message alone |
+| Conversation tree, any message | `Ctrl+R` | Reply to that message |
+| Conversation tree, any message | `Ctrl+Shift+R` | Reply All to that message |
+| Conversation tree, any message | `Alt+Shift+R` | Reply to Sender Only, for that message |
+| Conversation tree, any message | `Ctrl+L` | Forward that message |
+| Conversation tree, any message | `Ctrl+Shift+S` | Star that message, or take its star off |
+| Conversation tree, any message | `Ctrl+Shift+V` | Move that message to another folder |
+| Conversation tree, any message | `Ctrl+Shift+J` | Report that message as junk |
+| Conversation tree, any message | `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`, `Ctrl+5`, `Ctrl+6`, `Ctrl+7`, `Ctrl+8`, `Ctrl+9` | Put the label at that place in the order on that message, or take it off |
+| Conversation tree, any message | `Ctrl+0` | Take every label off that message |
+| Conversation tree, any message | `Ctrl+Shift+7`, `Ctrl+Shift+8`, `Ctrl+Shift+9` | Run the first, second or third Quick Step on that message |
 | Conversation tree | `Esc` | Back to the list, focus on the row it came from |
 
-On the first row, the whole conversation, `Delete`, `M` and the menu key do
-nothing: those are commands for one message. To act on every message of a
-conversation, use its row in the message list.
+The keys from `Ctrl+R` down are the message list's keys for the same
+commands, described under Message Actions, Labels and Quick Steps. Here each
+acts on the message the cursor is on, never on the rest of the conversation.
 
-After `Delete`, `M` or a line of the menu, the conversation comes back by
-itself, listing what is true now: the cursor is on the same message, or on
-the message after it when that one has gone. It says only what the command
-says, not the conversation's name again. When the last message of the
-conversation here has gone, you are back in the message list, on the next
-conversation. Reply, Reply All, Forward and the three Copy to commands open a
-window of their own instead, and closing that window takes you back to the
-list. The other message keys, such as `Ctrl+R`, are not answered here yet.
+On the first row, the whole conversation, `Delete`, `M`, the menu key and the
+keys above do nothing: those are commands for one message. To act on every
+message of a conversation, use its row in the message list.
+
+After `Delete`, `M`, a star, a move, a junk report, a label, a Quick Step or a
+line of the menu, the conversation comes back by itself, listing what is true
+now: the cursor is on the same message, or on the message after it when that
+one has gone. It says only what the command says, not the conversation's name
+again. When the last message of the conversation here has gone, you are back
+in the message list, on the next conversation. Reply, Reply All, Reply to
+Sender Only, Forward and the three Copy to commands open a window of their own
+instead, and closing that window takes you back to the list. Until 14 October
+2026 this page said the other message keys, such as `Ctrl+R`, were not
+answered here yet.
 
 Until 14 October 2026 this page said the message list stays one row per
 message. Since 20 September 2026 a folder shows one row per conversation unless

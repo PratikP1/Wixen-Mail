@@ -819,7 +819,7 @@ fn under(page: &str, heading: &str) -> String {
 fn the_keys_the_section_leaves_out(section: &str) -> Vec<String> {
     wx_thread_view::THE_TREES_KEYS
         .iter()
-        .map(|key| key.written)
+        .map(|key| key.written.as_str())
         .chain(THE_MENU_KEYS)
         .filter(|written| !section.contains(&format!("`{written}`")))
         .map(str::to_string)
