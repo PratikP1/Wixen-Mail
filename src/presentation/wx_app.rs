@@ -1028,7 +1028,9 @@ struct AppHandles<'a> {
 }
 
 impl WxMailApp {
-    pub fn new() -> Result<Self> {
+    pub fn new(this_copy: crate::application::running::ThisCopy) -> Result<Self> {
+        use crate::application::running::ThisCopy;
+
         let runtime = Arc::new(
             Runtime::new().map_err(|e| crate::common::Error::Other(format!("Runtime: {}", e)))?,
         );
@@ -1037,6 +1039,31 @@ impl WxMailApp {
         let cache_dir = AppPaths::resolve()?.cache_dir();
         let security = crate::service::security::SecurityService::new().ok();
         let message_cache = MessageCache::new(cache_dir, security).ok();
+
+        // `this_copy` is what the running marker said about this start. A run
+        // that ended mid-send, a crash or a power cut, leaves its claims on
+        // the Outbox behind, and nothing would ever send those messages. Let
+        // go here, once, and only when this is the only copy running: in a
+        // copy beside another, a claim may be held by the other copy's pass
+        // right now, and freeing it is the double send of finding #31. Never in
+        // `MessageCache::new`, which every pass of the send loop runs.
+        if let Some(cache) = &message_cache {
+            match this_copy {
+                ThisCopy::Alone => match cache.let_go_of_every_claim() {
+                    Ok(count) => tracing::info!(
+                        "Let go of {count} Outbox messages an earlier run was sending"
+                    ),
+                    Err(e) => tracing::warn!(
+                        "Could not let go of the Outbox messages an earlier run was sending: {e}"
+                    ),
+                },
+                ThisCopy::BesideAnother => {}
+                ThisCopy::CannotTell => tracing::info!(
+                    "Whether another copy is running is not known, so no Outbox \
+                     message an earlier run was sending was let go"
+                ),
+            }
+        }
 
         let mut state = WxUIState::default();
         // Borrowed rather than moved: the cache is handed to the window below.
@@ -24669,10 +24696,16 @@ fn undo_send(
     //
     // This way every ending is safe. The draft fails to save and nothing has
     // been touched. The draft saves and the row comes out, which is the
-    // ordinary case. Or the draft saves and the row has already gone, because
-    // the send loop reached it between deciding and acting, and the spare
-    // draft is taken away again below rather than left as a copy of a message
-    // that has been sent.
+    // ordinary case. Or the draft saves and the row will not come out, because
+    // a pass of the send loop claimed it between deciding and acting, and the
+    // spare draft is taken away again below rather than left as a copy of a
+    // message that is on its way.
+    //
+    // Until 2026-10-14 this said the row "has already gone" in that case, and
+    // the delete answering false was the only sign. The send loop took a row
+    // out only after its send finished, so while a message was on its way the
+    // row was still there, the delete answered true, and this said "Taken
+    // back" about it (finding #6). The delete now refuses a claimed row.
     let its_account = lock_state(state)
         .accounts
         .iter()
@@ -24691,7 +24724,7 @@ fn undo_send(
         Ok(true) => {}
         Ok(false) | Err(_) => {
             // Nothing came out of the queue, so the draft is a copy of a
-            // message that may already be on its way. Left in Drafts it would
+            // message a pass has claimed or already sent. Left in Drafts it would
             // be sent a second time by whoever found it.
             if let Err(why) = cache.delete_draft(&draft) {
                 tracing::error!("a draft made by Undo Send could not be removed: {why}");
@@ -24962,6 +24995,48 @@ fn flush_outbox(app: AppHandles<'_>) {
             return;
         }
 
+        // Claimed before anything is counted or sent, and only what this pass
+        // claimed goes. Reading a row is not claiming it: two passes a few
+        // seconds apart both read one message and both sent it, and Undo Send
+        // said "Taken back" about a message a pass was already sending
+        // (findings #31 and #6). A claim another pass, Undo Send or another
+        // copy got to first answers false and the message is passed over. A
+        // claim that fails is passed over too, rather than ending the pass,
+        // so one unreadable row does not hold back the rest.
+        let mut claimed = Vec::new();
+        for (account, queued) in waiting {
+            let mut ours = Vec::new();
+            for msg in queued {
+                let is_ours = match cache.claim_for_sending(&msg.id, now) {
+                    Ok(is_ours) => is_ours,
+                    Err(e) => {
+                        tracing::error!(
+                            "A queued message for {} could not be claimed, so it was not sent: {e}",
+                            account.name
+                        );
+                        false
+                    }
+                };
+                if !is_ours {
+                    continue;
+                }
+                ours.push(msg);
+            }
+            if !ours.is_empty() {
+                claimed.push((account, ours));
+            }
+        }
+
+        if claimed.is_empty() {
+            let _ = tx
+                .send(UIUpdate::StatusUpdated(
+                    "The Outbox is already being sent.".into(),
+                ))
+                .await;
+            return;
+        }
+        let waiting = claimed;
+
         let total: usize = waiting.iter().map(|(_, queued)| queued.len()).sum();
         let _ = tx
             .send(UIUpdate::StatusUpdated(format!(
@@ -25051,7 +25126,10 @@ fn flush_outbox(app: AppHandles<'_>) {
                         // Said rather than dropped, and said as what it means
                         // rather than as a database error, because the thing to do
                         // about it is to look in Sent before sending anything else.
-                        if let Err(e) = cache.delete_outbox_message(&msg.id) {
+                        //
+                        // Its own delete rather than Undo Send's, which refuses
+                        // a claimed row, and this pass holds this row's claim.
+                        if let Err(e) = cache.a_sent_message_leaves_the_queue(&msg.id) {
                             let said = format!(
                                 "{} was sent, but it is still in the Outbox and may be sent \
                              again. Check Sent before trying once more. ({e})",
@@ -25094,7 +25172,16 @@ fn flush_outbox(app: AppHandles<'_>) {
                         }
                     }
                     Err(reason) => {
-                        let _ = cache.update_outbox_failure(&msg.id, reason);
+                        // Counts the failure and lets go of the claim, so the
+                        // next pass offers the message again. Logged when it
+                        // cannot be written, because the claim then holds the
+                        // message until the program next starts.
+                        if let Err(e) = cache.update_outbox_failure(&msg.id, reason) {
+                            tracing::error!(
+                                "A failed send could not be recorded, so the message waits \
+                                 until Wixen Mail next starts: {e}"
+                            );
+                        }
                         failed += 1;
                     }
                 }

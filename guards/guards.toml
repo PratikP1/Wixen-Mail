@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 705 records have arrived since and have not been through it.
+# 706 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16395,7 +16395,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 7 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
 ]
 
 # ── A network loss is said once, because it is a change and not an answer ───
@@ -16486,7 +16486,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 7 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
 ]
 
 # ── The window that asks which copy to keep ─────────────────────────────────
@@ -39623,4 +39623,25 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/outbox.rs", tests = 35 },
+]
+
+# The send loop sending what it read without claiming it: the claim is
+# answered true for every message without asking the store, which is the
+# double send of finding #31 (13.2-04). The library cannot see it, since
+# nothing in it runs a pass; the reading of the send loop does.
+#
+# Measured by hand on 2026-10-14: the whole library at 9,045 passed and 0
+# failed, and the target at 11 passed and 1 failed, this one.
+[[guard]]
+name = "the send loop sends only what it claimed"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_leaves_the_outbox_unasked"
+before = '''                let is_ours = match cache.claim_for_sending(&msg.id, now) {'''
+after = '''                let is_ours = match Ok::<bool, crate::common::Error>(true) {'''
+red = [
+    "test_the_send_loop_claims_a_message_before_it_sends_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
 ]

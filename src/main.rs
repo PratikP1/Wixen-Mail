@@ -1,7 +1,7 @@
 #![windows_subsystem = "windows"]
 
 use wixen_mail::application::handover::{HowToStart, how_to_start};
-use wixen_mail::application::running::Claim;
+use wixen_mail::application::running::{Claim, ThisCopy};
 use wixen_mail::common::logging::{self, LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::common::{started, version};
@@ -84,11 +84,14 @@ fn main() {
     // does not clear the mark. A second copy does not stay: it hands what it
     // was given to the copy already running and stops, which is decided below
     // once logging is up and a failure can be recorded.
-    let mut another_was_already_running = false;
+    let mut this_copy = ThisCopy::CannotTell;
     let _running = match wixen_mail::application::running::claim() {
-        Claim::Granted(marker) => Some(marker),
+        Claim::Granted(marker) => {
+            this_copy = ThisCopy::Alone;
+            Some(marker)
+        }
         Claim::AnotherIsRunning(marker) => {
-            another_was_already_running = true;
+            this_copy = ThisCopy::BesideAnother;
             Some(marker)
         }
         Claim::Unknown(why) => {
@@ -98,6 +101,7 @@ fn main() {
             None
         }
     };
+    let another_was_already_running = this_copy == ThisCopy::BesideAnother;
 
     // Before anything opens a file, including the log the next line writes.
     let migration = prepare_data_folder();
@@ -137,10 +141,12 @@ fn main() {
     //
     // Windows starts a fresh copy for every link clicked, and being the
     // registered handler does not change that. Two copies share one database
-    // and one outbox, and the outbox has no notion of who is sending, so both
-    // would send the same queued message and the person on the other end would
-    // receive it twice. That is what this is for; the tidiness of one window is
-    // the smaller half.
+    // and one outbox. Until 2026-10-14 the outbox had no notion of who was
+    // sending, so both would send the same queued message and the person on
+    // the other end would receive it twice, and that was what this was for.
+    // Since 13.2-04 a pass claims each message before it sends, so a second
+    // copy cannot send one the first holds; the tidiness of one window is now
+    // most of the reason.
     //
     // A failure to hand over is not an error. The copy holding the mutex may be
     // shutting down, or may have gone between the mutex being seen and the pipe
@@ -184,7 +190,7 @@ fn main() {
     // start was asked to do.
     let open = run.open;
 
-    match WxMailApp::new() {
+    match WxMailApp::new(this_copy) {
         Ok(app) => {
             if let Err(e) = app.run(scan_target, open) {
                 tracing::error!("UI error: {}", e);
