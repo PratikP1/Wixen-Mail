@@ -919,6 +919,42 @@ impl WxUIState {
         self.acting_on
             .or_else(|| self.what_the_cursor_stands_for().map(|row| row.id))
     }
+
+    /// The message whose reading began, when the reading timer may mark it:
+    /// while the cursor row in the list is still the one it was read from
+    /// (13.2-03.1).
+    ///
+    /// The row's own message when it is unread, as the list always had it.
+    /// Under conversation view also a message read from the opened
+    /// conversation: an unread member of the row's conversation among the
+    /// loaded rows, or the row's own message filed in another folder, which
+    /// the loaded rows do not hold and whose read state the timer reads from
+    /// the store. A message of any other conversation, or a row the cursor
+    /// has left, is nothing.
+    pub fn what_reading_may_mark(&self) -> Option<i64> {
+        let (began, _) = self.reading_began?;
+        let row = self.selected_message_index?;
+        let the_rows_own = self
+            .the_loaded_message_the_row_stands_for(row)
+            .filter(|message| !message.read)
+            .map(|message| message.message_id);
+        if the_rows_own == Some(began) {
+            return Some(began);
+        }
+        let conversation = self
+            .showing
+            .showing_conversations()
+            .then(|| self.conversations.get(row))??;
+        let of_this_conversation = match self.messages.iter().find(|m| m.message_id == began) {
+            Some(loaded) => {
+                !loaded.read
+                    && loaded.account_id == conversation.read_in.account_id
+                    && loaded.thread_id.as_deref() == Some(conversation.thread_id.as_str())
+            }
+            None => conversation.stands_for.id == began,
+        };
+        of_this_conversation.then_some(began)
+    }
 }
 
 /// References to PIM module display widgets, used by handle_update to populate data.
@@ -11508,8 +11544,9 @@ const LABEL_IDS: [i32; 9] = [
 /// The menu id of the label at this place in the account's order.
 ///
 /// The first nine are the ids whose items carry Ctrl and the digit; the rest
-/// come from the block reserved for them. `None` past the block.
-fn label_id_at(position: usize) -> Option<Id> {
+/// come from the block reserved for them. `None` past the block. Public for
+/// the conversation tree's keys and the target that holds them (13.2-03.1).
+pub fn label_id_at(position: usize) -> Option<Id> {
     match position {
         0 => None,
         1..=9 => LABEL_IDS.get(position - 1).copied(),
@@ -11831,8 +11868,9 @@ pub fn a_saved_search_key_the_menu_does_not_answer(menu_bar: &MenuBar, position:
 }
 
 /// The menu id of the Quick Step at this place in the account's order,
-/// counted from one. `None` past the block reserved for them.
-fn quick_step_id_at(position: usize) -> Option<Id> {
+/// counted from one. `None` past the block reserved for them. Public for the
+/// conversation tree's keys and the target that holds them (13.2-03.1).
+pub fn quick_step_id_at(position: usize) -> Option<Id> {
     let past_the_first = i32::try_from(position.checked_sub(1)?).ok()?;
     (past_the_first < QUICK_STEPS_ON_THE_MENU).then_some(ID_QUICK_STEP_FIRST + past_the_first)
 }
@@ -12952,13 +12990,11 @@ fn as_they_were(
 fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     let AppHandles { state, tx, rt } = app;
 
-    let marked = {
+    let (row, loaded) = {
         let mut s = lock_state(state);
-        let selected_unread = s
-            .selected_message_index
-            .and_then(|index| s.the_loaded_message_the_row_stands_for(index))
-            .filter(|message| !message.read)
-            .map(|message| message.message_id);
+        // A member of an opened conversation or a row's message filed in
+        // another folder as well as the row's own message (13.2-03.1).
+        let selected_unread = s.what_reading_may_mark();
         let Some(row) = crate::application::reading_habits::whether_to_mark_read(
             s.reading_began,
             selected_unread,
@@ -12970,13 +13006,25 @@ fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
         // Cleared before the write, so a slow server does not mean asking
         // twice.
         s.reading_began = None;
-        let Some(message) = s.messages.iter_mut().find(|m| m.message_id == row) else {
-            return;
-        };
-        message.read = true;
-        (row, message.uid, message.subject.clone())
+        let loaded = s
+            .messages
+            .iter_mut()
+            .find(|m| m.message_id == row)
+            .map(|message| {
+                message.read = true;
+                (message.uid, message.subject.clone())
+            });
+        (row, loaded)
     };
-    let (row, uid, subject) = marked;
+    // A message the loaded rows do not hold, filed in another folder, is
+    // read from the store, and left alone when it is read there already.
+    let Some((uid, subject)) = loaded.or_else(|| {
+        the_stored_message(cache.as_deref()?, row)
+            .filter(|message| !message.read)
+            .map(|message| (message.uid, message.subject))
+    }) else {
+        return;
+    };
     let sent = tx.clone();
     rt.spawn(async move {
         let _ = sent.send(UIUpdate::MessageReadToggled(row, true)).await;

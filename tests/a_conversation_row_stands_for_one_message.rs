@@ -968,6 +968,13 @@ const THE_ACCESSOR: &str = "pub fn the_message_a_command_is_for(";
 const ASKS_THE_ACCESSOR: &str = "the_message_a_command_is_for(";
 const THE_NAMED_MESSAGE: &str = "acting_on";
 
+/// The reading timer (13.2-03.1), which asks the state what reading may
+/// mark, a member of the cursor row's conversation as well as its message,
+/// and that answer, which still asks which message the row stands for.
+const THROUGH_THE_READING: [&str; 1] = ["fn mark_what_was_read("];
+const THE_READING_ANSWER: &str = "pub fn what_reading_may_mark(";
+const ASKS_THE_READING_ANSWER: &str = "what_reading_may_mark(";
+
 /// The cursor handler asks which message the row stands for, previews
 /// that, and under conversation view starts the conversation's fetch;
 /// nothing in it indexes the flat list with the row's index.
@@ -1126,6 +1133,8 @@ fn the_cursor_commands_act_on_the_row_message(app: &str) -> Result<(), String> {
         }
         let asks = if THROUGH_THE_ACCESSOR.contains(&command) {
             ASKS_THE_ACCESSOR
+        } else if THROUGH_THE_READING.contains(&command) {
+            ASKS_THE_READING_ANSWER
         } else {
             THE_LOADED_ROW_MESSAGE
         };
@@ -1149,6 +1158,13 @@ fn the_cursor_commands_act_on_the_row_message(app: &str) -> Result<(), String> {
         return Err(format!(
             "{THE_ACCESSOR} asks {THE_LOADED_ROW_MESSAGE} before it reads {THE_NAMED_MESSAGE}, \
              so the row's message wins over the one an opened conversation named"
+        ));
+    }
+    let reading = method_of(app, THE_READING_ANSWER)?;
+    if !reading.contains(THE_LOADED_ROW_MESSAGE) {
+        return Err(format!(
+            "{THE_READING_ANSWER} does not ask {THE_LOADED_ROW_MESSAGE}, so the reading timer \
+             does not mark the message the row stands for"
         ));
     }
     let fetch = body_of(app, THE_BODY_FETCH)?;
@@ -1238,6 +1254,8 @@ fn a_window_as_it_should_be() -> String {
         snippet.push_str(command);
         if THROUGH_THE_ACCESSOR.contains(&command) {
             snippet.push_str(") {\n    s.the_message_a_command_is_for()\n}\n");
+        } else if THROUGH_THE_READING.contains(&command) {
+            snippet.push_str(") {\n    let selected_unread = s.what_reading_may_mark();\n}\n");
         } else {
             snippet.push_str(
                 ") {\n    s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))\n}\n",
@@ -1250,7 +1268,13 @@ fn a_window_as_it_should_be() -> String {
         "&self) -> Option<&MessageItem> {\n        match self.acting_on {\n            \
          Some(named) => self.messages.iter().find(|m| m.message_id == named),\n            \
          None => self.selected_message_index.and_then(|at| self.the_loaded_message_the_row_stands_for(at)),\n        \
-         }\n    }\n}\n",
+         }\n    }\n    ",
+    );
+    snippet.push_str(THE_READING_ANSWER);
+    snippet.push_str(
+        "&self) -> Option<i64> {\n        \
+         let the_rows_own = self.selected_message_index.and_then(|at| self.the_loaded_message_the_row_stands_for(at));\n    \
+         }\n}\n",
     );
     snippet.push_str(THE_BODY_FETCH);
     snippet.push_str(") {\n    let still = s.what_the_cursor_stands_for().is_some_and(|row| row.id == message_row_id);\n}\n");
@@ -1333,6 +1357,32 @@ fn test_the_readings_complain_when_the_preview_or_space_reads_the_flat_list_agai
     let why = the_cursor_commands_act_on_the_row_message(&the_named_message_ignored)
         .expect_err("the accessor ignoring acting_on");
     assert!(why.contains("does not read acting_on"), "{why}");
+
+    // 13.2-03.1: a timer that asks the row's message itself never marks a
+    // message read from an opened conversation, and an answer that reads
+    // the flat list marks an unrelated message.
+    let the_timer_asks_the_row = app.replacen(
+        "    let selected_unread = s.what_reading_may_mark();\n",
+        "    let selected_unread = s.the_loaded_message_the_row_stands_for(at);\n",
+        1,
+    );
+    let why = the_cursor_commands_act_on_the_row_message(&the_timer_asks_the_row)
+        .expect_err("the timer asking the row's message itself");
+    assert!(
+        why.contains("fn mark_what_was_read( does not ask what_reading_may_mark("),
+        "{why}"
+    );
+    let the_answer_reads_the_flat_list = app.replacen(
+        "        let the_rows_own = self.selected_message_index.and_then(|at| self.the_loaded_message_the_row_stands_for(at));\n",
+        "        let the_rows_own = self.selected_message_index.and_then(|at| self.messages.get(at));\n",
+        1,
+    );
+    let why = the_cursor_commands_act_on_the_row_message(&the_answer_reads_the_flat_list)
+        .expect_err("the answer reading the flat list");
+    assert!(
+        why.contains("pub fn what_reading_may_mark( does not ask"),
+        "{why}"
+    );
 }
 
 #[test]

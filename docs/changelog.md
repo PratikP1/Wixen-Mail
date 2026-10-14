@@ -1427,6 +1427,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Inside an opened conversation, the message list's other keys act on the message the
+  cursor is on, and a message you read there is marked read (2026-10-14, LIST-05, LIST-03).**
+  These were the two known limitations of the change below. In the conversation window,
+  `Ctrl+R` replies to the message under the cursor, `Ctrl+Shift+R` replies to all,
+  `Alt+Shift+R` replies to the sender only, `Ctrl+L` forwards it, `Ctrl+Shift+S` stars it or
+  takes the star off, `Ctrl+Shift+V` moves it, `Ctrl+Shift+J` reports it as junk, `Ctrl+1` to
+  `Ctrl+9` put a label on it or take it off, `Ctrl+0` takes every label off, and
+  `Ctrl+Shift+7` to `Ctrl+Shift+9` run your first three Quick Steps on it. Each is the same key
+  the message list uses for the same command, and acts on that one message, never on the rest
+  of the conversation. Reply, Reply All, Reply to Sender Only and Forward open their own
+  window, and closing it takes you back to the list; after the others the conversation comes
+  back by itself, as it does after `Delete`. A message you open from the conversation is now
+  marked read after the wait you chose under Mark as read after, as a message opened from the
+  list is, as long as the list's cursor is still on that conversation's row. The same goes
+  for a conversation's own message when it is filed in another folder. Moving through the list
+  still marks nothing read. The version does not move.
 - **Inside an opened conversation, the menu key, Delete, Shift+Delete and M act on the
   message the cursor is on (2026-10-14, LIST-05).** In the conversation window, the one place a
   conversation's messages are listed one by one, none of these did anything, so a message

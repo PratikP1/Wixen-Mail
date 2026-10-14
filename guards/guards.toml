@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 701 records have arrived since and have not been through it.
+# 703 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -39472,24 +39472,27 @@ tests_last_seen = [
 # 9,037 passed and 1 failed, the unit case the record after this names. A
 # record with a suite runs that target alone, so the library's half of the
 # same break is a record of its own.
+#
+# Rewritten on 2026-10-14 by 13.2-03.1, which made the tree's keys a list of
+# `("written", ID_NAME)` lines read for their key: the break now spells
+# Delete as a key the list cannot read, so the tree answers no Delete at
+# all. Measured by hand that day: the target at 18 passed and 3 failed,
+# these three, and the whole library at 9,037 passed and 1 failed, the unit
+# case the record after this names.
 [[guard]]
 name = "Delete on a message in an opened conversation acts on that message"
 file = "src/presentation/wx_thread_view.rs"
 suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
-before = '''    TreeKey {
-        key: 127,
-        shift: false,
-        written: "Delete",'''
-after = '''    TreeKey {
-        key: 0,
-        shift: false,
-        written: "Delete",'''
+before = '''    ("Delete", ID_DELETE),'''
+after = '''    ("Insert", ID_DELETE),'''
 red = [
     "test_delete_on_a_message_acts_on_that_message",
+    "test_every_key_the_tree_answers_is_the_key_the_main_window_gives_its_command",
+    "test_only_the_keys_that_open_a_window_leave_the_conversation_closed",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 13 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
 ]
 
 # The same break read by the library: the rule that tells a key-down which
@@ -39497,18 +39500,13 @@ tests_last_seen = [
 # pad's Del (13.2-03).
 #
 # Measured by hand on 2026-10-14: the whole library at 9,037 passed and 1
-# failed, this one.
+# failed, this one. Rewritten the same day by 13.2-03.1 with the record
+# above, onto the list's new line, and measured by hand again: the same one.
 [[guard]]
 name = "Delete and the number pad's Del are the conversation tree's Delete"
 file = "src/presentation/wx_thread_view.rs"
-before = '''    TreeKey {
-        key: 127,
-        shift: false,
-        written: "Delete",'''
-after = '''    TreeKey {
-        key: 0,
-        shift: false,
-        written: "Delete",'''
+before = '''    ("Delete", ID_DELETE),'''
+after = '''    ("Insert", ID_DELETE),'''
 red = [
     "presentation::wx_thread_view::tests::test_each_key_is_its_command_with_its_own_modifiers_and_no_other",
 ]
@@ -39535,5 +39533,52 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 13 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
+]
+
+# Ctrl+R in the conversation tree's keys given another command: inside an
+# opened conversation Ctrl+R forwards the message rather than replying to it,
+# a key that does something other than the same key in the list (13.2-03.1,
+# Pratik's fourth report of 2026-10-14, "or other commands"). The window is
+# driven by a posted key, and the comparison holds the line to the main
+# window's menu, which gives Forward Ctrl+L.
+#
+# Measured by hand on 2026-10-14: the target at 19 passed and 2 failed,
+# these two, and the whole library at 9,038 passed and 0 failed.
+[[guard]]
+name = "Ctrl+R in an opened conversation replies to the message under the cursor"
+file = "src/presentation/wx_thread_view.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''    ("Ctrl+R", ID_REPLY),'''
+after = '''    ("Ctrl+R", ID_FORWARD),'''
+red = [
+    "test_ctrl_r_on_a_message_replies_to_that_message",
+    "test_every_key_the_tree_answers_is_the_key_the_main_window_gives_its_command",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
+]
+
+# The reading timer's answer back to the row's own message alone: a message
+# read from an opened conversation, a member of the cursor row and not its
+# message, is never marked read, and nor is the row's own message filed in
+# another folder, which to the ear sounds like the mark never applying
+# (13.2-03.1, LIST-03 for the conversation).
+#
+# Measured by hand on 2026-10-14: the target at 25 passed and 2 failed,
+# these two, and the whole library at 9,038 passed and 0 failed.
+[[guard]]
+name = "a message read from an opened conversation is what the reading timer may mark"
+file = "src/presentation/wx_app.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''        of_this_conversation.then_some(began)'''
+after = '''        of_this_conversation.then_some(began).filter(|_| false)'''
+red = [
+    "test_a_member_read_from_the_conversation_is_what_reading_may_mark",
+    "test_the_rows_own_message_filed_in_another_folder_is_what_reading_may_mark",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
 ]

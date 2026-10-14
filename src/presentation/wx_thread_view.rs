@@ -14,8 +14,11 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::names::set_accessible_name;
 use crate::presentation::theme;
 use crate::presentation::tree_walk;
-use crate::presentation::wx_app::{ID_DELETE, ID_DELETE_OUTRIGHT, ID_MARK_READ};
-use std::sync::Arc;
+use crate::presentation::wx_app::{
+    ID_DELETE, ID_DELETE_OUTRIGHT, ID_FORWARD, ID_LABEL_NONE, ID_MARK_READ, ID_MOVE_TO_FOLDER,
+    ID_REPLY, ID_REPLY_ALL, ID_REPLY_SENDER, ID_REPORT_JUNK, ID_TOGGLE_STAR,
+};
+use std::sync::{Arc, LazyLock};
 use wxdragon::prelude::*;
 
 /// The dialog's third answer, alongside the stock OK and Cancel.
@@ -25,45 +28,111 @@ const ID_PLAIN_TEXT: Id = ID_HIGHEST + 950;
 /// (13.2-03): [`ThreadChoice::Act`] says which command and which message.
 pub const ID_ACT: Id = ID_HIGHEST + 951;
 
-/// One key the tree answers on a message, as the message list answers it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct TreeKey {
-    /// wxWidgets' code for the key: a letter's upper-case character, or
-    /// `WXK_DELETE`, which is 127.
-    pub key: u8,
-    /// Whether Shift is held, which makes Delete delete permanently.
+/// Which of Ctrl, Alt and Shift a key is pressed with, exactly: Ctrl+R and
+/// Ctrl+Shift+R are two commands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Held {
+    pub control: bool,
+    pub alt: bool,
     pub shift: bool,
-    /// How `docs/KEYBOARD_SHORTCUTS.md` writes the key.
-    pub written: &'static str,
+}
+
+/// One key the tree answers on a message, as the message list answers it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeKey {
+    /// wxWidgets' code for the key: a letter's upper-case character, a
+    /// digit's character, or `WXK_DELETE`, which is 127.
+    pub key: i32,
+    pub held: Held,
+    /// How `docs/KEYBOARD_SHORTCUTS.md` writes the key, which the key and
+    /// what is held are read from.
+    pub written: String,
     /// The main window's command the key runs.
     pub command: Id,
 }
 
+/// `WXK_DELETE`.
+const DELETE: i32 = 127;
+
+/// The message commands the tree has a key for, each with the key the
+/// message list gives it, written as the keyboard page writes it: Delete,
+/// Shift+Del and M (13.2-03), and the menu's keys for the rest (13.2-03.1).
+///
+/// One `("written", ID_NAME),` per line, because the test that holds each
+/// to the main window's menu reads them here. The labels and Quick Steps
+/// by number are added from their places in [`THE_TREES_KEYS`].
+const THE_MESSAGE_KEYS: [(&str, Id); 11] = [
+    ("Delete", ID_DELETE),
+    ("Shift+Del", ID_DELETE_OUTRIGHT),
+    ("M", ID_MARK_READ),
+    ("Ctrl+R", ID_REPLY),
+    ("Ctrl+Shift+R", ID_REPLY_ALL),
+    ("Alt+Shift+R", ID_REPLY_SENDER),
+    ("Ctrl+L", ID_FORWARD),
+    ("Ctrl+Shift+S", ID_TOGGLE_STAR),
+    ("Ctrl+Shift+V", ID_MOVE_TO_FOLDER),
+    ("Ctrl+Shift+J", ID_REPORT_JUNK),
+    ("Ctrl+0", ID_LABEL_NONE),
+];
+
 /// Every key the tree answers on a message, read by its one key handler
 /// and by the test that holds the keyboard page to it.
 ///
-/// Delete, Shift+Delete and M (13.2-03). The other message keys, Ctrl+R and
-/// the rest, are 13.2-03.1's.
-pub const THE_TREES_KEYS: [TreeKey; 3] = [
-    TreeKey {
-        key: 127,
-        shift: false,
-        written: "Delete",
-        command: ID_DELETE,
-    },
-    TreeKey {
-        key: 127,
-        shift: true,
-        written: "Shift+Del",
-        command: ID_DELETE_OUTRIGHT,
-    },
-    TreeKey {
-        key: b'M',
-        shift: false,
-        written: "M",
-        command: ID_MARK_READ,
-    },
-];
+/// The message keys above, then `Ctrl+1` to `Ctrl+9` for the labels and
+/// `Ctrl+Shift+7` to `Ctrl+Shift+9` for the Quick Steps, each built from its
+/// place by the function the main window's menu writes it with, so the list
+/// cannot skip a place or name one the menu does not.
+pub static THE_TREES_KEYS: LazyLock<Vec<TreeKey>> = LazyLock::new(|| {
+    use crate::application::{quick_steps, tagging};
+    use crate::presentation::wx_app::{label_id_at, quick_step_id_at};
+    let labels = (1..=tagging::REACHABLE_BY_KEY)
+        .filter_map(|place| Some((tagging::key_for(place)?, label_id_at(place)?)));
+    let steps = (1..=quick_steps::REACHABLE_BY_KEY)
+        .filter_map(|place| Some((quick_steps::key_for(place)?, quick_step_id_at(place)?)));
+    THE_MESSAGE_KEYS
+        .iter()
+        .map(|(written, command)| (written.to_string(), *command))
+        .chain(labels)
+        .chain(steps)
+        .filter_map(|(written, command)| {
+            let (key, held) = pressed_as(&written)?;
+            Some(TreeKey {
+                key,
+                held,
+                written,
+                command,
+            })
+        })
+        .collect()
+});
+
+/// The key `written` names and what is held with it: `Ctrl+Shift+R` is R
+/// with Ctrl and Shift held, and `Delete` and `Del` are both Delete.
+/// `None` for a spelling this does not know, which leaves the key out of the
+/// list; the target that compares the list with the main window's menu
+/// finds every key it should hold.
+fn pressed_as(written: &str) -> Option<(i32, Held)> {
+    let mut parts = written.split('+');
+    let key = parts.next_back()?;
+    let mut held = Held::default();
+    for modifier in parts {
+        let down = match modifier {
+            "Ctrl" => &mut held.control,
+            "Alt" => &mut held.alt,
+            "Shift" => &mut held.shift,
+            _ => return None,
+        };
+        *down = true;
+    }
+    let code = match key {
+        "Delete" | "Del" => DELETE,
+        _ => match key.as_bytes() {
+            [one] if one.is_ascii_alphanumeric() => i32::from(one.to_ascii_uppercase()),
+            _ => return None,
+        },
+    };
+    Some((code, held))
+}
 
 /// One message as the tree shows it.
 #[derive(Debug, Clone)]
@@ -111,23 +180,26 @@ pub enum ThreadChoice {
 const NUMPAD_DELETE: i32 = 385;
 
 /// Which of the tree's keys a key-down is, if any: its key with exactly its
-/// own modifiers, so Ctrl+M stays another command and Shift+M a capital for
-/// the tree's search.
+/// own modifiers, so Ctrl+M stays another command, Shift+M a capital for the
+/// tree's search, and Alt+Shift+R, which arrives as a system key, is not
+/// Ctrl+Shift+R.
 ///
-/// A letter is held to [`crate::presentation::list_keys::is_a_bare_press_of`],
-/// the rule M already follows on the message list. The number pad's Del is
-/// Delete, as it is everywhere else in Windows.
+/// The number pad's Del is Delete, as it is everywhere else in Windows.
 pub fn the_key_pressed(
     pressed: Option<i32>,
     control: bool,
     alt: bool,
     shift: bool,
 ) -> Option<&'static TreeKey> {
-    use crate::presentation::list_keys::is_a_bare_press_of;
-    let pressed = pressed.map(|code| if code == NUMPAD_DELETE { 127 } else { code });
-    THE_TREES_KEYS.iter().find(|key| {
-        key.shift == shift && is_a_bare_press_of(char::from(key.key), pressed, control, alt, false)
-    })
+    let pressed = pressed.map(|code| if code == NUMPAD_DELETE { DELETE } else { code })?;
+    let held = Held {
+        control,
+        alt,
+        shift,
+    };
+    THE_TREES_KEYS
+        .iter()
+        .find(|key| key.key == pressed && key.held == held)
 }
 
 /// What the dialog answered, from the code it ended with and the choice the
@@ -173,19 +245,20 @@ pub fn where_the_cursor_comes_back(
 /// Whether the conversation comes back after `command` (13.2-03).
 ///
 /// It does after a command over the message, a mark, a star, a delete, a
-/// move or a copy to a folder, whose own windows have closed by the time it
-/// returns. It does not after Reply, Reply All, Forward or the three Copy to
-/// commands, which open a window of their own: brought back over it, the
-/// conversation would sit on top and disable it, so closing that window
-/// returns to the list instead.
+/// move, a copy to a folder, a junk report, a label or a Quick Step, whose
+/// own windows have closed by the time it returns. It does not after Reply,
+/// Reply All, Reply to Sender Only, Forward or the three Copy to commands,
+/// which open a window of their own: brought back over it, the conversation
+/// would sit on top and disable it, so closing that window returns to the
+/// list instead.
 pub fn brings_the_conversation_back(command: Id) -> bool {
     use crate::presentation::wx_app::{
-        ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK, ID_FORWARD,
-        ID_REPLY, ID_REPLY_ALL,
+        ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK,
     };
     ![
         ID_REPLY,
         ID_REPLY_ALL,
+        ID_REPLY_SENDER,
         ID_FORWARD,
         ID_CONTEXT_COPY_TO_TASK,
         ID_CONTEXT_COPY_TO_EVENT,

@@ -25,10 +25,18 @@
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::context_menu::Action;
+use wixen_mail::application::conversations::AConversationReaches;
+use wixen_mail::application::{quick_steps, tagging};
+use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
 use wixen_mail::presentation::tree_walk;
+use wixen_mail::presentation::ui_types::MessageItem;
+use wixen_mail::presentation::view_state::Showing;
+use wixen_mail::presentation::wx_app::{WxUIState, apply_threading, label_id_at, quick_step_id_at};
 use wixen_mail::presentation::wx_context_menu::command_for;
 use wixen_mail::presentation::wx_thread_view::{self, ThreadChoice, ThreadNode};
+use wixen_mail::service::safety::Verdict;
 use wxdragon::prelude::*;
 
 /// The main window's commands, by the ids the message menu raises for them,
@@ -36,17 +44,36 @@ use wxdragon::prelude::*;
 const ID_DELETE: i32 = command_for(Action::DeleteMessage);
 const ID_DELETE_OUTRIGHT: i32 = command_for(Action::DeleteMessageOutright);
 const ID_MARK_READ: i32 = command_for(Action::MarkRead);
+const ID_REPLY: i32 = command_for(Action::Reply);
+const ID_REPLY_ALL: i32 = command_for(Action::ReplyAll);
+const ID_FORWARD: i32 = command_for(Action::Forward);
+const ID_TOGGLE_STAR: i32 = command_for(Action::ToggleStar);
+const ID_MOVE_TO_FOLDER: i32 = command_for(Action::MoveToFolder);
 
 // ── The window, driven by posted messages ──────────────────────────────────
 
 const WM_KEYDOWN: u32 = 0x0100;
+/// A key pressed with Alt held arrives as a system key.
+const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_COMMAND: u32 = 0x0111;
 const VK_RETURN: usize = 0x0D;
 const VK_DELETE: usize = 0x2E;
 const VK_M: usize = 0x4D;
+const VK_R: usize = 0x52;
+const VK_V: usize = 0x56;
+const VK_1: usize = 0x31;
+const VK_7: usize = 0x37;
 const VK_SHIFT: usize = 0x10;
 const VK_LSHIFT: usize = 0xA0;
+const VK_CONTROL: usize = 0x11;
+const VK_LCONTROL: usize = 0xA2;
+const VK_MENU: usize = 0x12;
+const VK_LMENU: usize = 0xA4;
 const PM_REMOVE: u32 = 0x0001;
+
+/// The context-code bit of a system key-down's `lParam`, set when Alt is
+/// held.
+const ALT_IS_DOWN: isize = 1 << 29;
 const GENERIC_ALL: u32 = 0x1000_0000;
 
 /// A key-down's `lParam`: pressed once.
@@ -181,14 +208,45 @@ enum StartOn {
     Root,
 }
 
+/// Which modifiers a posted key is held with.
+#[derive(Clone, Copy)]
+enum Held {
+    Nothing,
+    Shift,
+    Ctrl,
+    CtrlShift,
+    AltShift,
+}
+
+impl Held {
+    /// The virtual keys held down, each with its left key.
+    fn keys(self) -> &'static [usize] {
+        match self {
+            Held::Nothing => &[],
+            Held::Shift => &[VK_SHIFT, VK_LSHIFT],
+            Held::Ctrl => &[VK_CONTROL, VK_LCONTROL],
+            Held::CtrlShift => &[VK_CONTROL, VK_LCONTROL, VK_SHIFT, VK_LSHIFT],
+            Held::AltShift => &[VK_MENU, VK_LMENU, VK_SHIFT, VK_LSHIFT],
+        }
+    }
+
+    /// The message a key held this way arrives as, and its `lParam` bits.
+    fn arrives_as(self) -> (u32, isize) {
+        match self {
+            Held::AltShift => (WM_SYSKEYDOWN, ALT_IS_DOWN),
+            _ => (WM_KEYDOWN, 0),
+        }
+    }
+}
+
 /// What is posted, and to which window.
 #[derive(Clone, Copy)]
 enum Posted {
     Nothing,
-    /// A key-down to the tree, with Shift held or not.
+    /// A key-down to the tree, with these modifiers held.
     AKey {
         key: usize,
-        shift: bool,
+        held: Held,
     },
     /// A menu line to the tree, where the menu key's popup delivers it.
     AMenuLine(i32),
@@ -234,11 +292,15 @@ fn one_case(frame: &Frame, start: StartOn, posted: Posted) -> Result<Found, Stri
         unsafe {
             match posted {
                 Posted::Nothing => {}
-                Posted::AKey { key, shift } => {
-                    if shift {
-                        only_these_modifiers_down(&[VK_SHIFT, VK_LSHIFT]);
-                    }
-                    PostMessageW(tree_window, WM_KEYDOWN, key, KEY_DOWN_ONCE | extended(key));
+                Posted::AKey { key, held } => {
+                    only_these_modifiers_down(held.keys());
+                    let (message, bits) = held.arrives_as();
+                    PostMessageW(
+                        tree_window,
+                        message,
+                        key,
+                        KEY_DOWN_ONCE | extended(key) | bits,
+                    );
                 }
                 Posted::AMenuLine(command) => {
                     PostMessageW(tree_window, WM_COMMAND, command as u16 as usize, 0);
@@ -288,6 +350,11 @@ struct Harvest {
     m_on_a_message: Found,
     a_menu_line_on_a_message: Found,
     a_menu_line_on_another_message: Found,
+    ctrl_r_on_a_message: Found,
+    ctrl_shift_v_on_a_message: Found,
+    ctrl_1_on_a_message: Found,
+    ctrl_shift_7_on_a_message: Found,
+    alt_shift_r_on_a_message: Found,
 }
 
 fn take_the_harvest() -> Result<Harvest, String> {
@@ -305,21 +372,24 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 // Never shown: the dialogs are shown modally on this run's
                 // own desktop, where nobody sees them.
                 let frame = Frame::builder().build();
-                let key = |key: usize| Posted::AKey { key, shift: false };
+                let key = |key: usize| Posted::AKey {
+                    key,
+                    held: Held::Nothing,
+                };
+                let held = |key: usize, held: Held| Posted::AKey { key, held };
+                let on_a_message = |posted: Posted| one_case(&frame, StartOn::RowMessage, posted);
                 let harvest = Harvest {
                     the_choice_on_arrival: one_case(&frame, StartOn::RowMessage, Posted::Nothing)?,
                     enter_on_the_root: one_case(&frame, StartOn::Root, key(VK_RETURN))?,
                     delete_on_the_root: one_case(&frame, StartOn::Root, key(VK_DELETE))?,
-                    delete_on_a_message: one_case(&frame, StartOn::RowMessage, key(VK_DELETE))?,
-                    shift_delete_on_a_message: one_case(
-                        &frame,
-                        StartOn::RowMessage,
-                        Posted::AKey {
-                            key: VK_DELETE,
-                            shift: true,
-                        },
-                    )?,
-                    m_on_a_message: one_case(&frame, StartOn::RowMessage, key(VK_M))?,
+                    delete_on_a_message: on_a_message(key(VK_DELETE))?,
+                    shift_delete_on_a_message: on_a_message(held(VK_DELETE, Held::Shift))?,
+                    m_on_a_message: on_a_message(key(VK_M))?,
+                    ctrl_r_on_a_message: on_a_message(held(VK_R, Held::Ctrl))?,
+                    ctrl_shift_v_on_a_message: on_a_message(held(VK_V, Held::CtrlShift))?,
+                    ctrl_1_on_a_message: on_a_message(held(VK_1, Held::Ctrl))?,
+                    ctrl_shift_7_on_a_message: on_a_message(held(VK_7, Held::CtrlShift))?,
+                    alt_shift_r_on_a_message: on_a_message(held(VK_R, Held::AltShift))?,
                     a_menu_line_on_a_message: one_case(
                         &frame,
                         StartOn::RowMessage,
@@ -441,6 +511,287 @@ fn test_a_line_from_the_menu_acts_on_whichever_message_the_cursor_is_on() {
     );
 }
 
+// ── The rest of the message keys, 13.2-03.1 ────────────────────────────────
+//
+// Pratik's "or other commands": each key the message list has for a message
+// command, answered on the message under the cursor. A key nothing answers
+// ends the case as Cancelled.
+
+/// The command the tree's list says a key, written as the page writes it,
+/// runs; a complaint when the list holds no such key.
+fn the_trees_command_for(written: &str) -> i32 {
+    wx_thread_view::THE_TREES_KEYS
+        .iter()
+        .find(|key| key.written == written)
+        .map(|key| key.command)
+        .unwrap_or_else(|| panic!("the tree's list holds no key written {written:?}"))
+}
+
+#[test]
+fn test_ctrl_r_on_a_message_replies_to_that_message() {
+    assert_eq!(
+        the_harvest().ctrl_r_on_a_message.answered,
+        acts(ID_REPLY, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_shift_v_on_a_message_moves_that_message() {
+    assert_eq!(
+        the_harvest().ctrl_shift_v_on_a_message.answered,
+        acts(ID_MOVE_TO_FOLDER, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_1_on_a_message_puts_the_first_label_on_that_message() {
+    let first_label = label_id_at(1).expect("the first label has an id");
+    assert_eq!(
+        the_harvest().ctrl_1_on_a_message.answered,
+        acts(first_label, 33)
+    );
+}
+
+#[test]
+fn test_ctrl_shift_7_on_a_message_runs_the_first_quick_step_on_that_message() {
+    let first_step = quick_step_id_at(1).expect("the first Quick Step has an id");
+    assert_eq!(
+        the_harvest().ctrl_shift_7_on_a_message.answered,
+        acts(first_step, 33)
+    );
+}
+
+/// Alt held makes the key a system key, which the tree reads as it reads
+/// Shift. Which command it runs is the comparison's below, which holds the
+/// list's line for it to the main window's Reply to Sender Only.
+#[test]
+fn test_alt_shift_r_on_a_message_replies_to_its_sender_alone() {
+    assert_eq!(
+        the_harvest().alt_shift_r_on_a_message.answered,
+        acts(the_trees_command_for("Alt+Shift+R"), 33)
+    );
+}
+
+// ── The keys are the main window's ─────────────────────────────────────────
+//
+// Each key the tree answers is the key the main window gives the same
+// command. The menu labels stay literals, because `tests/wired.rs` finds a
+// bound key in their source text, so the tree's list is compared with them
+// rather than read from them: its lines in the tree's source are paired by
+// the command's name with the main window's label for that command.
+
+const THE_THREAD_VIEW: &str = "src/presentation/wx_thread_view.rs";
+/// The tree's list of message keys, one `("written", ID_NAME),` per line.
+const THE_LIST_OF_KEYS: &str = "const THE_MESSAGE_KEYS:";
+/// The keys the message list binds itself rather than through the menu,
+/// with the line that binds each.
+const THE_LISTS_OWN_LETTERS: [(&str, &str); 1] = [("M", "wire_letter(&msg_list, 'M'")];
+
+/// A key as written, read as which modifiers are held and which key: the
+/// page's `Delete` and the menu's `Del` are one key. `None` for a spelling
+/// this does not know.
+fn read_as_pressed(written: &str) -> Option<(bool, bool, bool, String)> {
+    let mut parts = written.split('+');
+    let key = parts.next_back()?;
+    let (mut control, mut alt, mut shift) = (false, false, false);
+    for modifier in parts {
+        match modifier {
+            "Ctrl" => control = true,
+            "Alt" => alt = true,
+            "Shift" => shift = true,
+            _ => return None,
+        }
+    }
+    let key = match key {
+        "Del" | "Delete" => "Delete".to_string(),
+        one if one.chars().count() == 1 => one.to_ascii_uppercase(),
+        _ => return None,
+    };
+    Some((control, alt, shift, key))
+}
+
+/// wxWidgets' code for a key as `read_as_pressed` names it.
+fn the_code_of(key: &str) -> Option<i32> {
+    match key {
+        "Delete" => Some(127),
+        one => one.bytes().next().map(i32::from),
+    }
+}
+
+/// The tree's list of message keys as its source writes them, as
+/// `(written, command name)`, or a complaint when the list is not there.
+fn the_trees_lines(view: &str) -> Result<Vec<(String, String)>, String> {
+    let listed = between(view, THE_LIST_OF_KEYS, "];").map_err(|_| {
+        format!("{THE_THREAD_VIEW} has no {THE_LIST_OF_KEYS}, so this compares nothing")
+    })?;
+    let lines: Vec<(String, String)> = listed
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim().strip_prefix("(\"")?;
+            let (written, command) = line.split_once("\", ")?;
+            Some((
+                written.to_string(),
+                command.trim_end_matches("),").to_string(),
+            ))
+        })
+        .collect();
+    if lines.is_empty() {
+        return Err(format!("{THE_LIST_OF_KEYS} lists nothing"));
+    }
+    Ok(lines)
+}
+
+/// The key the main window's menu writes after the tab in the label of
+/// `command`, by its name, when it writes one.
+fn the_menus_key_for(app: &str, command: &str) -> Option<String> {
+    let named = format!("{command},");
+    app.match_indices(&named).find_map(|(at, _)| {
+        let whole_name = !app[..at]
+            .chars()
+            .next_back()
+            .is_some_and(|before| before.is_alphanumeric() || before == '_');
+        let label = app[at + named.len()..]
+            .trim_start()
+            .strip_prefix('"')
+            .filter(|_| whole_name)?;
+        let label = &label[..label.find('"')?];
+        label.split_once("\\t").map(|(_, key)| key.to_string())
+    })
+}
+
+/// Every line of the tree's list whose key is not the one the main window
+/// gives its command, each in a sentence.
+fn the_keys_the_menu_disagrees_with(lines: &[(String, String)], app: &str) -> Vec<String> {
+    lines
+        .iter()
+        .filter_map(|(written, command)| {
+            let ours = read_as_pressed(written);
+            match the_menus_key_for(app, command) {
+                Some(menu) if ours.is_some() && read_as_pressed(&menu) == ours => None,
+                Some(menu) => Some(format!(
+                    "{written} runs {command}, which the main window gives {menu}"
+                )),
+                None => {
+                    let bound_by_the_list = THE_LISTS_OWN_LETTERS
+                        .iter()
+                        .any(|(letter, binding)| letter == written && app.contains(binding));
+                    (!bound_by_the_list).then(|| {
+                        format!(
+                            "{written} runs {command}, which has no key on the main window's \
+                             menu and is not a letter the list binds itself"
+                        )
+                    })
+                }
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_key_the_tree_answers_is_the_key_the_main_window_gives_its_command() {
+    let view = fs::read_to_string(THE_THREAD_VIEW)
+        .unwrap_or_else(|why| panic!("{THE_THREAD_VIEW}: {why}"))
+        .replace("\r\n", "\n");
+    let lines = the_trees_lines(&what_ships(&view)).unwrap_or_else(|why| panic!("{why}"));
+    let differ = the_keys_the_menu_disagrees_with(&lines, &the_main_window());
+    assert!(differ.is_empty(), "{differ:#?}");
+
+    // Each line is in the list the handler reads, and the key it names
+    // finds it there.
+    let numbered = (1..=tagging::REACHABLE_BY_KEY)
+        .filter_map(|place| Some((tagging::key_for(place)?, label_id_at(place)?)))
+        .chain(
+            (1..=quick_steps::REACHABLE_BY_KEY)
+                .filter_map(|place| Some((quick_steps::key_for(place)?, quick_step_id_at(place)?))),
+        );
+    let lines = lines.iter().map(|(written, _)| (written.clone(), None));
+    for (written, command) in lines.chain(numbered.map(|(written, id)| (written, Some(id)))) {
+        let (control, alt, shift, key) = read_as_pressed(&written)
+            .unwrap_or_else(|| panic!("{written:?} is not a key this can read"));
+        let found = wx_thread_view::the_key_pressed(the_code_of(&key), control, alt, shift)
+            .unwrap_or_else(|| panic!("{written} finds nothing in the tree's list"));
+        assert_eq!(found.written, written, "{written} finds another key's line");
+        if let Some(command) = command {
+            assert_eq!(
+                found.command, command,
+                "{written} runs another command than the main window's"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_the_comparison_refuses_a_key_the_main_window_does_not_give_its_command() {
+    let app = "append_item(ID_REPLY, \"&Reply\\tCtrl+R\", \"\")\n\
+               append_item(ID_REPLY_ALL, \"Reply &All\\tCtrl+Shift+R\", \"\")\n\
+               append_item(\n    ID_DELETE,\n    \"&Delete\\tDel\",\n)\n\
+               append_item(ID_MARK_READ, \"Mark as R&ead\", \"\")\n\
+               wire_letter(&msg_list, 'M', {})\n";
+    let line = |written: &str, command: &str| (written.to_string(), command.to_string());
+    let right = [
+        line("Ctrl+R", "ID_REPLY"),
+        line("Ctrl+Shift+R", "ID_REPLY_ALL"),
+        line("Delete", "ID_DELETE"),
+        line("M", "ID_MARK_READ"),
+    ];
+    assert!(the_keys_the_menu_disagrees_with(&right, app).is_empty());
+    for (planted, said) in [
+        (
+            line("Ctrl+K", "ID_REPLY"),
+            "which the main window gives Ctrl+R",
+        ),
+        (line("Ctrl+R", "ID_REPLY_ALL"), "gives Ctrl+Shift+R"),
+        (line("Shift+Del", "ID_DELETE"), "gives Del"),
+        (
+            line("N", "ID_MARK_READ"),
+            "not a letter the list binds itself",
+        ),
+    ] {
+        let differ = the_keys_the_menu_disagrees_with(std::slice::from_ref(&planted), app);
+        assert!(
+            differ.len() == 1 && differ[0].contains(said),
+            "{planted:?}: {differ:?}"
+        );
+    }
+}
+
+/// Reply, Reply All, Reply to Sender Only and Forward open a window of their
+/// own, so the conversation does not come back over it; every other key the
+/// tree answers acts on the message and brings the conversation back.
+#[test]
+fn test_only_the_keys_that_open_a_window_leave_the_conversation_closed() {
+    let opens_a_window: Vec<i32> = ["Ctrl+R", "Ctrl+Shift+R", "Alt+Shift+R", "Ctrl+L"]
+        .into_iter()
+        .map(the_trees_command_for)
+        .collect();
+    for command in &opens_a_window {
+        assert!(
+            !wx_thread_view::brings_the_conversation_back(*command),
+            "{command} would bring the conversation back over the window it opens"
+        );
+    }
+    for key in wx_thread_view::THE_TREES_KEYS.iter() {
+        if !opens_a_window.contains(&key.command) {
+            assert!(
+                wx_thread_view::brings_the_conversation_back(key.command),
+                "{} leaves the conversation closed",
+                key.written
+            );
+        }
+    }
+    for command in [ID_REPLY, ID_REPLY_ALL, ID_FORWARD] {
+        assert!(!wx_thread_view::brings_the_conversation_back(command));
+    }
+    for command in [ID_TOGGLE_STAR, ID_MOVE_TO_FOLDER] {
+        assert!(wx_thread_view::brings_the_conversation_back(command));
+    }
+    assert_eq!(
+        wx_thread_view::THE_TREES_KEYS.len(),
+        3 + 8 + tagging::REACHABLE_BY_KEY + quick_steps::REACHABLE_BY_KEY,
+        "13.2-03's three, the eight with their own menu keys, the labels and the Quick Steps"
+    );
+}
+
 // ── The page ───────────────────────────────────────────────────────────────
 
 const THE_PAGE: &str = "docs/KEYBOARD_SHORTCUTS.md";
@@ -474,7 +825,7 @@ fn under(page: &str, heading: &str) -> String {
 fn the_keys_the_section_leaves_out(section: &str) -> Vec<String> {
     wx_thread_view::THE_TREES_KEYS
         .iter()
-        .map(|key| key.written)
+        .map(|key| key.written.as_str())
         .chain(THE_MENU_KEYS)
         .filter(|written| !section.contains(&format!("`{written}`")))
         .map(str::to_string)
@@ -689,6 +1040,263 @@ fn test_the_loop_reading_complains_at_each_part_left_out() {
         );
         let why = the_loop_runs_the_command_and_comes_back(&broken)
             .expect_err("a part of the loop left out was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+}
+
+// ── A message read from the conversation is marked read, 13.2-03.1 ────────
+//
+// The reading timer marked only the message the list's cursor row stands
+// for, so a message read from an opened conversation, which is a member of
+// that row and not its message, was never marked, and neither was a row's
+// own message filed in another folder, which the loaded rows do not hold.
+// The state is built the way the window builds it, through the store,
+// `MessageItem::from_row` and `apply_threading`, because a conversation's
+// membership lives in the join between the two.
+
+const THE_ACCOUNT: &str = "acct-one";
+
+fn a_folder(cache: &MessageCache, name: &str) -> i64 {
+    cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: THE_ACCOUNT.to_string(),
+            name: name.to_string(),
+            path: name.to_string(),
+            folder_type: FolderType::Inbox.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("the folder")
+}
+
+/// Message `uid` of `conversation` in `folder`, arriving on day `day` of
+/// September, read or not; its row id comes back.
+fn a_message(
+    cache: &MessageCache,
+    folder: i64,
+    conversation: &str,
+    uid: u32,
+    day: u32,
+    read: bool,
+) -> i64 {
+    let received = format!("2026-09-{day:02}T09:00:00Z");
+    cache
+        .upsert_message(&IncomingMessage {
+            folder_id: folder,
+            uid,
+            message_id: format!("<{conversation}-{uid}@example.com>"),
+            subject: "Quarterly report".to_string(),
+            from_addr: format!("Sender {uid} <s{uid}@example.com>"),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            reply_to: None,
+            date: received.clone(),
+            internal_date: Some(received),
+            size_bytes: Some(1_000),
+            refs_header: Some(format!("<{conversation}>")),
+            read,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: Verdict::ordinary(),
+            gmail_message_id: None,
+            server_thread_id: None,
+            labels: None,
+            receipt_to: None,
+            list_unsubscribe: None,
+            pop_uidl: None,
+        })
+        .expect("the row written")
+}
+
+/// The window's state after `folder` opens, showing `showing`, the cursor
+/// on the row that stands for or is `cursor_on`, and the reading begun on
+/// `began`.
+fn the_window_after_opening(
+    cache: &MessageCache,
+    folder: i64,
+    showing: Showing,
+    cursor_on: i64,
+    began: i64,
+) -> WxUIState {
+    let rows = cache
+        .get_message_list_sorted(folder, THE_ACCOUNT, None, None)
+        .expect("the folder read");
+    let mut messages: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+    apply_threading(&rows, &mut messages);
+    let conversations = cache
+        .conversations_in(
+            folder,
+            THE_ACCOUNT,
+            AConversationReaches::TheWholeAccount,
+            None,
+        )
+        .expect("the conversations listed");
+    let row = match showing {
+        Showing::Conversations => conversations
+            .iter()
+            .position(|row| row.stands_for.id == cursor_on),
+        _ => messages.iter().position(|row| row.message_id == cursor_on),
+    };
+    assert!(row.is_some(), "no row is or stands for {cursor_on}");
+    WxUIState {
+        messages,
+        conversations,
+        showing,
+        selected_message_index: row,
+        reading_began: Some((began, std::time::Instant::now())),
+        ..WxUIState::default()
+    }
+}
+
+#[test]
+fn test_a_member_read_from_the_conversation_is_what_reading_may_mark() {
+    // A, B and C of one conversation in INBOX, nothing read, so the row
+    // stands for A; B was read from the opened conversation.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    a_message(&cache, inbox, "origin", 3, 3, false);
+    let mut state = the_window_after_opening(&cache, inbox, Showing::Conversations, a, b);
+    assert_eq!(state.what_reading_may_mark(), Some(b));
+
+    // Already read, there is nothing to mark.
+    for message in state.messages.iter_mut().filter(|m| m.message_id == b) {
+        message.read = true;
+    }
+    assert_eq!(state.what_reading_may_mark(), None);
+}
+
+#[test]
+fn test_the_rows_own_message_filed_in_another_folder_is_what_reading_may_mark() {
+    // The originator in INBOX, read; its reply filed in Sent, unread, so the
+    // row stands for the reply, which the loaded rows do not hold and Enter
+    // opened from the store (13.2-01).
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let sent = a_folder(&cache, "Sent");
+    a_message(&cache, inbox, "origin", 1, 1, true);
+    let there = a_message(&cache, sent, "origin", 2, 2, false);
+    let state = the_window_after_opening(&cache, inbox, Showing::Conversations, there, there);
+    assert!(
+        state.messages.iter().all(|m| m.message_id != there),
+        "the loaded rows hold INBOX alone"
+    );
+    assert_eq!(state.what_reading_may_mark(), Some(there));
+}
+
+#[test]
+fn test_a_message_of_another_conversation_is_never_what_reading_may_mark() {
+    // Two conversations of two in INBOX; the cursor on the first's row, the
+    // reading begun in the second, as when the cursor moved on after it.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "first", 1, 1, false);
+    a_message(&cache, inbox, "first", 2, 2, false);
+    let d = a_message(&cache, inbox, "second", 3, 3, false);
+    let e = a_message(&cache, inbox, "second", 4, 4, false);
+    for began in [d, e] {
+        let state = the_window_after_opening(&cache, inbox, Showing::Conversations, a, began);
+        assert_eq!(state.what_reading_may_mark(), None, "began on {began}");
+    }
+}
+
+#[test]
+fn test_under_the_message_view_reading_may_mark_the_selected_row_alone() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    let state = the_window_after_opening(&cache, inbox, Showing::Messages, a, a);
+    assert_eq!(state.what_reading_may_mark(), Some(a));
+    let state = the_window_after_opening(&cache, inbox, Showing::Messages, a, b);
+    assert_eq!(
+        state.what_reading_may_mark(),
+        None,
+        "the cursor moved on from the message read"
+    );
+}
+
+// ── The timer asks it, and marks what the loaded rows do not hold ─────────
+
+const THE_TIMER: &str = "fn mark_what_was_read(";
+const ASKS_WHAT_READING_MAY_MARK: &str = "what_reading_may_mark(";
+const THE_STORE_READ: &str = "the_stored_message(";
+
+/// The timer asks the state what reading may mark, keeps the rule and the
+/// wait it always read, and reads a message the loaded rows do not hold
+/// from the store rather than giving up on it.
+fn the_timer_marks_what_reading_may(app: &str) -> Result<(), String> {
+    let timer = body_of(app, THE_TIMER)?;
+    for (needed, why) in [
+        (
+            ASKS_WHAT_READING_MAY_MARK,
+            "so a message read from an opened conversation is never the one it marks",
+        ),
+        (
+            "whether_to_mark_read(",
+            "so the decision is not the rule reading_habits holds",
+        ),
+        ("s.marks_read", "so the wait is not the one Settings writes"),
+        (
+            THE_STORE_READ,
+            "so a message the loaded rows do not hold, one filed in another folder, is never \
+             marked",
+        ),
+    ] {
+        if !timer.contains(needed) {
+            return Err(format!("mark_what_was_read does not reach {needed}, {why}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_timer_marks_what_reading_may_even_where_the_loaded_rows_do_not_hold_it() {
+    the_timer_marks_what_reading_may(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The timer as it should be, holding every anchor the reading looks for.
+fn a_timer_as_it_should_be() -> String {
+    "fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {\n    \
+     let selected_unread = s.what_reading_may_mark();\n    \
+     let Some(row) = whether_to_mark_read(s.reading_began, selected_unread, now, s.marks_read) else {\n        return;\n    };\n    \
+     let loaded = s.messages.iter_mut().find(|m| m.message_id == row);\n    \
+     let Some((uid, subject)) = loaded.or_else(|| the_stored_message(cache, row)) else {\n        return;\n    };\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_timer_reading_refuses_a_timer_that_gives_up_on_a_message_not_loaded() {
+    let timer = a_timer_as_it_should_be();
+    the_timer_marks_what_reading_may(&timer).unwrap_or_else(|why| panic!("{why}"));
+    for (planted, needle, said) in [
+        (
+            "loaded.or_else(|| the_stored_message(cache, row))",
+            "loaded",
+            "does not reach the_stored_message(",
+        ),
+        (
+            "s.what_reading_may_mark()",
+            "s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))",
+            "does not reach what_reading_may_mark(",
+        ),
+    ] {
+        let broken = timer.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, timer,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = the_timer_marks_what_reading_may(&broken)
+            .expect_err("a timer left without a part was passed over");
         assert!(why.contains(said), "{planted:?}: {why}");
     }
 }

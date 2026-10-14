@@ -4234,6 +4234,17 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     read from inside the conversation window after the wait the setting names, while the
     cursor row in the list is still that conversation, the rule the list already keeps (his
     fourth report). It adds no `[D]` clause and the box stays ticked.
+  - 13.2-03.1 on 2026-10-14: `WxUIState::what_reading_may_mark` answers the message whose
+    reading began when it is the cursor row's unread message, an unread member of the row's
+    conversation among the loaded rows, or the row's own message filed in another folder, and
+    nothing for another conversation or a row the cursor has left; `mark_what_was_read` asks
+    it, keeps `whether_to_mark_read` and `s.marks_read` as they were, and reads a message the
+    loaded rows do not hold from the store, leaving it alone when it is read there. Held by
+    four cases built through the store and `apply_threading`, a reading of the timer with its
+    companion in `tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs`, the
+    widened cursor-command reading in `tests/a_conversation_row_stands_for_one_message.rs`, and
+    one record. The `[S]` line is still ledger 539; hearing the mark from a conversation is
+    ledger 841. No `[D]` clause is added and the box stays ticked.
 
 - [x] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
   menu and the toolbar, M toggles it in the message list and says read or unread, and a
@@ -4350,6 +4361,18 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     message or its neighbour. Held by the 20 cases of `application::choosing_messages`, the
     two widened readings, and `tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs`.
     Hearing it is ledger 839; the reader windows' own commands are 840.
+  - 13.2-03.1 on 2026-10-14: the conversation window answers the rest of the message keys on
+    the message under its cursor, each the key the list gives the same command: Ctrl+R,
+    Ctrl+Shift+R, Alt+Shift+R, Ctrl+L, Ctrl+Shift+S, Ctrl+Shift+V, Ctrl+Shift+J, Ctrl+1 to
+    Ctrl+9, Ctrl+0 and Ctrl+Shift+7 to Ctrl+Shift+9. `wx_thread_view::THE_TREES_KEYS` is one
+    list of `("written", command)` lines read for their key, with the labels and Quick Steps
+    built from their places by `tagging::key_for`, `quick_steps::key_for`, `label_id_at` and
+    `quick_step_id_at`; Reply to Sender Only joins the commands that do not bring the
+    conversation back. Held by five dialog cases, the comparison of every line with the main
+    window's menu and its planted companion, and the case over which keys bring the
+    conversation back, in the same target (27 tests), one new record and the two Delete
+    records rewritten onto the list's new line. Hearing it is ledger 841. No `[D]` clause is
+    added and the box stays ticked.
 
 - [x] **LIST-06**: A conversation row stands for the originator when every message in it is
   unread and for the first unread message otherwise, reports that message's sender first,
@@ -7627,9 +7650,9 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed. Planned 2026-10-02: 13-44.6.2 and 13-44.6.3 move every test that sends a key or a click onto a desktop made for its run (ledgers 580 and 761); no `[D]` clause is added. 13-44.6.2 done 2026-10-02: the ten plain-control key targets and the directory sign-in on desktops made for their runs, every key sent with only the modifiers it means, ledger 580 closed with its cause removed. 13-44.6.3 done 2026-10-02: the five key targets that hold a browser or start a second copy of themselves run their window tests in a child on a desktop made for the run, the four with a browser in one turn shared with the clipboard target, ledger 761 closed with its cause removed. Phase 13.1, planned 2026-10-03: 13.1-01 (the runner, a copy with no history, the push of `main`), 13.1-02 (the whole-tree reading, the suites' time) and 13.1-05 (the phase's full gate), adding no `[D]` clause. 13.1-01 done 2026-10-03: the marker and signature readings run their window tests on the runner's own desktop where `CI` is set, because an elevated child's browser opens on the shell's desktop there (ledger 785 open with its cause named), and the forgetting rows and the share of history say when git finds no repository (458 closed). 13.1-02 done 2026-10-03: every code commit runs the whole-tree reading of mail taken off, and the script suites' growth since 2026-09-23 is a process start of about a third of a second on this machine, not the suites (803 open, 802 closed). Closing read 2026-10-04, 13.1-05: stands; the phase's full gate green at `0bc790d0`, 10,566 tests; phase 13.2, planned 2026-10-14: 13.2-24, 13.2-25, 13.2-26 and 13.2-26.1 (the gate and CI) and 13.2-32 (the phase's full gate), adding no `[D]` clause |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
-| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause |
+| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause; 13.2-03.1 done 2026-10-14, a message read from an opened conversation, or the row's own message filed in another folder, is marked read after the wait (ledger 841) |
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836) |
-| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause; 13.2-03 done 2026-10-14, a command from an opened conversation acts on the one message it names, and the window answers the menu key, Delete, Shift+Delete and M (ledger 839, 840) |
+| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause; 13.2-03 done 2026-10-14, a command from an opened conversation acts on the one message it names, and the window answers the menu key, Delete, Shift+Delete and M (ledger 839, 840); 13.2-03.1 done 2026-10-14, the window answers the rest of the list's message keys on the message under its cursor (ledger 841) |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
