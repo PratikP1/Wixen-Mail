@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 714
+open_count: 715
 waived_count: 0
 fixed_count: 126
-total_count: 840
-last_updated: 2026-10-14T20:00:00.000Z
+total_count: 841
+last_updated: 2026-10-14T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -855,6 +855,7 @@ last_updated: 2026-10-14T20:00:00.000Z
 | 838 | 13.2 | todo | src/data/message_cache/messages.rs |  | 13.2-02, found while building its timing fixture: writing 34,407 messages and an All Mail copy of each, 68,814 rows whose References name their conversation's root, through upsert_messages in batches of 2,000, took 2,012 s, 1,844 s and 1,582 s in three runs on 2026-10-14, the batches slowing as the store grew (the first 24,000 rows in about 270 s). The 200,000-row harness writes rows with no References at about 1,250 a second, so the cost is likely in what each insert does for its conversation (merge_what_this_message_connects or the search index), not measured. A first download of an Inbox that size may spend as long in the store. Closed when the cost per row is measured at that size and named, and either made flat or ledgered with its figure | open |  | 2026-10-14T20:00:00.000Z |  |
 | 839 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03, Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03's merge: the menu key on a message heard raising that message's menu; Delete heard deleting that message and the window coming back on its neighbour with no second Conversation sentence; M heard saying read or unread; and Delete on the last message left heard putting him in the list on the next conversation. The dialog is held on its own desktop in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the loop by a reading of its source. Closed when he has heard all four on his own mailbox | open |  | 2026-10-14T23:00:00.000Z |  |
 | 840 | 13.2 | todo | src/presentation/wx_app.rs |  | 13.2-03, carried from REGRESSIONS.md's investigation 4: the reader window and the headings window offer no message command of their own, for a message opened from a conversation and for a lone message too. In the flat view this is hidden, because closing returns to a row that is that message; from a conversation, closing returns to the tree, where 13.2-03 answers the menu key, Delete and M. Closed when a message's commands are reachable from the window it is read in, with a case, or Pratik decides the tree and the list are where they belong | open |  | 2026-10-14T23:00:00.000Z |  |
+| 841 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03.1, the rest of Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03.1's merge: Ctrl+R on a message heard opening a reply to the message under the cursor; Ctrl+1 heard labelling it and the window coming back on it with no second Conversation sentence; and a message other than the row's own, opened from the conversation, heard as read when he comes back to it after the wait Mark as read after names. The keys are held on the dialog on its own desktop and by the comparison with the main window's menu in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the mark by WxUIState::what_reading_may_mark's cases there. Closed when he has heard all three on his own mailbox | open |  | 2026-10-14T23:30:00.000Z |  |
 
 ````json
 [
@@ -10936,6 +10937,18 @@ last_updated: 2026-10-14T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T23:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 841,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_thread_view.rs",
+    "line": null,
+    "description": "13.2-03.1, the rest of Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03.1's merge: Ctrl+R on a message heard opening a reply to the message under the cursor; Ctrl+1 heard labelling it and the window coming back on it with no second Conversation sentence; and a message other than the row's own, opened from the conversation, heard as read when he comes back to it after the wait Mark as read after names. The keys are held on the dialog on its own desktop and by the comparison with the main window's menu in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the mark by WxUIState::what_reading_may_mark's cases there. Closed when he has heard all three on his own mailbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:30:00.000Z",
     "resolved_at": null
   }
 ]
