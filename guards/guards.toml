@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 694 records have arrived since and have not been through it.
+# 695 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -14138,7 +14138,7 @@ red = [
     "presentation::view_state::tests::test_the_count_in_conversation_mode_is_the_conversation_count",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 57 },
+    { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
 [[guard]]
@@ -14172,7 +14172,7 @@ red = [
     "presentation::view_state::tests::test_two_of_a_conversation_s_five_messages_come_back_as_those_two",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 57 },
+    { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
 [[guard]]
@@ -14325,13 +14325,22 @@ file = "src/presentation/view_state.rs"
 # see. That test was green against the do-nothing body this rule was written
 # against, so without this record there would be nothing saying it checks
 # anything.
+#
+# Three more since 2026-10-14, measured with `scripts/guards.sh --remeasure`
+# by 13.2-02: the rule that brings conversation rows up to date after a change
+# made here repaints through this one, so three of its cases go red with it.
+# The other two stay green: one asks nothing about the repaint, and in the
+# other every row really did change, which is what the break says anyway.
 red = [
     "presentation::view_state::tests::test_a_conversation_growing_repaints_that_one_row",
     "presentation::view_state::tests::test_a_merge_repaints_the_run_it_touched_and_not_the_whole_list",
     "presentation::view_state::tests::test_nothing_changing_repaints_nothing_and_leaves_the_count_alone",
+    "presentation::view_state::tests::test_a_row_is_matched_by_its_account_as_well_as_its_conversation",
+    "presentation::view_state::tests::test_a_row_the_change_did_not_touch_is_left_alone",
+    "presentation::view_state::tests::test_a_touched_row_whose_conversation_came_back_is_replaced_where_it_stands",
 ]
 tests_last_seen = [
-    { file = "src/presentation/view_state.rs", tests = 57 },
+    { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 before = """        rows: (0..now.len())
             .filter(|row| was.get(*row) != Some(&now[*row]))
@@ -29417,7 +29426,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/presentation/view_state.rs", tests = 57 },
+    { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
 # The setting is read where the folder opens and handed to the rule; a
@@ -39328,4 +39337,29 @@ red = [
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
     { file = "tests/the_log_carries_what_a_report_needs.rs", tests = 23 },
+]
+
+# The listing a change made here reads, with its narrowing made to hold for
+# every conversation, so the read answers the whole folder or every inbox
+# rather than the conversations the change touched (13.2-02). The parameter
+# stays bound, so the statement still runs and the answer is the wrong rows,
+# not an error. The case for a conversation with nothing left in the folder
+# stays green: it names every conversation the folder still lists.
+#
+# Measured by hand on 2026-10-14: the target, and the whole library at 9,028
+# passed and 0 failed under the break.
+[[guard]]
+name = "a change made here reads only the conversations it touched"
+file = "src/data/message_cache/messages.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''                "WHERE (m.account_id, m.thread_id) IN ('''
+after = '''                "WHERE 1 = 1 OR (m.account_id, m.thread_id) IN ('''
+red = [
+    "test_a_narrowed_folder_listing_answers_exactly_the_whole_listing_s_rows",
+    "test_the_every_inbox_listing_narrowed_answers_each_account_s_row_and_not_the_other_s",
+    "test_a_conversation_whose_identifier_holds_a_quote_and_a_percent_is_named_and_listed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 8 },
 ]

@@ -269,7 +269,7 @@ pub fn which_rows_changed(was: &[ConversationItem], now: &[ConversationItem]) ->
 
 /// The conversation rows after a change made here, and what the list does
 /// about it (13.2-02).
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RowsBroughtUpToDate {
     /// The rows the list holds now, in the order it held them.
     pub rows: Vec<ConversationItem>,
@@ -289,12 +289,26 @@ pub struct RowsBroughtUpToDate {
 /// cursor and what was just heard do not jump.
 pub fn bring_rows_up_to_date(
     on_screen: &[ConversationItem],
-    _touched: &[WhoseConversation],
-    _fresh: &[ConversationItem],
+    touched: &[WhoseConversation],
+    fresh: &[ConversationItem],
 ) -> RowsBroughtUpToDate {
+    let mut rows = Vec::with_capacity(on_screen.len());
+    let mut left = Vec::new();
+    for (at, row) in on_screen.iter().enumerate() {
+        let Some(this) = touched.iter().find(|one| one.is(row)) else {
+            rows.push(row.clone());
+            continue;
+        };
+        match fresh.iter().find(|came_back| this.is(came_back)) {
+            Some(came_back) => rows.push(came_back.clone()),
+            None => left.push(at),
+        }
+    }
+    let repainting = which_rows_changed(on_screen, &rows);
     RowsBroughtUpToDate {
-        rows: on_screen.to_vec(),
-        ..RowsBroughtUpToDate::default()
+        rows,
+        left,
+        repainting,
     }
 }
 
