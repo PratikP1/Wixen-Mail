@@ -347,6 +347,221 @@ fn test_the_reading_can_see_a_flush_that_only_a_comment_mentions() {
     );
 }
 
+/// The call that hands one message to a server.
+const THE_SEND: &str = "send_email(";
+
+/// The call that makes a queued message this pass's alone.
+const THE_CLAIM: &str = "claim_for_sending(";
+
+/// The call that frees every claim a run that ended mid-send left behind.
+const THE_LETTING_GO: &str = "let_go_of_every_claim(";
+
+/// The answer that this start is the only copy running.
+const THE_ONLY_COPY: &str = "ThisCopy::Alone";
+
+/// The code of `fn flush_outbox(`, comments cut away, from the shipping lines
+/// only, so a test in the main window that names the function cannot be cut
+/// in its place.
+fn the_send_loop(source: &str) -> String {
+    let shipping = the_shipping_lines_of(source)
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    from_here_to_the_closing_brace(&shipping, WHERE_IT_IS_DECLARED, "")
+        .lines()
+        .map(code_of)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The code of `WxMailApp::new`, comments cut away.
+fn the_start(source: &str) -> String {
+    from_here_to_the_closing_brace(source, "impl WxMailApp {\n    pub fn new(", "    ")
+        .lines()
+        .map(code_of)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// What a send loop gets wrong about claiming, read from its code.
+#[derive(Debug, PartialEq)]
+enum TheSendLoop {
+    /// Claims each message, and passes over one it could not claim, before
+    /// anything is sent.
+    ClaimsBeforeItSends,
+    /// Nothing is sent, so this is not the loop it was meant to read.
+    SendsNothing,
+    /// Sends whatever it read, which is the double send of finding #31.
+    SendsWithoutClaiming,
+    /// Claims only after the send, when another pass may already have sent it.
+    ClaimsAfterItSends,
+    /// Claims, and sends a message whose claim was refused all the same.
+    SendsWhatItCouldNotClaim,
+}
+
+fn how_the_send_loop_claims(send_loop: &str) -> TheSendLoop {
+    let Some(sends) = send_loop.find(THE_SEND) else {
+        return TheSendLoop::SendsNothing;
+    };
+    let Some(claims) = send_loop.find(THE_CLAIM) else {
+        return TheSendLoop::SendsWithoutClaiming;
+    };
+    if claims > sends {
+        return TheSendLoop::ClaimsAfterItSends;
+    }
+    match send_loop[claims..sends].contains("continue") {
+        true => TheSendLoop::ClaimsBeforeItSends,
+        false => TheSendLoop::SendsWhatItCouldNotClaim,
+    }
+}
+
+/// What a start gets wrong about letting go of old claims.
+///
+/// Read as the nearest answer about this copy written before the letting go.
+/// It cannot see an `if` that turns the answer around, such as `!=`; it can
+/// see the call missing, written with no answer before it, or written under
+/// an arm that also matches another answer.
+#[derive(Debug, PartialEq)]
+enum TheStart {
+    /// Lets go only when this copy is the only one running.
+    LetsGoOnlyWhenAlone,
+    /// Never lets go, so a message a crash interrupted waits for ever.
+    NeverLetsGo,
+    /// Lets go whatever the marker said, which frees the claim of a pass
+    /// another copy is running.
+    LetsGoWhateverTheMarkerSaid,
+}
+
+fn how_the_start_lets_go(start: &str) -> TheStart {
+    let Some(lets_go) = start.find(THE_LETTING_GO) else {
+        return TheStart::NeverLetsGo;
+    };
+    let before = &start[..lets_go];
+    let Some(alone) = before.rfind(THE_ONLY_COPY) else {
+        return TheStart::LetsGoWhateverTheMarkerSaid;
+    };
+    match before[alone + THE_ONLY_COPY.len()..].contains("ThisCopy::") {
+        true => TheStart::LetsGoWhateverTheMarkerSaid,
+        false => TheStart::LetsGoOnlyWhenAlone,
+    }
+}
+
+#[test]
+fn test_the_send_loop_claims_a_message_before_it_sends_it() {
+    // Findings #31 and #6 of the audit of 2026-10-14. Reading a queued row
+    // did not claim it, so two passes a few seconds apart both sent one
+    // message, and Undo Send said "Taken back" about a message a pass was
+    // already sending. The claim is in the store; this reads that the send
+    // loop goes through it before anything leaves.
+    assert_eq!(
+        how_the_send_loop_claims(&the_send_loop(&the_main_window())),
+        TheSendLoop::ClaimsBeforeItSends,
+        "flush_outbox does not claim each message, and pass over one it could \
+         not claim, before it sends"
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_a_loop_that_sends_without_claiming() {
+    let unclaimed = "for msg in &queued {\n\
+        \x20   let outcome = controller.send_email(&request).await;\n\
+        }\n";
+
+    assert_eq!(
+        how_the_send_loop_claims(unclaimed),
+        TheSendLoop::SendsWithoutClaiming
+    );
+    assert_eq!(
+        how_the_send_loop_claims("let _ = cache.claim_for_sending(&msg.id, now);\n"),
+        TheSendLoop::SendsNothing,
+        "a loop with no send was read as one that claims before it sends"
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_a_claim_made_after_the_send() {
+    let late = "for msg in &queued {\n\
+        \x20   let outcome = controller.send_email(&request).await;\n\
+        \x20   if !cache.claim_for_sending(&msg.id, now)? { continue; }\n\
+        }\n";
+    let ignored = "for msg in &queued {\n\
+        \x20   let _ = cache.claim_for_sending(&msg.id, now);\n\
+        \x20   let outcome = controller.send_email(&request).await;\n\
+        }\n";
+
+    assert_eq!(
+        how_the_send_loop_claims(late),
+        TheSendLoop::ClaimsAfterItSends
+    );
+    assert_eq!(
+        how_the_send_loop_claims(ignored),
+        TheSendLoop::SendsWhatItCouldNotClaim
+    );
+}
+
+#[test]
+fn test_the_start_lets_go_of_old_claims_only_when_it_is_the_only_copy() {
+    // A claim a crash left behind holds its message for ever, so the start
+    // lets every claim go. Done by a second copy, that would free a claim the
+    // first copy's pass holds, which is the double send again; so only the
+    // copy the running marker said was alone does it, and never the database
+    // opening every pass does.
+    let source = the_main_window();
+    assert_eq!(
+        how_the_start_lets_go(&the_start(&source)),
+        TheStart::LetsGoOnlyWhenAlone,
+        "WxMailApp::new does not let go of old claims, or lets go whatever the \
+         running marker said"
+    );
+
+    let everywhere: Vec<usize> = the_shipping_lines_of(&source)
+        .iter()
+        .filter(|(_, line)| code_of(line).contains(THE_LETTING_GO))
+        .map(|(at, _)| *at)
+        .collect();
+    assert_eq!(
+        everywhere.len(),
+        1,
+        "the main window lets go of every claim at lines {everywhere:?}; only the \
+         start may, because anywhere else a pass may be running"
+    );
+
+    let cache = fs::read_to_string("src/data/message_cache/mod.rs").expect("the store");
+    assert!(
+        !cache
+            .lines()
+            .any(|line| code_of(line).contains(THE_LETTING_GO)),
+        "opening the database lets go of claims, so every pass frees the claims \
+         of the pass before it"
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_a_start_that_lets_go_whatever_the_marker_said() {
+    let unconditional = "if let Some(cache) = &message_cache {\n\
+        \x20   let _ = cache.let_go_of_every_claim();\n\
+        }\n";
+    let too_wide = "match this_copy {\n\
+        \x20   ThisCopy::Alone | ThisCopy::BesideAnother => cache.let_go_of_every_claim(),\n\
+        }\n";
+    let right = "match this_copy {\n\
+        \x20   ThisCopy::Alone => cache.let_go_of_every_claim(),\n\
+        \x20   ThisCopy::BesideAnother => {}\n\
+        }\n";
+
+    assert_eq!(
+        how_the_start_lets_go(unconditional),
+        TheStart::LetsGoWhateverTheMarkerSaid
+    );
+    assert_eq!(
+        how_the_start_lets_go(too_wide),
+        TheStart::LetsGoWhateverTheMarkerSaid
+    );
+    assert_eq!(how_the_start_lets_go(right), TheStart::LetsGoOnlyWhenAlone);
+    assert_eq!(how_the_start_lets_go("let x = 1;\n"), TheStart::NeverLetsGo);
+}
+
 #[test]
 fn test_the_reading_finds_a_flush_that_is_really_written() {
     // The other direction of the companion above. A reading that finds nothing
