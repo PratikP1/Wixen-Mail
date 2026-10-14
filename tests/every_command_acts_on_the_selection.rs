@@ -133,6 +133,17 @@ const THE_CURSOR_COMMANDS: [&str; 5] = [
     "fn send_receipt_for_the_open_message(",
 ];
 const THE_COPY_TO_ARM: &str = "_ if id == ID_CONTEXT_COPY_TO_TASK";
+/// The cursor commands an opened conversation can run (13.2-03), which ask
+/// the state which message they are for rather than reading the cursor
+/// themselves, so a command from the conversation acts on the message it
+/// names. The Copy to arm asks the same.
+const THROUGH_THE_ACCESSOR: [&str; 2] = ["fn start_reply(", "fn msg_info("];
+/// The accessor, and what it reads first: the message a command from the
+/// conversation names, and only then the cursor.
+const THE_ACCESSOR: &str = "pub fn the_message_a_command_is_for(";
+const ASKS_THE_ACCESSOR: &str = "the_message_a_command_is_for(";
+const THE_NAMED_MESSAGE: &str = "acting_on";
+const THE_CURSOR: &str = "selected_message_index";
 /// What a command over the set reads and says.
 const READS_THE_SELECTION: &str = "chosen_messages(";
 const REFUSES_ABOVE_THE_BOUND: &str = "too_many(";
@@ -245,22 +256,33 @@ fn move_and_copy_act_on_the_selection(app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// One method's text, from its signature to the brace that closes it at the
+/// method's own indent, or a complaint when the signature is gone.
+fn method_of(source: &str, signature: &str) -> Result<String, String> {
+    let at = source.find(signature).ok_or(format!(
+        "{signature} is no longer in this file, so this reads nothing"
+    ))?;
+    let rest = &source[at..];
+    let ends = rest.find("\n    }\n").map_or(rest.len(), |end| end + 6);
+    Ok(rest[..ends].to_string())
+}
+
 /// Reply, Forward, Save As, the read receipt, the invitation answer and Copy
 /// to a task, event or note act on the row the cursor is on and read no
-/// selection.
+/// selection. Those an opened conversation can run ask the accessor, which
+/// reads the message the conversation named before the cursor.
 fn the_cursor_commands_read_no_selection(app: &str) -> Result<(), String> {
     let copy_to = the_id_arm(app, THE_COPY_TO_ARM)?.to_string();
-    let mut texts = vec![("the Copy to arm".to_string(), copy_to)];
+    let mut texts = vec![("the Copy to arm".to_string(), copy_to, ASKS_THE_ACCESSOR)];
     for command in THE_CURSOR_COMMANDS {
-        texts.push((command.to_string(), body_of(app, command)?));
+        let reads = if THROUGH_THE_ACCESSOR.contains(&command) {
+            ASKS_THE_ACCESSOR
+        } else {
+            THE_CURSOR
+        };
+        texts.push((command.to_string(), body_of(app, command)?, reads));
     }
-    for (name, text) in texts {
-        if !text.contains("selected_message_index") {
-            return Err(format!(
-                "{name} no longer reads selected_message_index, so it does not act on the \
-                 row the cursor is on"
-            ));
-        }
+    for (name, text, reads) in texts {
         for must_not in [READS_THE_SELECTION, SAYS_ONE_SENTENCE] {
             if text.contains(must_not) {
                 return Err(format!(
@@ -268,6 +290,26 @@ fn the_cursor_commands_read_no_selection(app: &str) -> Result<(), String> {
                 ));
             }
         }
+        if !text.contains(reads) {
+            return Err(format!(
+                "{name} no longer reads {reads}, so it does not act on the row the cursor is \
+                 on or on the message an opened conversation named"
+            ));
+        }
+    }
+    let accessor = method_of(app, THE_ACCESSOR)?;
+    let named = accessor.find(THE_NAMED_MESSAGE).ok_or(format!(
+        "{THE_ACCESSOR} does not read {THE_NAMED_MESSAGE}, so a command from an opened \
+         conversation acts on the list's cursor row instead of the message it named"
+    ))?;
+    let cursor = accessor.find(THE_CURSOR).ok_or(format!(
+        "{THE_ACCESSOR} does not read {THE_CURSOR}, so a command from the list acts on nothing"
+    ))?;
+    if cursor < named {
+        return Err(format!(
+            "{THE_ACCESSOR} reads {THE_CURSOR} before {THE_NAMED_MESSAGE}, so the cursor row \
+             wins over the message an opened conversation named"
+        ));
     }
     Ok(())
 }
@@ -400,7 +442,14 @@ fn a_window_as_it_should_be() -> String {
         );
     }
     snippet.push_str(THE_COPY_TO_ARM);
-    snippet.push_str(" {\n    s.selected_message_index\n}\n_ if id == ID_OTHER => {}\n");
+    snippet.push_str(" {\n    s.the_message_a_command_is_for()\n}\n_ if id == ID_OTHER => {}\n");
+    snippet.push_str("impl WxUIState {\n    ");
+    snippet.push_str(THE_ACCESSOR);
+    snippet.push_str(
+        "&self) -> Option<&MessageItem> {\n        match self.acting_on {\n            \
+         Some(named) => self.messages.iter().find(|m| m.message_id == named),\n            \
+         None => self.selected_message_index.and_then(|at| self.row(at)),\n        }\n    }\n}\n",
+    );
     for signature in [THE_TOGGLE, THE_LABELS, THE_MOVE, THE_BATCH] {
         snippet.push_str(signature);
         snippet.push_str(
@@ -411,7 +460,11 @@ fn a_window_as_it_should_be() -> String {
     }
     for command in THE_CURSOR_COMMANDS {
         snippet.push_str(command);
-        snippet.push_str(") {\n    s.selected_message_index\n}\n");
+        if THROUGH_THE_ACCESSOR.contains(&command) {
+            snippet.push_str(") {\n    s.the_message_a_command_is_for()\n}\n");
+        } else {
+            snippet.push_str(") {\n    s.selected_message_index\n}\n");
+        }
     }
     snippet.push_str(THE_REFRESH);
     snippet.push_str(") {\n    chosen_rows(list);\n}\n");
@@ -481,13 +534,36 @@ fn test_the_reading_complains_when_an_arm_acts_on_the_cursor_row_alone() {
 
 #[test]
 fn test_the_reading_complains_when_a_cursor_command_reaches_the_set() {
-    let app = a_window_as_it_should_be().replacen(
-        "fn start_reply() {\n    s.selected_message_index",
+    let window = a_window_as_it_should_be();
+    let app = window.replacen(
+        "fn start_reply() {\n    s.the_message_a_command_is_for()",
         "fn start_reply() {\n    chosen_messages(state, cache, list, reach)",
         1,
     );
     let why = the_cursor_commands_read_no_selection(&app).expect_err("a reply over a set");
-    assert!(why.contains("fn start_reply("), "{why}");
+    assert!(
+        why.contains("fn start_reply( reaches chosen_messages("),
+        "{why}"
+    );
+
+    // 13.2-03: a reply that reads the cursor itself, and an accessor that
+    // never reads the message an opened conversation named, each act on the
+    // list's row rather than on the message under the conversation's cursor.
+    let reply_reads_the_cursor = window.replacen(
+        "fn start_reply() {\n    s.the_message_a_command_is_for()",
+        "fn start_reply() {\n    s.selected_message_index",
+        1,
+    );
+    let why = the_cursor_commands_read_no_selection(&reply_reads_the_cursor)
+        .expect_err("a reply reading the cursor itself");
+    assert!(
+        why.contains("fn start_reply( no longer reads the_message_a_command_is_for("),
+        "{why}"
+    );
+    let the_named_message_ignored = window.replacen("match self.acting_on {", "match None {", 1);
+    let why = the_cursor_commands_read_no_selection(&the_named_message_ignored)
+        .expect_err("the accessor ignoring acting_on");
+    assert!(why.contains("does not read acting_on"), "{why}");
 }
 
 #[test]
