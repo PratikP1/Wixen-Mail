@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 703 records have arrived since and have not been through it.
+# 705 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -34685,7 +34685,7 @@ red = [
     "test_a_queued_message_goes_out_from_the_address_its_row_carries",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/outbox.rs", tests = 28 },
+    { file = "src/data/message_cache/outbox.rs", tests = 35 },
     { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
 ]
 
@@ -39581,4 +39581,46 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 27 },
+]
+
+# The Outbox's claim taken out of its condition: every caller is told the
+# message is theirs, so two passes of the send loop both send it, which is
+# finding #31 of the audit of 2026-10-14 (13.2-04). A message taken back
+# first still cannot be claimed, because there is no row for the update to
+# change, so that case stays green under this break.
+#
+# Measured by hand on 2026-10-14: the whole library at 9,042 passed and 3
+# failed, these three.
+[[guard]]
+name = "a queued message is claimed by one pass of the send loop only"
+file = "src/data/message_cache/outbox.rs"
+before = '''                "UPDATE outbox_queue SET sending_since = ?2
+                 WHERE id = ?1 AND sending_since IS NULL",'''
+after = '''                "UPDATE outbox_queue SET sending_since = ?2
+                 WHERE id = ?1",'''
+red = [
+    "data::message_cache::outbox::tests::test_a_failed_send_lets_go_of_its_claim",
+    "data::message_cache::outbox::tests::test_a_message_the_send_loop_claimed_cannot_be_claimed_twice",
+    "data::message_cache::outbox::tests::test_a_message_queued_before_there_were_claims_is_unclaimed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/outbox.rs", tests = 35 },
+]
+
+# Undo Send's delete without the claim: it takes out a message a pass is
+# already sending and says "Taken back" about a message that goes, which is
+# finding #6 of the audit of 2026-10-14 (13.2-04).
+#
+# Measured by hand on 2026-10-14: the whole library at 9,044 passed and 1
+# failed, this one.
+[[guard]]
+name = "Undo Send cannot take back a message the send loop has claimed"
+file = "src/data/message_cache/outbox.rs"
+before = '''                "DELETE FROM outbox_queue WHERE id = ?1 AND sending_since IS NULL",'''
+after = '''                "DELETE FROM outbox_queue WHERE id = ?1",'''
+red = [
+    "data::message_cache::outbox::tests::test_undo_send_cannot_take_back_a_message_the_send_loop_has_claimed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/outbox.rs", tests = 35 },
 ]

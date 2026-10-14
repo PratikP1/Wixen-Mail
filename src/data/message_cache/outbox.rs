@@ -381,28 +381,39 @@ impl MessageCache {
         Ok(removed > 0)
     }
 
-    /// Take a queued message out by the identifier it was queued under.
+    /// Take a queued message out by the identifier it was queued under, if no
+    /// pass of the send loop has claimed it. Undo Send's delete.
     ///
-    /// `false` when there was no such row, which is how Undo Send finds out it
-    /// lost a race with the send loop. Deciding a message can be caught and
-    /// then taking it out are two steps, and the send loop can pick it up
-    /// between them. Whether the row was really there is the only thing that
-    /// can tell the difference, and saying "taken back" about a message that
-    /// has gone is the one answer this must never give.
+    /// `false` when there was no such row or a pass holds it, which is how
+    /// Undo Send finds out it lost a race with the send loop. Deciding a
+    /// message can be caught and then taking it out are two steps, and a pass
+    /// can claim it between them. The claim is the only thing that can tell
+    /// the difference, and saying "taken back" about a message that has gone
+    /// is the one answer this must never give.
+    ///
+    /// Until 2026-10-14 this said the row being there was that proof. It was
+    /// not: the send loop took a row out only after its send finished, so
+    /// while a message was on its way the row was still here and this
+    /// answered true about it (finding #6).
     pub fn delete_outbox_message(&self, id: &str) -> Result<bool> {
         let removed = self
             .conn
-            .execute("DELETE FROM outbox_queue WHERE id = ?1", params![id])
+            .execute(
+                "DELETE FROM outbox_queue WHERE id = ?1 AND sending_since IS NULL",
+                params![id],
+            )
             .map_err(|e| Error::Other(format!("Failed to delete outbox message: {}", e)))?;
         Ok(removed > 0)
     }
 
-    /// Update outbox attempt count/error after failed send
+    /// Count a failed send against the message and let go of its claim, in
+    /// one statement, so the next pass offers it again and there is no moment
+    /// where the failure is written down and the message still held.
     pub fn update_outbox_failure(&self, id: &str, last_error: &str) -> Result<()> {
         self.conn
             .execute(
                 "UPDATE outbox_queue
-             SET attempt_count = attempt_count + 1, last_error = ?2
+             SET attempt_count = attempt_count + 1, last_error = ?2, sending_since = NULL
              WHERE id = ?1",
                 params![id, last_error],
             )
@@ -410,19 +421,48 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Claim a queued message for this pass of the send loop.
-    pub fn claim_for_sending(&self, _id: &str, _at: DateTime<Local>) -> Result<bool> {
-        Ok(true)
+    /// Claim a queued message for the pass of the send loop that asks, at
+    /// `at`. `true` only for the one caller that found it unclaimed, so a
+    /// second pass, Undo Send or another copy of the program that reads the
+    /// same row a moment later is told it is not theirs (findings #31 and #6).
+    pub fn claim_for_sending(&self, id: &str, at: DateTime<Local>) -> Result<bool> {
+        let claimed = self
+            .conn
+            .execute(
+                "UPDATE outbox_queue SET sending_since = ?2
+                 WHERE id = ?1 AND sending_since IS NULL",
+                params![id, crate::application::sending_later::stored(at)],
+            )
+            .map_err(|e| Error::Other(format!("Failed to claim a queued message: {}", e)))?;
+        Ok(claimed > 0)
     }
 
-    /// Take out a message this pass sent.
-    pub fn a_sent_message_leaves_the_queue(&self, _id: &str) -> Result<bool> {
-        Ok(false)
+    /// Take out a message the send loop sent, whatever its claim says, and
+    /// say whether it was there.
+    ///
+    /// The send loop's alone. The pass that sent a message holds its claim,
+    /// so Undo Send's delete would refuse it.
+    pub fn a_sent_message_leaves_the_queue(&self, id: &str) -> Result<bool> {
+        let removed = self
+            .conn
+            .execute("DELETE FROM outbox_queue WHERE id = ?1", params![id])
+            .map_err(|e| Error::Other(format!("Failed to take a sent message out: {}", e)))?;
+        Ok(removed > 0)
     }
 
-    /// Let go of every claim a run that ended mid-send left behind.
+    /// Let go of every claim, and say how many there were.
+    ///
+    /// For start-up only, and only in the copy holding the running marker: a
+    /// run that ended mid-send leaves its claims behind and nothing else would
+    /// ever send those messages. Called anywhere a pass may be running, it
+    /// would free that pass's claim, which is the double send again.
     pub fn let_go_of_every_claim(&self) -> Result<usize> {
-        Ok(0)
+        self.conn
+            .execute(
+                "UPDATE outbox_queue SET sending_since = NULL WHERE sending_since IS NOT NULL",
+                [],
+            )
+            .map_err(|e| Error::Other(format!("Failed to let go of the Outbox's claims: {}", e)))
     }
 }
 
