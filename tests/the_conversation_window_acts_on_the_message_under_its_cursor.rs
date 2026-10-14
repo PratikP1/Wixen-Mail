@@ -25,12 +25,18 @@
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::context_menu::Action;
+use wixen_mail::application::conversations::AConversationReaches;
 use wixen_mail::application::{quick_steps, tagging};
+use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
 use wixen_mail::presentation::tree_walk;
-use wixen_mail::presentation::wx_app::{label_id_at, quick_step_id_at};
+use wixen_mail::presentation::ui_types::MessageItem;
+use wixen_mail::presentation::view_state::Showing;
+use wixen_mail::presentation::wx_app::{WxUIState, apply_threading, label_id_at, quick_step_id_at};
 use wixen_mail::presentation::wx_context_menu::command_for;
 use wixen_mail::presentation::wx_thread_view::{self, ThreadChoice, ThreadNode};
+use wixen_mail::service::safety::Verdict;
 use wxdragon::prelude::*;
 
 /// The main window's commands, by the ids the message menu raises for them,
@@ -1034,6 +1040,263 @@ fn test_the_loop_reading_complains_at_each_part_left_out() {
         );
         let why = the_loop_runs_the_command_and_comes_back(&broken)
             .expect_err("a part of the loop left out was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+}
+
+// ── A message read from the conversation is marked read, 13.2-03.1 ────────
+//
+// The reading timer marked only the message the list's cursor row stands
+// for, so a message read from an opened conversation, which is a member of
+// that row and not its message, was never marked, and neither was a row's
+// own message filed in another folder, which the loaded rows do not hold.
+// The state is built the way the window builds it, through the store,
+// `MessageItem::from_row` and `apply_threading`, because a conversation's
+// membership lives in the join between the two.
+
+const THE_ACCOUNT: &str = "acct-one";
+
+fn a_folder(cache: &MessageCache, name: &str) -> i64 {
+    cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: THE_ACCOUNT.to_string(),
+            name: name.to_string(),
+            path: name.to_string(),
+            folder_type: FolderType::Inbox.as_str().to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("the folder")
+}
+
+/// Message `uid` of `conversation` in `folder`, arriving on day `day` of
+/// September, read or not; its row id comes back.
+fn a_message(
+    cache: &MessageCache,
+    folder: i64,
+    conversation: &str,
+    uid: u32,
+    day: u32,
+    read: bool,
+) -> i64 {
+    let received = format!("2026-09-{day:02}T09:00:00Z");
+    cache
+        .upsert_message(&IncomingMessage {
+            folder_id: folder,
+            uid,
+            message_id: format!("<{conversation}-{uid}@example.com>"),
+            subject: "Quarterly report".to_string(),
+            from_addr: format!("Sender {uid} <s{uid}@example.com>"),
+            to_addr: "me@example.com".to_string(),
+            cc: None,
+            reply_to: None,
+            date: received.clone(),
+            internal_date: Some(received),
+            size_bytes: Some(1_000),
+            refs_header: Some(format!("<{conversation}>")),
+            read,
+            starred: false,
+            answered: false,
+            draft: false,
+            deleted: false,
+            has_attachments: false,
+            safety: Verdict::ordinary(),
+            gmail_message_id: None,
+            server_thread_id: None,
+            labels: None,
+            receipt_to: None,
+            list_unsubscribe: None,
+            pop_uidl: None,
+        })
+        .expect("the row written")
+}
+
+/// The window's state after `folder` opens, showing `showing`, the cursor
+/// on the row that stands for or is `cursor_on`, and the reading begun on
+/// `began`.
+fn the_window_after_opening(
+    cache: &MessageCache,
+    folder: i64,
+    showing: Showing,
+    cursor_on: i64,
+    began: i64,
+) -> WxUIState {
+    let rows = cache
+        .get_message_list_sorted(folder, THE_ACCOUNT, None, None)
+        .expect("the folder read");
+    let mut messages: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
+    apply_threading(&rows, &mut messages);
+    let conversations = cache
+        .conversations_in(
+            folder,
+            THE_ACCOUNT,
+            AConversationReaches::TheWholeAccount,
+            None,
+        )
+        .expect("the conversations listed");
+    let row = match showing {
+        Showing::Conversations => conversations
+            .iter()
+            .position(|row| row.stands_for.id == cursor_on),
+        _ => messages.iter().position(|row| row.message_id == cursor_on),
+    };
+    assert!(row.is_some(), "no row is or stands for {cursor_on}");
+    WxUIState {
+        messages,
+        conversations,
+        showing,
+        selected_message_index: row,
+        reading_began: Some((began, std::time::Instant::now())),
+        ..WxUIState::default()
+    }
+}
+
+#[test]
+fn test_a_member_read_from_the_conversation_is_what_reading_may_mark() {
+    // A, B and C of one conversation in INBOX, nothing read, so the row
+    // stands for A; B was read from the opened conversation.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    a_message(&cache, inbox, "origin", 3, 3, false);
+    let mut state = the_window_after_opening(&cache, inbox, Showing::Conversations, a, b);
+    assert_eq!(state.what_reading_may_mark(), Some(b));
+
+    // Already read, there is nothing to mark.
+    for message in state.messages.iter_mut().filter(|m| m.message_id == b) {
+        message.read = true;
+    }
+    assert_eq!(state.what_reading_may_mark(), None);
+}
+
+#[test]
+fn test_the_rows_own_message_filed_in_another_folder_is_what_reading_may_mark() {
+    // The originator in INBOX, read; its reply filed in Sent, unread, so the
+    // row stands for the reply, which the loaded rows do not hold and Enter
+    // opened from the store (13.2-01).
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let sent = a_folder(&cache, "Sent");
+    a_message(&cache, inbox, "origin", 1, 1, true);
+    let there = a_message(&cache, sent, "origin", 2, 2, false);
+    let state = the_window_after_opening(&cache, inbox, Showing::Conversations, there, there);
+    assert!(
+        state.messages.iter().all(|m| m.message_id != there),
+        "the loaded rows hold INBOX alone"
+    );
+    assert_eq!(state.what_reading_may_mark(), Some(there));
+}
+
+#[test]
+fn test_a_message_of_another_conversation_is_never_what_reading_may_mark() {
+    // Two conversations of two in INBOX; the cursor on the first's row, the
+    // reading begun in the second, as when the cursor moved on after it.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "first", 1, 1, false);
+    a_message(&cache, inbox, "first", 2, 2, false);
+    let d = a_message(&cache, inbox, "second", 3, 3, false);
+    let e = a_message(&cache, inbox, "second", 4, 4, false);
+    for began in [d, e] {
+        let state = the_window_after_opening(&cache, inbox, Showing::Conversations, a, began);
+        assert_eq!(state.what_reading_may_mark(), None, "began on {began}");
+    }
+}
+
+#[test]
+fn test_under_the_message_view_reading_may_mark_the_selected_row_alone() {
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    let state = the_window_after_opening(&cache, inbox, Showing::Messages, a, a);
+    assert_eq!(state.what_reading_may_mark(), Some(a));
+    let state = the_window_after_opening(&cache, inbox, Showing::Messages, a, b);
+    assert_eq!(
+        state.what_reading_may_mark(),
+        None,
+        "the cursor moved on from the message read"
+    );
+}
+
+// ── The timer asks it, and marks what the loaded rows do not hold ─────────
+
+const THE_TIMER: &str = "fn mark_what_was_read(";
+const ASKS_WHAT_READING_MAY_MARK: &str = "what_reading_may_mark(";
+const THE_STORE_READ: &str = "the_stored_message(";
+
+/// The timer asks the state what reading may mark, keeps the rule and the
+/// wait it always read, and reads a message the loaded rows do not hold
+/// from the store rather than giving up on it.
+fn the_timer_marks_what_reading_may(app: &str) -> Result<(), String> {
+    let timer = body_of(app, THE_TIMER)?;
+    for (needed, why) in [
+        (
+            ASKS_WHAT_READING_MAY_MARK,
+            "so a message read from an opened conversation is never the one it marks",
+        ),
+        (
+            "whether_to_mark_read(",
+            "so the decision is not the rule reading_habits holds",
+        ),
+        ("s.marks_read", "so the wait is not the one Settings writes"),
+        (
+            THE_STORE_READ,
+            "so a message the loaded rows do not hold, one filed in another folder, is never \
+             marked",
+        ),
+    ] {
+        if !timer.contains(needed) {
+            return Err(format!("mark_what_was_read does not reach {needed}, {why}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_timer_marks_what_reading_may_even_where_the_loaded_rows_do_not_hold_it() {
+    the_timer_marks_what_reading_may(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The timer as it should be, holding every anchor the reading looks for.
+fn a_timer_as_it_should_be() -> String {
+    "fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {\n    \
+     let selected_unread = s.what_reading_may_mark();\n    \
+     let Some(row) = whether_to_mark_read(s.reading_began, selected_unread, now, s.marks_read) else {\n        return;\n    };\n    \
+     let loaded = s.messages.iter_mut().find(|m| m.message_id == row);\n    \
+     let Some((uid, subject)) = loaded.or_else(|| the_stored_message(cache, row)) else {\n        return;\n    };\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_timer_reading_refuses_a_timer_that_gives_up_on_a_message_not_loaded() {
+    let timer = a_timer_as_it_should_be();
+    the_timer_marks_what_reading_may(&timer).unwrap_or_else(|why| panic!("{why}"));
+    for (planted, needle, said) in [
+        (
+            "loaded.or_else(|| the_stored_message(cache, row))",
+            "loaded",
+            "does not reach the_stored_message(",
+        ),
+        (
+            "s.what_reading_may_mark()",
+            "s.selected_message_index.and_then(|at| s.the_loaded_message_the_row_stands_for(at))",
+            "does not reach what_reading_may_mark(",
+        ),
+    ] {
+        let broken = timer.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, timer,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = the_timer_marks_what_reading_may(&broken)
+            .expect_err("a timer left without a part was passed over");
         assert!(why.contains(said), "{planted:?}: {why}");
     }
 }

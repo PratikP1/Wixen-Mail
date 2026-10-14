@@ -919,6 +919,15 @@ impl WxUIState {
         self.acting_on
             .or_else(|| self.what_the_cursor_stands_for().map(|row| row.id))
     }
+
+    /// The message whose reading began, when the reading timer may mark it.
+    pub fn what_reading_may_mark(&self) -> Option<i64> {
+        let (began, _) = self.reading_began?;
+        self.selected_message_index
+            .and_then(|row| self.the_loaded_message_the_row_stands_for(row))
+            .filter(|message| !message.read && message.message_id == began)
+            .map(|message| message.message_id)
+    }
 }
 
 /// References to PIM module display widgets, used by handle_update to populate data.
