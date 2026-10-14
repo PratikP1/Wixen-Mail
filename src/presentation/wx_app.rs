@@ -16346,13 +16346,22 @@ pub struct ConversationToOpen {
 
 /// What Enter on conversation row `row` opens (13.2-01).
 ///
+/// Two or more of the conversation's messages among the loaded rows open the
+/// conversation window on the row's message. Fewer open the row's own message
+/// straight into the reader, found by id the way Space finds it: by
+/// membership it could not be found, because `apply_threading` empties the
+/// conversation id of a message alone among the loaded rows, and until
+/// 2026-10-14 Enter on such a row did nothing (Pratik's first report). A row
+/// message filed in another folder, such as a reply in Sent, is read from the
+/// store, one row by id. `Nothing` when neither holds it.
+///
 /// Out of the activation handler so the choice can be held by cases built
 /// through the real producers: the handler needs a frame and a reader, and
 /// this needs only the state and the store. The state is locked in turns and
 /// never across [`conversation_nodes`], which locks it too.
 pub fn what_enter_opens_on_a_conversation_row(
     state: &Arc<StdMutex<WxUIState>>,
-    _cache: Option<&MessageCache>,
+    cache: Option<&MessageCache>,
     row: usize,
 ) -> WhatEnterOpens {
     let the_row = lock_state(state).conversations.get(row).map(|c| {
@@ -16368,16 +16377,14 @@ pub fn what_enter_opens_on_a_conversation_row(
     };
     let nodes = conversation_nodes(state, &read_in.account_id, &thread_id);
     if nodes.len() < 2 {
-        let only = nodes.first().and_then(|node| {
-            lock_state(state)
-                .messages
-                .iter()
-                .find(|m| m.message_id == node.message_id)
-                .cloned()
-        });
-        return only.map_or(WhatEnterOpens::Nothing, |message| {
-            WhatEnterOpens::TheMessage(Box::new(message))
-        });
+        let loaded = lock_state(state)
+            .the_loaded_message_the_row_stands_for(row)
+            .cloned();
+        return loaded
+            .or_else(|| the_stored_message(cache?, stands_for))
+            .map_or(WhatEnterOpens::Nothing, |message| {
+                WhatEnterOpens::TheMessage(Box::new(message))
+            });
     }
     WhatEnterOpens::TheConversation(ConversationToOpen {
         nodes,
@@ -16386,6 +16393,20 @@ pub fn what_enter_opens_on_a_conversation_row(
         subject,
         read_in,
     })
+}
+
+/// One message read from the store by its row id, as a list row.
+///
+/// A read that fails is logged and answers `None`, which the caller says as
+/// a refusal: the message cannot be opened either way.
+fn the_stored_message(cache: &MessageCache, message_id: i64) -> Option<MessageItem> {
+    match cache.message_rows_for(&[message_id], None) {
+        Ok(rows) => rows.first().map(MessageItem::from_row),
+        Err(e) => {
+            tracing::warn!("Message {message_id} could not be read: {e}");
+            None
+        }
+    }
 }
 
 /// Group a folder's messages into conversations and mark the list rows.

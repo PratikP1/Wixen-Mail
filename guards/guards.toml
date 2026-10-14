@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 691 records have arrived since and have not been through it.
+# 693 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -27861,6 +27861,11 @@ tests_last_seen = [
 #
 # Measured 2026-09-19 on the branch the record was written on, through
 # `scripts/guards.sh --remeasure`, the target named.
+#
+# 13.2-01, 2026-10-14: the eighth is the split case of Enter, whose row
+# stands for the reply filed in Sent under this break, so Enter opens that
+# rather than the originator here. Found by the re-measure, added by hand,
+# and measured again.
 [[guard]]
 name = "a conversation row stands for the first unread or the originator, not the newest"
 file = "src/presentation/message_columns.rs"
@@ -27875,10 +27880,11 @@ red = [
     "test_the_correspondent_cell_says_the_row_messages_sender_first_and_everyone_once",
     "test_sorting_by_correspondent_orders_conversations_by_their_row_messages_senders",
     "test_selecting_a_row_asks_for_the_conversations_missing_text_with_the_row_message_first",
+    "test_enter_on_a_conversation_split_across_folders_opens_the_message_here",
 ]
 tests_last_seen = [
     { file = "src/presentation/message_columns.rs", tests = 43 },
-    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
 # The row message's sender dropped from the front of the Correspondent
@@ -27900,7 +27906,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/message_rows.rs", tests = 41 },
-    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
 # The cursor handler reading the flat list at the row's index again, which
@@ -27926,7 +27932,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
 # The reading gate dropped from the conversation's fetch, so selecting a
@@ -27946,7 +27952,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
 # The conversation tree putting the cursor on the root whatever message
@@ -27967,7 +27973,61 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 9 },
-    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 18 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
+]
+
+# ── Enter on a conversation row of one loaded message (13.2-01) ──────────
+#
+# Pratik, 2026-10-14: "Pressing enter on a mail doesn't open a message any
+# more." The chooser's one-node arm put back on `nodes.first()`, the arm as
+# it was until 13.2-01: `apply_threading` empties the conversation id of a
+# message alone among the loaded rows, so the node list is empty and Enter
+# answers nothing on a lone message and on one whose reply is filed in Sent.
+# The store read goes with it, since the old arm had none. Both cases that
+# were red for the fix go red again; the conversation of two stays green.
+#
+# Measured by hand 2026-10-14 on branch
+# 13.2-01-enter-opens-a-message-alone-in-its-conversation.
+[[guard]]
+name = "Enter on a conversation row of one loaded message opens that message"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = '''        let loaded = lock_state(state)
+            .the_loaded_message_the_row_stands_for(row)
+            .cloned();
+        return loaded
+            .or_else(|| the_stored_message(cache?, stands_for))'''
+after = '''        let loaded = nodes.first().and_then(|node| {
+            lock_state(state).messages.iter().find(|m| m.message_id == node.message_id).cloned()
+        });
+        return loaded'''
+red = [
+    "test_enter_on_a_conversation_of_one_opens_that_message",
+    "test_enter_on_a_conversation_split_across_folders_opens_the_message_here",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
+]
+
+# The store read taken out alone, so a row standing for a reply filed in
+# another folder, which the loaded rows do not hold, answers nothing. Only
+# the split case's second half reaches it: the lone message and the
+# originator here are found among the loaded rows.
+#
+# Measured by hand 2026-10-14 on the same branch.
+[[guard]]
+name = "Enter on a row standing for a message filed in another folder reads it from the store"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = '''            .or_else(|| the_stored_message(cache?, stands_for))'''
+after = ''''''
+red = [
+    "test_enter_on_a_conversation_split_across_folders_opens_the_message_here",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
 # ── A conversation is Gmail's own, and a late parent joins it (11-08.1, #88) ─
