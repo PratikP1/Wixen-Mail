@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 704
+open_count: 707
 waived_count: 0
 fixed_count: 126
-total_count: 830
-last_updated: 2026-10-06T12:00:00.000Z
+total_count: 833
+last_updated: 2026-10-14T18:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -845,6 +845,9 @@ last_updated: 2026-10-06T12:00:00.000Z
 | 828 | 14 | deviation | src/presentation/page_window.rs |  | 14-06: test_an_address_that_is_not_a_page_opens_no_window called show, whose refusal wrote three lines into the real profile's logs\crash.log on every library run on this machine (--show-page was given "mailto:somebody@example.com", "not-a-page" and "", each "which is not a page. Nothing was opened."), 1,515 of each between 2026-09-22 and 2026-10-04 by research 3's count, beside one real panic of 2026-09-18. Fixed in 14-06: the refusal is decided and written by refuse_unless_a_page, which takes the folder, and the test hands it a temporary one; show passes default_log_dir(). The lines already in the tester's file stay, because nothing here edits his files; scripts/read-a-proof.py drops them and says how many. The other sites resolving the profile in src were read the same day: no test builds the main window (WxMailApp::new is in no target), the integration targets that build windows set WIXEN_MAIL_DATA, and one library test, test_the_key_path_names_the_file_the_service_reads_and_writes in service::security, resolves the real profile and creates its root folder when it is missing, which writes no file and on this machine changes nothing | fixed |  | 2026-10-06T09:00:00.000Z | 2026-10-06T09:00:00.000Z |
 | 829 | 14 | unrun-verify | src/application/mail_sync.rs |  | 14-07, from phase 14's first research reading the tester's logs on 2026-10-04: the Trash of his Gmail account could not be read at nearly every check on 18 and 20 September 2026, spoken as Trash: The connection to the mail server was lost, 107 times on the 18th and 79 on the 20th. Why is not known: the same days carry 932 connections closed while a folder was opening, and the Trash is where a delete lands, so sitting 3's proof needs it readable. Its first log on the new build is read at the start of sitting 1 by 14-09, and 14-11's precondition reads that summary. Closed when a check on the installed build reads the Trash, or a fix plan is named for it | open |  | 2026-10-06T10:00:00.000Z |  |
 | 830 | 14 | todo | src/presentation/wx_app.rs | 7471 | 14-07: Refresh's help sentence, Read this folder again from the server, is untrue in a mail folder. Its handler there (wx_app.rs:4445-4458) calls load_folder_messages, which reads this computer's store and asks no server; a whole folder is compared with the server at most every six hours (finding_what_was_deleted.rs). docs/KEYBOARD_SHORTCUTS.md's F5 row says the same. Two ways out, and the choice is Pratik's: F5 asks the server for the folder, or the sentence says what F5 does, reading the folder again from this computer. Neither changes in phase 14 (D-20); 14-10's premise 2 relies on this entry | open |  | 2026-10-06T10:00:00.000Z |  |
+| 831 | 13.2 | unrun-verify | src/presentation/wx_app.rs | 3560 | 13.2-01, Pratik's first report of 2026-10-14: Enter in his Inbox under conversation view, heard under NVDA on a build holding 13.2-01's merge. On a row whose message is alone in its conversation, the reader opens on it. On a row whose reply is filed in Sent, the row's own message opens: the Inbox message when nothing is read, the reply when the reply is the first unread. Closed when he has heard both on his own mailbox | open |  | 2026-10-14T18:00:00.000Z |  |
+| 832 | 13.2 | todo | src/presentation/wx_app.rs | 16291 | 13.2-01, the root fix REGRESSIONS.md names and leaves: MessageItem.thread_id is a display field apply_threading empties for a message alone among the loaded rows, and conversation_nodes joins on it, so a conversation row of one loaded message finds no node. 13.2-01 finds the row's message by id instead (what_enter_opens_on_a_conversation_row). Closed when MessageItem carries the store's conversation id in a field apply_threading never empties and conversation_nodes joins on that, with a case built through the store, MessageItem::from_row and apply_threading | open |  | 2026-10-14T18:00:00.000Z |  |
+| 833 | 13.2 | todo | src/presentation/wx_app.rs | 16291 | 13.2-01: a conversation with two or more messages in the open folder and more filed elsewhere opens a tree holding this folder's members only, while the row counts the whole account, so open_on can name a message the tree does not hold, a starter in Sent for one, and the tree opens on its root rather than on the row's message. Closed by entry 832's root fix together with a tree built across the reach the row counts, with a case where the row's message is filed in another folder | open |  | 2026-10-14T18:00:00.000Z |  |
 
 ````json
 [
@@ -10806,6 +10809,42 @@ last_updated: 2026-10-06T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-06T10:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 831,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 3560,
+    "description": "13.2-01, Pratik's first report of 2026-10-14: Enter in his Inbox under conversation view, heard under NVDA on a build holding 13.2-01's merge. On a row whose message is alone in its conversation, the reader opens on it. On a row whose reply is filed in Sent, the row's own message opens: the Inbox message when nothing is read, the reply when the reply is the first unread. Closed when he has heard both on his own mailbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 832,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 16291,
+    "description": "13.2-01, the root fix REGRESSIONS.md names and leaves: MessageItem.thread_id is a display field apply_threading empties for a message alone among the loaded rows, and conversation_nodes joins on it, so a conversation row of one loaded message finds no node. 13.2-01 finds the row's message by id instead (what_enter_opens_on_a_conversation_row). Closed when MessageItem carries the store's conversation id in a field apply_threading never empties and conversation_nodes joins on that, with a case built through the store, MessageItem::from_row and apply_threading",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 833,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 16291,
+    "description": "13.2-01: a conversation with two or more messages in the open folder and more filed elsewhere opens a tree holding this folder's members only, while the row counts the whole account, so open_on can name a message the tree does not hold, a starter in Sent for one, and the tree opens on its root rather than on the row's message. Closed by entry 832's root fix together with a tree built across the reach the row counts, with a case where the row's message is filed in another folder",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T18:00:00.000Z",
     "resolved_at": null
   }
 ]

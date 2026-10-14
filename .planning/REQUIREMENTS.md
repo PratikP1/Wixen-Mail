@@ -4366,6 +4366,15 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     message a conversation row stands for when it is alone in its conversation, and say why
     when there is nothing to open (his first report). It adds no `[D]` clause and the box
     stays ticked.
+  - 13.2-01 on 2026-10-14, pull request 169: under conversation view `Enter` on a row whose
+    conversation holds one message among the open folder's loaded rows opens the row's own
+    message, found by id as Space finds it and read from the store when it is filed in
+    another folder; two or more still open the window on that message; and when neither holds
+    it, `Enter` says "That message is no longer on this computer, so it could not be opened."
+    The choice is `what_enter_opens_on_a_conversation_row`, held by three cases in
+    `tests/a_conversation_row_stands_for_one_message.rs` built through the store,
+    `MessageItem::from_row` and `apply_threading`. Hearing it is ledger 831; the root fix and
+    the tree holding only this folder's members are 832 and 833.
 
 - [x] **LIST-07**: Ctrl+Shift+; reads the selected row column by column with its headings on
   request, and the pages say why the headers are spoken on every row and how to quiet them.
@@ -7591,7 +7600,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause |
 | LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause |
-| LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause |
+| LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
 | LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558); phase 13.2, planned 2026-10-14: 13.2-13, adding no `[D]` clause |
