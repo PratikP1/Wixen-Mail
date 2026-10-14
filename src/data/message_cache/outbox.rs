@@ -409,6 +409,21 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update outbox failure: {}", e)))?;
         Ok(())
     }
+
+    /// Claim a queued message for this pass of the send loop.
+    pub fn claim_for_sending(&self, _id: &str, _at: DateTime<Local>) -> Result<bool> {
+        Ok(true)
+    }
+
+    /// Take out a message this pass sent.
+    pub fn a_sent_message_leaves_the_queue(&self, _id: &str) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Let go of every claim a run that ended mid-send left behind.
+    pub fn let_go_of_every_claim(&self) -> Result<usize> {
+        Ok(0)
+    }
 }
 
 /// One queued message and when it may go, from a row of the queue's own
@@ -1578,5 +1593,245 @@ mod tests {
             .expect("the outbox to be read");
 
         assert_eq!(rows[0].subject, "Ordinary, waiting to send");
+    }
+
+    /// A cache holding one message that may go now, under `id`.
+    fn one_ready(what_for: &str, id: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(what_for);
+        cache
+            .queue_outbox_message_to_go(
+                &queued(id, "acc-1", "Going", "2026-10-14T09:00:00Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
+            .expect("a message to queue");
+        cache
+    }
+
+    fn still_queued(cache: &MessageCache) -> Vec<String> {
+        cache
+            .load_outbox_messages("acc-1")
+            .expect("the queue to load")
+            .into_iter()
+            .map(|message| message.id)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_message_the_send_loop_claimed_cannot_be_claimed_twice() {
+        // Findings #31 and #6 of the audit of 2026-10-14. Reading a row was
+        // all a pass did before sending it, so two passes a few seconds apart
+        // both read it, both sent it, and the person's correspondent got it
+        // twice. The claim is the one statement both passes go through.
+        let cache = one_ready("outbox_claim_twice", "going");
+        let now = at("2026-10-14 09:00:10");
+
+        assert!(
+            cache
+                .claim_for_sending("going", now)
+                .expect("the claim to run"),
+            "the first pass could not claim a message nobody held"
+        );
+        assert!(
+            !cache
+                .claim_for_sending("going", now)
+                .expect("the claim to run"),
+            "a second pass claimed a message the first was already sending"
+        );
+    }
+
+    #[test]
+    fn test_a_message_taken_back_first_cannot_then_be_claimed() {
+        // The other order of the same race: Undo Send got there first, so
+        // there is nothing for the pass to send.
+        let cache = one_ready("outbox_taken_back_first", "caught");
+
+        assert!(
+            cache
+                .delete_outbox_message("caught")
+                .expect("the delete to run"),
+            "Undo Send could not take back a message nobody had claimed"
+        );
+        assert!(
+            !cache
+                .claim_for_sending("caught", at("2026-10-14 09:00:10"))
+                .expect("the claim to run"),
+            "the send loop claimed a message that had been taken back"
+        );
+    }
+
+    #[test]
+    fn test_undo_send_cannot_take_back_a_message_the_send_loop_has_claimed() {
+        // Finding #6. A delete that found the row used to be taken as proof
+        // Undo Send caught the message, while a pass already held it in
+        // memory and was signing in to send it. "Taken back" about a message
+        // that went is the one answer Undo Send must never give.
+        let cache = one_ready("outbox_undo_claimed", "on-its-way");
+        cache
+            .queue_outbox_message_to_go(
+                &queued("still-waiting", "acc-1", "Waiting", "2026-10-14T09:00:05Z"),
+                &GoAfter::AsSoonAsPossible,
+            )
+            .expect("a message to queue");
+        assert!(
+            cache
+                .claim_for_sending("on-its-way", at("2026-10-14 09:00:10"))
+                .expect("the claim to run"),
+            "the pass could not claim the message"
+        );
+
+        assert!(
+            !cache
+                .delete_outbox_message("on-its-way")
+                .expect("the delete to run"),
+            "Undo Send said it took back a message the send loop was sending"
+        );
+        assert!(
+            cache
+                .delete_outbox_message("still-waiting")
+                .expect("the delete to run"),
+            "Undo Send could not take back a message nobody had claimed"
+        );
+        assert_eq!(
+            still_queued(&cache),
+            vec!["on-its-way".to_string()],
+            "the claimed message left the queue, or the unclaimed one stayed"
+        );
+    }
+
+    #[test]
+    fn test_a_sent_message_leaves_the_queue_although_its_pass_claimed_it() {
+        // The pass that sent a message is the one that holds its claim, so
+        // the delete Undo Send uses would refuse it. The send loop takes its
+        // own rows out through a method of its own.
+        let cache = one_ready("outbox_sent_leaves", "sent");
+        assert!(
+            cache
+                .claim_for_sending("sent", at("2026-10-14 09:00:10"))
+                .expect("the claim to run"),
+            "the pass could not claim the message"
+        );
+
+        assert!(
+            cache
+                .a_sent_message_leaves_the_queue("sent")
+                .expect("the delete to run"),
+            "the sent message was reported as not there"
+        );
+        assert!(
+            still_queued(&cache).is_empty(),
+            "a message that went is still in the Outbox"
+        );
+        assert!(
+            !cache
+                .a_sent_message_leaves_the_queue("sent")
+                .expect("the delete to run"),
+            "taking out nothing reported that it took something out"
+        );
+    }
+
+    #[test]
+    fn test_a_failed_send_lets_go_of_its_claim() {
+        // A failure is counted and the message stays, so the next pass offers
+        // it again. Letting go in the same statement that counts means there
+        // is no moment where the failure is written and the claim still held.
+        let cache = one_ready("outbox_failure_lets_go", "refused");
+        let now = at("2026-10-14 09:00:10");
+        assert!(
+            cache
+                .claim_for_sending("refused", now)
+                .expect("the claim to run")
+        );
+        assert!(
+            !cache
+                .claim_for_sending("refused", now)
+                .expect("the claim to run"),
+            "the claim did not hold before the failure"
+        );
+
+        cache
+            .update_outbox_failure("refused", "mailbox full")
+            .expect("the failure to be recorded");
+
+        assert!(
+            cache
+                .claim_for_sending("refused", now + chrono::Duration::seconds(30))
+                .expect("the claim to run"),
+            "a message whose send failed is held for ever"
+        );
+        assert_eq!(
+            cache.load_outbox_messages("acc-1").expect("the queue")[0].attempt_count,
+            1,
+            "the failure was not counted"
+        );
+    }
+
+    #[test]
+    fn test_claims_left_by_an_earlier_run_are_let_go() {
+        // A run that ended mid-send, a crash or a power cut, leaves its claims
+        // behind, and nothing would ever send those messages. Start-up lets
+        // them go and says how many.
+        let cache = one_ready("outbox_let_go", "first");
+        let now = at("2026-10-14 09:00:10");
+        for id in ["second", "third"] {
+            cache
+                .queue_outbox_message_to_go(
+                    &queued(id, "acc-1", "Going", "2026-10-14T09:00:01Z"),
+                    &GoAfter::AsSoonAsPossible,
+                )
+                .expect("a message to queue");
+        }
+        for id in ["first", "second"] {
+            assert!(cache.claim_for_sending(id, now).expect("the claim to run"));
+        }
+
+        assert_eq!(
+            cache
+                .let_go_of_every_claim()
+                .expect("the claims to be let go"),
+            2,
+            "the count let go is not the count that was held"
+        );
+        for id in ["first", "second", "third"] {
+            assert!(
+                cache.claim_for_sending(id, now).expect("the claim to run"),
+                "{id} is still held after start-up let every claim go"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_queued_before_there_were_claims_is_unclaimed() {
+        // The column arrives on a database that already exists. A message an
+        // older build queued was claimed by nobody, which is what it reads as.
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        {
+            let cache = MessageCache::new(folder.path().to_path_buf(), None).unwrap();
+            cache
+                .queue_outbox_message_to_go(
+                    &queued("old-1", "acc-1", "Queued long ago", "2026-01-01"),
+                    &GoAfter::AsSoonAsPossible,
+                )
+                .unwrap();
+            cache
+                .conn
+                .execute("ALTER TABLE outbox_queue DROP COLUMN sending_since", [])
+                .expect("the column to come off, making this an older database");
+        }
+
+        let reopened = MessageCache::new(folder.path().to_path_buf(), None)
+            .expect("the older database to open again");
+        let now = at("2026-10-14 09:00:10");
+        assert!(
+            reopened
+                .claim_for_sending("old-1", now)
+                .expect("the claim to run"),
+            "a message an older build queued reads as claimed"
+        );
+        assert!(
+            !reopened
+                .claim_for_sending("old-1", now)
+                .expect("the claim to run"),
+            "the reopened database cannot hold a claim"
+        );
     }
 }
