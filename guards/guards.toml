@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 697 records have arrived since and have not been through it.
+# 698 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -710,15 +710,21 @@ red = [
     # Added 2026-10-02 by 13-44.7, found by --remeasure: a POP account's
     # emptying says its count in the same words.
     "application::emptying_the_trash::tests::test_a_pop_account_set_to_thirty_days_marks_its_own_old_messages_deleted_here_and_keeps_their_identifiers",
+    # Added 2026-10-14 by 13.2-03, found by --remeasure: the calendar
+    # sync's two summaries say their counts in the same words. Neither
+    # file was on this record, so nothing flagged it when they arrived.
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
     { file = "src/application/bringing_everything_down.rs", tests = 23 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/choosing_messages.rs", tests = 18 },
+    { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 281 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
     { file = "src/application/mail_sync.rs", tests = 150 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -727,6 +733,7 @@ tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
@@ -27411,7 +27418,7 @@ red = [
     "application::choosing_messages::tests::test_a_batch_with_a_refusal_says_how_many_went_and_how_many_did_not",
 ]
 tests_last_seen = [
-    { file = "src/application/choosing_messages.rs", tests = 18 },
+    { file = "src/application/choosing_messages.rs", tests = 20 },
 ]
 
 # The bound gone: nothing is ever too many, so Shift+End on a folder of
@@ -27434,7 +27441,7 @@ red = [
     "application::choosing_messages::tests::test_the_bound_is_select_alls_and_is_refused_only_above_it",
 ]
 tests_last_seen = [
-    { file = "src/application/choosing_messages.rs", tests = 18 },
+    { file = "src/application/choosing_messages.rs", tests = 20 },
 ]
 
 # SingleSel back on the message list, which is the tree before this plan:
@@ -39432,4 +39439,26 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 20 },
+]
+
+# The target that ignores the message an opened conversation named: Delete,
+# Mark as Read, Star, a label, a move or a Quick Step run from inside the
+# conversation acts on every message of the conversation row behind it,
+# which is Pratik's fourth report of 2026-10-14 (13.2-03). `chosen_messages`
+# needs a list control, so the reading over it is what sees this.
+#
+# Measured by hand on 2026-10-14: the target, and the whole library at
+# 9,030 passed and 0 failed.
+[[guard]]
+name = "a command from an opened conversation acts on the one message it names"
+file = "src/presentation/wx_app.rs"
+suite = "every_command_acts_on_the_selection"
+before = '''    let named = match s.acting_on {'''
+after = '''    let named = match None::<i64> {'''
+red = [
+    "test_star_mark_as_read_and_the_labels_act_on_the_selection_with_one_sentence",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/every_command_acts_on_the_selection.rs", tests = 17 },
 ]

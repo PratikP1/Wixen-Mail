@@ -164,8 +164,13 @@ pub fn what_the_command_is_for(
     rows: &[usize],
     members_of: impl FnMut(usize) -> Option<Members>,
 ) -> Chosen {
-    let _ = named;
-    what_the_selection_holds(rows, members_of)
+    match named {
+        Some(message) => Chosen {
+            messages: vec![message],
+            ..Chosen::default()
+        },
+        None => what_the_selection_holds(rows, members_of),
+    }
 }
 
 /// The commands that act on the whole selection.

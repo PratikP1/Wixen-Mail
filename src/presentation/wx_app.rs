@@ -519,6 +519,13 @@ pub struct WxUIState {
     /// the list selects more than one, and the set is read from the control
     /// at the key rather than kept here; this stays the cursor.
     pub selected_message_index: Option<usize>,
+    /// The message a command run from an opened conversation names, by its
+    /// row id (13.2-03). Set only while that command runs and cleared by a
+    /// guard whatever it did, so every other command reads the list's cursor
+    /// and selection as it always did. The commands ask
+    /// [`Self::the_message_a_command_is_for`] and `chosen_messages`, which
+    /// read this before the cursor.
+    pub acting_on: Option<i64>,
     /// A set of messages a delete or a move over a selection is taking out
     /// of the list, so the cursor lands once, after the last of them has
     /// left, rather than after each (#30). Nothing between sets.
@@ -798,6 +805,7 @@ impl Default for WxUIState {
             mail_watches: std::collections::HashMap::new(),
             last_checked: std::collections::HashMap::new(),
             selected_message_index: None,
+            acting_on: None,
             a_set_leaving: None,
             conversations_being_fetched: std::collections::HashSet::new(),
             message_preview: MessageBody::default(),
@@ -884,6 +892,32 @@ impl WxUIState {
         self.messages
             .iter()
             .find(|message| message.message_id == stands_for)
+    }
+
+    /// The message a command over one message is for (13.2-03): the one an
+    /// opened conversation named, while its command runs, and otherwise the
+    /// message the cursor row stands for, as the loaded rows hold it.
+    ///
+    /// A conversation's tree is built from the loaded rows, so the message
+    /// it names is always among them.
+    pub fn the_message_a_command_is_for(&self) -> Option<&MessageItem> {
+        match self.acting_on {
+            Some(named) => self
+                .messages
+                .iter()
+                .find(|message| message.message_id == named),
+            None => self
+                .selected_message_index
+                .and_then(|row| self.the_loaded_message_the_row_stands_for(row)),
+        }
+    }
+
+    /// Its row id, for a command that needs no more than that: the one an
+    /// opened conversation named, else the message the cursor row stands
+    /// for, wherever it is filed.
+    pub fn the_id_a_command_is_for(&self) -> Option<i64> {
+        self.acting_on
+            .or_else(|| self.what_the_cursor_stands_for().map(|row| row.id))
     }
 }
 
@@ -4812,10 +4846,9 @@ impl WxMailApp {
                                 Answer::Declined
                             };
                             // The row under the cursor, which the menu and
-                            // the list's context menu both act on.
-                            let under_the_cursor = lock_state(&state)
-                                .what_the_cursor_stands_for()
-                                .map(|row| row.id);
+                            // the list's context menu both act on, or the
+                            // message an opened conversation named.
+                            let under_the_cursor = lock_state(&state).the_id_a_command_is_for();
                             answer_the_invitation(app, &message_cache, under_the_cursor, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
@@ -4847,12 +4880,7 @@ impl WxMailApp {
                                 ItemKind::Note
                             };
 
-                            let chosen = {
-                                let s = lock_state(&state);
-                                s.selected_message_index
-                                    .and_then(|at| s.the_loaded_message_the_row_stands_for(at))
-                                    .cloned()
-                            };
+                            let chosen = lock_state(&state).the_message_a_command_is_for().cloned();
                             let Some(message) = chosen else {
                                 send_refusal(&ui_tx, &runtime, &nothing_chosen(Thing::MESSAGE));
                                 return;
@@ -5408,7 +5436,7 @@ impl WxMailApp {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
-                            let (_to, subj, body) = msg_info(&state);
+                            let (_to, subj, body) = msg_info(&state, message_cache.as_deref());
                             open_compose(
                                 app,
                                 &frame,
@@ -12274,7 +12302,7 @@ fn chosen_messages(
     list: &ListCtrl,
     reach: crate::application::conversations::AConversationReaches,
 ) -> std::result::Result<crate::application::choosing_messages::Chosen, String> {
-    use crate::application::choosing_messages::{Members, MessageRef, what_the_selection_holds};
+    use crate::application::choosing_messages::{Members, MessageRef, what_the_command_is_for};
     let rows = {
         let rows = chosen_rows(list);
         if rows.is_empty() {
@@ -12287,8 +12315,14 @@ fn chosen_messages(
         }
     };
     let s = lock_state(state);
+    // A command from an opened conversation names one message (13.2-03),
+    // which is the whole set however many rows the list has selected.
+    let named = match s.acting_on {
+        Some(named) => Some(the_named_message(&s, cache.as_deref(), named)?),
+        None => None,
+    };
     if !s.showing.showing_conversations() {
-        return Ok(what_the_selection_holds(&rows, |row| {
+        return Ok(what_the_command_is_for(named, &rows, |row| {
             s.messages.get(row).map(|message| {
                 Members::AMessage(MessageRef {
                     row_id: message.message_id,
@@ -12309,7 +12343,7 @@ fn chosen_messages(
     // several accounts' at once, and a read against the open folder, which
     // there is none of, or the active account, which is one of them, would
     // act on the wrong mail or refuse (T-11-113).
-    let chosen = what_the_selection_holds(&rows, |row| {
+    let chosen = what_the_command_is_for(named, &rows, |row| {
         let conversation = s.conversations.get(row)?;
         let ids = match cache.messages_in_conversation(
             &conversation.thread_id,
@@ -12342,6 +12376,34 @@ fn chosen_messages(
     match trouble {
         Some(why) => Err(why),
         None => Ok(chosen),
+    }
+}
+
+/// The one message an opened conversation named, as a command over a set
+/// meets it: from the loaded rows, which hold every message a conversation's
+/// tree lists, else from the store, as a conversation's messages are read.
+/// A sentence when neither has it, for the command to refuse with.
+fn the_named_message(
+    s: &WxUIState,
+    cache: Option<&MessageCache>,
+    named: i64,
+) -> std::result::Result<crate::application::choosing_messages::MessageRef, String> {
+    use crate::application::choosing_messages::MessageRef;
+    if let Some(message) = s.messages.iter().find(|m| m.message_id == named) {
+        return Ok(MessageRef {
+            row_id: message.message_id,
+            uid: message.uid,
+            subject: message.subject.clone(),
+            read: message.read,
+            starred: message.starred,
+        });
+    }
+    let gone = || "That message is no longer on this computer.".to_string();
+    let cache = cache.ok_or_else(gone)?;
+    match cache.get_message(named) {
+        Ok(Some(message)) => Ok(MessageRef::from(&message)),
+        Ok(None) => Err(gone()),
+        Err(e) => Err(format!("The message could not be read: {e}")),
     }
 }
 
@@ -18898,16 +18960,14 @@ fn start_reply(
     mode: ReplyMode,
 ) {
     let AppHandles { state, .. } = app;
-    let (selected, accounts, preview) = {
+    let (selected, accounts) = {
         let s = lock_state(state);
         (
-            s.selected_message_index
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
-                .cloned(),
+            s.the_message_a_command_is_for().cloned(),
             s.accounts.clone(),
-            s.message_preview.clone(),
         )
     };
+    let preview = the_body_a_command_quotes(state, cache.as_deref());
     let Some(message) = selected else {
         let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
         return;
@@ -19140,24 +19200,51 @@ fn file_name_of(path: &std::path::Path) -> String {
 }
 
 /// Extract selected message info for reply/forward.
-fn msg_info(state: &Arc<StdMutex<WxUIState>>) -> (String, String, MessageBody) {
-    state
+fn msg_info(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> (String, String, MessageBody) {
+    let addressed = state
         .lock()
         .map(|s| {
-            s.selected_message_index
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
+            s.the_message_a_command_is_for()
                 // The reply address, not the sender: a mailing list sets
                 // Reply-To so a reply reaches the list rather than one member.
-                .map(|m| {
-                    (
-                        m.reply_address().to_string(),
-                        m.subject.clone(),
-                        s.message_preview.clone(),
-                    )
-                })
-                .unwrap_or_default()
+                .map(|m| (m.reply_address().to_string(), m.subject.clone()))
         })
-        .unwrap_or_default()
+        .ok()
+        .flatten();
+    match addressed {
+        Some((to, subject)) => (to, subject, the_body_a_command_quotes(state, cache)),
+        None => Default::default(),
+    }
+}
+
+/// The text a reply or a forward quotes: the message an opened conversation
+/// named, read from the store, while its command runs (13.2-03); otherwise
+/// the preview, which holds the message the cursor row stands for.
+///
+/// Never the preview while a message is named, because the preview holds
+/// the list row's message and a reply would quote a message nobody chose.
+/// With no store open the named message quotes nothing rather than that.
+fn the_body_a_command_quotes(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> MessageBody {
+    let (named, preview) = {
+        let s = lock_state(state);
+        (s.acting_on, s.message_preview.clone())
+    };
+    match named {
+        Some(named) => body_as_written(cache.and_then(|cache| {
+            cache
+                .get_message_body(named)
+                .map_err(|e| tracing::warn!("The text of message {named} could not be read: {e}"))
+                .ok()
+                .flatten()
+        })),
+        None => preview,
+    }
 }
 
 /// The other addresses each account sends from, as the store keeps them,
@@ -19307,9 +19394,8 @@ fn open_compose(
             // The To and Cc of the message answered or forwarded, which is
             // the one selected, as `start_reply` and Forward read it.
             let answered = s
-                .selected_message_index
+                .the_message_a_command_is_for()
                 .filter(|_| replying)
-                .and_then(|i| s.the_loaded_message_the_row_stands_for(i))
                 .map(|message| (message.to.clone(), message.cc.clone()))
                 .unwrap_or_default();
             (s.accounts.clone(), sender, answered)

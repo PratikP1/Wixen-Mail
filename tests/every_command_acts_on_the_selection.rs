@@ -144,6 +144,8 @@ const THE_ACCESSOR: &str = "pub fn the_message_a_command_is_for(";
 const ASKS_THE_ACCESSOR: &str = "the_message_a_command_is_for(";
 const THE_NAMED_MESSAGE: &str = "acting_on";
 const THE_CURSOR: &str = "selected_message_index";
+/// Where every set command takes its set from.
+const THE_TARGET: &str = "fn chosen_messages(";
 /// What a command over the set reads and says.
 const READS_THE_SELECTION: &str = "chosen_messages(";
 const REFUSES_ABOVE_THE_BOUND: &str = "too_many(";
@@ -188,6 +190,18 @@ fn the_flag_commands_act_on_the_selection(app: &str) -> Result<(), String> {
                      says nothing over the set"
                 ));
             }
+        }
+    }
+    // Every set command reaches chosen_messages, so where it takes its set
+    // from is read once, here: the message an opened conversation named
+    // before the selection (13.2-03).
+    let target = body_of(app, THE_TARGET)?;
+    for needed in [THE_NAMED_MESSAGE, "what_the_command_is_for("] {
+        if !target.contains(needed) {
+            return Err(format!(
+                "chosen_messages does not reach {needed}, so a command from an opened \
+                 conversation acts on the whole conversation row behind it"
+            ));
         }
     }
     if !body_of(app, THE_TOGGLE)?.contains("what_mark_read_does(") {
@@ -443,6 +457,10 @@ fn a_window_as_it_should_be() -> String {
     }
     snippet.push_str(THE_COPY_TO_ARM);
     snippet.push_str(" {\n    s.the_message_a_command_is_for()\n}\n_ if id == ID_OTHER => {}\n");
+    snippet.push_str(THE_TARGET);
+    snippet.push_str(
+        ") {\n    let named = s.acting_on;\n    what_the_command_is_for(named, &rows, members_of)\n}\n",
+    );
     snippet.push_str("impl WxUIState {\n    ");
     snippet.push_str(THE_ACCESSOR);
     snippet.push_str(
@@ -512,6 +530,20 @@ fn test_the_reading_complains_when_an_arm_acts_on_the_cursor_row_alone() {
     let why = the_flag_commands_act_on_the_selection(&toggle_alone).expect_err("the toggle alone");
     assert!(
         why.contains("toggle_read_state does not reach chosen_messages("),
+        "{why}"
+    );
+
+    // 13.2-03: a target that never reads the message an opened conversation
+    // named acts on the whole conversation row behind it.
+    let the_named_message_ignored = app.replacen(
+        "    let named = s.acting_on;\n",
+        "    let named = None;\n",
+        1,
+    );
+    let why = the_flag_commands_act_on_the_selection(&the_named_message_ignored)
+        .expect_err("the target ignoring acting_on");
+    assert!(
+        why.contains("chosen_messages does not reach acting_on"),
         "{why}"
     );
 
