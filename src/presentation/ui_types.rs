@@ -159,15 +159,17 @@ impl MessageItem {
 impl MessageItem {
     /// Build a list row from what the cache stores.
     ///
-    /// `thread_id` stays `None` here, and that is now about this struct
-    /// rather than about the program. Every stored message carries a
-    /// conversation id in the database, written by
-    /// `application::thread_identity::conversation_root`. What has not
-    /// happened yet is the listing query selecting that column, so
-    /// [`crate::data::message_cache::MessageListRow`] has nothing to hand
-    /// over and there is nothing honest to put here. `apply_threading` fills
-    /// the field afterwards from the in-memory pass, for the rows of the one
-    /// folder that is open.
+    /// `thread_id` stays `None` here. Every stored message carries a
+    /// conversation id, written by
+    /// `application::thread_identity::conversation_root`, and the listing
+    /// hands it over on [`crate::data::message_cache::MessageListRow`]
+    /// since #88. `apply_threading` fills the field afterwards from that row,
+    /// for the rows of the one folder that is open, and empties it for a
+    /// message alone in its conversation among them. So an empty field means
+    /// "alone here", not "in no conversation": Enter on a conversation row
+    /// finds its message by id rather than by this field (13.2-01).
+    /// Corrected 2026-10-14; until then this said the listing did not
+    /// select the column, which stopped being true with #88.
     pub fn from_row(row: &crate::data::message_cache::MessageListRow) -> Self {
         Self {
             uid: row.uid,

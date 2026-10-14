@@ -3562,6 +3562,8 @@ impl WxMailApp {
                 let a11y = a11y.clone();
                 let thread_cache = message_cache.clone();
                 let reader = reader.clone();
+                let ui_tx = ui_tx.clone();
+                let runtime = runtime.clone();
                 move |event| {
                     let index = event.get_item_index();
                     if index < 0 {
@@ -3614,7 +3616,14 @@ impl WxMailApp {
                                     state.clone(),
                                 );
                             }
-                            WhatEnterOpens::Nothing => {}
+                            // Neither the loaded rows nor the store hold
+                            // the row's message. Said, because a key that
+                            // does nothing sounds like a broken key.
+                            WhatEnterOpens::Nothing => send_refusal(
+                                &ui_tx,
+                                &runtime,
+                                "That message is no longer on this computer, so it could not be opened.",
+                            ),
                         }
                         return;
                     }
@@ -33898,14 +33907,24 @@ mod tests {
 
     #[test]
     fn test_a_conversation_ignores_messages_from_other_threads() {
+        // Two messages in each conversation. Until 2026-10-14 each held one
+        // with its conversation id set, a shape `apply_threading` never
+        // makes, since it empties the id of a message alone among the loaded
+        // rows; the one-node arm of the Enter handler passed over that shape
+        // and never met it in the program (13.2-01). This is about the
+        // filter, so it is built the way the program leaves the rows.
         let state = Arc::new(StdMutex::new(WxUIState::default()));
         lock_state(&state).messages = vec![
             threaded(1, 1, "2026-07-26 10:00", 0, "t1"),
             threaded(2, 2, "2026-07-26 11:00", 0, "t2"),
+            threaded(3, 3, "2026-07-26 12:00", 1, "t1"),
+            threaded(4, 4, "2026-07-26 13:00", 1, "t2"),
         ];
         let nodes = conversation_nodes(&state, "acc", "t1");
-        assert_eq!(nodes.len(), 1);
-        assert_eq!(nodes[0].message_id, 1);
+        assert_eq!(
+            nodes.iter().map(|n| n.message_id).collect::<Vec<_>>(),
+            vec![1, 3]
+        );
     }
 
     #[test]

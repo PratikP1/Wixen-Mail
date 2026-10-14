@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 693 records have arrived since and have not been through it.
+# 694 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -28024,6 +28024,29 @@ before = '''            .or_else(|| the_stored_message(cache?, stands_for))'''
 after = ''''''
 red = [
     "test_enter_on_a_conversation_split_across_folders_opens_the_message_here",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
+]
+
+# The refusal taken out of the handler, so Enter on a row whose message
+# neither the loaded rows nor the store hold returns in silence again, the
+# way every lone message did until 13.2-01. The activation reading goes red.
+#
+# Measured by hand 2026-10-14 on the same branch.
+[[guard]]
+name = "Enter that can open nothing on a conversation row says why"
+file = "src/presentation/wx_app.rs"
+suite = "a_conversation_row_stands_for_one_message"
+before = '''                            WhatEnterOpens::Nothing => send_refusal(
+                                &ui_tx,
+                                &runtime,
+                                "That message is no longer on this computer, so it could not be opened.",
+                            ),'''
+after = '''                            WhatEnterOpens::Nothing => {}'''
+red = [
+    "test_enter_opens_the_conversation_on_the_row_message",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
