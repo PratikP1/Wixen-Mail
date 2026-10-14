@@ -1,5 +1,11 @@
 # Sitting 4, done last: two accounts, a Trash emptied at a server, and POP
 
+**Waiting since 14 October.** This sitting waits until two things are done: the fixes from
+the audit of 14 October and for the four problems you reported that day, which are phase
+13.2, and a new build made after them, which you install first. The agent then corrects this
+sheet against that build before you start, so the build and the sentences named below may
+change.
+
 The sittings run in the order 2, 3, 1, 4, so this one comes after Sitting 1.
 
 This sitting adds the accounts you have, brings a second Google account's

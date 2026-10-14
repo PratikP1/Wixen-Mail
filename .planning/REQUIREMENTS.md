@@ -146,6 +146,9 @@ write path added by this milestone passes through that gate.
 
   - [D] Which of the two a folder is, is decided by `local_folders::is_local` and nowhere
     else. A second answer to that question is how the two would drift.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-07 has Empty Folder
+    say a folder was emptied only when the server emptied it (finding #34). It adds no `[D]`
+    clause and the box stays ticked.
 
 - [ ] **FOLDER-02**: Nested folder hierarchy in the folder tree.
   - Evidence: rewritten 2026-09-04. The previous evidence said the inventory records the tree
@@ -650,6 +653,10 @@ write path added by this milestone passes through that gate.
 
   - [D] Conflict handling is testable without a live account: the test drives two divergent
     local states through the same code path the sync uses.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-20 keeps a tick, a
+    move or a note edit made while a sync pushes, and 13.2-20.1 an event edit, instead of
+    marking the row sent and wiping or never sending the change (finding #1). They add no
+    `[D]` clause and the box stays open.
 
 ### Writing and reading a message
 
@@ -1020,6 +1027,10 @@ write path added by this milestone passes through that gate.
   - [D] A screen reader can work through a view's events in date order without the user
     having to reconstruct the grid from cell labels. This is the criterion most likely to need
     a real screen reader run to settle, and it is why this is its own requirement.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-18 has Week and Month
+    show events made here on their first day (finding #4). The Outlook calendar's window
+    (#27) sits under no requirement, and the plan's line says so. It adds no `[D]` clause and
+    the box stays open.
 
 - [ ] **PIM-03**: Show recurring events across the calendar's date ranges. Depends on PIM-06.
   - Evidence: rewritten 2026-09-04. The previous evidence was true and understated what ships
@@ -1055,6 +1066,9 @@ write path added by this milestone passes through that gate.
 
   - [D] The two stated limitations above are either fixed or restated in the product where the
     user meets them, not left only in the changelog.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-19 keeps a subscribed
+    feed's repeating event and its moved or cancelled days apart (finding #28). It adds no
+    `[D]` clause and the box stays open.
 
 - [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
   - Evidence: **that paragraph stopped being true on 2026-09-10, when `05.1-03` created
@@ -1191,6 +1205,10 @@ write path added by this milestone passes through that gate.
     with its old shape visible.** The screen says this account has no notes backend, not "not
     yet", because a consumer Gmail account still has none after all three backends ship. A
     backend is now live for CalDAV accounts, and the same screen names where those notes go.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-20 makes the notes
+    editor's Save mark the note waiting, so an edit to a note a backend holds is sent, and
+    keeps a note edit made while a sync pushes (finding #1). It adds no `[D]` clause and the
+    box stays open.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
   - Evidence: rewritten 2026-09-10 by `05.1-03`, which made most of the old wording false.
@@ -1291,6 +1309,9 @@ write path added by this milestone passes through that gate.
   - [D] The XML and vCard parsing is pure and unit-testable without a server, per the project's
     thin-transport rule; the transport itself stays untested until a live account exists, and
     the requirement says so rather than claiming otherwise.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-19 makes the address
+    book's XML decoder the one the calendar server's reader uses too (finding #46). It adds no
+    `[D]` clause and the box stays ticked.
 
 ### How the application speaks
 
@@ -1491,6 +1512,10 @@ write path added by this milestone passes through that gate.
 
   - [D] The existing tests over `date_display` keep passing under a forced English locale, so
     the change is testable without a machine set to another language.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-30 deletes the second
+    translation registry, which translated nothing, and keeps its two picture words as
+    literals until the Fluent catalogue of version 2 (finding #48). It adds no `[D]` clause and
+    the box stays ticked.
 
 - [x] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
   - Evidence: re-checked 2026-09-04 and still accurate, every anchor.
@@ -1715,6 +1740,10 @@ write path added by this milestone passes through that gate.
     means for this product and not a separate capability. It closes a gap the first version of
     these plans raised: a feature that was planned, tested and named in no requirement, which a
     later audit finds as scope nothing asked for.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-16 has the update
+    check trust the project's signing profile rather than any installer signed in the name
+    "Pratik Patel" (finding #24); the profile's identifier waits on Pratik (ledger 329). It
+    adds no `[D]` clause and the box stays open.
 
 - [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
@@ -2507,6 +2536,10 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     put right and what it costs.
   - [S] Whether the tester's rows now read as words is a test on his profile after the
     first open of the new build.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-12 checks once,
+    where the markup is parsed, how deeply a stranger's HTML nests, and reads anything deeper
+    than the limit as its words alone, so a snippet or the index can no longer overflow a
+    thread's stack (finding #17). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **FOUND-04**: Undo Send is on the Edit menu.
   - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-03, merged 2026-09-16 at
@@ -2522,6 +2555,12 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
   - [D] Undo Send is the first item on the Edit menu, keeps `Ctrl+Shift+Z`, and is not on
     Tools; a reading holds the Edit menu's first item to `ID_UNDO_SEND`; the shortcuts page
     says which menu.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-04 makes Undo Send's
+    answer true while the send loop runs, the Outbox claiming a message before sending it
+    (findings #31 and #6); 13.2-05 stops Undo Send's too-late path filing a copy of a message
+    that went (#35). The double send and the sent draft's copy in Drafts sit under no
+    requirement, and each plan's line says so. They add no `[D]` clause and the box stays
+    ticked.
 
 - [x] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
   the organiser has been told only once it has gone.
@@ -2823,6 +2862,9 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     are later work and the issue stays open for them; point 7, the guide, closes with the
     fourth `[D]` line.
   - [S] No real Outlook data file has ever been read here, and the changelog keeps saying so.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-16 marks a file Save
+    As writes and an attachment the reader saves as coming from the internet, the Mark of the
+    Web (finding #22). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
   - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-09, merged 2026-09-17 at
@@ -3633,6 +3675,14 @@ seven groups.
     `scripts/check.sh`, each found by grep; 785 and 803 open, 458 and 802 closed. The phase's
     full gate, 13.1-05's task 3, was green at `0bc790d0` with `main` unmoved: exit 0 after
     935 s, 10,566 tests passed, the audit clean. The box stays ticked.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-24 has the release
+    gate and the Linux and macOS jobs fetch the whole history, the guard read every workflow
+    and the release gate hold a read-only token (findings #39 and #42, ledgers 464 and 616);
+    13.2-25 has the hook test the snapshot it decides about and refuse a red commit whose test
+    program crashed (#40, #44); 13.2-26 has the scoped run reach the 73 guard records outside
+    their file's module and a `build.rs` change earn its tests (#38, #41); 13.2-26.1 asks
+    Pratik whether a documents-only commit still runs clippy and carries out his answer (#45);
+    13.2-32 runs the phase's full gate. They add no `[D]` clause and the box stays ticked.
 
 ### All the mail, and what is said while it comes
 
@@ -3721,6 +3771,9 @@ provider does.
   - [S] Whether Gmail, the one provider anything here will meet, tolerates 12,872 messages
     coming down chunk after chunk is the tester's account's to show, and ledger 72 stays open
     until it has.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-09 stops the download
+    of everything asking for text that always fails and re-reading the open folder after
+    every chunk (findings #11 and #36). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **MAIL-02**: The message list holds every message the folder holds on this computer,
   and a message arriving adds a row and removes none.
@@ -3766,6 +3819,9 @@ provider does.
     reading with companions in a target coupled to `wx_app.rs` holds the window to it.
   - [S] Whether a folder of 12,872 messages opens and reads as one list on the tester's
     machine with his screen reader is his.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-08 makes a message a
+    rule files one row in its folder, not two (finding #10). It adds no `[D]` clause and the
+    box stays ticked.
 
 - [x] **MAIL-03**: Message text comes down with the mail unless a person has forbidden it,
   and stays unless a person has chosen a size.
@@ -3836,6 +3892,9 @@ provider does.
     message opened before its turn is fetched on opening as before.
   - [S] Whether Gmail tolerates the text of 12,872 messages coming down in chunks is the
     tester's account's to show, and ledger 11 stays open until it has.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-09 ends the text
+    download's endless asking for messages whose text always fails (finding #11). It adds no
+    `[D]` clause and the box stays ticked.
 
 - [x] **MAIL-04**: Mail keeps arriving on its own for as long as the program runs.
   - **Closed 2026-09-18 by the phase's closing read in 10-07; 10-01 at `d8e887d6` and
@@ -3908,6 +3967,12 @@ provider does.
   - [S] Whether Gmail drops an IDLE connection, after how long, whether the restart carries
     mail over hours, and whether two connections per account are welcome are the tester's
     account's to show (ledger 64, 65, 67).
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-06 stops the watch of
+    an account that was removed or switched off (finding #33); 13.2-08 fetches every message
+    of a large arrival (#12); 13.2-10 runs one check per account at a time (#15, #14); 13.2-14
+    keeps one unreadable POP message from ending that account's mail (#13). Saving accounts
+    (#3) and the calendar feed (#20) sit under no requirement, and their plans' lines say so.
+    They add no `[D]` clause and the box stays ticked.
 
 - [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
@@ -3972,6 +4037,11 @@ provider does.
   - [S] What a check of the tester's 50 folders sounds like under each level, and which
     sentence is a step and which a result by ear, is a listening pass and his (ledger 10, 73,
     78).
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-08 counts and
+    announces every message of a large arrival (finding #12); 13.2-09 stops speaking the count
+    after every chunk of the download (#36); 13.2-10 announces new mail once per check (#15);
+    13.2-22 joins announcements released together into one line, most urgent first (#32).
+    They add no `[D]` clause and the box stays ticked.
 
 ### Reading, and the list
 
@@ -4160,6 +4230,10 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
   - [S] Whether the unread count survives a walk through his inbox by ear, and whether Space
     then the delay moves it, are his; from 11-05.1, whether the first Space leaves the count
     alone and the second moves it.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's report of that day: 13.2-03.1 marks a message
+    read from inside the conversation window after the wait the setting names, while the
+    cursor row in the list is still that conversation, the rule the list already keeps (his
+    fourth report). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **LIST-04**: Mark as Read says which way it will go on the Action menu, the context
   menu and the toolbar, M toggles it in the message list and says read or unread, and a
@@ -4206,6 +4280,10 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     as Read, with one announcement saying how many (with LIST-05).
   - [S] The label heard on each surface after arrowing between a read and an unread message,
     the word after M, and that M does not jump the list, are his ear's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's report of that day: 13.2-02 shows a mark made
+    here on its conversation row at once, so a conversation marked from its row reads as
+    marked without waiting for the next check (his second report). It adds no `[D]` clause
+    and the box stays ticked.
 
 - [x] **LIST-05**: Shift with the arrow keys selects more than one message, every command
   that acts on messages acts on the selection with one announcement saying how many, and a
@@ -4247,6 +4325,10 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     is a row on the measurements page.
   - [S] NVDA's own selected and not selected as he extends, the count after Ctrl+A, one
     sentence after a command over many, and the refusal above the bound, are his ear's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's report of that day: 13.2-03 has the menu key,
+    Delete, Shift+Delete and M inside the conversation window act on the message under its
+    cursor through the command code the list uses, and 13.2-03.1 gives the window the rest of
+    the message keys (his fourth report). They add no `[D]` clause and the box stays ticked.
 
 - [x] **LIST-06**: A conversation row stands for the originator when every message in it is
   unread and for the first unread message otherwise, reports that message's sender first,
@@ -4280,6 +4362,10 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     node; a reading target holds the branch, the fetch and the window.
   - [S] The sender heard first on his thread rows, the window's opening node, and the text of
     a conversation arriving from Gmail on selection are his ear's and his account's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's report of that day: 13.2-01 has Enter open the
+    message a conversation row stands for when it is alone in its conversation, and say why
+    when there is nothing to open (his first report). It adds no `[D]` clause and the box
+    stays ticked.
 
 - [x] **LIST-07**: Ctrl+Shift+; reads the selected row column by column with its headings on
   request, and the pages say why the headers are spoken on every row and how to quiet them.
@@ -4385,6 +4471,9 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     (11-11, tasks 1 and 2).
   - [S] A shown picture in the preview, a passed-over undescribed one, the link's words as a
     description and the sentence about tracking pixels are his reader's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-13 has Reply and
+    Forward load none of the sender's pictures, which the reader already holds back (finding
+    #19). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **LIST-10**: The privacy page lists every way a reader of mail can be tracked, what
   this program does about each by default, what a person can change, and what it cannot
@@ -4413,6 +4502,9 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     so points at no picture the new default would fetch, which is the `rsa` advisory's expiry
     condition not tripping, and `.cargo/audit.toml` records the same (11-11, task 3).
   - [S] Whether the page is clear to the person it is for is his.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-13 says on the privacy
+    page that the reply editor loads no remote picture (finding #19). It adds no `[D]` clause
+    and the box stays ticked.
 
 **Added 2026-09-18, later the same day: three more, from three issues filed that day after the
 phase was planned, each taken by an inserted plan (11-13, 11-06.1, 11-09.1).**
@@ -4906,6 +4998,12 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
   - [S] A replayed move after a restart against a real server, a move of a message the server
     changed meanwhile, and #63's move, copy and delete proofs re-taken after this, are his
     account's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request and reports of that day: 13.2-02 takes a
+    deleted message's conversation row out at once and lands the cursor by the removal rule,
+    so a delete made here shows here first under conversation view too (his third report);
+    13.2-11 replays a move or a delete kept from offline only into the folder numbering it was
+    kept under, and stops an older waiting flag change overwriting a newer one (findings #5
+    and #2). They add no `[D]` clause and the box stays ticked.
 
 **Added 2026-09-19: one more for #86's second half, after Pratik overruled 11-07.1's
 decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
@@ -4981,6 +5079,9 @@ decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
   - [S] Ledger 187's three questions (a ten megabyte upload, Gmail's label for a copy from
     another account, an identifier the destination already holds) and #63's copy and move
     across accounts, re-taken after this, are his accounts'.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-11 replays a move or a
+    copy kept from offline only into the folder numbering it was kept under (finding #5). It
+    adds no `[D]` clause and the box stays ticked.
 
 **Added 2026-09-19, in the morning: two more, from two issues filed that morning, as
 inserts (11-08.1 after 11-08, whose row message a re-threading moves; 11-10.1 after 11-10
@@ -5137,6 +5238,10 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     `html_renderer.rs` or `long_text.rs`.
   - [S] That the newsletter now reads once, with no table and no grouping announced, is his
     ear's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-12 reads a message
+    whose markup nests past the depth limit as its words alone, with one sentence saying so,
+    rather than overflowing a thread's stack (finding #17). It adds no `[D]` clause and the box
+    stays ticked.
 - [x] **LIST-26**: A setting saved in Settings applies without a restart. Mark as read after
   governs the next tick the moment it is saved, because the setting lives in the window's
   state, written at startup and by the Settings-saved arm through an update, and the timer
@@ -6301,6 +6406,9 @@ changed.
     `ce63fda5`, `fe9bd124`, `72eb04fb`, `10700af8`, `5f549f91` and `209f57a3`. The ear is
     ledgers 630, 634, 636, 662, 668, 673, 728 and 733; real organisers and accounts are 631,
     635, 637, 663, 669, 674, 729 and 734, all phase 14's.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-13 does not apply a
+    meeting change in a message the program labelled Spam or worse, and narrows ledger 637
+    (finding #21). It adds no `[D]` clause and the box stays ticked.
 
 - [x] **GAP-05**: S/MIME-encrypted and PGP/MIME mail is read, a PGP signature is verified and
   said, and a message can be sent signed and encrypted. Ticked 2026-09-27 by 13-21.
@@ -6560,6 +6668,10 @@ changed.
     where it may have been set, and a block's move as a move (GAP-02's closing line). The
     ear is ledgers 676, 684, 690, 755 and 769; real servers and accounts are 675, 686, 689,
     756 and 768.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-15 sends a browser
+    sign-in's token only to the provider's own servers and keeps it only for the account that
+    consented, Google's check built and Microsoft's ledgered (findings #18 and #23). It adds no
+    `[D]` clause and the box stays ticked.
 
 - [x] **GAP-07**: Directory lookup answers from Graph for a Microsoft account and from an LDAP
   directory that needs a sign-in.
@@ -7194,6 +7306,10 @@ changed.
   - Closing read, 2026-10-04, 13.1-05: stands. D-02 and D-07 read against the tree:
     `PRAGMA secure_delete=ON;` in `MessageCache::new` and "and Wixen Mail keeps no other copy"
     in `src/application/emptying.rs`, found by grep. The ear is listening item 182 (804).
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-07 makes the Trash a
+    schedule empties the server's declared Trash, never a person's folder named Bin or
+    Deleted, and has Empty Folder say what the server really did (findings #9 and #34). It
+    adds no `[D]` clause and the box stays ticked.
 
 ### The real-account proofs
 
@@ -7288,6 +7404,12 @@ then the second sentence of this paragraph was true.
     key later", so #22's sitting, 14-09, now comes third, after the copy, move and delete
     sittings, once he says his Google key is placed. Nothing has met his account. No `[D]`
     clause is earned and the box stays open.
+  - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-15 keeps a browser
+    sign-in only for the account that consented (finding #23); 13.2-17 keeps Google contacts
+    syncing after the marker expires and sends a contact made here on the next sync (#25,
+    #26); 13.2-21 has a full read take off what Google deleted and the Google calendar read in
+    full only on an expired marker (#29, #30). They add no `[D]` clause; the box stays open,
+    since REAL-01 is proven in phase 14's sittings.
 
 - [ ] **REAL-02**: The five write paths, copy within an account, copy across two, move within
   an account, move across two, and delete, are each proved against a real account and
@@ -7392,7 +7514,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOLDER-01 | Phase 1 | Complete |
+| FOLDER-01 | Phase 1 | Complete; phase 13.2, planned 2026-10-14: 13.2-07, adding no `[D]` clause |
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Complete |
@@ -7405,7 +7527,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-03 | Phase 3 | Pending |
 | SCALE-04 | Phase 3 | Complete |
 | SCALE-05 | Phase 3 | Complete |
-| SCALE-06 | Phase 3 | Pending |
+| SCALE-06 | Phase 3 | Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Complete |
 | WRITE-03 | Phase 4 | Complete |
@@ -7414,17 +7536,17 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | READ-03 | Phase 4 | Complete |
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
-| PIM-06 | Phase 5 | Pending |
-| PIM-03 | Phase 5 | Pending |
-| PIM-04 | Phase 5 | Pending |
+| PIM-06 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause |
+| PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause |
+| PIM-04 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
-| PIM-05 | Phase 5 | Complete |
+| PIM-05 | Phase 5 | Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause |
 | FEEDBACK-01 | Phase 6 | Pending |
-| FEEDBACK-02 | Phase 6 | Complete |
+| FEEDBACK-02 | Phase 6 | Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause |
 | FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
-| SHIP-02 | Phase 7 | Pending |
+| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause |
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
@@ -7438,42 +7560,42 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
-| FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's |
-| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271` |
+| FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, adding no `[D]` clause |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
 | FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
 | FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
-| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read |
+| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
 | FOUND-15 | Phase 10 | Complete, 10-02.1 at `c0505f68`; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
 | FOUND-16 | Phase 10 | Complete, 10-02.2 at `44bff634`; one installer built from `main` reads `1.0.0-alpha.1+114.g44bff634` with file version `1.0.0.14114`; whether it installs over the alpha.1 build as an upgrade is settled by a machine, ledger 517 |
-| MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523 |
-| MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515 |
-| MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523 |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526 |
-| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521 |
+| MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause |
+| MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause |
+| MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause |
+| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578. Corrected 2026-09-24 by 12-12: the run answered green later on 2026-09-23, NVDA run 35876075636 on pull request #94, so ledger 567 is fixed, as the requirement's `[S]` line already says; the ear, ledger 578, stays open |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
 | FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576. Corrected 2026-09-24 by 12-12: NVDA runs 35872797349 and 35876075636 on pull request #94 passed both cases on 2026-09-23, so ledger 576 is fixed, as the requirement's `[S]` line already says |
-| FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed. Planned 2026-10-02: 13-44.6.2 and 13-44.6.3 move every test that sends a key or a click onto a desktop made for its run (ledgers 580 and 761); no `[D]` clause is added. 13-44.6.2 done 2026-10-02: the ten plain-control key targets and the directory sign-in on desktops made for their runs, every key sent with only the modifiers it means, ledger 580 closed with its cause removed. 13-44.6.3 done 2026-10-02: the five key targets that hold a browser or start a second copy of themselves run their window tests in a child on a desktop made for the run, the four with a browser in one turn shared with the clipboard target, ledger 761 closed with its cause removed. Phase 13.1, planned 2026-10-03: 13.1-01 (the runner, a copy with no history, the push of `main`), 13.1-02 (the whole-tree reading, the suites' time) and 13.1-05 (the phase's full gate), adding no `[D]` clause. 13.1-01 done 2026-10-03: the marker and signature readings run their window tests on the runner's own desktop where `CI` is set, because an elevated child's browser opens on the shell's desktop there (ledger 785 open with its cause named), and the forgetting rows and the share of history say when git finds no repository (458 closed). 13.1-02 done 2026-10-03: every code commit runs the whole-tree reading of mail taken off, and the script suites' growth since 2026-09-23 is a process start of about a third of a second on this machine, not the suites (803 open, 802 closed). Closing read 2026-10-04, 13.1-05: stands; the phase's full gate green at `0bc790d0`, 10,566 tests |
+| FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed. Planned 2026-10-02: 13-44.6.2 and 13-44.6.3 move every test that sends a key or a click onto a desktop made for its run (ledgers 580 and 761); no `[D]` clause is added. 13-44.6.2 done 2026-10-02: the ten plain-control key targets and the directory sign-in on desktops made for their runs, every key sent with only the modifiers it means, ledger 580 closed with its cause removed. 13-44.6.3 done 2026-10-02: the five key targets that hold a browser or start a second copy of themselves run their window tests in a child on a desktop made for the run, the four with a browser in one turn shared with the clipboard target, ledger 761 closed with its cause removed. Phase 13.1, planned 2026-10-03: 13.1-01 (the runner, a copy with no history, the push of `main`), 13.1-02 (the whole-tree reading, the suites' time) and 13.1-05 (the phase's full gate), adding no `[D]` clause. 13.1-01 done 2026-10-03: the marker and signature readings run their window tests on the runner's own desktop where `CI` is set, because an elevated child's browser opens on the shell's desktop there (ledger 785 open with its cause named), and the forgetting rows and the share of history say when git finds no repository (458 closed). 13.1-02 done 2026-10-03: every code commit runs the whole-tree reading of mail taken off, and the script suites' growth since 2026-09-23 is a process start of about a third of a second on this machine, not the suites (803 open, 802 closed). Closing read 2026-10-04, 13.1-05: stands; the phase's full gate green at `0bc790d0`, 10,566 tests; phase 13.2, planned 2026-10-14: 13.2-24, 13.2-25, 13.2-26 and 13.2-26.1 (the gate and CI) and 13.2-32 (the phase's full gate), adding no `[D]` clause |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
-| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539 |
-| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544 |
-| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544 |
-| LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548) |
+| LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause |
+| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause |
+| LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause |
+| LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
 | LIST-08 | Phase 11 | Complete, 11-10 at `39d53503`; the phrase heard first on a row, the sound once after a check with several matches, and the Labels column read as part of the row are the tester's ear (ledger 556) |
-| LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558) |
-| LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his |
+| LIST-09 | Phase 11 | Complete, 11-11 at `f497785f`; a shown picture, a passed-over one, the link's words and the sentence about tracking pixels are the tester's reader (ledger 558); phase 13.2, planned 2026-10-14: 13.2-13, adding no `[D]` clause |
+| LIST-10 | Phase 11 | Complete, 11-11 at `f497785f`; whether the page is clear to the person it is for is his; phase 13.2, planned 2026-10-14: 13.2-13, adding no `[D]` clause |
 | LIST-11 | Phase 11, then phase 12 | Complete, 12-03, 2026-09-23 at `a9ce329d`; deferred from phase 11 on Pratik's decision of 2026-09-20 under his token budget and moved that day to phase 12; the `[S]` line, the bar read by ear, is ledger 574 |
 | LIST-12 | Phase 11 | Complete, 11-06.1 at `0ed2c1a1`; whether NVDA reads the landed row once after Delete and not again after the re-read is the tester's ear, ledger 541 |
 | LIST-13 | Phase 11 | Complete, 11-09.1 at `517a2a4c`; whether the row is heard once with the tone, and the tone alone with the status bar off, is the tester's ear (ledger 552) |
@@ -7484,11 +7606,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
 | LIST-19 | Phase 11, then phase 12 | Complete, 2026-09-22: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page) and 12-02 at `70f5435a`, corrected at `cf58f9a4` (the separate window as a process of its own with a browser profile of its own, the erase reaching it, the route spawning it, ledger 566 fixed). What only an ear settles is ledger 560 and 568, and the scan's `page-window` target runs at the next push of `main` |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
-| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546) |
-| LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547) |
+| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause |
+| LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
-| LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559) |
+| LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559); phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
@@ -7502,9 +7624,9 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-01 | Phase 13 | Done 2026-09-25, 13-04: File, Print on every surface that shows a message or an item, the reader window, a conversation's row, the formatted message window and the five other modules, through one path to Windows' print dialog, held by `tests/print_is_on_the_file_menu.rs`, `application::printing`'s and `presentation::page_jumps`'s cases; the ear and the paper are ledger 613 and 617. Until then "13-03 built 2026-09-25, File, Print on the message list through Windows' print dialog; 13-04 to come, which ticks it". Before that "13-02 built 2026-09-25, the page layout, reached by nothing yet; 13-03 (waits on answer (b)) and 13-04 to come, 13-04 ticks it". Before that "Planned 2026-09-24: 13-02, 13-03 (waits on answer (b)), 13-04, which ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands. Corrected 2026-10-03 by phase 13.1's planning: ledger 614 open again on Pratik's real answer (d); 13.1-05 corrects the alpha page; the box stands. Closing read 2026-10-04, 13.1-05: stands; the alpha page corrected by dating, 614 open, nothing filed |
 | GAP-02 | Phase 13 | Done 2026-09-25, 13-08 and 13-09: Edit, Undo and Redo on every box that takes typing, several steps each, in the message list on the last mark, star, label, move, delete or copy, and in the other five modules on the last Mark Done, Pin, move, copy or delete, with the item named in all six, held by `tests/undo_reaches_the_text.rs`, `tests/every_text_box_keeps_a_history.rs`, `tests/undoing_a_mark_names_the_message.rs`, `application::undoing`'s and `data::message_cache::taking_back`'s cases; the ear and the real account are ledger 622 to 625, 627 and 628; #47 closed by 13-09. Until 13-09 "Done 2026-09-25, 13-08: Edit, Undo and Redo on every box that takes typing, several steps each, and in the message list on the last mark, star, label, move, delete or copy with the item named, held by `tests/undo_reaches_the_text.rs`, `tests/every_text_box_keeps_a_history.rs`, `tests/undoing_a_mark_names_the_message.rs` and `application::undoing`'s cases; the ear and the real server are ledger 622 to 625; 13-09 brings the other five modules and closes #47". Until then "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 built 2026-09-25, undo of the last mark, star or label in the message list; 13-08 and 13-09 to come, 13-08 ticks it". Until 13-07 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 built 2026-09-25, the same in every dialog's boxes; 13-07 to 13-09 to come, 13-08 ticks it". Until 13-06 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 built 2026-09-25, several steps in those boxes; 13-06 to 13-09 to come, 13-08 ticks it", and until 13-05 "13-01 built 2026-09-24, Undo and Redo on the main window's boxes; 13-05 to 13-09 to come, 13-08 ticks it", and until then "Planned 2026-09-24: 13-01, 13-05 to 13-09, 13-08 ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands; a report and a block's move are undone as moves, a Quick Step and a rule run their last action only |
 | GAP-03 | Phase 13 | Done 2026-09-27, 13-16, 13-17 and 13-17.1: several private keys in credential entries Windows will keep and public keys in the mail database; the manager on File, PGP Keys, listing, importing, exporting and removing keys and saying what they can do here; keys locked with a passphrase kept locked, their passphrase asked for by a reader window when a message first needs it and held in memory until the program closes, never stored. Held by `service::pgp`'s, `application::pgp_keys`'s, `presentation::wx_pgp_keys`'s and `presentation::reader_text`'s cases, `tests/the_key_manager_lists_and_names_its_controls.rs`, `tests/a_locked_key_asks_for_its_passphrase.rs` and `tests/a_passphrase_box_takes_a_real_paste.rs`. A real key from a real correspondent is Pratik's (#49 left open for him). 13-36.1 done 2026-09-29: the key list's Created and Expires written the way the Reading tab says dates are written, on this computer's clock, held by `presentation::wx_pgp_keys`'s three date cases and `test_the_rows_dates_follow_the_date_setting_the_window_was_given` (ledger 649 fixed); no `[D]` clause is added. 13-44.6.1 done 2026-10-02: the passphrase box's real paste moved into `tests/a_passphrase_box_takes_a_real_paste.rs`, 11 tests, which names why a refused clipboard was refused, and `tests/a_locked_key_asks_for_its_passphrase.rs`, 9 tests, opens no clipboard (ledger 716 fixed); no `[D]` clause is added. Until 13-44.6.1 "Held by `service::pgp`'s, `application::pgp_keys`'s, `presentation::wx_pgp_keys`'s and `presentation::reader_text`'s cases, `tests/the_key_manager_lists_and_names_its_controls.rs` and `tests/a_locked_key_asks_for_its_passphrase.rs`." and "Planned 2026-10-02: 13-44.6.1 moves the passphrase box's real paste into `tests/a_passphrase_box_takes_a_real_paste.rs`, which names why a refused clipboard was refused, and leaves `tests/a_locked_key_asks_for_its_passphrase.rs` opening no clipboard (ledger 716); no `[D]` clause is added." Until 13-36.1 "Planned 2026-09-27: 13-36.1 writes the key list's Created and Expires the way the Reading tab says dates are written (ledger 649); no `[D]` clause is added." Until 13-17.1 "In progress 2026-09-27: the manager built by 13-17, File, PGP Keys, listing, importing, exporting and removing keys and saying what they can do here, held by `application::pgp_keys`'s, `presentation::wx_pgp_keys`'s and `tests/the_key_manager_lists_and_names_its_controls.rs`'s cases, on the storage 13-16 built; passphrase keys wait for 13-17.1, which ticks it. Until 13-17 "In progress 2026-09-27: the storage the manager needs built by 13-16, several private keys in credential entries Windows will keep and other people's public keys in the mail database, with one list, import, remove and export, held by `service::pgp`'s, `data::message_cache::pgp_keys`'s and `application::pgp_keys`'s cases; the manager waits for 13-17 and passphrase keys for 13-17.1, which ticks it". Until 13-16 "Planned 2026-09-24: 13-16, 13-17, 13-17.1, which ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands, one name followed through its rename |
-| GAP-04 | Phase 13 | Done 2026-09-26, 13-10 to 13-13: the invitation said before the body, answered from buttons in both reader windows through the outbox and the gate, and an organiser's update moving the meeting and cancellation removing it on opening in a reader window, held by `tests/an_invitation_is_said_before_the_body.rs`, `tests/the_invitation_is_answered_from_the_reader.rs`, `tests/a_meeting_change_reaches_the_calendar.rs` and `application::meeting_changes`'s cases; untried against a real organiser (ledgers 631, 635 and 637). 13-21.1 on 2026-09-27: the invitation's times read in the zone it names and said at this computer's hour, the other clock said once, the standing and the move decided by instants (ledger 632's invitation half; 13-21.2 has the calendar's, 13-21.3 ledger 633). 13-21.2 on 2026-09-27: the calendar's list, readings, printed page, header, Calendar window, due window and event editor on this computer's clock, an Outlook event at its hour here, held by `presentation::event_times`'s 23 cases and `tests/an_event_is_shown_on_this_computers_clock.rs`; ledger 632 fixed by both plans. 13-21.3 on 2026-09-27: a message the download brought before 13-10 fetched once for its parts when it is selected, through its own account, every part kept with its file and the meeting said with no second announcement, held by `tests/an_earlier_download_is_fetched_once_for_its_parts.rs`, `data::message_cache::parts_left_behind`'s and `application::parts_left_behind`'s cases; ledger 633 fixed, 672 to 674 left. 13-36.2 done 2026-09-29: a meeting answered before its calendar check is one meeting after a Google, Outlook or calendar-server check, the provider's copy on the answer's row with the answer kept, held by `application::answered_meetings`'s loopback reads of each provider and `data::message_cache::calendar`'s four cases of the unclaimed answer's row; ledger 154 updated for phase 14, 725 to 727 opened; no `[D]` clause is added. 13-36.3 done 2026-09-29: an organiser's update or cancellation for one day of a repeating meeting changes that day alone on a calendar server or a calendar kept here, kept apart and linked by the day, and one for every day changes the whole meeting, held by `tests/one_day_of_a_repeating_meeting_is_changed_alone.rs`, `application::one_day_of_a_series`'s and `application::meeting_changes`'s cases; ledger 638 updated and left for 13-36.4, 728 to 732 opened; no `[D]` clause is added. 13-36.4 done 2026-09-29: one day of a repeating meeting answered for that day, the reply naming the day and the answer filed on that day alone, and a whole repeating meeting answered keeping its repeat, held by `tests/one_day_of_a_repeating_meeting_is_answered_alone.rs` and `application::answered_meetings`'s, `application::invitations`'s and `application::answering`'s cases; ledgers 638 and 723 fixed, 733 to 737 opened; no `[D]` clause is added. Until 13-36.4 that sentence read "Planned 2026-09-27: 13-36.4 answers one day of a repeating meeting (ledger 638); it adds no `[D]` clause." Until 13-36.3 that sentence read "Planned 2026-09-27: 13-36.3 and 13-36.4 change and answer one day of a repeating meeting (ledger 638); none adds a `[D]` clause." Until 13-36.2 that sentence began "13-36.2 merges a meeting answered before its calendar check with the provider's copy (ledger 154), and". Until 13-13 "In progress 2026-09-26: the first `[D]` clause's "invitation's part shown and said before the body" built by 13-10, held by `tests/an_invitation_is_said_before_the_body.rs` and `application::invitations`'s cases; "with Accept, Tentative and Decline" and "the answer sent through the outbox and the gate" built by 13-11, held by `tests/the_invitation_is_answered_from_the_reader.rs` and `application::answering`'s cases; the UID and organiser every sync keeps, the prerequisite of the calendar changes, built by 13-12, held by `application::answered_meetings`'s and `application::calendar`'s cases; the calendar changes wait for 13-13, which ticks it". Until 13-12 "the UID and the calendar changes wait for 13-12 and 13-13, and 13-13 ticks it". Until 13-11 "the answer buttons, the UID and the calendar changes wait for 13-11 to 13-13, and 13-13 ticks it". Until 13-10 "Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
+| GAP-04 | Phase 13 | Done 2026-09-26, 13-10 to 13-13: the invitation said before the body, answered from buttons in both reader windows through the outbox and the gate, and an organiser's update moving the meeting and cancellation removing it on opening in a reader window, held by `tests/an_invitation_is_said_before_the_body.rs`, `tests/the_invitation_is_answered_from_the_reader.rs`, `tests/a_meeting_change_reaches_the_calendar.rs` and `application::meeting_changes`'s cases; untried against a real organiser (ledgers 631, 635 and 637). 13-21.1 on 2026-09-27: the invitation's times read in the zone it names and said at this computer's hour, the other clock said once, the standing and the move decided by instants (ledger 632's invitation half; 13-21.2 has the calendar's, 13-21.3 ledger 633). 13-21.2 on 2026-09-27: the calendar's list, readings, printed page, header, Calendar window, due window and event editor on this computer's clock, an Outlook event at its hour here, held by `presentation::event_times`'s 23 cases and `tests/an_event_is_shown_on_this_computers_clock.rs`; ledger 632 fixed by both plans. 13-21.3 on 2026-09-27: a message the download brought before 13-10 fetched once for its parts when it is selected, through its own account, every part kept with its file and the meeting said with no second announcement, held by `tests/an_earlier_download_is_fetched_once_for_its_parts.rs`, `data::message_cache::parts_left_behind`'s and `application::parts_left_behind`'s cases; ledger 633 fixed, 672 to 674 left. 13-36.2 done 2026-09-29: a meeting answered before its calendar check is one meeting after a Google, Outlook or calendar-server check, the provider's copy on the answer's row with the answer kept, held by `application::answered_meetings`'s loopback reads of each provider and `data::message_cache::calendar`'s four cases of the unclaimed answer's row; ledger 154 updated for phase 14, 725 to 727 opened; no `[D]` clause is added. 13-36.3 done 2026-09-29: an organiser's update or cancellation for one day of a repeating meeting changes that day alone on a calendar server or a calendar kept here, kept apart and linked by the day, and one for every day changes the whole meeting, held by `tests/one_day_of_a_repeating_meeting_is_changed_alone.rs`, `application::one_day_of_a_series`'s and `application::meeting_changes`'s cases; ledger 638 updated and left for 13-36.4, 728 to 732 opened; no `[D]` clause is added. 13-36.4 done 2026-09-29: one day of a repeating meeting answered for that day, the reply naming the day and the answer filed on that day alone, and a whole repeating meeting answered keeping its repeat, held by `tests/one_day_of_a_repeating_meeting_is_answered_alone.rs` and `application::answered_meetings`'s, `application::invitations`'s and `application::answering`'s cases; ledgers 638 and 723 fixed, 733 to 737 opened; no `[D]` clause is added. Until 13-36.4 that sentence read "Planned 2026-09-27: 13-36.4 answers one day of a repeating meeting (ledger 638); it adds no `[D]` clause." Until 13-36.3 that sentence read "Planned 2026-09-27: 13-36.3 and 13-36.4 change and answer one day of a repeating meeting (ledger 638); none adds a `[D]` clause." Until 13-36.2 that sentence began "13-36.2 merges a meeting answered before its calendar check with the provider's copy (ledger 154), and". Until 13-13 "In progress 2026-09-26: the first `[D]` clause's "invitation's part shown and said before the body" built by 13-10, held by `tests/an_invitation_is_said_before_the_body.rs` and `application::invitations`'s cases; "with Accept, Tentative and Decline" and "the answer sent through the outbox and the gate" built by 13-11, held by `tests/the_invitation_is_answered_from_the_reader.rs` and `application::answering`'s cases; the UID and organiser every sync keeps, the prerequisite of the calendar changes, built by 13-12, held by `application::answered_meetings`'s and `application::calendar`'s cases; the calendar changes wait for 13-13, which ticks it". Until 13-12 "the UID and the calendar changes wait for 13-12 and 13-13, and 13-13 ticks it". Until 13-11 "the answer buttons, the UID and the calendar changes wait for 13-11 to 13-13, and 13-13 ticks it". Until 13-10 "Planned 2026-09-24: 13-10 to 13-13, 13-13 ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands; phase 13.2, planned 2026-10-14: 13.2-13, adding no `[D]` clause |
 | GAP-05 | Phase 13 | Complete 2026-09-27: 13-21 done that day, Sign and Encrypt in the composer on `Alt+G` and `Alt+Y`, checked at Send before anything is queued and again when the message goes, the choice kept on the outbox row and the draft, held by `application::protecting`'s cases and `tests/signing_and_encrypting_from_the_composer.rs`, and it ticks the line. 13-36.1 done 2026-09-29: a PGP/MIME message holding only files says it opened where its words would be, and an S/MIME one's page says its opened sentence, held by four cases in `tests/an_encrypted_message_is_not_left_unexplained.rs`; the stored-before reason is given only at or below the mark this build notes in `last_message_before`, and "This message carries a signature in a form Wixen Mail does not check." above it, held by `data::message_cache::signed_original`'s four mark cases and three `application::checking_signatures` cases (ledgers 643 and 653 fixed); no `[D]` clause is added. Until 13-36.1 "Planned 2026-09-27: 13-36.1 says a PGP/MIME message holding only files opened, and gives the stored-before reason only for mail stored before this build first opened the database (ledgers 643 and 653); no `[D]` clause is added." Encrypting with a Bcc stays refused until phase 14 (ledger 659, Pratik's answer of 2026-09-27). Until 13-21 "In progress: 13-14 done 2026-09-26, S/MIME-encrypted mail read with a key in the Windows store, decrypted each time and never stored, held by `application::encrypted_mail`'s and `service::signed_mail`'s cases and `tests/an_encrypted_message_is_not_left_unexplained.rs`; 13-15 done 2026-09-26, PGP/MIME mail marked at arrival and opened with the imported key under the same rules, held by `application::opening_pgp`'s and `data::message_cache::how_it_arrived`'s cases and the same target; 13-18 done 2026-09-27, a PGP signature, inline or PGP/MIME, checked against the key manager's keys and said in one of four verdicts, at each message of a conversation too, and signed mail stored before originals were kept said as such, held by `service::pgp::signatures`'s, `application::checking_signatures`'s and `presentation::reader_text`'s cases and the same target; 13-19 done 2026-09-27, S/MIME signing and encrypting beneath the composer and a correspondent's certificate kept when their signature holds, held by `service::signed_mail::sending`'s, `service::protocols::smtp`'s and `data::message_cache::correspondent_certificates`'s cases, reached only by tests until 13-21; 13-20 done 2026-09-27, OpenPGP signing and encrypting beneath the composer, wrapped per RFC 3156, held by `service::pgp::sending`'s and `service::protocols::smtp`'s cases, reached only by tests until 13-21; 13-21 to come, and it ticks it". Until 13-20 "13-20 and 13-21 to come, 13-21 ticks it". Until 13-19 "13-19 to 13-21 to come". Until 13-18 "13-18 to 13-21 to come". Until 13-15 "13-15, 13-18 to 13-21 to come". Until 13-14 "Planned 2026-09-24: 13-14, 13-15, 13-18 to 13-21 (13-20 waits on answer (b)), 13-21 ticks it; not built", and until then "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands, one name followed through its rename; ledger 659 carries Pratik's answer and waits for phase 14 |
-| GAP-06 | Phase 13 | Done 2026-09-28, 13-22 and 13-25: Report as Junk on the Action menu, and a block that asks once about the sender's mail already here and moves it through the runner, held by `tests/report_as_junk_is_on_the_action_menu.rs` and `tests/a_block_moves_the_mail_already_here.rs`; neither has met a real server (ledger 675, 689). Planned 2026-09-29: 13-44.1 takes the junk mark off at the server when a report is undone and writes a block to the account the message is in (ledgers 677 and 691); no `[D]` clause is added. 13-44.1 done 2026-10-01: Undo of a report takes the mark off before the messages move back and a block goes to the message's own account, held by `tests/report_as_junk_is_on_the_action_menu.rs` and `tests/a_block_moves_the_mail_already_here.rs`; neither has met a real server (ledger 756). Planned 2026-09-30: 13-44.5, one check of whether an account is Gmail or Microsoft, asked by Report as Junk, the folder chooser, sign-in, the account editor's app password advice and Send Feedback's account kinds; no `[D]` clause is added. 13-44.5 done 2026-10-01: `WhoRunsTheMail` asked by all of them, a Workspace or Microsoft 365 account on its own domain known by its server, held by `application::who_runs_the_mail::tests` and `tests/one_check_says_who_runs_the_mail.rs`; nothing has met a real account (ledger 768). Planned 2026-09-24: 13-22, 13-24, 13-24.1, 13-25, which ticks it; 13-24 done 2026-09-28, Report as Junk's move through Move's quiet do-half with the report saying its own sentence, and the do-halves the block's runner calls; 13-24.1 done 2026-09-28, the runner the block moves the mail already here through, called by nothing until 13-25; 13-25 done 2026-09-28, a block asks once about the mail already here and moves it through the runner, ticked; 13-22's report half done 2026-09-28. Until 13-25 the row ended "otherwise not built". Until then "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
+| GAP-06 | Phase 13 | Done 2026-09-28, 13-22 and 13-25: Report as Junk on the Action menu, and a block that asks once about the sender's mail already here and moves it through the runner, held by `tests/report_as_junk_is_on_the_action_menu.rs` and `tests/a_block_moves_the_mail_already_here.rs`; neither has met a real server (ledger 675, 689). Planned 2026-09-29: 13-44.1 takes the junk mark off at the server when a report is undone and writes a block to the account the message is in (ledgers 677 and 691); no `[D]` clause is added. 13-44.1 done 2026-10-01: Undo of a report takes the mark off before the messages move back and a block goes to the message's own account, held by `tests/report_as_junk_is_on_the_action_menu.rs` and `tests/a_block_moves_the_mail_already_here.rs`; neither has met a real server (ledger 756). Planned 2026-09-30: 13-44.5, one check of whether an account is Gmail or Microsoft, asked by Report as Junk, the folder chooser, sign-in, the account editor's app password advice and Send Feedback's account kinds; no `[D]` clause is added. 13-44.5 done 2026-10-01: `WhoRunsTheMail` asked by all of them, a Workspace or Microsoft 365 account on its own domain known by its server, held by `application::who_runs_the_mail::tests` and `tests/one_check_says_who_runs_the_mail.rs`; nothing has met a real account (ledger 768). Planned 2026-09-24: 13-22, 13-24, 13-24.1, 13-25, which ticks it; 13-24 done 2026-09-28, Report as Junk's move through Move's quiet do-half with the report saying its own sentence, and the do-halves the block's runner calls; 13-24.1 done 2026-09-28, the runner the block moves the mail already here through, called by nothing until 13-25; 13-25 done 2026-09-28, a block asks once about the mail already here and moves it through the runner, ticked; 13-22's report half done 2026-09-28. Until 13-25 the row ended "otherwise not built". Until then "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands; phase 13.2, planned 2026-10-14: 13.2-15, adding no `[D]` clause |
 | GAP-07 | Phase 13 | Done 2026-09-28, 13-28: Microsoft's people search in People found for an Outlook browser sign-in, each row "from Microsoft", asked with a token carrying People.Read alone, held by `tests/microsoft_people_join_the_people_found_list.rs` and the people cases in `service::microsoft_graph`, `application::looking_people_up` and `presentation::finding_people`; nothing has met Microsoft (ledger 702). Done 2026-10-01, 13-44.2: a sign-in over `ldap://` is refused at OK in the lookup's own sentence with focus on the Directory address box, and the credential store's sentences name the account, never its id (ledgers 699 and 696 closed); no `[D]` clause is added. Until 13-44.2 this read "Planned 2026-09-29: 13-44.2 refuses a sign-in over `ldap://` at OK and names the account in the credential store's sentences (ledgers 699 and 696); no `[D]` clause is added". Until 13-28 this read "Planned 2026-09-24: 13-26, 13-27, 13-28 (answer (c) given on 2026-09-24), which ticks it; 13-26 done 2026-09-28, the directory password in the credential store, read by the lookup, refused over `ldap://` and erased with its account and at uninstall, with nothing on screen setting it until 13-27; 13-27 done 2026-09-28, the sign-in typed in Look People Up at Work on the Account Manager and its password written to the credential store, the LDAP half whole and the Graph half waiting for 13-28". Until 13-26 this read "not built", and until the plans "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
 | GAP-08 | Phase 13 | Done 2026-09-29, 13-31: a guest Microsoft places by the zone of their working hours is judged on their own clock and each offered time is said on up to three guests' clocks, an event's own Windows zone read by `common::zones`; no real colleague's answer has been read (ledger 709) and a contact's zone is later work (ledger 708). Done 2026-10-01, 13-44.4: a colleague Microsoft places is judged by the days and hours set in their own Outlook, on the clock they keep them on, and everybody else by the working day set here (ledger 711 closed); no `[D]` clause is added, and no real colleague's hours have been read (ledger 709). Until 13-44.4 this read "Planned 2026-09-29: 13-44.4 judges a colleague Microsoft places by their own working days and hours (ledger 711); no `[D]` clause is added." 13-32 is not a GAP-08 `[D]` line; done 2026-09-29, the event form, where free/busy is asked, scrolls to the field in focus and is never taller than its screen, so Times offered is reached and seen on a 768-pixel screen, held by `tests/the_event_form_scrolls_to_the_field_in_focus.rs` (ledger 417). Until 13-31 this read: Planned 2026-09-24: 13-29 to 13-32, 13-31 ticks it; 13-29 done 2026-09-28, Google asked for free/busy on an account whose calendar is at Google, with its sign-in's token fetched in the worker, and a guest Google cannot find said as not shared and never free; nothing has met Google (ledger 704); 13-30 done 2026-09-28, every place an account keeps a calendar asked at once and each guest's answers merged by address, busy time united; no account with two places has been asked (ledger 707). Until 13-30 this read as far as "(ledger 704)". Until 13-29 this read "not built". Until then "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands; the conditional 13-32 ran |
 | GAP-09 | Phase 13 | Done 2026-09-30, 13-37 to 13-39: a saved search moved with the tree's gesture, `Alt+4` to `Alt+9` and a Saved Searches submenu listing the account's searches, and a saved search made from nothing through New Saved Search and the conditions window, which asks every or any for Edit Conditions too, held by `tests/a_saved_search_moves_with_the_gesture.rs`, `tests/the_saved_searches_menu_says_the_searches_an_account_has.rs`, `tests/a_saved_search_can_be_made_from_nothing.rs` and `application::saved_searches`' cases; the ear is ledger 738 to 740, the 500 cap ledger 741. Until 13-39 "Planned 2026-09-24: 13-37 to 13-39, 13-39 ticks it; not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
@@ -7512,8 +7634,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | GAP-11 | Phase 13 | Done 2026-09-30, 13-23, 13-24, 13-24.1 and 13-40 to 13-42: Quick Steps kept per account, made in the Quick Step Manager, listed on Action, Quick Steps with `Ctrl+Shift+7` to `Ctrl+Shift+9`, and run over the selection through the one runner with one sentence, held by `tests/a_quick_step_runs_over_the_selection.rs`, `tests/the_quick_step_manager_says_what_each_step_does.rs` and `application::quick_steps`' cases; the real server is ledger 745, the ear ledger 746. Until 13-42 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-40 to 13-42, 13-42 ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary Quick Steps reuse; 13-24 done 2026-09-28, the five set actions as quiet do-halves a Quick Step's runner calls; 13-24.1 done 2026-09-28, the runner a Quick Step's actions are carried out through, answering what it did for the step's own sentence; 13-40 done 2026-09-30, the steps stored and named per account in a rule's action words, with their refusals, keys and sentence, and nothing yet running one (ledger 742); 13-41 done 2026-09-30, the Quick Step Manager on Action, Quick Steps and the step editor, steps made, changed and put in order and none run yet; otherwise not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
 | GAP-12 | Phase 13 | Done 2026-10-01, 13-23, 13-24, 13-24.1, 13-43, 13-44 and 13-44.3 (done 2026-10-01, a rule's marks, flags and labels on arriving mail sent to the mail server in the check and a rule's Delete to the Trash there, ledger 678 closed): a rule run over a folder on demand from Action, This Folder, Run a Rule on This Folder and from the Filter Manager's Run on a Folder, counted on a worker, asked about in a native question after the account's gate, and run through the one runner with one sentence, held by `tests/a_rule_runs_over_a_folder_when_asked.rs` and `application::running_a_rule_now`'s cases; the real server is ledger 750, the ear ledger 751. Planned 2026-09-29: 13-44.3 sends a rule's marks, flags and labels on arriving mail to the mail server in the check (ledger 678), and a rule's Delete to the Trash there through the menu's delete path; no `[D]` clause is added. Until 13-44 "Planned 2026-09-24: 13-23, 13-24, 13-24.1, 13-43, 13-44, which ticks it; 13-23 done 2026-09-28, a rule's Add a label resolved to the account's label and put on, the vocabulary a rule run over a folder reuses; 13-24 done 2026-09-28, the five set actions as quiet do-halves the runner over a folder calls; 13-24.1 done 2026-09-28, the runner a rule over a folder hands its matched messages to, through the gated write paths; 13-43 done 2026-09-30, what a rule would change in a folder counted and the question before a run worded, nothing yet asking it; otherwise not built", and before that "Not planned, 2026-09-20". Closing read 2026-10-03, 13-51: stands |
 | GAP-13 | Phase 13 | Done 2026-10-03, 13-45 to 13-50: the bare mailbox file and the loose message files on the File menu (13-45, 13-46), `.msg` read through both imports (13-47, 13-48), `.pst` export said plainly to be out and on no menu (13-49), and imported messages keeping their files, with a file over 25 MB listed, counted and said (13-50, ledger 800), held by the round trips in `application::exporting_mail`, the reader's and the routing's cases, the kept-files cases in `application::importing_messages::end_to_end` and `tests/mail_goes_out_in_every_shape.rs`; ticked by 13-49, #53 closed from its merge; 13-50 added no `[D]` clause. Nobody has opened an export in another mail program (ledgers 502, 789, 792), no real `.pst` or Pratik's own `.msg` has been through an import (ledgers 499, 795), whether Outlook takes dragged message files is ledger 799, and no real mailbox file with attachments has been imported and a file opened from it (ledger 801). Until 13-50 "Done 2026-10-03, 13-45 to 13-49: the bare mailbox file and the loose message files on the File menu (13-45, 13-46), `.msg` read through both imports (13-47, 13-48), and `.pst` export said plainly to be out and on no menu (13-49), held by the round trips in `application::exporting_mail`, the reader's and the routing's cases and `tests/mail_goes_out_in_every_shape.rs`; ticked by 13-49, #53 closed from its merge; 13-50 to come, adding no `[D]` clause. Nobody has opened an export in another mail program (ledgers 502, 789, 792), no real `.pst` or Pratik's own `.msg` has been through an import (ledgers 499, 795), and whether Outlook takes dragged message files is ledger 799". Until 13-49 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, the loose message files in 13-46, File, Export Folder as Message Files, the `.msg` reader in 13-47, and `.msg` reading reachable from both imports in 13-48; 13-49 and 13-50 to come, 13-49 ticks it". Until 13-48 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, the loose message files in 13-46, File, Export Folder as Message Files, and the `.msg` reader in 13-47, wired by 13-48; 13-48 to 13-50 to come, 13-49 ticks it". Until 13-47 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File, and the loose message files in 13-46, File, Export Folder as Message Files; 13-47 to 13-50 to come, 13-49 ticks it". Until 13-46 "In progress 2026-10-03: the bare mailbox file landed in 13-45, File, Export Folder as a Mailbox File; 13-46 to 13-50 to come, 13-49 ticks it". Until 13-45 "Planned 2026-09-24: 13-45 to 13-50 (13-47 waits on answer (a)), 13-49 ticks it; not built. Until then "Not planned, 2026-09-20"". Closing read 2026-10-03, 13-51: stands; the conditional 13-50 ran. Phase 13.1, planned 2026-10-03: 13.1-04 for ledgers 794, 797 and 798, adding no `[D]` clause. 13.1-04 on 2026-10-04: an encrypted saved message counted and said, an archive's folder made at its first filed message, and the folder import's three counts said in the single-file import's words; ledgers 794, 797 and 798 closed, 805 and 806 opened. Closing read 2026-10-04, 13.1-05: stands; the ear is listening item 183 |
-| GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787), apart from copies earlier changes left in unused space, which 13-44.9 measured on 2026-10-03 at 9 messages in 1,000 at 200,000 and put to Pratik with the cost of reaching them (ledger 788). Until 13-44.9 it read "Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787)." Until 13-44.8 the row read "Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784)." Until 13-44.7 it read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending". Closing read 2026-10-03, 13-51: stands; ledger 788 was Pratik's choice until 2026-10-03. He chose that day, "yes to all.": secure delete on every connection and no compacting command, which is 13.1-03's with ledger 786, adding no `[D]` clause. 13.1-03 on 2026-10-03: secure delete on in `MessageCache::new`, the measurement taken again (on left 1 of 1,000 at 200,000), the privacy page reworded, Empty Folder's "and Wixen Mail keeps no other copy"; ledgers 788 and 786 closed, 804 opened. Closing read 2026-10-04, 13.1-05: stands; the ear is listening item 182 |
-| REAL-01 | Phase 14 | 14-08 merged 2026-10-06: the build `1.0.0-alpha.1+1118.gd3455792` installed and read back from the registry, #22's sheet written; his key comes later, so 14-09 runs third, after 14-10 and 14-11; no `[D]` clause earned; 14-10 next. Until 14-08 "14-06 merged 2026-10-06: `scripts/read-a-proof.py`, the tested read-only reader his profile is read with at each sitting, held over a fixture profile; no `[D]` clause earned; 14-07 next". Until 14-06 "14-04 merged 2026-10-06: every calendar on a Gmail account's Google list brought under a row of its own, read-only, free-and-busy and hidden calendars handled, events looked up within their calendar, and a calendar Google stops listing put away with a waiting change kept; no `[D]` clause earned; 14-05 next". Until 14-04 "14-03 merged 2026-10-05: a separate browser sign-in for a Gmail account's calendars, contacts and tasks with mail kept on its app password, from the Account Manager's Sign In for Calendars, Contacts and Tasks, and Help's section on making the Google testing key and placing `oauth.toml`; no `[D]` clause earned; 14-04 next". Until 14-03 "14-02 merged 2026-10-05: a log line per request and per finished sync against the loopback stand-ins, each account asking only its own provider, the three syncs run once when an account is added and F5 in a module syncing it, earning the `[D]` halves "traced against the loopback servers" and "the sync run on account creation as well as on Refresh"; 14-03 next". Until 14-02 "14-01 merged 2026-10-05: the three syncs say why nothing was asked of Google and log the reason; 14-02 next". Planned 2026-10-05 against `01ef4589`: 14-01 to 14-04 the code, 14-06 the reader, 14-08 the build, 14-09 and 14-12 the sittings that read it against his account, 14-13 the closing read. Until then "Not planned, 2026-09-20; needs Pratik's account" |
+| GAP-14 | Phase 13 | Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787), apart from copies earlier changes left in unused space, which 13-44.9 measured on 2026-10-03 at 9 messages in 1,000 at 200,000 and put to Pratik with the cost of reaching them (ledger 788). Until 13-44.9 it read "Complete 2026-10-02, 13-44.6, 13-44.7 and 13-44.8: a message kept on this computer alone and taken off it keeps only what stops it being downloaded again, its words gone from the mail database once the next check has let the search index go (13-44.8, ledger 787)." Until 13-44.8 the row read "Complete 2026-10-02, 13-44.6 and 13-44.7: After 15 days and After 30 days on IMAP accounts the one check does not call Gmail or Microsoft (13-44.6), When Wixen Mail closes within five seconds with the window gone first, and POP accounts emptied on this computer only, of their own messages, with ledger 753's re-download fixed (13-44.7), held by `application::emptying_the_trash::tests`, `application::pop_sync::tests`, `data::message_cache::in_the_trash::tests` and `tests/the_trash_is_emptied_on_purpose.rs`; no emptying has met a real server (ledgers 771 and 784)." Until 13-44.7 it read "Pending; 13-44.6 done 2026-10-02", and until 13-44.6 "Pending". Closing read 2026-10-03, 13-51: stands; ledger 788 was Pratik's choice until 2026-10-03. He chose that day, "yes to all.": secure delete on every connection and no compacting command, which is 13.1-03's with ledger 786, adding no `[D]` clause. 13.1-03 on 2026-10-03: secure delete on in `MessageCache::new`, the measurement taken again (on left 1 of 1,000 at 200,000), the privacy page reworded, Empty Folder's "and Wixen Mail keeps no other copy"; ledgers 788 and 786 closed, 804 opened. Closing read 2026-10-04, 13.1-05: stands; the ear is listening item 182; phase 13.2, planned 2026-10-14: 13.2-07, adding no `[D]` clause |
+| REAL-01 | Phase 14 | 14-08 merged 2026-10-06: the build `1.0.0-alpha.1+1118.gd3455792` installed and read back from the registry, #22's sheet written; his key comes later, so 14-09 runs third, after 14-10 and 14-11; no `[D]` clause earned; 14-10 next. Until 14-08 "14-06 merged 2026-10-06: `scripts/read-a-proof.py`, the tested read-only reader his profile is read with at each sitting, held over a fixture profile; no `[D]` clause earned; 14-07 next". Until 14-06 "14-04 merged 2026-10-06: every calendar on a Gmail account's Google list brought under a row of its own, read-only, free-and-busy and hidden calendars handled, events looked up within their calendar, and a calendar Google stops listing put away with a waiting change kept; no `[D]` clause earned; 14-05 next". Until 14-04 "14-03 merged 2026-10-05: a separate browser sign-in for a Gmail account's calendars, contacts and tasks with mail kept on its app password, from the Account Manager's Sign In for Calendars, Contacts and Tasks, and Help's section on making the Google testing key and placing `oauth.toml`; no `[D]` clause earned; 14-04 next". Until 14-03 "14-02 merged 2026-10-05: a log line per request and per finished sync against the loopback stand-ins, each account asking only its own provider, the three syncs run once when an account is added and F5 in a module syncing it, earning the `[D]` halves "traced against the loopback servers" and "the sync run on account creation as well as on Refresh"; 14-03 next". Until 14-02 "14-01 merged 2026-10-05: the three syncs say why nothing was asked of Google and log the reason; 14-02 next". Planned 2026-10-05 against `01ef4589`: 14-01 to 14-04 the code, 14-06 the reader, 14-08 the build, 14-09 and 14-12 the sittings that read it against his account, 14-13 the closing read. Until then "Not planned, 2026-09-20; needs Pratik's account"; phase 13.2, planned 2026-10-14: 13.2-15, 13.2-17 and 13.2-21, adding no `[D]` clause, the box left for phase 14's sittings |
 | REAL-02 | Phase 14 | 14-08 merged 2026-10-06: the build carrying phase 12 and everything since installed and read back from the registry, a steps page per sitting written; the sittings run 14-10, 14-11, 14-09, 14-12, and 14-10 records the two waiting deletes at the first start; no `[D]` clause earned; 14-10 next. Until 14-08 "14-07 merged 2026-10-06: every surface says sending was proven on a Gmail account on 18 September 2026 and the rest has not been, the download's sentence says what Gmail did, the first-run choice names the browser sign-in; the switch unchanged (answer 7); ledger 148 closed and #63's comment set to the app password; no `[D]` clause earned; 14-08 next". Until 14-07 "14-06 merged 2026-10-06: `scripts/read-a-proof.py`, the tested read-only reader each sitting's proof is read with, printing no subject but a proof's and no address unmasked; a crash entry names its build; no `[D]` clause earned; 14-07 next". Until 14-06 "14-05 merged 2026-10-06: each replayed move, copy and delete names its row, the server's answer and where the server holds it; a crossing writes each step and its outcome; a sign-in and a send say how they signed in; no `[D]` clause earned; 14-06 next". Planned 2026-10-05 against `01ef4589`: 14-05 the log lines, 14-06 the reader, 14-07 the true words and #63 set right, 14-08 the build, 14-09 to 14-12 the sittings, 14-13 the warnings per path and the closing read; the switch's starting position stays (answer 7); nothing executed. Until then "Not planned, 2026-09-20; sending proven 2026-09-18, the other four lines his account's" |
 
 **Coverage:**
@@ -7521,6 +7643,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 - v1 requirements: 123 total
 - Mapped to phases: 123
 - Unmapped: 0
+
+**Unchanged 2026-10-14** by phase 13.2's planning: its thirty-five plans add no requirement, so
+the count stays at 123 and the table above at 123 rows. Thirty requirements carry a bullet
+naming the plans that work under them, and a clause on their rows; 13.2-23, 13.2-27, 13.2-28,
+13.2-29 and 13.2-31 name no requirement, and each says why.
 
 **Re-taken 2026-10-03,** by 13-51's closing read of phase 13, with the same command as
 below: 123 at `975d6ef9` plus 13-51's edits, and 123 traceability rows, unchanged. All

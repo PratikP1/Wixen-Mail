@@ -1,5 +1,11 @@
 # Sitting 2, done first: copying and moving in Gmail, and undoing them
 
+**Waiting since 14 October.** This sitting waits until two things are done: the fixes from
+the audit of 14 October and for the four problems you reported that day, which are phase
+13.2, and a new build made after them, which you install first. The agent then corrects this
+sheet against that build before you start, so the build and the sentences named below may
+change.
+
 The sittings run in the order 2, 3, 1, 4. Sitting 1 needs your Google key,
 and you said the key comes later, so this one comes first.
 

@@ -1,5 +1,13 @@
 # Phase 14: The real-account proofs
 
+**Waiting from 2026-10-14 for phase 13.2.** With 14-01 to 14-08 done and no sitting held,
+phase 13.2, the fixes for that day's full audit and for the four regressions Pratik reported
+the same day, runs before the rest of this phase: thirty-five plans in
+`.planning/phases/13.2-the-audit-s-fixes/`, the first four on the regressions and the next
+eight on what the sittings prove. The sittings resume at 14-10 after 13.2-32's merge, on a new
+build that holds phase 13.2, and each sheet is corrected against that build before its
+sitting. No plan makes that build yet; the Handover below says what it needs.
+
 Thirteen plans, one per wave, written on 2026-10-05 against `main` at `01ef4589`, version
 `1.0.0-alpha.1`, from `PROPOSAL.md` and its three research files in this folder, on Pratik's
 answers of the same day to the proposal's twelve questions. On the day, `guards/guards.toml`
@@ -283,6 +291,16 @@ In the order the plans meet them.
 - The listening items each sheet carries.
 
 ## Handover
+
+**Added 2026-10-14, when phase 13.2 was planned.** The sittings wait for phase 13.2 and a new
+build. 14-10's precondition reads the build named by "the latest summary that made a build",
+14-08's today, so the new build is made by a plan of its own after 13.2-32's merge, the way
+14-08 made the last with `scripts/build-installer.sh` on Pratik's ruling of 2026-10-06, and
+Pratik installs it from an install page written for it. No plan carries that build yet; it is
+added before 14-10 resumes. Branch `14-10-sitting-2` holds 14-10's before reading,
+`14-10-BEFORE-READING.md`, and sheet 2 corrected against build 1118 (commit `0eea8aec`);
+14-10's executor takes both from there and corrects the sheet again against the new build.
+The paragraphs below are the handover of 2026-10-06 and still give the order of the sittings.
 
 Written 2026-10-06, when 14-08 merged. 14-01 to 14-08 are on `main` and not pushed. The build
 `1.0.0-alpha.1+1118.gd3455792` is installed and has not been started; Start Wixen Mail was

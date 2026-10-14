@@ -1,5 +1,10 @@
 # Installing the build for the four sittings
 
+**Replaced from 14 October.** The sittings now wait for a new build, made after the fixes
+from the audit of 14 October and for the four problems you reported that day (phase 13.2), and
+this page is written again for it before Sitting 2. Until then, what follows is the page for
+the build of 6 October, which you have installed.
+
 Every sitting of phase 14 runs on one build, made on this computer on
 2026-10-06 from the merge of plan 14-07. This page installs it over the
 build you have now. It takes about five to ten minutes. Nothing else runs
