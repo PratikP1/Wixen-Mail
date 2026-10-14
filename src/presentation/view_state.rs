@@ -13,7 +13,7 @@
 //! the count handed to the control, and which `ORDER BY` the query is given.
 //! None of those needs a window to decide.
 
-use crate::application::conversations::ConversationItem;
+use crate::application::conversations::{ConversationItem, WhoseConversation};
 use crate::presentation::message_columns::Sort;
 
 /// Whether the list is one row per message or one row per conversation.
@@ -264,6 +264,51 @@ pub fn which_rows_changed(was: &[ConversationItem], now: &[ConversationItem]) ->
             .filter(|row| was.get(*row) != Some(&now[*row]))
             .collect(),
         count_changed: was.len() != now.len(),
+    }
+}
+
+/// The conversation rows after a change made here, and what the list does
+/// about it (13.2-02).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowsBroughtUpToDate {
+    /// The rows the list holds now, in the order it held them.
+    pub rows: Vec<ConversationItem>,
+    /// Where each row that left stood, in the rows as they were, in order.
+    pub left: Vec<usize>,
+    /// What the control repaints, by [`which_rows_changed`].
+    pub repainting: Repainting,
+}
+
+/// Bring the rows on screen up to date with the rows just read for the
+/// conversations a change touched.
+///
+/// A touched row whose conversation came back is replaced where it stands;
+/// one that did not come back has nothing left here and leaves. A row the
+/// change did not touch is left alone, and a fresh row that is not on screen
+/// is not added: a row keeps its place until the folder is next read, so the
+/// cursor and what was just heard do not jump.
+pub fn bring_rows_up_to_date(
+    on_screen: &[ConversationItem],
+    touched: &[WhoseConversation],
+    fresh: &[ConversationItem],
+) -> RowsBroughtUpToDate {
+    let mut rows = Vec::with_capacity(on_screen.len());
+    let mut left = Vec::new();
+    for (at, row) in on_screen.iter().enumerate() {
+        let Some(this) = touched.iter().find(|one| one.is(row)) else {
+            rows.push(row.clone());
+            continue;
+        };
+        match fresh.iter().find(|came_back| this.is(came_back)) {
+            Some(came_back) => rows.push(came_back.clone()),
+            None => left.push(at),
+        }
+    }
+    let repainting = which_rows_changed(on_screen, &rows);
+    RowsBroughtUpToDate {
+        rows,
+        left,
+        repainting,
     }
 }
 
@@ -625,6 +670,116 @@ mod tests {
             repaint.nothing_to_repaint(),
             "there are no rows left to paint"
         );
+    }
+
+    // ── A change made here, brought onto the rows (13.2-02) ─────────────────
+
+    fn unread(mut row: ConversationItem, unread: i64) -> ConversationItem {
+        row.unread = unread;
+        row
+    }
+
+    fn in_account(mut row: ConversationItem, account_id: &str) -> ConversationItem {
+        row.read_in.account_id = account_id.to_string();
+        row
+    }
+
+    fn whose(row: &ConversationItem) -> WhoseConversation {
+        WhoseConversation {
+            account_id: row.read_in.account_id.clone(),
+            thread_id: row.thread_id.clone(),
+        }
+    }
+
+    #[test]
+    fn test_a_touched_row_whose_conversation_came_back_is_replaced_where_it_stands() {
+        // Pratik, 2026-10-14: the announcement said the mark landed and the
+        // row went on saying Unread until the next check.
+        let on_screen = [
+            unread(a_conversation("a@x", 1), 1),
+            unread(a_conversation("b@x", 2), 2),
+            unread(a_conversation("c@x", 1), 1),
+        ];
+        let fresh = [a_conversation("b@x", 2)];
+
+        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[0])], &fresh);
+
+        assert_eq!(
+            now.rows,
+            [on_screen[0].clone(), fresh[0].clone(), on_screen[2].clone()]
+        );
+        assert!(now.left.is_empty());
+        assert_eq!(now.repainting.rows(), [1], "only the row that changed");
+        assert!(!now.repainting.count_changed());
+    }
+
+    #[test]
+    fn test_a_touched_row_with_nothing_left_leaves_and_says_where_it_stood() {
+        // "Delete is the same as 2": the row stayed until the next check.
+        let on_screen = [
+            a_conversation("a@x", 1),
+            a_conversation("b@x", 2),
+            a_conversation("c@x", 1),
+        ];
+
+        let now = bring_rows_up_to_date(&on_screen, &[whose(&on_screen[0])], &[]);
+
+        assert_eq!(now.rows, [on_screen[1].clone(), on_screen[2].clone()]);
+        assert_eq!(now.left, [0]);
+        assert!(now.repainting.count_changed(), "a row fewer");
+        assert_eq!(now.repainting.rows(), [0, 1], "both rows moved up one");
+    }
+
+    #[test]
+    fn test_a_row_the_change_did_not_touch_is_left_alone() {
+        // The fresh read answered for a, which nothing touched; its row stays
+        // as it was, so a read can only ever change what a change reached.
+        let on_screen = [
+            a_conversation("a@x", 1),
+            unread(a_conversation("b@x", 1), 1),
+        ];
+        let fresh = [
+            unread(a_conversation("a@x", 1), 1),
+            a_conversation("b@x", 1),
+        ];
+
+        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[1])], &fresh);
+
+        assert_eq!(now.rows, [on_screen[0].clone(), fresh[1].clone()]);
+        assert_eq!(now.repainting.rows(), [1]);
+    }
+
+    #[test]
+    fn test_a_fresh_row_that_is_not_on_screen_is_not_added() {
+        // A row keeps its place until the folder is next read, and a new one
+        // waits for that read too, so nothing appears under the cursor.
+        let on_screen = [unread(a_conversation("a@x", 1), 1)];
+        let fresh = [a_conversation("a@x", 1), a_conversation("z@x", 1)];
+
+        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[0]), whose(&fresh[1])], &fresh);
+
+        assert_eq!(now.rows, [fresh[0].clone()]);
+        assert!(now.left.is_empty());
+        assert!(!now.repainting.count_changed());
+    }
+
+    #[test]
+    fn test_a_row_is_matched_by_its_account_as_well_as_its_conversation() {
+        // All Inboxes: one identifier in two accounts is two rows (T-01-47),
+        // and a change in the second must not reach the first.
+        let on_screen = [
+            unread(in_account(a_conversation("a@x", 1), "first"), 1),
+            unread(in_account(a_conversation("a@x", 1), "second"), 1),
+        ];
+        let fresh = [
+            in_account(a_conversation("a@x", 1), "first"),
+            in_account(a_conversation("a@x", 1), "second"),
+        ];
+
+        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[1])], &fresh);
+
+        assert_eq!(now.rows, [on_screen[0].clone(), fresh[1].clone()]);
+        assert_eq!(now.repainting.rows(), [1]);
     }
 
     fn a_sort(column: MessageColumn, direction: SortDirection) -> Sort {

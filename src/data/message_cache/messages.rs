@@ -1,7 +1,9 @@
 //! Message persistence operations
 
 use super::{CachedAttachment, CachedMessage, MessageCache};
-use crate::application::conversations::{AConversationReaches, ConversationItem};
+use crate::application::conversations::{
+    AConversationReaches, ConversationItem, WhoseConversation,
+};
 use crate::application::importing_messages::WrittenDownAs;
 use crate::common::{Error, Result};
 use crate::service::protocols::imap::flag;
@@ -192,28 +194,11 @@ const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
 /// `here` carries `account_id` and `read_in_folder`, and `elsewhere` keys a
 /// copy by its account as well as its message. Neither changes what one
 /// folder's listing answers, since every row of one scope is one account's;
-/// both are what lets [`every_inbox_scope`] hold two accounts in one `here`
-/// without a row of one account standing in for a conversation of the
+/// both are what lets [`EVERY_INBOX`]'s scope hold two accounts in one
+/// `here` without a row of one account standing in for a conversation of the
 /// other. The text is [`the_scope_over`]'s, with this scope's four parts.
 pub(super) fn conversation_scope() -> String {
-    the_scope_over(&ONE_FOLDER)
-}
-
-/// The same scope over every account's inbox at once, for All Inboxes shown
-/// as conversations (#92, 2026-09-20).
-///
-/// One text with [`conversation_scope`], through [`the_scope_over`], with
-/// four parts replaced: the inboxes named first, `reach` being every inbox
-/// or, when `?1` is 1, every folder of every account that has one, so D-08's
-/// reach is applied per account as one folder's is; the folder a row was
-/// read in being its account's inbox; and the conversations listed being
-/// those an account's inbox touches, per account, so an account whose inbox
-/// holds none of a conversation contributes no row for it whatever its
-/// other folders hold.
-///
-/// `?1` alone: there is no folder being stood in and no one account.
-pub(super) fn every_inbox_scope() -> String {
-    the_scope_over(&EVERY_INBOX)
+    the_scope_over(&ONE_FOLDER, Listing::Whole)
 }
 
 /// What one folder's scope and the every-inbox scope do not share.
@@ -240,12 +225,16 @@ struct AScope {
     /// on 16,000 rows over two accounts took 198 s against 27 ms for the
     /// message listing, measured 2026-09-20 on a release build.
     listed: &'static str,
+    /// Where a narrowed listing binds the conversations it names, after the
+    /// scope's own parameters (13.2-02).
+    named_at: &'static str,
 }
 
 /// One folder: `?1` the account, `?2` the folder, `?3` whether the reach is
-/// the whole account.
+/// the whole account, and `?4` the conversations a narrowed listing names.
 const ONE_FOLDER: AScope = AScope {
     before_reach: "",
+    named_at: "?4",
     reached: "account_id = ?1 AND (?3 = 1 OR id = ?2)",
     read_in_folder: "?2",
     listed: "m.thread_id IN (
@@ -256,7 +245,20 @@ const ONE_FOLDER: AScope = AScope {
 };
 
 /// Every inbox: `?1` whether the reach is the whole account, applied per
-/// account.
+/// account, and `?2` the conversations a narrowed listing names.
+///
+/// The scope of All Inboxes shown as conversations (#92, 2026-09-20): one
+/// text with one folder's, through [`the_scope_over`], with four parts
+/// replaced: the inboxes named first, `reach` being every inbox or, when `?1`
+/// is 1, every folder of every account that has one, so D-08's reach is
+/// applied per account as one folder's is; the folder a row was read in being
+/// its account's inbox; and the conversations listed being those an
+/// account's inbox touches, per account, so an account whose inbox holds none
+/// of a conversation contributes no row for it whatever its other folders
+/// hold. There is no folder being stood in and no one account. Until
+/// 2026-10-14 a function, `every_inbox_scope`, built it; the narrowed listing
+/// of 13.2-02 builds the text with its narrowing, so the queries ask
+/// [`the_scope_over`] directly.
 ///
 /// `MIN(id)` because an account has one inbox, and a database that somehow
 /// typed two would otherwise hand a row two folders; the lower id is the
@@ -267,6 +269,7 @@ const EVERY_INBOX: AScope = AScope {
     before_reach: "inboxes AS (
              SELECT id, account_id FROM folders WHERE folder_type = 'Inbox'
          ),",
+    named_at: "?2",
     reached: "(?1 = 1 AND account_id IN (SELECT account_id FROM inboxes))
                OR id IN (SELECT id FROM inboxes)",
     read_in_folder: "(SELECT MIN(i.id) FROM inboxes i WHERE i.account_id = mf.account_id)",
@@ -279,13 +282,24 @@ const EVERY_INBOX: AScope = AScope {
 };
 
 /// The scope's text, with one scope's four parts in it.
-fn the_scope_over(scope: &AScope) -> String {
+///
+/// A listing that names its conversations (13.2-02) narrows `elsewhere` and
+/// `here` to them as well, so a read for one conversation reads that
+/// conversation's rows through the thread index rather than every message in
+/// the reach: measured on 2026-10-14 at the size of Pratik's inbox, narrowing
+/// after the scope alone left the read of one conversation at 620 ms. A copy
+/// carries its conversation the way the message it copies does, so narrowing
+/// `elsewhere` to the same conversations drops the same copies.
+fn the_scope_over(scope: &AScope, listing: Listing) -> String {
     let AScope {
         before_reach,
         reached,
         read_in_folder,
         listed,
+        named_at,
     } = scope;
+    let named_elsewhere = listing.narrowed_by("f", named_at);
+    let named_here = listing.narrowed_by("mf", named_at);
     format!(
         "WITH {before_reach}
          reach AS (
@@ -298,7 +312,7 @@ fn the_scope_over(scope: &AScope) -> String {
              INNER JOIN folders f ON m.folder_id = f.id
              WHERE m.folder_id IN (SELECT id FROM reach)
                AND m.deleted = 0
-               AND f.holds_all_mail = 0
+               AND f.holds_all_mail = 0{named_elsewhere}
          ),
          here AS (
              SELECT mf.account_id, {read_in_folder} AS read_in_folder,
@@ -314,7 +328,7 @@ fn the_scope_over(scope: &AScope) -> String {
                     OR mf.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS}
                        NOT IN (SELECT message FROM elsewhere))
                AND m.thread_id IS NOT NULL AND m.thread_id <> ''
-               AND {listed}
+               AND {listed}{named_here}
          )"
     )
 }
@@ -379,27 +393,85 @@ pub(super) fn messages_in_one_conversation() -> String {
 /// row was read in, from `here`, which the scope fills. The text is
 /// [`a_conversation_listing`]'s over [`conversation_scope`], grouped by
 /// conversation; [`conversations_in_every_inbox_query`] is the same text
-/// over [`every_inbox_scope`], grouped by account and conversation.
-pub(super) fn conversations_query(order: &str) -> String {
+/// over [`EVERY_INBOX`]'s scope, grouped by account and conversation.
+pub(super) fn conversations_query(order: &str, listing: Listing) -> String {
     a_conversation_listing(
-        conversation_scope(),
+        the_scope_over(&ONE_FOLDER, listing),
         "m.thread_id",
         order,
         "m.thread_id ASC",
     )
 }
 
+/// Which of a scope's conversations a listing reads (13.2-02).
+///
+/// The narrowing is the scope's own, written once in [`the_scope_over`], so
+/// a narrowed row is the whole listing's row for its conversation: the same
+/// scope, the same column list, the same rules for its count, its message and
+/// its preview.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Listing {
+    /// Every conversation the scope lists.
+    Whole,
+    /// Only the conversations named, bound as one JSON array of
+    /// `[account, conversation]` pairs.
+    ///
+    /// One parameter whatever the number named, so the statement text does
+    /// not change with the count and one cached statement serves every
+    /// read; and bound rather than written in, because a conversation's
+    /// identifier comes from `Message-ID` and `References`, headers a
+    /// stranger wrote.
+    OnlyNamed,
+}
+
+impl Listing {
+    /// The line that narrows a part of the scope to the named conversations,
+    /// over the folder `folder` names in that part, with the pairs bound at
+    /// `placeholder`; nothing for the whole listing, so its text is as it was.
+    ///
+    /// Two conditions where the pair would do, because the first is on one
+    /// column and `idx_messages_thread` can serve it, and the pair cannot be
+    /// looked up through an index spanning two tables; the second keeps the
+    /// account. Measured 2026-10-14 at the size of Pratik's inbox: 385 ms for
+    /// one conversation with the pair alone, 299 ms with both.
+    fn narrowed_by(self, folder: &str, placeholder: &str) -> String {
+        match self {
+            Self::Whole => String::new(),
+            Self::OnlyNamed => format!(
+                "
+               AND m.thread_id IN (
+                   SELECT json_extract(value, '$[1]') FROM json_each({placeholder})
+               )
+               AND ({folder}.account_id, m.thread_id) IN (
+                   SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')
+                   FROM json_each({placeholder})
+               )"
+            ),
+        }
+    }
+}
+
+/// The conversations named, as the JSON array [`Listing::OnlyNamed`] binds.
+fn as_bound_pairs(named: &[WhoseConversation]) -> Result<String> {
+    let pairs: Vec<[&str; 2]> = named
+        .iter()
+        .map(|one| [one.account_id.as_str(), one.thread_id.as_str()])
+        .collect();
+    serde_json::to_string(&pairs)
+        .map_err(|e| Error::Other(format!("Failed to name the conversations: {e}")))
+}
+
 /// The query All Inboxes runs when it shows conversations (#92).
 ///
-/// [`conversations_query`]'s text over [`every_inbox_scope`], grouped by
+/// [`conversations_query`]'s text over [`EVERY_INBOX`]'s scope, grouped by
 /// account and conversation: a conversation is an account's, so the same
 /// identifier in two inboxes is two rows, each counting its own account's
 /// messages (T-01-47, one list wider). Ordered as the folder's listing is,
 /// then by account and conversation, so two rows the sort cannot tell apart
 /// come in one order every time.
-pub(super) fn conversations_in_every_inbox_query(order: &str) -> String {
+pub(super) fn conversations_in_every_inbox_query(order: &str, listing: Listing) -> String {
     a_conversation_listing(
-        every_inbox_scope(),
+        the_scope_over(&EVERY_INBOX, listing),
         "m.account_id, m.thread_id",
         order,
         "m.account_id ASC, m.thread_id ASC",
@@ -2556,7 +2628,7 @@ impl MessageCache {
         order_by: Option<&str>,
     ) -> Result<Vec<ConversationItem>> {
         let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
-        let query = conversations_query(order);
+        let query = conversations_query(order, Listing::Whole);
         let mut stmt = self
             .conn
             .prepare_cached(&query)
@@ -2595,7 +2667,7 @@ impl MessageCache {
         order_by: Option<&str>,
     ) -> Result<Vec<ConversationItem>> {
         let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
-        let query = conversations_in_every_inbox_query(order);
+        let query = conversations_in_every_inbox_query(order, Listing::Whole);
         let mut stmt = self.conn.prepare_cached(&query).map_err(|e| {
             Error::Other(format!(
                 "Failed to prepare the conversations of every inbox: {e}"
@@ -2614,6 +2686,95 @@ impl MessageCache {
             })?;
 
         Ok(rows)
+    }
+
+    /// The conversations these messages belong to, each once, with whose
+    /// they are (13.2-02).
+    ///
+    /// A message deleted here is still named: a delete marks the row and
+    /// keeps its conversation, which is how a change that took a
+    /// conversation's last message away can still say which row it was.
+    pub fn conversations_holding(&self, messages: &[i64]) -> Result<Vec<WhoseConversation>> {
+        let ids = serde_json::to_string(messages)
+            .map_err(|e| Error::Other(format!("Failed to name the messages: {e}")))?;
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT DISTINCT f.account_id, m.thread_id
+                 FROM messages m
+                 INNER JOIN folders f ON m.folder_id = f.id
+                 WHERE m.id IN (SELECT value FROM json_each(?1))
+                   AND m.thread_id IS NOT NULL AND m.thread_id <> ''
+                 ORDER BY f.account_id, m.thread_id",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare the conversations read: {e}")))?;
+        stmt.query_map(params![ids], |row| {
+            Ok(WhoseConversation {
+                account_id: row.get(0)?,
+                thread_id: row.get(1)?,
+            })
+        })
+        .map_err(|e| Error::Other(format!("Failed to read the conversations: {e}")))?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| Error::Other(format!("Failed to collect the conversations: {e}")))
+    }
+
+    /// [`Self::conversations_in`], narrowed to the conversations named.
+    ///
+    /// What a change made here reads, so a row is brought up to date from
+    /// the store without reading the folder again.
+    pub fn conversations_named_in(
+        &self,
+        folder_id: i64,
+        account_id: &str,
+        reach: AConversationReaches,
+        order_by: Option<&str>,
+        named: &[WhoseConversation],
+    ) -> Result<Vec<ConversationItem>> {
+        let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
+        let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        self.the_named_conversations(
+            &conversations_query(order, Listing::OnlyNamed),
+            params![
+                account_id,
+                folder_id,
+                i64::from(counts_the_account),
+                as_bound_pairs(named)?
+            ],
+        )
+    }
+
+    /// [`Self::conversations_in_every_inbox`], narrowed to the conversations
+    /// named.
+    pub fn conversations_named_in_every_inbox(
+        &self,
+        reach: AConversationReaches,
+        order_by: Option<&str>,
+        named: &[WhoseConversation],
+    ) -> Result<Vec<ConversationItem>> {
+        let order = order_by.unwrap_or(NEWEST_CONVERSATION_FIRST);
+        let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        self.the_named_conversations(
+            &conversations_in_every_inbox_query(order, Listing::OnlyNamed),
+            params![i64::from(counts_the_account), as_bound_pairs(named)?],
+        )
+    }
+
+    /// Run a narrowed listing.
+    fn the_named_conversations(
+        &self,
+        query: &str,
+        bound: impl rusqlite::Params,
+    ) -> Result<Vec<ConversationItem>> {
+        let mut stmt = self.conn.prepare_cached(query).map_err(|e| {
+            Error::Other(format!(
+                "Failed to prepare the named conversations read: {e}"
+            ))
+        })?;
+        stmt.query_map(bound, conversation_row)
+            .map_err(|e| Error::Other(format!("Failed to read the named conversations: {e}")))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect the named conversations: {e}")))
     }
 
     /// Every message of one conversation, under the same reach its row counts.
@@ -7006,7 +7167,8 @@ mod tests {
         // way to be sure is for both to decide which messages exist with the
         // same text.
         let scope = super::conversation_scope();
-        let listing = super::conversations_query(super::NEWEST_CONVERSATION_FIRST);
+        let listing =
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::Whole);
         let of_one = super::messages_in_one_conversation();
         assert!(
             built_on_the_same_scope(&scope, [listing.as_str(), of_one.as_str()]),
@@ -8242,7 +8404,7 @@ mod tests {
         // fixed strings the column enum gives, and they are checked here rather
         // than described: the query has to contain every one of them, and the
         // values have to arrive as parameters.
-        let built = super::conversations_query("COUNT(*) DESC");
+        let built = super::conversations_query("COUNT(*) DESC", super::Listing::Whole);
         for column in crate::presentation::message_columns::MessageColumn::ALL {
             assert!(
                 built.contains(column.conversation_sort_expression()),
@@ -8578,12 +8740,22 @@ mod a_listing_reads_no_message_text {
             // What a listing gets when nothing asked for an order, which is the
             // default the four message listings and `conversations_in` apply.
             super::listing_query(newest_first, " LIMIT 50"),
-            super::conversations_query(super::NEWEST_CONVERSATION_FIRST),
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::Whole),
+            // What a change made here reads to bring its rows up to date
+            // (13.2-02), in a folder and in All Inboxes.
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::OnlyNamed),
+            super::conversations_in_every_inbox_query(
+                super::NEWEST_CONVERSATION_FIRST,
+                super::Listing::OnlyNamed,
+            ),
             // All Inboxes, which is a folder listing that names no folder,
             // bounded and whole, and its conversations (#92).
             super::unified_inbox_query(newest_first, Some(100)),
             super::unified_inbox_query(newest_first, None),
-            super::conversations_in_every_inbox_query(super::NEWEST_CONVERSATION_FIRST),
+            super::conversations_in_every_inbox_query(
+                super::NEWEST_CONVERSATION_FIRST,
+                super::Listing::Whole,
+            ),
             super::super::tags::label_listing_query(newest_first, None),
             super::super::saved_searches::results_query("1,2", newest_first),
         ];
@@ -8595,9 +8767,11 @@ mod a_listing_reads_no_message_text {
             queries.push(super::listing_query(&clause, ""));
             queries.push(super::conversations_query(
                 &order.conversation_order_by_clause(),
+                super::Listing::Whole,
             ));
             queries.push(super::conversations_in_every_inbox_query(
                 &order.conversation_order_by_clause(),
+                super::Listing::Whole,
             ));
             // The three listings that take the chosen sort since 10-02.1, so
             // a body column entering through a sort term is caught in every

@@ -1427,6 +1427,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A mark or a delete shows on a conversation's row at once (2026-10-14, LIST-04,
+  LIST-21).** When messages are shown as conversations, marking a conversation read or
+  unread said it was done while its row went on saying Unread until the next check for mail.
+  Starring, labelling, undoing a mark, the mark made after a message has been read for a
+  moment, and a change the server refused being put back all waited the same way, and a
+  deleted or moved conversation stayed in the list. Now the row changes at once. After you
+  mark a conversation read, Mark as Read on the Action menu, the toolbar and the context menu
+  offers Mark as Unread, so pressing `M` again does what it says. When a delete or a move
+  takes the last of a conversation's messages out of the folder, its row leaves at once and
+  the cursor lands on the next conversation, or on the one before it when it was the last,
+  which is what your screen reader reads next. A row that changes keeps its place until the
+  folder is read again, even when the list is sorted by unread, so nothing moves under the
+  cursor, and nothing more is said than the word you heard when you pressed the key. Known
+  limitations: the unread count beside a folder in the folder tree still changes at the next
+  check; and All Inboxes shown as conversations is not read again after a check, so new mail
+  there waits until you leave All Inboxes and come back. The version does not move.
 - **Enter opens a message again when messages are shown as conversations (2026-10-14,
   LIST-06).** On a conversation row whose message is the only one of its conversation in the
   folder, `Enter` did nothing and said nothing, which in a large Inbox is about half the rows or

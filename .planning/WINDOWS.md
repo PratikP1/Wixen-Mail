@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 707
+open_count: 712
 waived_count: 0
 fixed_count: 126
-total_count: 833
-last_updated: 2026-10-14T18:00:00.000Z
+total_count: 838
+last_updated: 2026-10-14T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -558,7 +558,7 @@ last_updated: 2026-10-14T18:00:00.000Z
 | 541 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06.1: what only the tester's ear settles for #76. After Delete on a middle row, NVDA reading the next message's row once and not twice when the watch's re-read follows; after Delete on the last row, the previous row read once; the same after Move to Trash and after a move out of the folder; and the preview showing the landed message. A built list holds the four cases and the focus event the landing raises; which of the two paths the tester met was not watched, because a delete cannot be driven here while the tester's copy is open, and the built list showed the last-row case leaving the control holding nothing | open |  | 2026-09-18T23:59:00.000Z |  |
 | 542 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-06.1: what only the tester's ear settles for #83. "Delete" heard once at the key and nothing after it when the delete went through, the landed row's reading being enough on its own; the refusal heard with its reason when a delete fails, for instance with the network off; Move to Trash and Move to Folder the same, and Copy to Folder's "Copied to" still heard because its row stays; and the status bar's fuller line, "Deleting" then "Moved to Trash", read on request with NVDA+End and not otherwise. The readings hold the arm to the one word, the outcome to the shown channel when the row left and the spoken one when it stayed, and the shown channel to speaking nothing; none of it has been heard | open |  | 2026-09-19T00:16:00.000Z |  |
 | 543 | 11 | unrun-verify | src/presentation/list_arrival.rs |  | 11-06.2: what only the tester's ear settles for #87. Tab from the folder tree into the message list, with a folder just opened, NVDA reading the newest message's row once and not twice; F6 into the list the same; back to the tree and Tab again landing on the row that was left, with nothing moved; and an empty folder's list saying "No messages" once. A built tree and list hold the four steps and recorded the focus events the arrival raised, the list itself then the row twice where before it raised only the list itself; whether NVDA reads the row once from that sequence is his ear | open |  | 2026-09-19T01:20:00.000Z |  |
-| 544 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying "selected" for each row added and reading the row; Shift+Up shrinking it with "not selected" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, "Delete" once and the row after the set read once when they have gone; "3 messages marked read" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying "1 conversation, 5 messages marked read"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard | open |  | 2026-09-19T03:44:00.000Z |  |
+| 544 | 11 | unrun-verify | src/presentation/wx_app.rs |  | 11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying "selected" for each row added and reading the row; Shift+Up shrinking it with "not selected" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, "Delete" once and the row after the set read once when they have gone; "3 messages marked read" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying "1 conversation, 5 messages marked read"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard. Noted 2026-10-14 by 13.2-02: under conversation view a conversation row now changes at once after M rather than at the next check, held on a built list in tests/a_change_made_here_reaches_the_conversation_rows.rs; the mark clause stays open until heard | open |  | 2026-09-19T03:44:00.000Z |  |
 | 545 | 11 | deviation | tests/house_style.rs |  | 11-07: test_every_guard_record_still_names_one_place_in_the_tree exempts a whole file when any record's after is in the tree and its before is not, taken as the file being mid-measurement, so one record whose after matched the rewritten cursor handler by coincidence hid five other records of wx_app.rs whose before had left the tree, and the check passed green over six unmeasurable records; found by an independent one-place count run by hand on 2026-09-19 and the six rewritten and measured. The exemption should be per record, and a pass through it should say so. Recurred, found 2026-09-27 by 13-36.3's planner: the record 'Undo and Redo are offered again whenever a menu closes, so their keys always speak' lost its before in 4d7d513f (13-07), and its after, the line that opens the on_menu_closed handler, is still in src/presentation/wx_app.rs (:19065 at fe9bd124, :19237 at 85a5f873), so the whole file reads as mid-measurement on every commit and a missing anchor among its records (127 at fe9bd124, 143 at 85a5f873) is not reported. 13-36.3 and 13-36.4 find that file's anchors by script, and 13-36.3 updates this entry. 13-36.3 on 2026-09-29, after its last edit to src/presentation/wx_app.rs, located every record's before with a script over the TOML reader: 144 records name the file and 142 find one place; the two that find none are the Undo and Redo record above, still unmended and not re-measured here because its break is 13-07's and nothing in this plan reaches it, and 'a feedback report is queued through the one function every message uses', whose before is missing on main too and whose after is not in the file, so it is a second unmeasurable record the exemption hid. Recommendation, this entry's own: re-measure both records, and make a file read as mid-measurement only while its after is not a line the file's own code still carries, per record rather than per file | open |  | 2026-09-19T03:44:00.000Z |  |
 | 546 | 11 | unrun-verify | src/application/moves_waiting.rs |  | 11-07.1: what only the tester's ear and a real server settle for #86. A move leaving the row at once under NVDA with the cursor read on the next message; Enter on the chosen folder in the Move dialog moving the message; a move made with the network off put back and the refusal heard once when the server answers no; a move made with the network off and the program closed, replayed at the next check after a restart with the message in the destination and not brought back by the check; a copy heard as "Copied to Work" once with the row staying. And what a real mail server does with a replayed move, and with a message another client changed meanwhile, which the loopback servers cannot say: #63's move, copy and delete proofs against the tester's account are re-taken after this plan, and ledger 187's three questions about a crossing stay the tester's. Since 11-07.2 (later on 2026-09-19) the crossing completes here first too, so #63's copy and move across accounts are re-taken against that shape, and 547 names what its ear settles. Amended on 2026-10-06 by 14-07: the tester's log of 2026-09-20 holds five lines reading A waiting delete was replayed: Moved to Trash, at 04:21:00, 13:33:05, 13:33:06, 13:34:51 and 20:57:43 (phase 14's RESEARCH-2). They are evidence that a replayed delete reached Gmail and not the proof: nobody listened, and nothing was taken with the network off or across a restart. 14-11 takes the proof | open |  | 2026-09-19T06:07:03.000Z |  |
 | 547 | 11 | unrun-verify | src/application/moves_waiting.rs |  | 11-07.2: what only the tester's ear and two real servers settle for #86's second half. A move to a folder of the other account leaving the row at once under NVDA with the cursor read on the next message and "Moved to Work in Home" shown; the message appearing in that folder of the other account at its next check; with the network off, the row going and coming back with the refusal spoken once when a server answers no; a restart with a crossing waiting finishing it at the next check of either account from the kept message, without a question; a message over 25 MB saying it goes now and its row leaving when the other account has taken it; a copy across accounts heard once. And what two real servers do: the upload's answer at a real destination, what a destination does with a message carrying an identifier it already holds, which the replay reads as an arrival only for a new number, and Gmail's treatment of an appended message; the loopback servers prove the four answers at each of the two servers and the restart from held bytes, and nothing here has met a real account | open |  | 2026-09-19T08:20:00.000Z |  |
@@ -848,6 +848,11 @@ last_updated: 2026-10-14T18:00:00.000Z
 | 831 | 13.2 | unrun-verify | src/presentation/wx_app.rs | 3560 | 13.2-01, Pratik's first report of 2026-10-14: Enter in his Inbox under conversation view, heard under NVDA on a build holding 13.2-01's merge. On a row whose message is alone in its conversation, the reader opens on it. On a row whose reply is filed in Sent, the row's own message opens: the Inbox message when nothing is read, the reply when the reply is the first unread. Closed when he has heard both on his own mailbox | open |  | 2026-10-14T18:00:00.000Z |  |
 | 832 | 13.2 | todo | src/presentation/wx_app.rs | 16291 | 13.2-01, the root fix REGRESSIONS.md names and leaves: MessageItem.thread_id is a display field apply_threading empties for a message alone among the loaded rows, and conversation_nodes joins on it, so a conversation row of one loaded message finds no node. 13.2-01 finds the row's message by id instead (what_enter_opens_on_a_conversation_row). Closed when MessageItem carries the store's conversation id in a field apply_threading never empties and conversation_nodes joins on that, with a case built through the store, MessageItem::from_row and apply_threading | open |  | 2026-10-14T18:00:00.000Z |  |
 | 833 | 13.2 | todo | src/presentation/wx_app.rs | 16291 | 13.2-01: a conversation with two or more messages in the open folder and more filed elsewhere opens a tree holding this folder's members only, while the row counts the whole account, so open_on can name a message the tree does not hold, a starter in Sent for one, and the tree opens on its root rather than on the row's message. Closed by entry 832's root fix together with a tree built across the reach the row counts, with a case where the row's message is filed in another folder | open |  | 2026-10-14T18:00:00.000Z |  |
+| 834 | 13.2 | unrun-verify | src/presentation/wx_app.rs | 27023 | 13.2-02, Pratik's second and third reports of 2026-10-14, heard under NVDA in his Inbox under conversation view on a build holding 13.2-02's merge: M on an unread conversation, then arrowing away and back, the row heard without Unread; the Action menu then saying Mark as Unread; and Delete on a conversation, the row heard leaving and NVDA reading the next conversation. A built list holds all three in tests/a_change_made_here_reaches_the_conversation_rows.rs. Closed when he has heard them on his own mailbox | open |  | 2026-10-14T20:00:00.000Z |  |
+| 835 | 13.2 | todo | src/presentation/wx_app.rs | 22841 | 13.2-02, carried from REGRESSIONS.md's investigation 3: All Inboxes shown as conversations is never read again after a check, because reread_folder_if_open needs a folder id and All Inboxes has none, so mail arriving there waits until he leaves All Inboxes and comes back. A change made here reaches its rows since 13.2-02; mail arriving does not. Closed when a check that finds mail for an inbox reads All Inboxes again while it is on screen, repainting only the rows that changed, with a case | open |  | 2026-10-14T20:00:00.000Z |  |
+| 836 | 13.2 | todo | src/presentation/wx_app.rs | 12841 | 13.2-02, question 2 of REGRESSIONS.md, waiting on Pratik's answer: the folder tree's unread count, as in "Inbox, 5 unread", shows the stored folders.unread_count, which only the mail check's set_folder_counts and Mark All as Read write, so a mark made here changes it at the next check in either view, though mark_what_was_read's doc comment says the count in the folder tree is where it shows. Recommended: the count from this computer at once, the next check correcting it, as a small plan of its own. Closed by his answer and, on a yes, that plan | open |  | 2026-10-14T20:00:00.000Z |  |
+| 837 | 13.2 | todo | src/data/message_cache/messages.rs | 437 | 13.2-02: the read a change made here runs on the interface thread takes 299 ms for one conversation at the size of Pratik's Inbox (34,407 messages, 22,503 conversations, an All Mail copy of each), measured on docs/development/measurements.md, against the 100 ms the plan set for a read on a key press; narrowing elsewhere and here and letting the thread index serve it brought it from 620 ms. Where the rest goes is not measured: the folder's listed set, the reach, or the column expressions reading here. Closed when EXPLAIN QUERY PLAN names the cost and the read is under 100 ms at that size, or Pratik accepts the figure after hearing M on his Inbox | open |  | 2026-10-14T20:00:00.000Z |  |
+| 838 | 13.2 | todo | src/data/message_cache/messages.rs |  | 13.2-02, found while building its timing fixture: writing 34,407 messages and an All Mail copy of each, 68,814 rows whose References name their conversation's root, through upsert_messages in batches of 2,000, took 2,012 s, 1,844 s and 1,582 s in three runs on 2026-10-14, the batches slowing as the store grew (the first 24,000 rows in about 270 s). The 200,000-row harness writes rows with no References at about 1,250 a second, so the cost is likely in what each insert does for its conversation (merge_what_this_message_connects or the search index), not measured. A first download of an Inbox that size may spend as long in the store. Closed when the cost per row is measured at that size and named, and either made flat or ledgered with its figure | open |  | 2026-10-14T20:00:00.000Z |  |
 
 ````json
 [
@@ -7373,7 +7378,7 @@ last_updated: 2026-10-14T18:00:00.000Z
     "phase": "11",
     "file": "src/presentation/wx_app.rs",
     "line": null,
-    "description": "11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying \"selected\" for each row added and reading the row; Shift+Up shrinking it with \"not selected\" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, \"Delete\" once and the row after the set read once when they have gone; \"3 messages marked read\" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying \"1 conversation, 5 messages marked read\"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard",
+    "description": "11-07: what only the tester's ear settles for #30 and the thread clause of #27. Shift+Down growing the selection with NVDA saying \"selected\" for each row added and reading the row; Shift+Up shrinking it with \"not selected\" for the row that leaves; the count after Ctrl+A on its own; one sentence after Delete over several, \"Delete\" once and the row after the set read once when they have gone; \"3 messages marked read\" once after Mark as Read over three and nothing per message; M on a conversation row marking the whole thread and saying \"1 conversation, 5 messages marked read\"; and the refusal above 5,000 heard once with the count. The built list holds the events the control raises and the source readings hold the seven arms to the set; none of it has been heard. Noted 2026-10-14 by 13.2-02: under conversation view a conversation row now changes at once after M rather than at the next check, held on a built list in tests/a_change_made_here_reaches_the_conversation_rows.rs; the mark clause stays open until heard",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-19T03:44:00.000Z",
@@ -10845,6 +10850,66 @@ last_updated: 2026-10-14T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 834,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 27023,
+    "description": "13.2-02, Pratik's second and third reports of 2026-10-14, heard under NVDA in his Inbox under conversation view on a build holding 13.2-02's merge: M on an unread conversation, then arrowing away and back, the row heard without Unread; the Action menu then saying Mark as Unread; and Delete on a conversation, the row heard leaving and NVDA reading the next conversation. A built list holds all three in tests/a_change_made_here_reaches_the_conversation_rows.rs. Closed when he has heard them on his own mailbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 835,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 22841,
+    "description": "13.2-02, carried from REGRESSIONS.md's investigation 3: All Inboxes shown as conversations is never read again after a check, because reread_folder_if_open needs a folder id and All Inboxes has none, so mail arriving there waits until he leaves All Inboxes and comes back. A change made here reaches its rows since 13.2-02; mail arriving does not. Closed when a check that finds mail for an inbox reads All Inboxes again while it is on screen, repainting only the rows that changed, with a case",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 836,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": 12841,
+    "description": "13.2-02, question 2 of REGRESSIONS.md, waiting on Pratik's answer: the folder tree's unread count, as in \"Inbox, 5 unread\", shows the stored folders.unread_count, which only the mail check's set_folder_counts and Mark All as Read write, so a mark made here changes it at the next check in either view, though mark_what_was_read's doc comment says the count in the folder tree is where it shows. Recommended: the count from this computer at once, the next check correcting it, as a small plan of its own. Closed by his answer and, on a yes, that plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 837,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/message_cache/messages.rs",
+    "line": 437,
+    "description": "13.2-02: the read a change made here runs on the interface thread takes 299 ms for one conversation at the size of Pratik's Inbox (34,407 messages, 22,503 conversations, an All Mail copy of each), measured on docs/development/measurements.md, against the 100 ms the plan set for a read on a key press; narrowing elsewhere and here and letting the thread index serve it brought it from 620 ms. Where the rest goes is not measured: the folder's listed set, the reach, or the column expressions reading here. Closed when EXPLAIN QUERY PLAN names the cost and the read is under 100 ms at that size, or Pratik accepts the figure after hearing M on his Inbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 838,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/message_cache/messages.rs",
+    "line": null,
+    "description": "13.2-02, found while building its timing fixture: writing 34,407 messages and an All Mail copy of each, 68,814 rows whose References name their conversation's root, through upsert_messages in batches of 2,000, took 2,012 s, 1,844 s and 1,582 s in three runs on 2026-10-14, the batches slowing as the store grew (the first 24,000 rows in about 270 s). The 200,000-row harness writes rows with no References at about 1,250 a second, so the cost is likely in what each insert does for its conversation (merge_what_this_message_connects or the search index), not measured. A first download of an Inbox that size may spend as long in the store. Closed when the cost per row is measured at that size and named, and either made flat or ledgered with its figure",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T20:00:00.000Z",
     "resolved_at": null
   }
 ]

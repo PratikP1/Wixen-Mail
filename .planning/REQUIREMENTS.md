@@ -4284,6 +4284,16 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     here on its conversation row at once, so a conversation marked from its row reads as
     marked without waiting for the next check (his second report). It adds no `[D]` clause
     and the box stays ticked.
+  - 13.2-02 on 2026-10-14: under conversation view Mark as Read, Star, the label command and
+    the runner's labels, Undo and Redo of a mark, and the read, starred and label update arms
+    bring the conversation rows they touched up to date from the store at once,
+    `bring_the_conversation_rows_up_to_date` over `conversations_holding` and the folder's or
+    every inbox's listing narrowed to those conversations, a row replaced where it stands by
+    `view_state::bring_rows_up_to_date` and only changed rows repainted, nothing said beyond
+    the word at the key; so `the_chosen_rows_have_unread` reads the new count and the command
+    offers Mark as Unread. Held on a built list, cells read with `LVM_GETITEMTEXTW`, in
+    `tests/a_change_made_here_reaches_the_conversation_rows.rs`. Hearing it is ledger 834;
+    the folder tree's count is 836, waiting on Pratik.
 
 - [x] **LIST-05**: Shift with the arrow keys selects more than one message, every command
   that acts on messages acts on the selection with one announcement saying how many, and a
@@ -5013,6 +5023,15 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     13.2-11 replays a move or a delete kept from offline only into the folder numbering it was
     kept under, and stops an older waiting flag change overwriting a newer one (findings #5
     and #2). They add no `[D]` clause and the box stays ticked.
+  - 13.2-02 on 2026-10-14: under conversation view `take_row_out_of_the_list` takes the store
+    and no longer returns early; a delete or a move made here brings its conversation rows up
+    to date from the store, a row whose conversation has nothing left in the folder leaves at
+    once, and the cursor lands by the removal rule on the next conversation, or the one before
+    it when it was last, with the focus event raised. A set remembers its messages under
+    conversation view too, so a delete over five catches up and lands once. Held on a built
+    list in `tests/a_change_made_here_reaches_the_conversation_rows.rs`, the delete made
+    through `what_happens_here` as `complete_here_then_tell_the_server` makes it. Hearing it
+    is ledger 834; All Inboxes not read again after a check is 835.
 
 **Added 2026-09-19: one more for #86's second half, after Pratik overruled 11-07.1's
 decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
@@ -7598,7 +7617,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause |
-| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause |
+| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836) |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
@@ -7615,7 +7634,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
 | LIST-19 | Phase 11, then phase 12 | Complete, 2026-09-22: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page) and 12-02 at `70f5435a`, corrected at `cf58f9a4` (the separate window as a process of its own with a browser profile of its own, the erase reaching it, the route spawning it, ledger 566 fixed). What only an ear settles is ledger 560 and 568, and the scan's `page-window` target runs at the next push of `main` |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
-| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause |
+| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause; 13.2-02 done 2026-10-14, a conversation row a delete made here emptied leaves at once and the cursor lands (ledger 834, 835) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
