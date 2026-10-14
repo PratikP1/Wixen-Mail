@@ -277,6 +277,12 @@ Escape from the conversation is what takes you back to the message list, so
 reading three messages from one thread is three trips out and back rather than
 three trips out and three trips back down.
 
+A command on a message in the conversation, `Delete`, `M` or a line from its
+menu, comes back the same way: the conversation returns by itself with the
+cursor on that message, or on the next one when it has gone, and lists what is
+true now, so a message just marked read no longer says "Unread". The keys
+are under Conversations, below.
+
 The reader is a read-only text control, not a browser, so everything you expect
 from a text control works: arrow keys move by character, word and line, `Home`
 and `End` work, text can be selected and copied, and your screen reader reports
@@ -563,11 +569,30 @@ other two surfaces. Nobody has heard any of this in a screen reader yet.
 | A conversation row, one of its messages in this folder | `Enter` | Opens the row's own message, the one its sender and preview show, even when that message is filed in another folder. If it is no longer on this computer, Enter says so |
 | Conversation tree, first row | `Enter` | The whole conversation in one document, every message in order |
 | Conversation tree, any message | `Enter` | That message alone |
+| Conversation tree, any message | `Delete` | Deletes that message, not the whole conversation. Not asked about first, as in the list |
+| Conversation tree, any message | `Shift+Del` | Deletes that message permanently, as in the list. Not asked about first |
+| Conversation tree, any message | `M` | Marks that message read, or unread when it is read, and says which, as the Action menu's Mark as Read does |
+| Conversation tree, any message | `Applications` or `Shift+F10` | The message's menu, the same one the message list offers. What you choose acts on that message alone |
 | Conversation tree | `Esc` | Back to the list, focus on the row it came from |
 
-The message list stays one row per message. The conversation structure is
-behind `Enter` rather than in the list itself, so arrowing never walks branches
-you did not ask for.
+On the first row, the whole conversation, `Delete`, `M` and the menu key do
+nothing: those are commands for one message. To act on every message of a
+conversation, use its row in the message list.
+
+After `Delete`, `M` or a line of the menu, the conversation comes back by
+itself, listing what is true now: the cursor is on the same message, or on
+the message after it when that one has gone. It says only what the command
+says, not the conversation's name again. When the last message of the
+conversation here has gone, you are back in the message list, on the next
+conversation. Reply, Reply All, Forward and the three Copy to commands open a
+window of their own instead, and closing that window takes you back to the
+list. The other message keys, such as `Ctrl+R`, are not answered here yet.
+
+Until 14 October 2026 this page said the message list stays one row per
+message. Since 20 September 2026 a folder shows one row per conversation unless
+you switch it to messages, and a conversation row never expands in the list.
+Its messages are listed one by one only here, behind `Enter`, so arrowing never
+walks branches you did not ask for.
 
 The first row of the tree is labelled "Whole conversation, 5 messages" rather
 than the subject, because `Enter` does two different things in that tree and

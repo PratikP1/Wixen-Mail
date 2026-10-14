@@ -106,22 +106,35 @@ pub enum ThreadChoice {
     Cancelled,
 }
 
-/// Which of the tree's keys a key-down is, if any.
+/// `WXK_NUMPAD_DELETE`: the number pad's Del, with Num Lock off, which
+/// wxWidgets names apart from the dedicated Delete key.
+const NUMPAD_DELETE: i32 = 385;
+
+/// Which of the tree's keys a key-down is, if any: its key with exactly its
+/// own modifiers, so Ctrl+M stays another command and Shift+M a capital for
+/// the tree's search.
+///
+/// A letter is held to [`crate::presentation::list_keys::is_a_bare_press_of`],
+/// the rule M already follows on the message list. The number pad's Del is
+/// Delete, as it is everywhere else in Windows.
 pub fn the_key_pressed(
     pressed: Option<i32>,
     control: bool,
     alt: bool,
     shift: bool,
 ) -> Option<&'static TreeKey> {
-    let _ = (pressed, control, alt, shift);
-    None
+    use crate::presentation::list_keys::is_a_bare_press_of;
+    let pressed = pressed.map(|code| if code == NUMPAD_DELETE { 127 } else { code });
+    THE_TREES_KEYS.iter().find(|key| {
+        key.shift == shift && is_a_bare_press_of(char::from(key.key), pressed, control, alt, false)
+    })
 }
 
 /// What the dialog answered, from the code it ended with and the choice the
 /// tree kept current while it was open.
 pub fn what_the_dialog_answered(code: i32, chosen: &ThreadChoice) -> ThreadChoice {
     match code {
-        ID_OK => chosen.clone(),
+        ID_OK | ID_ACT => chosen.clone(),
         // Always the whole thread, whichever row the tree was on. The plain
         // reading is of the conversation, and one message already has its own
         // way in through Enter.
@@ -132,20 +145,87 @@ pub fn what_the_dialog_answered(code: i32, chosen: &ThreadChoice) -> ThreadChoic
 
 /// Where the cursor goes when the conversation comes back after a command
 /// on `acted_on`, given the tree before it, `before`, and the messages it
-/// lists now, `now`.
+/// lists now, `now` (13.2-03).
+///
+/// The same message while it is still listed, so a mark or a star keeps
+/// the place. Otherwise the message after it in the order the tree listed
+/// them, which is where a person arrowing down would have gone next, then
+/// the one before it when it was the last; nothing when nothing is left,
+/// which opens on the root.
 pub fn where_the_cursor_comes_back(
     before: &[ThreadNode],
     acted_on: i64,
     now: &[ThreadNode],
 ) -> Option<i64> {
-    let _ = (before, acted_on, now);
-    None
+    let still_listed = |id: &i64| now.iter().any(|node| node.message_id == *id);
+    let walked: Vec<i64> = rows_in_walk_order(before)
+        .iter()
+        .map(|row| before[row.node].message_id)
+        .collect();
+    let at = walked.iter().position(|id| *id == acted_on)?;
+    walked[at..]
+        .iter()
+        .chain(walked[..at].iter().rev())
+        .copied()
+        .find(still_listed)
 }
 
-/// Whether the conversation comes back after `command`.
+/// Whether the conversation comes back after `command` (13.2-03).
+///
+/// It does after a command over the message, a mark, a star, a delete, a
+/// move or a copy to a folder, whose own windows have closed by the time it
+/// returns. It does not after Reply, Reply All, Forward or the three Copy to
+/// commands, which open a window of their own: brought back over it, the
+/// conversation would sit on top and disable it, so closing that window
+/// returns to the list instead.
 pub fn brings_the_conversation_back(command: Id) -> bool {
-    let _ = command;
-    false
+    use crate::presentation::wx_app::{
+        ID_CONTEXT_COPY_TO_EVENT, ID_CONTEXT_COPY_TO_NOTE, ID_CONTEXT_COPY_TO_TASK, ID_FORWARD,
+        ID_REPLY, ID_REPLY_ALL,
+    };
+    ![
+        ID_REPLY,
+        ID_REPLY_ALL,
+        ID_FORWARD,
+        ID_CONTEXT_COPY_TO_TASK,
+        ID_CONTEXT_COPY_TO_EVENT,
+        ID_CONTEXT_COPY_TO_NOTE,
+    ]
+    .contains(&command)
+}
+
+/// How the conversation window is arriving.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Arrival {
+    /// Opened from the list, or back from a message read from it: it says
+    /// "Conversation, N messages", as it always did.
+    FirstOpening,
+    /// Back after a command run in it (13.2-03): the command has said its
+    /// own words, and the window says nothing more (guardrail 5).
+    AfterACommand,
+}
+
+/// End the dialog with `code`, once. A second ending queued behind the first,
+/// such as Escape pressed just after Enter, would otherwise overwrite the
+/// answer the first gave.
+fn finish(dlg: Dialog, code: i32) {
+    if dlg.is_shown() {
+        dlg.end_modal(code);
+    }
+}
+
+/// Turn the choice into a command on the message the cursor is on, when it
+/// is on one: the root is the whole conversation, and the message commands
+/// are a message's. Whether it did.
+fn act_on_the_message(chosen: &std::cell::RefCell<ThreadChoice>, command: Id) -> bool {
+    let mut chosen = chosen.borrow_mut();
+    match *chosen {
+        ThreadChoice::Message(message) => {
+            *chosen = ThreadChoice::Act { command, message };
+            true
+        }
+        _ => false,
+    }
 }
 
 /// How a message reads in the tree.
@@ -263,12 +343,20 @@ pub fn where_to_open(nodes: &[ThreadNode], open_on: Option<i64>) -> Option<usize
 /// `open_on` is the message the cursor starts on, by [`where_to_open`], so
 /// Enter on arrival opens the message the list row stood for; nothing puts
 /// the cursor on the root.
+///
+/// `offers` is the menu the message the cursor is on offers, asked when the
+/// menu key is pressed on it (13.2-03): the caller's rule, which is the
+/// message list's, so one message offers one menu in both windows. The root
+/// offers nothing. `arrival` says whether to say "Conversation, N messages":
+/// on a first opening yes, after a command run here no.
 pub fn show_thread_dialog(
     parent: &Frame,
     subject: &str,
     nodes: &[ThreadNode],
     open_on: Option<i64>,
     a11y: &Arc<Accessibility>,
+    arrival: Arrival,
+    offers: impl Fn(i64) -> Option<&'static [crate::application::context_menu::Entry]> + 'static,
 ) -> ThreadChoice {
     use crate::presentation::accessibility::announcements::Priority;
 
@@ -276,7 +364,7 @@ pub fn show_thread_dialog(
         return ThreadChoice::Cancelled;
     }
 
-    let Some((dlg, _tree, chosen)) = build_thread_dialog(
+    let Some((dlg, tree, chosen)) = build_thread_dialog(
         parent,
         subject,
         nodes,
@@ -286,10 +374,22 @@ pub fn show_thread_dialog(
         return ThreadChoice::Cancelled;
     };
 
-    let _ = a11y.announce(
-        &format!("Conversation, {} messages", nodes.len()),
-        Priority::Normal,
-    );
+    // A line chosen from it reaches the dialog's menu handler, which turns it
+    // into a command on the message.
+    crate::presentation::wx_app::wire_context_menu(&tree, {
+        let chosen = chosen.clone();
+        move || match *chosen.borrow() {
+            ThreadChoice::Message(message) => offers(message),
+            _ => None,
+        }
+    });
+
+    if arrival == Arrival::FirstOpening {
+        let _ = a11y.announce(
+            &format!("Conversation, {} messages", nodes.len()),
+            Priority::Normal,
+        );
+    }
 
     let code = dlg.show_modal();
     what_the_dialog_answered(code, &chosen.borrow())
@@ -436,10 +536,59 @@ pub fn build_thread_dialog(
     }
     tree.set_focus();
 
-    tree.on_item_activated(move |_| dlg.end_modal(ID_OK));
-    open.on_click(move |_| dlg.end_modal(ID_OK));
-    plain.on_click(move |_| dlg.end_modal(ID_PLAIN_TEXT));
-    cancel.on_click(move |_| dlg.end_modal(ID_CANCEL));
+    // The buttons' clicks are consumed, so wxWidgets' own handling of the
+    // stock OK and Cancel ids does not end the dialog a second time behind
+    // `finish` and overwrite its answer.
+    tree.on_item_activated(move |_| finish(dlg, ID_OK));
+    open.on_click(move |clicked| {
+        clicked.event.skip(false);
+        finish(dlg, ID_OK);
+    });
+    plain.on_click(move |clicked| {
+        clicked.event.skip(false);
+        finish(dlg, ID_PLAIN_TEXT);
+    });
+    cancel.on_click(move |clicked| {
+        clicked.event.skip(false);
+        finish(dlg, ID_CANCEL);
+    });
+
+    // The message keys, read from one list, act on the message the cursor is
+    // on and end the dialog for the main window to run the command (13.2-03).
+    // Consumed, so M never reaches the tree's own search; on the root they
+    // are left alone, since the root is the whole conversation.
+    tree.bind_internal(EventType::KEY_DOWN, {
+        let chosen = chosen.clone();
+        move |event| {
+            event.skip(true);
+            let Some(key) = the_key_pressed(
+                event.get_key_code(),
+                event.control_down(),
+                event.alt_down(),
+                event.shift_down(),
+            ) else {
+                return;
+            };
+            if act_on_the_message(&chosen, key.command) {
+                event.skip(false);
+                finish(dlg, ID_ACT);
+            }
+        }
+    });
+    // A line from the message's menu, which the menu key raises on the tree
+    // and which reaches the dialog as a menu event. The dialog's own answers
+    // arrive as buttons and the tree's activation, never as menu events, so
+    // every menu event here is a line of that menu.
+    dlg.bind_internal(EventType::MENU, {
+        let chosen = chosen.clone();
+        move |event| {
+            event.skip(true);
+            if act_on_the_message(&chosen, event.get_id()) {
+                event.skip(false);
+                finish(dlg, ID_ACT);
+            }
+        }
+    });
 
     // Painted last. The tree is left to Windows here, the same as every
     // `Choice`, `ComboBox`, `RadioButton` and `CheckBox` elsewhere in this

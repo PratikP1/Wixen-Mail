@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 698 records have arrived since and have not been through it.
+# 701 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -15223,7 +15223,7 @@ red = [
     "test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
     { file = "tests/tree_rows_leave_no_registry_entry.rs", tests = 1 },
 ]
 
@@ -15330,7 +15330,7 @@ red = [
     "test_choosing_a_row_in_either_dialog_resolves_to_that_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
     { file = "tests/tree_dialogs_resolve_the_row_somebody_is_on.rs", tests = 1 },
 ]
 
@@ -27990,7 +27990,7 @@ red = [
     "test_enter_opens_the_conversation_on_the_row_message",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_thread_view.rs", tests = 9 },
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
     { file = "tests/a_conversation_row_stands_for_one_message.rs", tests = 21 },
 ]
 
@@ -39461,4 +39461,79 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/every_command_acts_on_the_selection.rs", tests = 17 },
+]
+
+# Delete taken out of the conversation tree's keys: Delete on a message in
+# an opened conversation does nothing, which is Pratik's fourth report of
+# 2026-10-14 (13.2-03). The window is shown modally on the run's own desktop
+# and the key posted to its tree, so the case sees what a pressed key does.
+#
+# Measured by hand on 2026-10-14: the target, and the whole library at
+# 9,037 passed and 1 failed, the unit case the record after this names. A
+# record with a suite runs that target alone, so the library's half of the
+# same break is a record of its own.
+[[guard]]
+name = "Delete on a message in an opened conversation acts on that message"
+file = "src/presentation/wx_thread_view.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''    TreeKey {
+        key: 127,
+        shift: false,
+        written: "Delete",'''
+after = '''    TreeKey {
+        key: 0,
+        shift: false,
+        written: "Delete",'''
+red = [
+    "test_delete_on_a_message_acts_on_that_message",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 13 },
+]
+
+# The same break read by the library: the rule that tells a key-down which
+# of the tree's keys it is answers nothing for Delete, or for the number
+# pad's Del (13.2-03).
+#
+# Measured by hand on 2026-10-14: the whole library at 9,037 passed and 1
+# failed, this one.
+[[guard]]
+name = "Delete and the number pad's Del are the conversation tree's Delete"
+file = "src/presentation/wx_thread_view.rs"
+before = '''    TreeKey {
+        key: 127,
+        shift: false,
+        written: "Delete",'''
+after = '''    TreeKey {
+        key: 0,
+        shift: false,
+        written: "Delete",'''
+red = [
+    "presentation::wx_thread_view::tests::test_each_key_is_its_command_with_its_own_modifiers_and_no_other",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_thread_view.rs", tests = 17 },
+]
+
+# The guard taken out of the conversation's Act arm: a command chosen in an
+# opened conversation runs with no message named, so it acts on the list's
+# cursor row, the whole conversation behind the window (13.2-03). The loop
+# needs the whole main window, so the reading over it is what sees this.
+#
+# Measured by hand on 2026-10-14: the target, and the whole library at
+# 9,038 passed and 0 failed.
+[[guard]]
+name = "a command chosen in an opened conversation runs with its message named"
+file = "src/presentation/wx_app.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''                let _acting = ActingOn::begin(&state, message);
+'''
+after = ''''''
+red = [
+    "test_the_loop_runs_the_command_on_the_named_message_and_comes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 13 },
 ]
