@@ -45,6 +45,9 @@
 //! when it has had enough: ledger 11 and 72. Nothing here has met one. The
 //! chunk sizes are decisions of 2026-09-17 and each says so on its constant.
 
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
 use crate::common::types::FolderType;
 use crate::data::message_cache::bodies::MessageToFetch;
 
@@ -75,6 +78,61 @@ pub const TEXT_PER_CHUNK_MESSAGES: usize = 50;
 /// would leave it missing forever. A provider observed doing something else
 /// would move it; nothing has observed one.
 pub const TEXT_PER_CHUNK_BYTES: u64 = 16 * 1024 * 1024;
+
+/// How often the folder on screen is read again while the download brings
+/// it.
+///
+/// Ten seconds, the figure the verdict on finding #36 named on 2026-10-14.
+/// Until then every chunk of headers made the window read the whole open
+/// folder again, which grows with the square of the folder: the verdict put
+/// the tester's 12,872 messages at about 40 to 90 ms a chunk on the window's
+/// thread, and a freeze somebody notices at roughly 50,000. A chunk lands
+/// every few seconds, so once every ten seconds is a fraction of the reads,
+/// and the list is never more than ten seconds behind what is here.
+pub const HOW_OFTEN_THE_OPEN_FOLDER_IS_READ_AGAIN: Duration = Duration::from_secs(10);
+
+/// When the folder on screen is read again while the download brings it.
+///
+/// A chunk landing marks its folder when it is the one on screen, and the
+/// main timer asks [`ReadingTheOpenFolderAgain::the_folder_due`] about once
+/// a second. The mark outlives the chunks, so the last chunk of a folder is
+/// still shown, once its ten seconds have passed.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ReadingTheOpenFolderAgain {
+    /// The folder on screen a chunk landed in since it was last read.
+    marked: Option<i64>,
+    /// When a chunk's arrival last had the folder read again.
+    last_read_again_at: Option<Instant>,
+}
+
+impl ReadingTheOpenFolderAgain {
+    /// A chunk of headers landed in `folder_id`.
+    ///
+    /// Marked only when it is the folder on screen: a chunk landing in a
+    /// folder nobody is looking at would otherwise take the mark from the
+    /// one somebody is, and that folder's last chunk would never be shown.
+    pub fn a_chunk_landed(&mut self, folder_id: i64, on_screen: Option<i64>) {
+        if on_screen == Some(folder_id) {
+            self.marked = Some(folder_id);
+        }
+    }
+
+    /// The folder to read again now, if any.
+    ///
+    /// Answering forgets the mark and remembers the moment, so the next
+    /// answer waits for the next chunk and for the interval both.
+    pub fn the_folder_due(&mut self, now: Instant) -> Option<i64> {
+        let waited = self.last_read_again_at.is_none_or(|last| {
+            now.saturating_duration_since(last) >= HOW_OFTEN_THE_OPEN_FOLDER_IS_READ_AGAIN
+        });
+        if !waited {
+            return None;
+        }
+        let due = self.marked.take()?;
+        self.last_read_again_at = Some(now);
+        Some(due)
+    }
+}
 
 /// How much of a folder is on this computer after a chunk landed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -217,6 +275,48 @@ pub struct TextStillMissing<'a> {
     /// How many bytes of message text this computer already keeps for the
     /// account.
     pub kept_bytes: u64,
+}
+
+/// The messages whose text one account's run has already asked for.
+///
+/// Nothing on this computer records a message whose text failed to arrive,
+/// so without this the list of what has no text here hands the same message
+/// back after every chunk, and one that always fails is asked for again with
+/// no wait until a check forgets it, which can be six hours or never (finding
+/// #11, 2026-10-14). Held by the runner for one account's run and dropped at
+/// its end, so a message is asked for at most once a run, and the run carries
+/// on past one that will not come. Forgotten at the end on purpose: a failure
+/// that was passing, a connection closed while a folder opened, is asked
+/// again by the next run, which the next check starts.
+#[derive(Debug, Default)]
+pub struct TextAskedThisRun(HashSet<i64>);
+
+impl TextAskedThisRun {
+    /// Remember that this chunk's text was asked for.
+    pub fn remember(&mut self, chunk: &[MessageToFetch]) {
+        self.0
+            .extend(chunk.iter().map(|message| message.message_id));
+    }
+
+    /// What is missing that this run has not asked for yet, in the order it
+    /// came.
+    pub fn not_yet_asked(&self, missing: &[MessageToFetch]) -> Vec<MessageToFetch> {
+        missing
+            .iter()
+            .filter(|message| !self.0.contains(&message.message_id))
+            .cloned()
+            .collect()
+    }
+}
+
+/// Whether a chunk of text counts as work done for the account.
+///
+/// A run says what an account came to only when it did something, and a
+/// chunk that fetched nothing did nothing: with each message asked once a
+/// run, a run whose only text work asked again for messages that fail would
+/// otherwise say the download is done at every check.
+pub fn a_chunk_of_text_did_work(fetched: usize) -> bool {
+    fetched > 0
 }
 
 /// Why a download of everything has nothing more to do.
@@ -787,6 +887,145 @@ mod tests {
                 why: Why::ReadingIsOff
             }
         );
+    }
+
+    #[test]
+    fn test_a_message_asked_for_in_this_run_is_not_asked_for_again() {
+        let missing = [a_message(9, 100), a_message(8, 100), a_message(7, 100)];
+        let mut asked = TextAskedThisRun::default();
+
+        assert_eq!(
+            asked.not_yet_asked(&missing),
+            missing.to_vec(),
+            "a run that has asked for nothing left something out"
+        );
+
+        asked.remember(&[a_message(9, 100), a_message(7, 100)]);
+
+        assert_eq!(
+            asked.not_yet_asked(&missing),
+            vec![a_message(8, 100)],
+            "a message this run already asked for was handed back to be asked again"
+        );
+    }
+
+    #[test]
+    fn test_a_run_with_only_failed_text_left_finds_everything_here() {
+        // Two messages whose text never comes: asked once, still missing,
+        // and the run is over rather than asking again with no wait.
+        let folders = [a_folder(1, "Inbox", FolderType::Inbox, 2, 2)];
+        let missing = [a_message(9, 100), a_message(7, 100)];
+        let mut asked = TextAskedThisRun::default();
+        asked.remember(&missing);
+        let left = asked.not_yet_asked(&missing);
+
+        let next = what_to_do_next(
+            &folders,
+            TextStillMissing {
+                messages: &left,
+                kept_bytes: 0,
+            },
+            TextBudget::All,
+            None,
+            true,
+        );
+
+        assert_eq!(
+            next,
+            WhatToDoNext::EverythingIsHere {
+                why: Why::ItIsAllHere
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_chunk_that_fetched_nothing_is_not_work() {
+        assert!(
+            !a_chunk_of_text_did_work(0),
+            "a chunk that fetched nothing counted as work, so the run would say the download is \
+             done at every check"
+        );
+        assert!(a_chunk_of_text_did_work(1));
+    }
+
+    /// A pacing whose folder 4 has been marked as on screen.
+    fn folder_4_marked() -> ReadingTheOpenFolderAgain {
+        let mut reading = ReadingTheOpenFolderAgain::default();
+        reading.a_chunk_landed(4, Some(4));
+        reading
+    }
+
+    #[test]
+    fn test_the_open_folder_is_read_again_at_most_every_ten_seconds() {
+        let start = Instant::now();
+
+        let mut never_read = folder_4_marked();
+        assert_eq!(
+            never_read.the_folder_due(start),
+            Some(4),
+            "a marked folder read again by no chunk before waited"
+        );
+
+        let mut read_four_seconds_ago = folder_4_marked();
+        read_four_seconds_ago.the_folder_due(start);
+        read_four_seconds_ago.a_chunk_landed(4, Some(4));
+        assert_eq!(
+            read_four_seconds_ago.the_folder_due(start + Duration::from_secs(4)),
+            None,
+            "the folder was read again four seconds after the last time"
+        );
+        assert_eq!(
+            read_four_seconds_ago.the_folder_due(start + HOW_OFTEN_THE_OPEN_FOLDER_IS_READ_AGAIN),
+            Some(4),
+            "the folder was not read again once ten seconds had passed"
+        );
+
+        assert_eq!(
+            ReadingTheOpenFolderAgain::default().the_folder_due(start),
+            None,
+            "a folder was read again with nothing marked"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_marked_after_the_last_chunk_is_still_read_again() {
+        // The last chunk lands two seconds after a re-read and nothing comes
+        // after it, so it is the mark alone that has it shown, and it is
+        // shown once.
+        let start = Instant::now();
+        let mut reading = folder_4_marked();
+        assert_eq!(reading.the_folder_due(start), Some(4));
+
+        reading.a_chunk_landed(4, Some(4));
+
+        assert_eq!(reading.the_folder_due(start + Duration::from_secs(5)), None);
+        assert_eq!(
+            reading.the_folder_due(start + Duration::from_secs(11)),
+            Some(4),
+            "the last chunk of the folder was never shown"
+        );
+        assert_eq!(
+            reading.the_folder_due(start + Duration::from_secs(30)),
+            None,
+            "the folder was read again with no chunk since"
+        );
+    }
+
+    #[test]
+    fn test_a_chunk_in_a_folder_not_on_screen_marks_nothing() {
+        let mut reading = folder_4_marked();
+
+        reading.a_chunk_landed(9, Some(4));
+
+        assert_eq!(
+            reading.the_folder_due(Instant::now()),
+            Some(4),
+            "a chunk in a folder nobody is looking at took the mark from the one on screen"
+        );
+
+        let mut nothing_on_screen = ReadingTheOpenFolderAgain::default();
+        nothing_on_screen.a_chunk_landed(9, None);
+        assert_eq!(nothing_on_screen.the_folder_due(Instant::now()), None);
     }
 
     #[test]

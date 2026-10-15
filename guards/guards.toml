@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 721 records have arrived since and have not been through it.
+# 730 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -718,7 +718,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
@@ -4825,21 +4825,27 @@ tests_last_seen = [
 # once per chunk of headers, so the arm and the break are unchanged and the
 # target that reads them is `everything_comes_down_without_being_asked`.
 # Measured again through `--remeasure` that day.
+#
+# Rewritten on 2026-10-15 by 13.2-09 for finding #36: the arm no longer reads
+# the folder once per chunk; it marks it, and the main timer reads it at most
+# every ten seconds. The break takes the mark out, which leaves what a chunk
+# brought off the list, and the reading asks for the mark. Measured by hand
+# that day: the whole library at 9,100 passed, the target at 27 passed and 1
+# failed, the one named.
 
 [[guard]]
 name = "a chunk of the download that lands is shown, and no limit grows"
 file = "src/presentation/wx_app.rs"
 suite = "everything_comes_down_without_being_asked"
-before = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
-            reread_folder_if_open(state, message_cache, *folder_id, tx);"""
-after = """            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
-            let _ = folder_id;"""
+before = """            s.reading_the_open_folder_again
+                .a_chunk_landed(*folder_id, on_screen);"""
+after = """            let _ = (&mut s.reading_the_open_folder_again, *folder_id, on_screen);"""
 red = [
     "test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]
 
 # ── Every check ends by starting the download (#20, #23) ────────────────────
@@ -4871,7 +4877,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]
 
 # ── The download asks whether to stop between chunks ─────────────────────────
@@ -4903,7 +4909,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]
 
 # ── A failed chunk waits before the download is tried again ──────────────────
@@ -4930,7 +4936,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]
 
 # ── Pausing the download ticks the item as well as flipping the flag ─────────
@@ -4958,7 +4964,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]
 
 # ── The download's warning says what Gmail did, not that it never ran ────────
@@ -25493,7 +25499,7 @@ red = [
     "application::bringing_everything_down::tests::test_the_folder_on_screen_comes_first_then_the_inbox_then_the_tree_order",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
 ]
 
 # A text budget somebody chose ends the text run when the next chunk would
@@ -25514,7 +25520,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_chunk_of_text_shrinks_to_what_the_budget_still_allows",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
 ]
 
 # A folder is reported as stopped only when a chunk brought nothing new.
@@ -25542,7 +25548,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_finished_folder_brings_nothing_new_and_is_not_a_server_that_stopped",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
 ]
 
 # The list of messages with no text here carries each row's size, so a
@@ -39979,4 +39985,171 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
+]
+
+# ── A message's text asked for at most once a run (finding #11, 13.2-09) ─────
+#
+# Nothing on this computer records a message whose text failed, so the list
+# of what has no text here handed it back after every chunk and the download
+# asked for it again with no wait, until a check forgot it. The run now keeps
+# what it asked for and hands the model only the rest. Four records: the
+# model's filter, and the three things the runner does with it.
+#
+# Each measured by hand on 2026-10-15, the break applied with the rest of the
+# tree green: the whole library and `everything_comes_down_without_being_asked`.
+# The model's break left the library at 9,095 passed and 2 failed, these two,
+# and the target green; each runner break left the library at 9,097 passed and
+# the target at 23 passed and 1 failed, the one named.
+[[guard]]
+name = "a message's text is asked for at most once a run"
+file = "src/application/bringing_everything_down.rs"
+before = '''            .filter(|message| !self.0.contains(&message.message_id))'''
+after = '''            .filter(|_| true)'''
+red = [
+    "application::bringing_everything_down::tests::test_a_message_asked_for_in_this_run_is_not_asked_for_again",
+    "application::bringing_everything_down::tests::test_a_run_with_only_failed_text_left_finds_everything_here",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+]
+
+[[guard]]
+name = "the download leaves out the text this run already asked for"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                let not_yet_asked = asked.not_yet_asked(&missing);'''
+after = '''                let not_yet_asked = missing.clone();'''
+red = [
+    "test_the_download_leaves_out_the_text_this_run_already_asked_for",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+[[guard]]
+name = "a chunk of text counts as work only when it fetched something"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                        did_anything |= crate::application::bringing_everything_down::a_chunk_of_text_did_work(done.fetched);'''
+after = '''                        did_anything = true;'''
+red = [
+    "test_a_chunk_of_text_is_remembered_and_is_work_only_when_it_fetched_something",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+[[guard]]
+name = "a refused chunk of text ends its own account and not every account"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                                // waits and is tried again.
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break;'''
+after = '''                                // waits and is tried again.
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;'''
+red = [
+    "test_a_text_refusal_ends_its_own_account_and_not_every_account",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+# ── The open folder read at most every ten seconds (finding #36, 13.2-09) ────
+#
+# Each chunk of headers made the window read the whole open folder again and
+# speak its count, in flat view and in conversation view. The arm now marks
+# the folder, the main timer reads it at most every ten seconds and once
+# after the last chunk, and a chunk's re-read shows the count without
+# speaking it. Five records: the model's interval and its on-screen rule, the
+# timer's read, and the two loaded arms; the arm's mark is the rewritten
+# record "a chunk of the download that lands is shown, and no limit grows".
+#
+# Each measured by hand on 2026-10-15, the break applied with the rest of the
+# tree green: the whole library and `everything_comes_down_without_being_asked`,
+# and for the two arms `all_inboxes_keeps_a_view_of_its_own` and
+# `deleting_a_message_lands_on_the_next_one` as well, which read the messages
+# arm and stayed green. The interval's break left the library at 9,098 passed
+# and 2 failed, the on-screen rule's at 9,099 and 1, these named, and the
+# target green; each window break left the library at 9,100 passed and the
+# target at 27 passed and 1 failed, the one named.
+[[guard]]
+name = "the open folder is read again at most every ten seconds"
+file = "src/application/bringing_everything_down.rs"
+before = '''        if !waited {
+            return None;
+        }'''
+after = '''        let _ = waited;'''
+red = [
+    "application::bringing_everything_down::tests::test_a_folder_marked_after_the_last_chunk_is_still_read_again",
+    "application::bringing_everything_down::tests::test_the_open_folder_is_read_again_at_most_every_ten_seconds",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+]
+
+[[guard]]
+name = "a chunk in a folder not on screen marks nothing"
+file = "src/application/bringing_everything_down.rs"
+before = '''        if on_screen == Some(folder_id) {
+            self.marked = Some(folder_id);'''
+after = '''        if on_screen.is_some() || on_screen.is_none() {
+            self.marked = Some(folder_id);'''
+red = [
+    "application::bringing_everything_down::tests::test_a_chunk_in_a_folder_not_on_screen_marks_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+]
+
+[[guard]]
+name = "the main timer reads the folder a chunk marked"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                    let due = lock_state(&state)
+                        .reading_the_open_folder_again
+                        .the_folder_due(std::time::Instant::now());'''
+after = '''                    let due: Option<i64> = None;'''
+red = [
+    "test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+[[guard]]
+name = "a chunk's re-read of the messages shows the count and does not speak it"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                frame.set_status_text(&msg, 0);
+                if *why != WhyTheRowsWereRead::AChunkOfTheDownloadLanded {'''
+after = '''                frame.set_status_text(&msg, 0);
+                if true {'''
+red = [
+    "test_a_chunks_reread_shows_the_count_and_does_not_speak_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+[[guard]]
+name = "a chunk's re-read of the conversations shows the count and does not speak it"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''            frame.set_status_text(&msg, 0);
+            if *why != WhyTheRowsWereRead::AChunkOfTheDownloadLanded {'''
+after = '''            frame.set_status_text(&msg, 0);
+            if true {'''
+red = [
+    "test_a_chunks_reread_shows_the_count_and_does_not_speak_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
 ]

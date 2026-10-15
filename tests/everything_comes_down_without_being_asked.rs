@@ -346,6 +346,219 @@ fn test_the_reading_would_see_a_failed_chunk_tried_again_at_once() {
     );
 }
 
+// ── Each message's text is asked for at most once a run ──────────────────────
+
+/// The runner's arm for a chunk of text, up to the arm after it.
+///
+/// Bounded at `WhatToDoNext::EverythingIsHere`, the arm that follows it, for
+/// the reason `the_arm_for` gives: an arm read to the end holds every arm
+/// below it and passes on their words.
+fn the_text_arm(runner: &str) -> &str {
+    let Some(at) = runner.find("WhatToDoNext::TheNextChunkOfText {") else {
+        return "";
+    };
+    let rest = &runner[at..];
+    &rest[..rest
+        .find("WhatToDoNext::EverythingIsHere")
+        .unwrap_or(rest.len())]
+}
+
+/// What is wrong with the list the model is handed, as sentences; nothing
+/// when what this run already asked for is left out of it first.
+fn what_is_wrong_with_the_missing_list(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let leaves_out = runner.find("asked.not_yet_asked(&missing)");
+    let asks = runner.find("what_to_do_next(");
+    match (leaves_out, asks) {
+        (Some(leaves_out), Some(asks)) if leaves_out < asks => {}
+        _ => wrong.push(
+            "the download does not leave out what this run already asked for before it asks \
+             the model, so a message whose text always fails is asked for again with no wait"
+                .into(),
+        ),
+    }
+    if !runner.contains("messages: &not_yet_asked,") {
+        wrong.push(
+            "the model is handed the whole missing list rather than what this run has not \
+             asked for yet"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// What is wrong with the arm for a chunk of text, as sentences; nothing when
+/// it remembers the chunk and counts it as work only when it fetched
+/// something.
+fn what_is_wrong_with_the_text_arm(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let arm = the_text_arm(runner);
+    if arm.is_empty() {
+        wrong.push("the runner has no arm for a chunk of text, so this reads nothing".into());
+        return wrong;
+    }
+    if !arm.contains("asked.remember(&messages)") {
+        wrong.push(
+            "a chunk of text is not remembered, so the next ask hands the same messages back"
+                .into(),
+        );
+    }
+    if arm.contains("did_anything = true;")
+        || !arm.contains("a_chunk_of_text_did_work(done.fetched)")
+    {
+        wrong.push(
+            "a chunk of text counts as work whatever it fetched, so a run that only asked again \
+             for text that fails says the download is done at every check"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// What is wrong with how a refused chunk of text ends, as sentences;
+/// nothing when it ends this account's run, still marked as a server that
+/// stopped so the run waits and is tried again.
+fn what_is_wrong_with_a_text_refusal(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let arm = the_text_arm(runner);
+    let Some(at) = arm.find("Ending::TheServerStoppedAnswering") else {
+        wrong.push("the arm for a chunk of text has no refusal, so this reads nothing".into());
+        return wrong;
+    };
+    let refusal = &arm[at..];
+    if refusal.contains("break 'accounts") || !refusal.contains("break;") {
+        wrong.push(
+            "a refused chunk of text ends the run for every account after this one, so one \
+             account's trouble holds up the others"
+                .into(),
+        );
+    }
+    if !refusal.contains("ended = WhyTheRunEnded::AServerStopped;") {
+        wrong.push(
+            "a refused chunk of text is not marked as a server that stopped, so the run is not \
+             tried again after the wait"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// The runner's text loop as it stood until 2026-10-15, planted, which
+/// every reading in this section is proven against.
+const THE_TEXT_LOOP_BEFORE_THE_FIX: &str = "\
+                let missing = match cache.messages_with_no_text_here(&account.id) {
+                    Ok(missing) => missing,
+                    Err(e) => break,
+                };
+                let next = crate::application::bringing_everything_down::what_to_do_next(
+                    &here,
+                    crate::application::bringing_everything_down::TextStillMissing {
+                        messages: &missing,
+                        kept_bytes,
+                    },
+                );
+                match next {
+                    WhatToDoNext::TheNextChunkOfText { messages, .. } => {
+                        did_anything = true;
+                        let done = handle.block_on(fetch_over_a_mailbox(server, &cache, &messages, &stop, &|_| {}));
+                        match done.ended {
+                            Ending::WentThroughTheWholeList => worked(),
+                            Ending::TheServerStoppedAnswering { after, because } => {
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;
+                            }
+                        }
+                    }
+                    WhatToDoNext::EverythingIsHere { why } => break,
+                }
+";
+
+#[test]
+fn test_the_download_leaves_out_the_text_this_run_already_asked_for() {
+    // Finding #11: nothing records a message whose text failed, so the list
+    // of what has no text here hands it back after every chunk. The run
+    // keeps what it asked for and the model is handed only the rest.
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_the_missing_list(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_text_asked_for_again() {
+    // Proving the reading before believing it.
+    let wrong = what_is_wrong_with_the_missing_list(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert_eq!(
+        wrong.len(),
+        2,
+        "the reading did not see the whole list handed to the model: {wrong:?}"
+    );
+}
+
+#[test]
+fn test_a_chunk_of_text_is_remembered_and_is_work_only_when_it_fetched_something() {
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_the_text_arm(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_chunk_forgotten_or_counted_as_work_for_nothing() {
+    // Proving the reading before believing it: the arm as it was, and one
+    // that remembers the chunk and still counts every chunk as work.
+    let wrong = what_is_wrong_with_the_text_arm(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert!(
+        wrong.iter().any(|w| w.contains("not remembered"))
+            && wrong.iter().any(|w| w.contains("whatever it fetched")),
+        "the reading did not see the arm as it was: {wrong:?}"
+    );
+
+    let remembers_and_still_counts = THE_TEXT_LOOP_BEFORE_THE_FIX.replace(
+        "did_anything = true;",
+        "did_anything = true;\n asked.remember(&messages);",
+    );
+    let wrong = what_is_wrong_with_the_text_arm(&remembers_and_still_counts);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "the reading did not see exactly the chunk counted as work for nothing: {wrong:?}"
+    );
+}
+
+#[test]
+fn test_a_text_refusal_ends_its_own_account_and_not_every_account() {
+    // A server that stops answering one account's text ends that account's
+    // run; the accounts after it still get theirs, and the run still waits
+    // and is tried again because it is marked as a server that stopped.
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_a_text_refusal(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_text_refusal_end_every_account() {
+    // Proving the reading before believing it: the arm as it was, and one
+    // that ends the account and forgets to wait.
+    let wrong = what_is_wrong_with_a_text_refusal(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "the reading did not see exactly every account ended: {wrong:?}"
+    );
+    assert!(
+        wrong[0].contains("every account after this one"),
+        "{wrong:?}"
+    );
+
+    let ends_without_waiting = THE_TEXT_LOOP_BEFORE_THE_FIX
+        .replace("break 'accounts;", "break;")
+        .replace("ended = WhyTheRunEnded::AServerStopped;", "");
+    let wrong = what_is_wrong_with_a_text_refusal(&ends_without_waiting);
+    assert!(
+        wrong.iter().any(|w| w.contains("not tried again")),
+        "the reading did not see the wait forgotten: {wrong:?}"
+    );
+}
+
 // ── The whole-folder command is gone, because this is what it did ────────────
 
 /// The words of the retired command the window still carries, if any.
@@ -577,13 +790,25 @@ fn test_the_reading_would_see_a_plain_item_or_an_untouched_tick() {
 const THE_WORDS_OF_A_LIMIT: [&str; 3] = ["message_list_limit", "FOLDER_LIST_PAGE_SIZE", "+="];
 
 /// What is wrong with the arm a chunk's arrival reaches, as sentences;
-/// nothing when it re-reads the folder and grows no limit.
+/// nothing when it marks the folder for the timer to read again, reads
+/// nothing itself and grows no limit.
+///
+/// Until 2026-10-15 this asked for `reread_folder_if_open(` in the arm. The
+/// arm read the whole open folder once per chunk, which grows with the
+/// square of the folder and spoke its count each time (finding #36), so the
+/// arm marks and the main timer reads, at most every ten seconds.
 fn what_is_wrong_with_the_arm(arm: &str) -> Vec<String> {
     let mut wrong = Vec::new();
-    if !arm.contains("reread_folder_if_open(") {
+    if !arm.contains(".a_chunk_landed(") {
         wrong.push(format!(
-            "the arm a chunk's arrival reaches does not re-read the folder, so what the chunk \
-             brought stays in the cache and off the list: {arm}"
+            "the arm a chunk's arrival reaches does not mark the folder, so nothing reads it \
+             again and what the chunk brought stays in the cache and off the list: {arm}"
+        ));
+    }
+    if arm.contains("reread_folder_if_open(") {
+        wrong.push(format!(
+            "the arm a chunk's arrival reaches reads the folder again itself, once per chunk, \
+             which grows with the square of the folder: {arm}"
         ));
     }
     for word in THE_WORDS_OF_A_LIMIT {
@@ -603,9 +828,11 @@ fn test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit() {
     // The view side. The download runs on a worker thread and sends
     // `MoreOfTheFolderArrived` once per chunk of headers; the arm for that
     // update used to grow the list's limit by a page and then re-read the
-    // folder. There is no limit since 10-02, so the arm re-reads and does
-    // nothing else, and a limit written back into it is the page returning
-    // under another name.
+    // folder. There is no limit since 10-02, and a limit written back into
+    // it is the page returning under another name. Since 2026-10-15 the arm
+    // marks the folder and the main timer reads it, at most every ten
+    // seconds (finding #36), so the folder is still read again, and not
+    // once per chunk.
     let source = the_window_itself();
     let runner = the_item_starting_with(&source, THE_RUNNER);
 
@@ -622,7 +849,8 @@ fn test_a_chunk_arriving_rereads_the_folder_and_grows_no_limit() {
 #[test]
 fn test_the_reading_would_see_a_limit_grown_again() {
     // Proving the reading before believing it: the old arm, with the page
-    // grown before the re-read, planted whole.
+    // grown before the re-read, planted whole, which also reads the folder
+    // once per chunk; and, since 2026-10-15, an arm that marks nothing.
     let the_old_arm = "(folder_id) => {\n\
                        \x20           {\n\
                        \x20               let mut s = lock_state(state);\n\
@@ -633,16 +861,202 @@ fn test_the_reading_would_see_a_limit_grown_again() {
     let wrong = what_is_wrong_with_the_arm(the_old_arm);
 
     assert_eq!(
-        wrong.len(),
+        wrong.iter().filter(|w| w.contains("names `")).count(),
         THE_WORDS_OF_A_LIMIT.len(),
         "the reading did not see every word of the limit grown again: {wrong:?}"
     );
-
-    let an_arm_that_forgot_to_reread = "(folder_id) => {\n    let _ = folder_id;\n}\n";
-    let wrong = what_is_wrong_with_the_arm(an_arm_that_forgot_to_reread);
     assert!(
-        wrong.iter().any(|w| w.contains("does not re-read")),
-        "the reading did not see the re-read taken out: {wrong:?}"
+        wrong
+            .iter()
+            .any(|w| w.contains("reads the folder again itself")),
+        "the reading did not see the folder read once per chunk: {wrong:?}"
+    );
+
+    let an_arm_that_forgot_to_mark = "(folder_id) => {\n    let _ = folder_id;\n}\n";
+    let wrong = what_is_wrong_with_the_arm(an_arm_that_forgot_to_mark);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "the reading did not see exactly the mark taken out: {wrong:?}"
+    );
+    assert!(wrong[0].contains("does not mark"), "{wrong:?}");
+}
+
+// ── The open folder is read again at most every ten seconds ──────────────────
+
+/// What is wrong with the main timer's half of the paced re-read, as
+/// sentences; nothing when the timer, between the held mail and the
+/// reminders, asks which folder is due and reads it with a chunk's reason.
+fn what_is_wrong_with_the_timers_reread(window: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let (Some(held_mail), Some(reminders)) = (
+        window.find("HOW_OFTEN_TO_LET_HELD_MAIL_GO {"),
+        window.find("let somewhere_to_type = ["),
+    ) else {
+        wrong.push("the main timer is not where this reads, so this reads nothing".into());
+        return wrong;
+    };
+    let timer = &window[held_mail..reminders.max(held_mail)];
+    let Some(asks) = timer.find(".the_folder_due(") else {
+        wrong.push(
+            "the main timer never asks which folder is due, so a folder a chunk marked is never \
+             read again and what the download brought stays off the list"
+                .into(),
+        );
+        return wrong;
+    };
+    let block = &timer[asks..];
+    let block = &block[..block.find("\n\n").unwrap_or(block.len())];
+    if !block.contains("reread_folder_if_open(") {
+        wrong.push(
+            "the main timer asks which folder is due and never reads it, so what the download \
+             brought stays off the list"
+                .into(),
+        );
+    }
+    if !block.contains("WhyTheRowsWereRead::AChunkOfTheDownloadLanded") {
+        wrong.push(
+            "the main timer reads the folder without saying a chunk of the download is why, so \
+             the count is spoken every ten seconds"
+                .into(),
+        );
+    }
+    wrong
+}
+
+#[test]
+fn test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason() {
+    // Finding #36. The arm marks; the main timer, which already paces held
+    // mail on its own interval, asks the model which folder is due and
+    // reads it, at most every ten seconds and once after the last chunk.
+    let wrong = what_is_wrong_with_the_timers_reread(&the_window_itself());
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_the_timer_leave_the_folder_unread() {
+    // Proving the reading before believing it: the timer as it was, and one
+    // that reads the folder for an arrival.
+    let the_timer_as_it_was = "if looked_for_held_mail_at.get().elapsed() >= \
+                               HOW_OFTEN_TO_LET_HELD_MAIL_GO {\n    flush_outbox(app);\n}\n\n\
+                               let somewhere_to_type = [\n";
+    let wrong = what_is_wrong_with_the_timers_reread(the_timer_as_it_was);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("never asks which folder is due"),
+        "the reading did not see the timer as it was: {wrong:?}"
+    );
+
+    let reads_for_an_arrival = "HOW_OFTEN_TO_LET_HELD_MAIL_GO {\n}\n\
+                                if let Some(folder_id) = pacing.the_folder_due(now) {\n    \
+                                reread_folder_if_open(&state, &message_cache, folder_id, \
+                                WhyTheRowsWereRead::MailArrived, &ui_tx);\n}\n\n\
+                                let somewhere_to_type = [\n";
+    let wrong = what_is_wrong_with_the_timers_reread(reads_for_an_arrival);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("count is spoken every ten seconds"),
+        "the reading did not see the folder read for an arrival: {wrong:?}"
+    );
+}
+
+// ── A chunk's re-read shows the count and does not speak it ──────────────────
+
+/// What is wrong with how one arm says the folder's count, as sentences;
+/// nothing when it always shows the count and speaks it only when a chunk of
+/// the download is not why the rows were read.
+///
+/// Read with the spaces taken out, so the check is about the code and not
+/// about how rustfmt wrapped it.
+fn what_is_wrong_with_how_the_count_is_said(arm: &str, which: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let squashed = without_whitespace(arm);
+    if !squashed.contains("frame.set_status_text(&msg,0);") {
+        wrong.push(format!(
+            "the {which} arm no longer shows the folder's count on the status bar"
+        ));
+    }
+    let asks = squashed.find("if*why!=WhyTheRowsWereRead::AChunkOfTheDownloadLanded{");
+    let speaks = squashed.find("announce_topic(&msg,Priority::Normal,\"messages\")");
+    match (asks, speaks) {
+        (_, None) => wrong.push(format!(
+            "the {which} arm never speaks the folder's count, so opening a folder says nothing"
+        )),
+        (Some(asks), Some(speaks)) if asks < speaks => {}
+        _ => wrong.push(format!(
+            "the {which} arm speaks the folder's count whatever the reason, so a first download \
+             reads it out every time the list is brought up to date"
+        )),
+    }
+    wrong
+}
+
+/// What is wrong with the three arms a re-read reaches, as sentences.
+fn what_is_wrong_with_what_a_reread_says(window: &str) -> Vec<String> {
+    let mut wrong = what_is_wrong_with_how_the_count_is_said(
+        &the_arm_for(window, "MessagesLoaded("),
+        "MessagesLoaded",
+    );
+    let conversations = the_arm_for(window, "ConversationsLoaded(");
+    wrong.extend(what_is_wrong_with_how_the_count_is_said(
+        &conversations,
+        "ConversationsLoaded",
+    ));
+    if !without_whitespace(&conversations).contains(
+        "WhyTheRowsWereRead::MailArrived|WhyTheRowsWereRead::AChunkOfTheDownloadLanded=>{\
+         repaint_the_rows_that_changed(",
+    ) {
+        wrong.push(
+            "a chunk's conversations are not repainted the way an arrival's are, so the rows \
+             on screen move or are announced again"
+                .into(),
+        );
+    }
+    if !the_arm_for(window, "FolderMessagesArrived(").contains("WhyTheRowsWereRead::MailArrived") {
+        wrong.push(
+            "the arm a check's arrival reaches does not read the folder for an arrival, so a \
+             check that found mail may not say the count"
+                .into(),
+        );
+    }
+    wrong
+}
+
+#[test]
+fn test_a_chunks_reread_shows_the_count_and_does_not_speak_it() {
+    // Guardrail 5. A first download of a large folder lands a chunk every
+    // few seconds, and the count spoken after each, in flat view and in
+    // conversation view alike, is noise in a room where mail is private.
+    // Opening a folder and a check that found mail still say it; every
+    // reason shows it on the status bar.
+    let wrong = what_is_wrong_with_what_a_reread_says(&the_window_itself());
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_chunks_count_spoken() {
+    // Proving the reading before believing it: the two arms' ends as they
+    // were, each speaking the count whatever the reason.
+    let the_arm_as_it_was = "messages) => {\n\
+                             \x20   let msg = what_a_mailbox_holds(messages.len(), unread);\n\
+                             \x20   frame.set_status_text(&msg, 0);\n\
+                             \x20   let _ = a11y.announce_topic(&msg, Priority::Normal, \"messages\");\n\
+                             }\n";
+    let wrong = what_is_wrong_with_how_the_count_is_said(the_arm_as_it_was, "MessagesLoaded");
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("whatever the reason"),
+        "the reading did not see the count spoken for every reason: {wrong:?}"
+    );
+
+    let says_and_shows_nothing = the_arm_as_it_was
+        .replace("    frame.set_status_text(&msg, 0);\n", "")
+        .replace(
+            "    let _ = a11y.announce_topic(&msg, Priority::Normal, \"messages\");\n",
+            "",
+        );
+    let wrong = what_is_wrong_with_how_the_count_is_said(&says_and_shows_nothing, "MessagesLoaded");
+    assert!(
+        wrong.iter().any(|w| w.contains("no longer shows"))
+            && wrong.iter().any(|w| w.contains("never speaks")),
+        "the reading did not see the count neither shown nor spoken: {wrong:?}"
     );
 }
 

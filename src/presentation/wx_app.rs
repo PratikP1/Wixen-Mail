@@ -707,6 +707,14 @@ pub struct WxUIState {
     /// offline mode: a person who paused a run and closed the program has
     /// not asked for the next start to stay paused.
     pub downloading: Downloading,
+    /// The folder on screen a chunk of the download landed in, and when
+    /// one last had it read again (finding #36).
+    ///
+    /// In state because the update arm marks it and the main timer reads
+    /// it, at most every ten seconds, rather than every chunk reading the
+    /// whole folder and speaking its count.
+    pub reading_the_open_folder_again:
+        crate::application::bringing_everything_down::ReadingTheOpenFolderAgain,
 }
 
 /// Where the download of everything stands.
@@ -845,6 +853,7 @@ impl Default for WxUIState {
             ),
             calendar_showing: CalendarShowing::agenda_now(),
             downloading: Downloading::default(),
+            reading_the_open_folder_again: Default::default(),
         }
     }
 }
@@ -3467,7 +3476,13 @@ impl WxMailApp {
                         // Selecting a folder used to announce "Loading
                         // INBOX..." and then load nothing at all. This is
                         // the read that makes the status true.
-                        load_folder_messages(&folder_cache, folder_id, account_id.clone(), &ui_tx);
+                        load_folder_messages(
+                            &folder_cache,
+                            folder_id,
+                            account_id.clone(),
+                            crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+                            &ui_tx,
+                        );
                         // Both, when the folder is showing conversations. The
                         // rows come from the conversations and the tree a row
                         // opens into is built from the messages, so neither is
@@ -4599,7 +4614,13 @@ impl WxMailApp {
                                 )
                             };
                             if folder_id.is_some() {
-                                load_folder_messages(&message_cache, folder_id, account_id, &ui_tx);
+                                load_folder_messages(
+                                    &message_cache,
+                                    folder_id,
+                                    account_id,
+                                    crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+                                    &ui_tx,
+                                );
                                 let _ = a11y.announce_topic(
                                     &format!(
                                         "Refreshed {}",
@@ -6192,7 +6213,10 @@ impl WxMailApp {
                                 "Generated {} messages, sending to the list",
                                 generated.len()
                             );
-                            if let Err(e) = ui_tx.try_send(UIUpdate::MessagesLoaded(generated)) {
+                            if let Err(e) = ui_tx.try_send(UIUpdate::MessagesLoaded(
+                                generated,
+                                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+                            )) {
                                 tracing::error!("Sample mailbox never reached the list: {}", e);
                             }
                         }
@@ -6677,6 +6701,25 @@ impl WxMailApp {
                         if held_mail_is_due {
                             flush_outbox(app);
                         }
+                    }
+
+                    // The folder on screen, read again while the download
+                    // brings it: at most every ten seconds and once after its
+                    // last chunk, on this timer for the reason the held mail
+                    // is (finding #36). The arm a chunk reaches only marks
+                    // the folder; reading it there cost a whole folder per
+                    // chunk and spoke its count each time.
+                    let due = lock_state(&state)
+                        .reading_the_open_folder_again
+                        .the_folder_due(std::time::Instant::now());
+                    if let Some(folder_id) = due {
+                        reread_folder_if_open(
+                            &state,
+                            &message_cache,
+                            folder_id,
+                            crate::presentation::ui_types::WhyTheRowsWereRead::AChunkOfTheDownloadLanded,
+                            &ui_tx,
+                        );
                     }
 
                     // The editable boxes in this window somebody could be
@@ -8174,7 +8217,10 @@ fn load_messages_with_label(
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
             attach_labels(&mut items, cache.tags_by_message_in_account(&account_id));
-            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(
+                items,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+            ));
         }
         Err(e) => {
             // Said rather than left as an empty list, for the reason every
@@ -8226,7 +8272,10 @@ fn load_every_inbox(
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
             attach_labels(&mut items, cache.tags_by_message_in_every_inbox());
-            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(
+                items,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+            ));
         }
         Err(e) => {
             // Said rather than left as an empty list. No mail and mail that
@@ -10298,6 +10347,7 @@ fn empty_the_chosen_folder(
             &Some(cache.clone()),
             open_now,
             lock_state(state).active_account_id.clone(),
+            crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
             tx,
         );
     }
@@ -10510,6 +10560,7 @@ fn mark_the_chosen_folder_read(
             &Some(cache.clone()),
             open_now,
             lock_state(state).active_account_id.clone(),
+            crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
             tx,
         );
     }
@@ -17979,6 +18030,7 @@ fn load_folder_messages(
     cache: &Option<Arc<MessageCache>>,
     folder_id: Option<i64>,
     account_id: Option<String>,
+    why: crate::presentation::ui_types::WhyTheRowsWereRead,
     tx: &Sender<UIUpdate>,
 ) {
     let (Some(cache), Some(folder_id), Some(account_id)) = (cache.as_ref(), folder_id, account_id)
@@ -18002,7 +18054,7 @@ fn load_folder_messages(
         match cache.outbox_rows(&account_id, chrono::Local::now(), dates) {
             Ok(rows) => {
                 let items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
-                let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+                let _ = tx.try_send(UIUpdate::MessagesLoaded(items, why));
             }
             Err(e) => {
                 let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
@@ -18020,7 +18072,7 @@ fn load_folder_messages(
             let mut items: Vec<MessageItem> = rows.iter().map(MessageItem::from_row).collect();
             apply_threading(&rows, &mut items);
             attach_labels(&mut items, cache.tags_by_message_in_folder(folder_id));
-            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(items, why));
         }
         Err(e) => {
             tracing::error!("Failed to read folder {}: {}", folder_id, e);
@@ -22325,7 +22377,13 @@ fn show_where_they_came_back(
     if direction == crate::application::undoing::Direction::Undo {
         lock_state(state).land_on_when_listed = Some(first_back);
     }
-    reread_folder_if_open(state, &Some(cache.clone()), on_screen, tx);
+    reread_folder_if_open(
+        state,
+        &Some(cache.clone()),
+        on_screen,
+        crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
+        tx,
+    );
 }
 
 /// Put one mark on one message the way the command that made it does: the row
@@ -23236,10 +23294,15 @@ fn what_the_open_row_says(state: &WxUIState) -> Option<String> {
 /// messages leaves every visible row exactly as it was and an arrival is
 /// invisible until the folder is reopened. Opening a folder already reads both
 /// for the same reason (D-01), and this is the other half of that pair.
+///
+/// `why` goes to both readings, since 2026-10-15: an arrival or a change made
+/// here is `MailArrived`, and the main timer's re-read during the download is
+/// `AChunkOfTheDownloadLanded`, whose count is shown and not spoken (#36).
 fn reread_folder_if_open(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     folder_id: i64,
+    why: crate::presentation::ui_types::WhyTheRowsWereRead,
     tx: &Sender<UIUpdate>,
 ) {
     let (open, account_id, showing) = {
@@ -23249,15 +23312,9 @@ fn reread_folder_if_open(
     if open != Some(folder_id) {
         return;
     }
-    load_folder_messages(cache, Some(folder_id), account_id.clone(), tx);
+    load_folder_messages(cache, Some(folder_id), account_id.clone(), why, tx);
     if showing.showing_conversations() {
-        load_folder_conversations(
-            cache,
-            Some(folder_id),
-            account_id,
-            crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
-            tx,
-        );
+        load_folder_conversations(cache, Some(folder_id), account_id, why, tx);
     }
 }
 
@@ -23485,7 +23542,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 counted,
             );
         }
-        UIUpdate::MessagesLoaded(messages) => {
+        UIUpdate::MessagesLoaded(messages, why) => {
             // The cursor's message and its row, remembered before the rows
             // are replaced, so it can be found again by identity below.
             let (old_index, cursor) = {
@@ -23561,12 +23618,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // conversations, the messages still arrive because a collapsed row
             // opens into a tree built from them, but they are not what is
             // listed, and announcing their count would tell somebody there are
-            // two hundred rows in a list of forty.
+            // two hundred rows in a list of forty. Shown whatever the reason,
+            // and not spoken for a chunk of the download, which brings the
+            // list up to date every ten seconds through a first download
+            // (finding #36).
             if !lock_state(state).showing.showing_conversations() {
                 let unread = messages.iter().filter(|m| !m.read).count();
                 let msg = what_a_mailbox_holds(messages.len(), unread);
                 frame.set_status_text(&msg, 0);
-                let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+                if *why != WhyTheRowsWereRead::AChunkOfTheDownloadLanded {
+                    let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+                }
             }
         }
         UIUpdate::ConversationsLoaded(conversations, why) => {
@@ -23599,16 +23661,21 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 // when the size really moved. The selection is not touched at
                 // all: putting it back would move focus and take the screen
                 // reader's cursor with it, which is the fault the folder tree
-                // already had to be fixed for.
-                WhyTheRowsWereRead::MailArrived => {
+                // already had to be fixed for. A chunk of the download is
+                // mail arriving into rows on screen in the same way.
+                WhyTheRowsWereRead::MailArrived | WhyTheRowsWereRead::AChunkOfTheDownloadLanded => {
                     repaint_the_rows_that_changed(state, msg_list, &repaint);
                 }
             }
 
+            // Shown whatever the reason, and not spoken for a chunk of the
+            // download, for the reason the messages' arm gives (#36).
             let unread = conversations.iter().filter(|c| c.unread > 0).count();
             let msg = what_a_mailbox_holds(conversations.len(), unread);
             frame.set_status_text(&msg, 0);
-            let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+            if *why != WhyTheRowsWereRead::AChunkOfTheDownloadLanded {
+                let _ = a11y.announce_topic(&msg, Priority::Normal, "messages");
+            }
         }
         UIUpdate::AttachmentRead(document) => {
             // On the UI thread, which is the only place a window may be
@@ -24121,7 +24188,13 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             .map(|folder| folder.id)
             .collect();
             for folder_id in folders_to_read {
-                reread_folder_if_open(state, message_cache, folder_id, tx);
+                reread_folder_if_open(
+                    state,
+                    message_cache,
+                    folder_id,
+                    crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
+                    tx,
+                );
             }
             let said = put_back_because_the_server_refused(&waiting.what, &subject, reason);
             {
@@ -24269,6 +24342,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     &Some(cache.clone()),
                     Some(folder_id),
                     lock_state(state).active_account_id.clone(),
+                    crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
                     tx,
                 );
             }
@@ -24749,17 +24823,28 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
         }
         UIUpdate::FolderMessagesArrived(folder_id) => {
-            reread_folder_if_open(state, message_cache, *folder_id, tx);
+            reread_folder_if_open(
+                state,
+                message_cache,
+                *folder_id,
+                crate::presentation::ui_types::WhyTheRowsWereRead::MailArrived,
+                tx,
+            );
         }
         UIUpdate::MoreOfTheFolderArrived(folder_id) => {
-            // A chunk landed in the cache; if its folder is open, the list
-            // reads the folder again and shows it. Nothing grows here: until
-            // 2026-09-17 this arm moved the second of two bounds, the page
-            // the list read through, once per chunk, and a chunk arriving
-            // with that line missing stayed hidden behind the page. The list
-            // holds everything the folder holds now, so the only bound left
-            // is `mail_sync::INITIAL_FETCH_LIMIT`, on what one chunk fetches.
-            reread_folder_if_open(state, message_cache, *folder_id, tx);
+            // A chunk landed in the cache; if its folder is open, it is
+            // marked, and the main timer reads it again at most every ten
+            // seconds and once after the last chunk. Until 2026-10-15 this
+            // arm read the whole folder once per chunk, which grows with the
+            // square of the folder, and the count was spoken each time
+            // (finding #36). Nothing grows here either: until 2026-09-17
+            // this arm moved a page the list read through, and the only
+            // bound left is `mail_sync::INITIAL_FETCH_LIMIT`, on what one
+            // chunk fetches.
+            let mut s = lock_state(state);
+            let on_screen = folder_on_screen(&s);
+            s.reading_the_open_folder_again
+                .a_chunk_landed(*folder_id, on_screen);
         }
         UIUpdate::LabelsChanged(cache_id) => {
             // Reread from the cache rather than told what changed. The cache is
@@ -27352,6 +27437,7 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 &Some(cache.clone()),
                 Some(folder_id),
                 lock_state(state).active_account_id.clone(),
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
                 tx,
             );
         }
@@ -30858,6 +30944,10 @@ fn start_the_download(app: AppHandles<'_>) {
                 stopped_at_the_budget: None,
             };
             let mut text_to_fetch: Option<usize> = None;
+            // Each message's text at most once in this account's run, so one
+            // that always fails is not asked for again with no wait (#11).
+            let mut asked =
+                crate::application::bringing_everything_down::TextAskedThisRun::default();
             let mut did_anything = false;
 
             loop {
@@ -30877,10 +30967,11 @@ fn start_the_download(app: AppHandles<'_>) {
                     }
                 };
                 let kept_bytes = cache.cached_body_bytes().unwrap_or(0).max(0) as u64;
+                let not_yet_asked = asked.not_yet_asked(&missing);
                 let next = crate::application::bringing_everything_down::what_to_do_next(
                     &here,
                     crate::application::bringing_everything_down::TextStillMissing {
-                        messages: &missing,
+                        messages: &not_yet_asked,
                         kept_bytes,
                     },
                     budget,
@@ -30949,7 +31040,6 @@ fn start_the_download(app: AppHandles<'_>) {
                         }
                     }
                     WhatToDoNext::TheNextChunkOfText { messages, .. } => {
-                        did_anything = true;
                         let to_fetch = *text_to_fetch.get_or_insert(missing.len());
                         let done = handle.block_on(
                             crate::application::mail_sync::fetch_over_a_mailbox(
@@ -30960,6 +31050,8 @@ fn start_the_download(app: AppHandles<'_>) {
                                 &|_| {},
                             ),
                         );
+                        asked.remember(&messages);
+                        did_anything |= crate::application::bringing_everything_down::a_chunk_of_text_did_work(done.fetched);
                         text.fetched += done.fetched;
                         text.could_not += done.could_not;
                         use crate::application::mail_sync::Ending;
@@ -30999,8 +31091,11 @@ fn start_the_download(app: AppHandles<'_>) {
                                 say(UIUpdate::Progress(
                                     crate::application::bringing_everything_down::what_the_text_download_came_to(&text),
                                 ));
+                                // This account's run ends and the next
+                                // account's begins; the run as a whole still
+                                // waits and is tried again.
                                 ended = WhyTheRunEnded::AServerStopped;
-                                break 'accounts;
+                                break;
                             }
                         }
                     }
@@ -32441,7 +32536,12 @@ fn apply_sort(app: AppHandles<'_>, order: MailSortOption) {
     let tx2 = tx.clone();
     let tx3 = tx.clone();
     rt.spawn(async move {
-        let _ = tx2.send(UIUpdate::MessagesLoaded(sorted)).await;
+        let _ = tx2
+            .send(UIUpdate::MessagesLoaded(
+                sorted,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+            ))
+            .await;
     });
     send_status(&tx3, rt, label);
 }
@@ -34199,12 +34299,18 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+        load_folder_messages(
+            &cache,
+            Some(folder_id),
+            Some("acct-1".to_string()),
+            WhyTheRowsWereRead::SomebodyAskedForThem,
+            &tx,
+        );
 
         let messages = drain(&rx)
             .into_iter()
             .find_map(|u| match u {
-                UIUpdate::MessagesLoaded(items) => Some(items),
+                UIUpdate::MessagesLoaded(items, _) => Some(items),
                 _ => None,
             })
             .expect("messages loaded");
@@ -34277,12 +34383,18 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+        load_folder_messages(
+            &cache,
+            Some(folder_id),
+            Some("acct-1".to_string()),
+            WhyTheRowsWereRead::SomebodyAskedForThem,
+            &tx,
+        );
 
         let messages = drain(&rx)
             .into_iter()
             .find_map(|u| match u {
-                UIUpdate::MessagesLoaded(items) => Some(items),
+                UIUpdate::MessagesLoaded(items, _) => Some(items),
                 _ => None,
             })
             .expect("messages loaded");
@@ -34340,12 +34452,18 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+        load_folder_messages(
+            &cache,
+            Some(folder_id),
+            Some("acct-1".to_string()),
+            WhyTheRowsWereRead::SomebodyAskedForThem,
+            &tx,
+        );
 
         let messages = drain(&rx)
             .into_iter()
             .find_map(|u| match u {
-                UIUpdate::MessagesLoaded(items) => Some(items),
+                UIUpdate::MessagesLoaded(items, _) => Some(items),
                 _ => None,
             })
             .expect("messages loaded");
@@ -35430,10 +35548,16 @@ mod tests {
             })
             .expect("cache");
 
-        load_folder_messages(&cache, Some(folder_id), Some("acct-1".to_string()), &tx);
+        load_folder_messages(
+            &cache,
+            Some(folder_id),
+            Some("acct-1".to_string()),
+            WhyTheRowsWereRead::SomebodyAskedForThem,
+            &tx,
+        );
 
         assert!(drain(&rx).iter().any(
-            |u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 1
+            |u| matches!(u, UIUpdate::MessagesLoaded(items, _) if items.len() == 1
                 && items[0].subject == "Quarterly report")
         ));
     }
@@ -35443,7 +35567,13 @@ mod tests {
         // The tree can be clicked before the ids have arrived.
         let cache = test_cache();
         let (tx, rx) = async_channel::unbounded();
-        load_folder_messages(&cache, None, Some("acct-1".to_string()), &tx);
+        load_folder_messages(
+            &cache,
+            None,
+            Some("acct-1".to_string()),
+            WhyTheRowsWereRead::SomebodyAskedForThem,
+            &tx,
+        );
         assert!(drain(&rx).is_empty());
     }
 
@@ -35544,7 +35674,13 @@ mod tests {
         let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Conversations);
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         let sent = drain(&rx);
         assert!(
@@ -35558,7 +35694,7 @@ mod tests {
         );
         assert!(
             sent.iter()
-                .any(|u| matches!(u, UIUpdate::MessagesLoaded(_))),
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(..))),
             "the messages are still needed, because a row opens into a tree \
              built from them (D-01)"
         );
@@ -35571,12 +35707,18 @@ mod tests {
         let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Messages);
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         let sent = drain(&rx);
         assert!(
             sent.iter()
-                .any(|u| matches!(u, UIUpdate::MessagesLoaded(_))),
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(..))),
             "the folder on screen must still be read: {sent:?}"
         );
         assert!(
@@ -35593,7 +35735,13 @@ mod tests {
         let (cache, state, folder_id) = looking_at_a_folder(view_state::Showing::Conversations);
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id + 1, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id + 1,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         assert!(
             drain(&rx).is_empty(),
@@ -35731,11 +35879,17 @@ mod tests {
         }
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         assert!(drain(&rx).iter().any(|u| matches!(
             u,
-            UIUpdate::MessagesLoaded(items) if items.len() == 1
+            UIUpdate::MessagesLoaded(items, _) if items.len() == 1
                 && items[0].subject == "New mail while you were away"
         )));
     }
@@ -35781,7 +35935,13 @@ mod tests {
         }
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         assert!(drain(&rx).is_empty());
     }
@@ -35850,12 +36010,18 @@ mod tests {
         }
         let (tx, rx) = async_channel::unbounded();
 
-        reread_folder_if_open(&state, &cache, folder_id, &tx);
+        reread_folder_if_open(
+            &state,
+            &cache,
+            folder_id,
+            WhyTheRowsWereRead::MailArrived,
+            &tx,
+        );
 
         assert!(
             drain(&rx)
                 .iter()
-                .any(|u| matches!(u, UIUpdate::MessagesLoaded(items) if items.len() == 3))
+                .any(|u| matches!(u, UIUpdate::MessagesLoaded(items, _) if items.len() == 3))
         );
     }
 
