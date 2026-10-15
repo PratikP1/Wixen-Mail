@@ -381,27 +381,40 @@ pub struct Moving {
     pub into: String,
 }
 
-/// Which messages to fetch headers for, newest first, bounded.
+/// Which messages to fetch headers for: everything that arrived, and the
+/// newest of the rest up to `limit`.
 ///
-/// Newest first because that is where a reader starts, and bounded because the
-/// alternative on a large mailbox is a sync that never visibly finishes.
+/// A uid above the newest one held is a message that arrived since this
+/// computer last looked, and every one of them is taken, however many: the
+/// rules run over what a check fetches and the check counts it as arrived, so
+/// cutting them at `limit` left a week's mail beyond the newest 500 unsorted
+/// and uncounted, brought down later by a download that runs no rules (#12,
+/// 2026-10-15). `fetch_headers` splits a long set into pieces a server takes.
+///
+/// `limit` bounds the rest: a first look at a folder holding nothing here,
+/// newest first because that is where a reader starts, and the older mail
+/// missing below the newest held, because on a large mailbox the alternative
+/// is a sync that never visibly finishes. A limit of nothing asks for nothing.
+///
 /// Returned in ascending order, which is how they go into a sequence set.
 fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     if limit == 0 {
         return Vec::new();
     }
     let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
-    let mut missing: Vec<u32> = on_server
+    let newest_held = stored.iter().copied().max();
+    let (mut arrived, mut older): (Vec<u32>, Vec<u32>) = on_server
         .iter()
         .copied()
         .filter(|uid| !held.contains(uid))
-        .collect();
+        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest));
 
     // Descending to take the newest, then back to ascending for the caller.
-    missing.sort_unstable_by(|a, b| b.cmp(a));
-    missing.truncate(limit);
-    missing.sort_unstable();
-    missing
+    older.sort_unstable_by(|a, b| b.cmp(a));
+    older.truncate(limit);
+    arrived.append(&mut older);
+    arrived.sort_unstable();
+    arrived
 }
 
 /// What the server answered when it was asked which messages a folder holds,
