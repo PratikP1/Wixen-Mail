@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 726
+open_count: 730
 waived_count: 0
 fixed_count: 126
-total_count: 852
-last_updated: 2026-10-15T16:00:00.000Z
+total_count: 856
+last_updated: 2026-10-15T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -867,6 +867,10 @@ last_updated: 2026-10-15T16:00:00.000Z
 | 850 | 13.2 | unrun-verify | src/application/mail_sync.rs |  | 13.2-08, findings #12 and #10 of the audit of 2026-10-14, for a phase 14 sitting on the tester's account on a build holding 13.2-08's merge: a rule that files mail into another folder, then that folder read after the next check, shows each filed message once; and a check after more than 500 messages arrived, for example after a long gap or a bulk copy from another client, says the whole count, and the rules ran over every one of them. Held by cases in src/application/mail_sync.rs over the scripted server, two new records, and the replay's own cases in src/application/moves_waiting.rs; none has met a real server, and how long one check takes over thousands of arrivals has not been timed. Closed when the sitting has seen both on his account | open |  | 2026-10-15T11:00:00.000Z |  |
 | 851 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-09, findings #11 and #36 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-09's merge: a first download of a large folder with that folder open in the flat view, the count heard once when the folder opens and not again per chunk, the list growing about every ten seconds, and the window answering keys while the download runs; then the same in conversation view; and on the tester's account, a message whose text cannot be fetched no longer asked for over and over, with the other accounts' text still coming down. Held by cases in src/application/bringing_everything_down.rs, six readings in tests/everything_comes_down_without_being_asked.rs, nine new records and one rewritten; none has met a real server, and the pause per re-read at the tester's size has not been timed. Closed when he has heard both views and the sitting has seen the text pass carry on past a failing message | open |  | 2026-10-15T15:00:00.000Z |  |
 | 852 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-10, findings #15 and #14 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-10's merge with one new message waiting at the server: F9 pressed during the start-up check, and F9 pressed twice in a row, each heard as one announcement of the new message and one new-mail sound, with the rules run on it once; and on the tester's account, a check of a large folder on a server that cannot say what changed finishing no slower than before. Held by three cases in src/application/mail_session.rs, a reading in tests/mail_keeps_arriving_on_its_own.rs, a case in src/application/what_rules_tell_the_server.rs for labels arriving through the flag pass, and five new records; none has met a real server, and no NVDA case presses F9 during a check. Closed when he has heard both and the sitting has seen the check finish | open |  | 2026-10-15T16:00:00.000Z |  |
+| 853 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-11, finding #2 of the audit of 2026-10-14, on the tester's account in a phase 14 sitting on a build holding 13.2-11's merge: a message read with Allow Changes off, changes turned on, the message marked unread, a check run, and the message still unread here and on his phone. Finding #5, a waiting move, delete, copy, crossing or read or star sent after the server renumbered its folder, cannot be made to happen on a real provider on purpose: the decision's cases in src/application/renumbered.rs, the loopback cases in src/application/moves_waiting.rs, the store's cases in src/data/message_cache/moves_waiting.rs and waiting_flag_changes.rs, a reading of the flag replay in tests/nothing_sends_a_flag_change_unasked.rs and eight new records hold it; none has met a real server. Closed when the sitting has seen the message stay unread | open |  | 2026-10-15T20:00:00.000Z |  |
+| 854 | 13.2 | todo | src/service/protocols/imap.rs |  | 13.2-11, for 13.2-32's closing read: ImapSession::uids_with_message_id searches HEADER MESSAGE-ID, which matches any message whose Message-ID contains the text asked for (RFC 3501, section 6.4.4). 13.2-11 made the renumbering decision read the one message found and require an exact match before anything is sent. The same search also serves remove_by_message_id, which takes a sent draft's filed copies out of Drafts and removes every number it answers, so a message in Drafts whose identifier merely contains the draft's would be removed with it. Left shared and unchanged by 13.2-11 because the draft path is 13.2-05's and its identifiers are this program's own, which makes a containing identifier unlikely rather than impossible. Recommended: keep only the numbers whose message carries the identifier exactly before the removal, as the decision does. Closed when 13.2-32's closing read carries it out with a case, or Pratik decides the draft path may stay as it is | open |  | 2026-10-15T20:00:00.000Z |  |
+| 855 | 13.2 | todo | src/application/flag_changes_waiting.rs |  | 13.2-11: a read or star kept from offline that cannot be placed after its folder was renumbered is put back and said in the existing sentence, The mail server refused your change, so it has been put back: the mail server has renumbered the folder since the change was made, and the message could not be found in it. The server refused nothing. The plan chose that sentence so one count covers both kinds; a move put back the same way says Could not move, which is true. Recommended: when every change put back in one check was put back for a renumbering, open with Your change could not be sent, so it has been put back, and the same reason. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence may stay | open |  | 2026-10-15T20:00:00.000Z |  |
+| 856 | 13.2 | todo | .github/workflows/accessibility.yml |  | 13.2-11's pull request 180: the Accessibility run 38803731724's first attempt failed with These windows were not scanned: blocked-senders : the application exited with code 0 before the scan, and its rerun of the failed job passed with every window scanned. 13.2-11 changes nothing the blocked-senders scan target reaches, and no earlier summary or ledger row records that refusal, so it is read as a flake. Why a scan target's process can exit cleanly before the scanner attaches is not diagnosed. Closed when it is diagnosed and made to say its cause, or it has not recurred by 13.2-32's closing read | open |  | 2026-10-15T21:35:00.000Z |  |
 
 ````json
 [
@@ -11092,6 +11096,54 @@ last_updated: 2026-10-15T16:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-15T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 853,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-11, finding #2 of the audit of 2026-10-14, on the tester's account in a phase 14 sitting on a build holding 13.2-11's merge: a message read with Allow Changes off, changes turned on, the message marked unread, a check run, and the message still unread here and on his phone. Finding #5, a waiting move, delete, copy, crossing or read or star sent after the server renumbered its folder, cannot be made to happen on a real provider on purpose: the decision's cases in src/application/renumbered.rs, the loopback cases in src/application/moves_waiting.rs, the store's cases in src/data/message_cache/moves_waiting.rs and waiting_flag_changes.rs, a reading of the flag replay in tests/nothing_sends_a_flag_change_unasked.rs and eight new records hold it; none has met a real server. Closed when the sitting has seen the message stay unread",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 854,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/service/protocols/imap.rs",
+    "line": null,
+    "description": "13.2-11, for 13.2-32's closing read: ImapSession::uids_with_message_id searches HEADER MESSAGE-ID, which matches any message whose Message-ID contains the text asked for (RFC 3501, section 6.4.4). 13.2-11 made the renumbering decision read the one message found and require an exact match before anything is sent. The same search also serves remove_by_message_id, which takes a sent draft's filed copies out of Drafts and removes every number it answers, so a message in Drafts whose identifier merely contains the draft's would be removed with it. Left shared and unchanged by 13.2-11 because the draft path is 13.2-05's and its identifiers are this program's own, which makes a containing identifier unlikely rather than impossible. Recommended: keep only the numbers whose message carries the identifier exactly before the removal, as the decision does. Closed when 13.2-32's closing read carries it out with a case, or Pratik decides the draft path may stay as it is",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 855,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/flag_changes_waiting.rs",
+    "line": null,
+    "description": "13.2-11: a read or star kept from offline that cannot be placed after its folder was renumbered is put back and said in the existing sentence, The mail server refused your change, so it has been put back: the mail server has renumbered the folder since the change was made, and the message could not be found in it. The server refused nothing. The plan chose that sentence so one count covers both kinds; a move put back the same way says Could not move, which is true. Recommended: when every change put back in one check was put back for a renumbering, open with Your change could not be sent, so it has been put back, and the same reason. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence may stay",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 856,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": ".github/workflows/accessibility.yml",
+    "line": null,
+    "description": "13.2-11's pull request 180: the Accessibility run 38803731724's first attempt failed with These windows were not scanned: blocked-senders : the application exited with code 0 before the scan, and its rerun of the failed job passed with every window scanned. 13.2-11 changes nothing the blocked-senders scan target reaches, and no earlier summary or ledger row records that refusal, so it is read as a flake. Why a scan target's process can exit cleanly before the scanner attaches is not diagnosed. Closed when it is diagnosed and made to say its cause, or it has not recurred by 13.2-32's closing read",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T21:35:00.000Z",
     "resolved_at": null
   }
 ]

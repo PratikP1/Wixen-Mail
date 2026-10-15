@@ -5164,6 +5164,18 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     list in `tests/a_change_made_here_reaches_the_conversation_rows.rs`, the delete made
     through `what_happens_here` as `complete_here_then_tell_the_server` makes it. Hearing it
     is ledger 834; All Inboxes not read again after a check is 835.
+  - 13.2-11 on 2026-10-15: a read or star that reaches the server lets go of the older change
+    kept waiting for the same message and flag, by the time it was asked read as a time, and
+    the replay of waiting flag changes lets go of exactly the change it sent (finding #2). A
+    move or a delete kept here, and a waiting flag change, records the folder's numbering when
+    first kept in an additive `uid_validity` column, and before it is sent
+    `application::renumbered` asks the folder its numbering now: unchanged or unknown, the
+    kept number; changed, the one number its Message-ID is under once the message there is
+    read and carries that identifier exactly; otherwise put back and said (finding #5, and
+    the substring search found reviewing it). Held by the decision's cases, loopback cases
+    in `application::moves_waiting`, the store's cases and readings in
+    `tests/nothing_sends_a_flag_change_unasked.rs`. The tester's check is ledger 853. No
+    `[D]` clause is added and the box stays ticked.
 
 **Added 2026-09-19: one more for #86's second half, after Pratik overruled 11-07.1's
 decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
@@ -5242,6 +5254,13 @@ decision 29 on the issue; taken by 11-07.2 between 11-07.1 and 11-08.**
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-11 replays a move or a
     copy kept from offline only into the folder numbering it was kept under (finding #5). It
     adds no `[D]` clause and the box stays ticked.
+  - 13.2-11 on 2026-10-15: a waiting crossing asks the source folder its numbering before it
+    fetches or removes anything; under a changed numbering the source copy is taken from the
+    one number its Message-ID is under once the message there carries that identifier
+    exactly, and otherwise nothing is fetched or appended and the crossing is put back and
+    said, or, resumed from held bytes, the source copy is left and said (finding #5). Held by
+    four loopback cases in `application::moves_waiting` and two records. The tester's check
+    is ledger 853. No `[D]` clause is added and the box stays ticked.
 
 **Added 2026-09-19, in the morning: two more, from two issues filed that morning, as
 inserts (11-08.1 after 11-08, whose row message a re-threading moves; 11-10.1 after 11-10
@@ -7776,8 +7795,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
 | LIST-19 | Phase 11, then phase 12 | Complete, 2026-09-22: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page) and 12-02 at `70f5435a`, corrected at `cf58f9a4` (the separate window as a process of its own with a browser profile of its own, the erase reaching it, the route spawning it, ledger 566 fixed). What only an ear settles is ledger 560 and 568, and the scan's `page-window` target runs at the next push of `main` |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
-| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause; 13.2-02 done 2026-10-14, a conversation row a delete made here emptied leaves at once and the cursor lands (ledger 834, 835) |
-| LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause |
+| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause; 13.2-02 done 2026-10-14, a conversation row a delete made here emptied leaves at once and the cursor lands (ledger 834, 835); 13.2-11 done 2026-10-15, an older waiting flag change no longer undoes a newer one and a waiting move, delete or flag change goes to its own message after a renumbering or comes back (ledger 853) |
+| LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause; 13.2-11 done 2026-10-15, a waiting crossing takes its source copy from its own message after a renumbering or comes back (ledger 853) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
 | LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559); phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
