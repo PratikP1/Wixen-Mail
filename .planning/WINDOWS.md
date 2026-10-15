@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 723
+open_count: 724
 waived_count: 0
 fixed_count: 126
-total_count: 849
-last_updated: 2026-10-15T07:00:00.000Z
+total_count: 850
+last_updated: 2026-10-15T11:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -864,6 +864,7 @@ last_updated: 2026-10-15T07:00:00.000Z
 | 847 | 13.2 | todo | src/data/message_cache/accounts.rs |  | 13.2-06: an installation where the old save already replaced an account, because a second account was added on the same address, keeps the first account's password and sign-in tokens in the credential store under its id with no row to name them, so neither removing an account nor the uninstall erases them. Not repaired here: nothing on this computer records which ids were lost, and the code has no way today to list the credential store's entries. The changelog says where to look. Who can act: Pratik, by deciding whether an upgrade looks for wixen-mail entries no account row names and offers to erase them, or whether the changelog's sentence is enough. Closed when he answers and the answer is carried out with a case, or he decides the sentence is enough | open |  | 2026-10-15T05:00:00.000Z |  |
 | 848 | 13.2 | todo | src/presentation/wx_account_manager.rs |  | 13.2-06: the refusal of a taken address is said at High and shown on the Account Manager's status line, and the Add or Edit Account window comes back over that line, so somebody reading the screen rather than listening may not see why OK did nothing. Recommended: show the same sentence inside the Add or Edit Account window as well, on a line beside the address box, cleared when the address changes. Closed when Pratik answers and the answer is carried out with a case, or he decides the status line is enough | open |  | 2026-10-15T05:00:00.000Z |  |
 | 849 | 13.2 | unrun-verify | src/service/protocols/imap/special_use.rs |  | 13.2-07, findings #9 and #34 of the audit of 2026-10-14, for phase 14's delete sitting on the tester's account: Delete lands in the folder the server declares as its Trash; an account holding a folder of its own named Deleted or Bin keeps it as an ordinary folder in the tree, and an emptying schedule leaves it alone; a folder an earlier build took for the Trash is put right at the account's first check; and Empty Folder on a server that can only mark a message or copy it to the Trash stops at that message and says so. Held by cases in src/service/protocols/imap/special_use.rs, src/application/server_delete.rs and src/application/emptying.rs, and readings of list_folders and spawn_the_folder_empty; none has met a real server. Closed when the sitting has seen all four on his account | open |  | 2026-10-15T07:00:00.000Z |  |
+| 850 | 13.2 | unrun-verify | src/application/mail_sync.rs |  | 13.2-08, findings #12 and #10 of the audit of 2026-10-14, for a phase 14 sitting on the tester's account on a build holding 13.2-08's merge: a rule that files mail into another folder, then that folder read after the next check, shows each filed message once; and a check after more than 500 messages arrived, for example after a long gap or a bulk copy from another client, says the whole count, and the rules ran over every one of them. Held by cases in src/application/mail_sync.rs over the scripted server, two new records, and the replay's own cases in src/application/moves_waiting.rs; none has met a real server, and how long one check takes over thousands of arrivals has not been timed. Closed when the sitting has seen both on his account | open |  | 2026-10-15T11:00:00.000Z |  |
 
 ````json
 [
@@ -11053,6 +11054,18 @@ last_updated: 2026-10-15T07:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-15T07:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 850,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "13.2-08, findings #12 and #10 of the audit of 2026-10-14, for a phase 14 sitting on the tester's account on a build holding 13.2-08's merge: a rule that files mail into another folder, then that folder read after the next check, shows each filed message once; and a check after more than 500 messages arrived, for example after a long gap or a bulk copy from another client, says the whole count, and the rules ran over every one of them. Held by cases in src/application/mail_sync.rs over the scripted server, two new records, and the replay's own cases in src/application/moves_waiting.rs; none has met a real server, and how long one check takes over thousands of arrivals has not been timed. Closed when the sitting has seen both on his account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T11:00:00.000Z",
     "resolved_at": null
   }
 ]

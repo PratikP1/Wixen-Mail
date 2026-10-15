@@ -1427,6 +1427,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Every new message reaches your rules, and a message a rule files shows once (2026-10-15,
+  MAIL-02, MAIL-04, MAIL-05).** When more than 500 messages arrived in a folder between two
+  checks, for example after a week away, the check took only the newest 500. Your rules ran
+  over those alone, so a blocked sender or a filing rule missed the rest, and the check said
+  500 had arrived. The rest came down later with nothing sorting them. Now a check takes every
+  message that arrived since the last one, runs your rules over all of them, and counts all of
+  them in what it says arrived. The first look at a folder this computer holds nothing from
+  still takes the newest 500, and older mail still comes down in the background. A message a
+  rule filed into another folder also used to show there twice from the next check on, once as
+  filed here and once as the server holds it. It now shows once, at the place the server gave
+  it, or, when the server cannot say where that is, it comes back once on the next read of
+  that folder. Nothing here has been tried against a real mail server yet. The version does
+  not move.
 - **Delete uses the folder your mail server calls its Trash, and Empty Folder says a folder
   was emptied only when it was (2026-10-15, GAP-14, FOLDER-01).** A folder of your own named
   Bin, Deleted, Deleted Items, Deleted Messages or Trash, anywhere in the folder list, could be
