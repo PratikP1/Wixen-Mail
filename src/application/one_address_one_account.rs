@@ -42,19 +42,46 @@ pub struct AddressTaken {
 
 impl std::fmt::Display for AddressTaken {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let _ = (&self.by, &self.address);
-        write!(f, "")
+        let by = match self.by.trim() {
+            "" => "Another account",
+            name => name,
+        };
+        write!(
+            f,
+            "{by} already uses {}. Edit that account rather than adding the address again.",
+            self.address
+        )
     }
 }
 
 /// The account among `held` that already uses `candidate`'s address, if one
 /// does.
+///
+/// Addresses are compared ignoring case and the spaces around them, because
+/// `Pratik@example.com` and `pratik@example.com` are one mailbox. An account
+/// keeping the address it already has is never refused: the stored table
+/// compares with case, so an older database can hold one mailbox twice, and
+/// refusing every save of either would lock somebody out of the Account
+/// Manager.
 pub fn who_already_uses<'a>(
     candidate: Mailbox<'_>,
     held: impl IntoIterator<Item = Mailbox<'a>>,
 ) -> Option<AddressTaken> {
-    let _ = (candidate, held.into_iter().count());
-    None
+    let using_it: Vec<Mailbox<'a>> = held
+        .into_iter()
+        .filter(|other| same_mailbox(other.address, candidate.address))
+        .collect();
+    if using_it.iter().any(|other| other.id == candidate.id) {
+        return None;
+    }
+    using_it.first().map(|other| AddressTaken {
+        by: other.name.to_string(),
+        address: other.address.to_string(),
+    })
+}
+
+fn same_mailbox(one: &str, other: &str) -> bool {
+    one.trim().to_lowercase() == other.trim().to_lowercase()
 }
 
 #[cfg(test)]

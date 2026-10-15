@@ -40,10 +40,16 @@ pub fn moved(accounts: &[(String, String)], which: &str, direction: Move) -> Mov
 /// The accounts in the order `order` gives by id, any it does not name kept
 /// at the end in the order they had.
 pub fn in_this_order(
-    accounts: Vec<crate::data::account::Account>,
+    mut accounts: Vec<crate::data::account::Account>,
     order: &[String],
 ) -> Vec<crate::data::account::Account> {
-    let _ = order;
+    // A stable sort, so the accounts the order does not name keep theirs.
+    accounts.sort_by_key(|account| {
+        order
+            .iter()
+            .position(|id| id == &account.id)
+            .unwrap_or(order.len())
+    });
     accounts
 }
 

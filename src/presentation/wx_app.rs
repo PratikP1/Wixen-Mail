@@ -11413,6 +11413,14 @@ fn move_the_chosen_account(
             return refuse_a_command(tx, "Where the accounts sit could not be saved.");
         }
     }
+    // And the window's own list, which the Account Manager opens with. Left
+    // alone, the Account Manager listed the old order until a restart, and its
+    // next save wrote that order back.
+    {
+        let mut s = lock_state(state);
+        let accounts = std::mem::take(&mut s.accounts);
+        s.accounts = crate::application::account_order::in_this_order(accounts, &after.order);
+    }
     // The sidebar is where the new order shows, now that the tree holds every
     // account, so writing the ordinal and leaving the tree alone would announce
     // a move that had not happened on screen. Read back before the sentence and
