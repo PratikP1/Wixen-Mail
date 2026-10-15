@@ -2373,6 +2373,10 @@ impl MessageCache {
         // row an older build kept.
         self.ensure_column_exists("moves_waiting", "uid_validity", "INTEGER")?;
 
+        // The same numbering on the flag queue (finding #5 of the audit of
+        // 2026-10-14): the folder's numbering when the change was first kept.
+        self.ensure_column_exists("waiting_flag_changes", "uid_validity", "INTEGER")?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS held_conflicts (

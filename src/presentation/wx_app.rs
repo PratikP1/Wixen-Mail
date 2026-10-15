@@ -18865,26 +18865,63 @@ fn send_the_flag_changes_that_were_waiting(
 ) {
     use crate::application::flag_changes_waiting::{
         WhatToDoWithAWaitingChange, WhichFlag, put_back_because_the_server_refused,
-        what_became_of_it,
+        the_number_to_offer_it_at, what_became_of_it,
     };
+    use crate::application::renumbered::{Kept, the_number_to_send_to};
     let waiting = cache
         .flag_changes_waiting_for(account_id)
         .unwrap_or_default();
     let mut put_back = 0usize;
     let mut last_refusal = String::new();
+    // Each folder's numbering now, asked once per folder this replay sends
+    // into (finding #5 of the audit of 2026-10-14).
+    let mut numberings: std::collections::HashMap<String, Option<u32>> =
+        std::collections::HashMap::new();
     for change in &waiting {
-        let offered = match change.which_flag {
-            WhichFlag::Read => handle.block_on(controller.set_flag(
-                &change.folder_path,
-                change.uid,
-                crate::service::protocols::imap::flag::SEEN,
-                change.changed_to,
-            )),
-            WhichFlag::Starred => handle.block_on(controller.set_starred(
-                &change.folder_path,
-                change.uid,
-                change.changed_to,
-            )),
+        // What the change was kept under, read before anything is sent. A
+        // change whose row cannot be read stays waiting rather than going to
+        // a number nobody checked.
+        let (Ok(numbering), Ok(message)) = (
+            cache.the_numbering_a_flag_change_was_kept_under(
+                change.message_row_id,
+                change.which_flag,
+            ),
+            cache.get_message(change.message_row_id),
+        ) else {
+            continue;
+        };
+        let identifier = message
+            .map(|message| message.message_id)
+            .unwrap_or_default();
+        let kept = Kept {
+            uid: change.uid,
+            numbering,
+            identifier: &identifier,
+        };
+        let numbered_now = match kept.numbering {
+            Some(_) => the_numbering_now(controller, handle, &change.folder_path, &mut numberings),
+            None => Ok(None),
+        };
+        let sent_to = handle.block_on(the_number_to_send_to(
+            &kept,
+            async { numbered_now },
+            controller.uids_with_message_id(&change.folder_path, &identifier),
+        ));
+        let offered = match the_number_to_offer_it_at(sent_to) {
+            Err(not_offered) => Err(not_offered),
+            Ok(uid) => match change.which_flag {
+                WhichFlag::Read => handle.block_on(controller.set_flag(
+                    &change.folder_path,
+                    uid,
+                    crate::service::protocols::imap::flag::SEEN,
+                    change.changed_to,
+                )),
+                WhichFlag::Starred => handle.block_on(controller.set_starred(
+                    &change.folder_path,
+                    uid,
+                    change.changed_to,
+                )),
+            },
         };
         match what_became_of_it(&offered) {
             // Each answer lets go of exactly the change it sent. A change kept
@@ -18920,6 +18957,25 @@ fn send_the_flag_changes_that_were_waiting(
             put_back_because_the_server_refused(put_back, &last_refusal),
         ));
     }
+}
+
+/// A folder's numbering now, its UIDVALIDITY, asked of the server once per
+/// folder in a replay and remembered in `asked`. A failure is not
+/// remembered, so the next change in that folder asks again.
+fn the_numbering_now(
+    controller: &crate::application::mail_controller::MailController,
+    handle: &tokio::runtime::Handle,
+    folder: &str,
+    asked: &mut std::collections::HashMap<String, Option<u32>>,
+) -> crate::common::Result<Option<u32>> {
+    if let Some(numbering) = asked.get(folder) {
+        return Ok(*numbering);
+    }
+    let numbering = handle
+        .block_on(controller.select_folder(folder))?
+        .uid_validity;
+    asked.insert(folder.to_string(), numbering);
+    Ok(numbering)
 }
 
 /// Open the list of who is blocked on the account being looked at.

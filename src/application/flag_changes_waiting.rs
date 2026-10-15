@@ -208,7 +208,9 @@ pub fn what_became_of_it(offered: &Result<(), Error>) -> WhatToDoWithAWaitingCha
 /// could not be asked its numbering is answered as that failure, and read
 /// as any other offer that failed that way.
 pub fn the_number_to_offer_it_at(sent_to: Result<Option<u32>, Error>) -> Result<u32, Error> {
-    Ok(sent_to?.unwrap_or_default())
+    sent_to?.ok_or_else(|| {
+        Error::InPlainWords(crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string())
+    })
 }
 
 /// The flags to write here from what the server said, with each change still

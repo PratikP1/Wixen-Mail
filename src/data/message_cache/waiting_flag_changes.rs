@@ -38,13 +38,26 @@ impl MessageCache {
     /// Two changes to the same flag on the same message leave one, the later
     /// one. That falls out of the primary key rather than out of a read before
     /// the write, so nothing has to remember it.
+    ///
+    /// The numbering the folder had when a change to this message and flag
+    /// was first kept stays with it. A later keep may carry a number read
+    /// after a renumbering, and then the first numbering only costs a search
+    /// by the message's identifier at the replay; keeping the later numbering
+    /// with a number from the first would send that number unchecked.
     pub fn keep_a_flag_change_waiting(&self, waiting: &AWaitingFlagChange) -> Result<()> {
+        let numbering = match self.the_numbering_a_flag_change_was_kept_under_if_kept(
+            waiting.message_row_id,
+            waiting.which_flag,
+        )? {
+            Some(kept) => kept,
+            None => self.the_numbering_of(&waiting.account_id, &waiting.folder_path)?,
+        };
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO waiting_flag_changes
                  (message_row_id, account_id, folder_path, uid, which_flag,
-                  changed_to, changed_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                  changed_to, changed_at, uid_validity)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -53,6 +66,7 @@ impl MessageCache {
                     waiting.which_flag.as_stored(),
                     waiting.changed_to,
                     waiting.changed_at,
+                    numbering,
                 ],
             )
             .map_err(|e| Error::Other(format!("A flag change could not be kept: {e}")))?;
@@ -169,10 +183,30 @@ impl MessageCache {
     /// build.
     pub fn the_numbering_a_flag_change_was_kept_under(
         &self,
-        _message_row_id: i64,
-        _which_flag: WhichFlag,
+        message_row_id: i64,
+        which_flag: WhichFlag,
     ) -> Result<Option<u32>> {
-        Ok(None)
+        Ok(self
+            .the_numbering_a_flag_change_was_kept_under_if_kept(message_row_id, which_flag)?
+            .flatten())
+    }
+
+    /// The kept change's numbering, nothing inside when it kept none, and
+    /// nothing at all when no change is kept for this message and flag.
+    fn the_numbering_a_flag_change_was_kept_under_if_kept(
+        &self,
+        message_row_id: i64,
+        which_flag: WhichFlag,
+    ) -> Result<Option<Option<u32>>> {
+        self.conn
+            .query_row(
+                "SELECT uid_validity FROM waiting_flag_changes
+                 WHERE message_row_id = ?1 AND which_flag = ?2",
+                params![message_row_id, which_flag.as_stored()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("The waiting change could not be read: {e}")))
     }
 
     fn let_go(&self, which: &str, values: impl rusqlite::Params) -> Result<()> {

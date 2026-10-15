@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 740 records have arrived since and have not been through it.
+# 741 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -3990,7 +3990,7 @@ red = [
     "application::reporting_junk::tests::test_a_store_refused_while_taking_the_mark_off_is_an_error_carrying_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 21 },
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
@@ -16648,10 +16648,14 @@ red = [
     # server never reached is put back rather than left waiting.
     "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
     "application::moves_waiting::tests::test_a_replay_that_never_reached_the_server_writes_no_line_of_its_own",
+    # Added 2026-10-15 by 13.2-11: a flag change whose folder could not be
+    # asked its numbering, because the connection went, goes on waiting
+    # through the same answer.
+    "application::flag_changes_waiting::tests::test_a_change_with_a_number_is_offered_there_and_an_unasked_folder_goes_on_waiting",
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/flag_changes_waiting.rs", tests = 19 },
+    { file = "src/application/flag_changes_waiting.rs", tests = 21 },
     { file = "src/application/moves_waiting.rs", tests = 69 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
@@ -16710,7 +16714,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -40286,7 +40290,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
 ]
 
 [[guard]]
@@ -40302,7 +40306,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
 ]
 
 # A change kept from offline is sent by number only into the numbering it
@@ -40359,4 +40363,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 69 },
+]
+
+# A read or star kept from offline is sent by number only into the
+# numbering it was kept under (finding #5 of the audit of 2026-10-14, the
+# flag half). Written 2026-10-15 by 13.2-11, taken by hand: a replay that
+# answers the kept numbering for the numbering now, so it sends the kept
+# number whatever the server did, left the whole library green at 9,136
+# passed and the target at 12 passed and 1 failed, the one named.
+[[guard]]
+name = "the flag replay asks the folder its numbering before it sends a kept number"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = '''            Some(_) => the_numbering_now(controller, handle, &change.folder_path, &mut numberings),'''
+after = '''            Some(_) => Ok(kept.numbering),'''
+red = [
+    "test_the_flag_replay_asks_which_number_a_change_goes_to_before_it_sends",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
 ]
