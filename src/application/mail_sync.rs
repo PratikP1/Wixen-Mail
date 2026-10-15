@@ -1642,17 +1642,17 @@ fn hold_back_what_waits(filtered: &mut Filtered, from: &str) {
 }
 
 /// The changes waiting to go for a folder's account, by the row each is
-/// about, read once for the flag read.
+/// about, read once for the flag read. Nothing when the account is not
+/// known, which the caller has already said.
 fn the_changes_waiting_by_row(
     cache: &MessageCache,
-    folder_id: i64,
+    account: Option<&str>,
 ) -> std::collections::HashMap<i64, Vec<(crate::application::flag_changes_waiting::WhichFlag, bool)>>
 {
     let mut by_row: std::collections::HashMap<i64, Vec<_>> = std::collections::HashMap::new();
-    let waiting = match cache.folder_account(folder_id) {
-        Ok(Some(account)) => cache.flag_changes_waiting_for(&account),
-        Ok(None) => Ok(Vec::new()),
-        Err(why) => Err(why),
+    let waiting = match account {
+        Some(account) => cache.flag_changes_waiting_for(account),
+        None => Ok(Vec::new()),
     };
     match waiting {
         Ok(waiting) => {
@@ -2004,16 +2004,35 @@ pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
     // A change still waiting to go is written over what the server said, for
     // its flag only: the server has not heard of it yet, and writing its
     // answer as it came undid every waiting mark until the mark went (D5).
-    let waiting = if changed.is_empty() {
-        std::collections::HashMap::new()
+    //
+    // The account, what waits to go for it and its labels that carry a
+    // keyword are read once for the whole pass rather than once a message. A
+    // server that cannot say what changed answers about every message held,
+    // and each of those reads gave the same answer every time (finding #14).
+    // No transaction around the loop: it would hold the write lock for the
+    // whole pass and keep the window's own writes waiting behind it.
+    let account = if changed.is_empty() {
+        None
     } else {
-        the_changes_waiting_by_row(cache, folder_id)
+        cache.account_of_folder(folder_id).unwrap_or_else(|why| {
+            // Said rather than swallowed: without the account neither what
+            // waits to go nor the labels can be read, so the server's flags
+            // are written as they came and its keywords move no label.
+            tracing::warn!("The account of a folder being checked could not be read: {why}");
+            None
+        })
+    };
+    let waiting = the_changes_waiting_by_row(cache, account.as_deref());
+    let keyword_labels = match account.as_deref() {
+        Some(account) => cache.labels_with_a_keyword(account).unwrap_or_else(|why| {
+            tracing::warn!("The labels that carry a keyword could not be read: {why}");
+            Vec::new()
+        }),
+        None => Vec::new(),
     };
     for (uid, said) in &changed {
-        let waits = match cache.message_row_for_uid(folder_id, *uid) {
-            Ok(Some(row)) => waiting.get(&row),
-            _ => None,
-        };
+        let row = cache.message_row_for_uid(folder_id, *uid).ok().flatten();
+        let waits = row.and_then(|row| waiting.get(&row));
         let kept;
         let flags = match waits {
             Some(waits) => {
@@ -2027,9 +2046,11 @@ pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
         // off elsewhere. Without this a label set on a phone never arrived and
         // one removed there stayed here for as long as the account existed,
         // which is the same gap the flag sync itself was written to close.
-        if let Ok(Some(account)) = cache.folder_account(folder_id)
-            && let Ok(Some(row)) = cache.message_row_for_uid(folder_id, *uid)
-            && let Err(e) = cache.match_labels_to_keywords(row, &account, flags)
+        // An account none of whose labels carries a keyword has nothing here
+        // the server's keywords could move, so its messages are not read.
+        if !keyword_labels.is_empty()
+            && let Some(row) = row
+            && let Err(e) = cache.match_these_labels_to_keywords(row, &keyword_labels, flags)
         {
             // Said rather than swallowed: labels quietly not arriving looks
             // exactly like nobody having set any.

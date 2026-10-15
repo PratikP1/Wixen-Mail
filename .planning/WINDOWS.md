@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 725
+open_count: 726
 waived_count: 0
 fixed_count: 126
-total_count: 851
-last_updated: 2026-10-15T15:00:00.000Z
+total_count: 852
+last_updated: 2026-10-15T16:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -866,6 +866,7 @@ last_updated: 2026-10-15T15:00:00.000Z
 | 849 | 13.2 | unrun-verify | src/service/protocols/imap/special_use.rs |  | 13.2-07, findings #9 and #34 of the audit of 2026-10-14, for phase 14's delete sitting on the tester's account: Delete lands in the folder the server declares as its Trash; an account holding a folder of its own named Deleted or Bin keeps it as an ordinary folder in the tree, and an emptying schedule leaves it alone; a folder an earlier build took for the Trash is put right at the account's first check; and Empty Folder on a server that can only mark a message or copy it to the Trash stops at that message and says so. Held by cases in src/service/protocols/imap/special_use.rs, src/application/server_delete.rs and src/application/emptying.rs, and readings of list_folders and spawn_the_folder_empty; none has met a real server. Closed when the sitting has seen all four on his account | open |  | 2026-10-15T07:00:00.000Z |  |
 | 850 | 13.2 | unrun-verify | src/application/mail_sync.rs |  | 13.2-08, findings #12 and #10 of the audit of 2026-10-14, for a phase 14 sitting on the tester's account on a build holding 13.2-08's merge: a rule that files mail into another folder, then that folder read after the next check, shows each filed message once; and a check after more than 500 messages arrived, for example after a long gap or a bulk copy from another client, says the whole count, and the rules ran over every one of them. Held by cases in src/application/mail_sync.rs over the scripted server, two new records, and the replay's own cases in src/application/moves_waiting.rs; none has met a real server, and how long one check takes over thousands of arrivals has not been timed. Closed when the sitting has seen both on his account | open |  | 2026-10-15T11:00:00.000Z |  |
 | 851 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-09, findings #11 and #36 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-09's merge: a first download of a large folder with that folder open in the flat view, the count heard once when the folder opens and not again per chunk, the list growing about every ten seconds, and the window answering keys while the download runs; then the same in conversation view; and on the tester's account, a message whose text cannot be fetched no longer asked for over and over, with the other accounts' text still coming down. Held by cases in src/application/bringing_everything_down.rs, six readings in tests/everything_comes_down_without_being_asked.rs, nine new records and one rewritten; none has met a real server, and the pause per re-read at the tester's size has not been timed. Closed when he has heard both views and the sitting has seen the text pass carry on past a failing message | open |  | 2026-10-15T15:00:00.000Z |  |
+| 852 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-10, findings #15 and #14 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-10's merge with one new message waiting at the server: F9 pressed during the start-up check, and F9 pressed twice in a row, each heard as one announcement of the new message and one new-mail sound, with the rules run on it once; and on the tester's account, a check of a large folder on a server that cannot say what changed finishing no slower than before. Held by three cases in src/application/mail_session.rs, a reading in tests/mail_keeps_arriving_on_its_own.rs, a case in src/application/what_rules_tell_the_server.rs for labels arriving through the flag pass, and five new records; none has met a real server, and no NVDA case presses F9 during a check. Closed when he has heard both and the sitting has seen the check finish | open |  | 2026-10-15T16:00:00.000Z |  |
 
 ````json
 [
@@ -11079,6 +11080,18 @@ last_updated: 2026-10-15T15:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-15T15:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 852,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-10, findings #15 and #14 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-10's merge with one new message waiting at the server: F9 pressed during the start-up check, and F9 pressed twice in a row, each heard as one announcement of the new message and one new-mail sound, with the rules run on it once; and on the tester's account, a check of a large folder on a server that cannot say what changed finishing no slower than before. Held by three cases in src/application/mail_session.rs, a reading in tests/mail_keeps_arriving_on_its_own.rs, a case in src/application/what_rules_tell_the_server.rs for labels arriving through the flag pass, and five new records; none has met a real server, and no NVDA case presses F9 during a check. Closed when he has heard both and the sitting has seen the check finish",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T16:00:00.000Z",
     "resolved_at": null
   }
 ]

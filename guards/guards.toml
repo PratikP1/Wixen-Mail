@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 730 records have arrived since and have not been through it.
+# 735 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -732,7 +732,7 @@ tests_last_seen = [
     { file = "src/application/reporting_junk.rs", tests = 31 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 35 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -4523,7 +4523,7 @@ tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
     { file = "src/application/emptying.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 [[guard]]
@@ -4783,7 +4783,7 @@ red = [
     "application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -15847,7 +15847,7 @@ red = [
     "application::mail_session::tests::test_two_pieces_of_work_for_one_account_sign_in_once",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
 ]
 
 # ── Once means once ─────────────────────────────────────────────────────────
@@ -15898,7 +15898,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
 ]
 
 # ── A folder listing reads no message text ─────────────────────────────────
@@ -16649,7 +16649,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 19 },
     { file = "src/application/moves_waiting.rs", tests = 64 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 [[guard]]
@@ -25782,7 +25782,7 @@ red = [
     "test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 13 },
+    { file = "src/data/message_cache/tags.rs", tests = 15 },
     { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
 ]
 
@@ -25846,7 +25846,7 @@ red = [
     "test_a_label_view_answers_in_the_order_it_is_handed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 13 },
+    { file = "src/data/message_cache/tags.rs", tests = 15 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -26297,7 +26297,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A watch that never started is asked about before the branch returns ─────
@@ -26328,7 +26328,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The network coming back starts the watches at once (#37) ────────────────
@@ -26355,7 +26355,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The timer checks the accounts that are due (#37) ────────────────────────
@@ -26383,7 +26383,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The schedule reads the interval off the account row (#37) ───────────────
@@ -26419,7 +26419,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A start checks without a keystroke (#37) ────────────────────────────────
@@ -26445,7 +26445,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A check that went through nowhere asks for no download (#37) ────────────
@@ -26477,7 +26477,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A spelling language chosen for a region is shown as chosen, not as the checker's answer ──
@@ -30844,7 +30844,7 @@ red = [
     "data::message_cache::tags::tests::test_the_order_written_is_the_order_read_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 13 },
+    { file = "src/data/message_cache/tags.rs", tests = 15 },
 ]
 
 # ── Only the first nine labels carry a key on the menu (#48) ────────────────
@@ -33910,7 +33910,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # The same on a POP check, which ran the same assignment. Written
@@ -36288,7 +36288,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A rule's mark sent whether or not the message arrived with it, so every
@@ -36308,7 +36308,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_what_the_server_is_told_is_only_what_the_rules_changed",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A rule's mark sent with mail changes off, so a rule writes at somebody's
@@ -36326,7 +36326,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A check writing the server's flags as they came over a mark still waiting
@@ -36344,7 +36344,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A change the server refused, or a label nothing can hold waiting, left on
@@ -36362,7 +36362,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_a_rules_label_comes_off_again",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A message filed by its rule while its mark waits, so the waiting mark names
@@ -36379,7 +36379,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A rule's Delete on arriving mail that never reaches the server, so the
@@ -36412,24 +36412,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A rule's Delete the server could not be asked about put back rather than
 # left waiting in the menu's store, so a message a rule deleted on a train
 # is back in the Inbox and the next check sends nothing (D11). Written
 # 2026-10-01 by 13-44.3, taken by hand against the whole library first.
+# Found short on 2026-10-15 by 13.2-10's re-measure: the Trash schedule's
+# emptying asks the same decision since 13-44.6, and its case in
+# emptying_the_trash.rs goes red too. Taken by hand that day, whole library
+# 9,103 passed and 3 failed, the three now named.
 [[guard]]
 name = "a rule's delete the server could not be asked about waits in the menu's queue"
 file = "src/application/what_rules_tell_the_server.rs"
 before = '''        (Replayed::NotReached, _) => ForTheChange::KeptWaiting(Until::TheServerCanBeReached),'''
 after = '''        (Replayed::NotReached, _) => ForTheChange::PutBack(Because::TheServerCouldNotBeReached),'''
 red = [
+    "application::emptying_the_trash::tests::test_a_server_that_cannot_be_reached_leaves_one_waiting_and_the_rest_untouched",
     "application::what_rules_tell_the_server::tests::test_a_rules_delete_the_server_could_not_be_asked_about_waits_in_the_menus_queue",
     "application::what_rules_tell_the_server::tests::test_what_a_rules_delete_calls_for",
 ]
 tests_last_seen = [
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/emptying_the_trash.rs", tests = 33 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A rule's Delete the server or this computer's gate refused, left in the
@@ -36455,7 +36461,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/moves_waiting.rs", tests = 64 },
-    { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
 # A POP rule's Delete that does nothing at all, now that the rules write
@@ -39830,7 +39836,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # The watch finding its account by id alone: the end of a check already
@@ -39850,7 +39856,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # A watch waking checking its account whether or not it is switched on, and
@@ -39870,7 +39876,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # A folder's role taken from its last name at any depth, beside a folder the
@@ -40152,4 +40158,94 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+# One check of an account at a time (finding #15 of the audit of
+# 2026-10-14). F9, a start, the schedule and a watch waking each started a
+# check, and two checks of one account fetched the same mail, ran the rules
+# over it twice and announced it twice. Written 2026-10-15 by 13.2-10, each
+# taken by hand against the whole library and, for the window, the target:
+# the fresh lock left the library at 9,102 passed and 1 failed, the one
+# lock for every account at 9,102 and 1, and the turn taken out of the
+# check left the library green at 9,103 and the target at 21 passed and 1
+# failed, each the one named. The case that a check which panics gives its
+# turn back has no record: what gives the turn back is the guard's drop,
+# and no edit to `one_check_at_a_time` short of leaking the guard reaches it.
+[[guard]]
+name = "a second check of one account waits for the first"
+file = "src/application/mail_session.rs"
+before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
+after = '''        let _ = &mut turns;
+        Arc::new(Mutex::new(()))'''
+red = [
+    "application::mail_session::tests::test_a_second_check_of_one_account_waits_for_the_first",
+]
+tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 17 },
+]
+
+[[guard]]
+name = "two accounts are checked side by side"
+file = "src/application/mail_session.rs"
+before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
+after = '''        turns.entry(String::new()).or_default().clone()'''
+red = [
+    "application::mail_session::tests::test_two_accounts_are_checked_side_by_side",
+]
+tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 17 },
+]
+
+[[guard]]
+name = "a check takes its account's turn before its session"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''            let _this_accounts_turn = handle.block_on(
+                crate::application::mail_session::one_check_at_a_time(&account.id),
+            );'''
+after = '''            let _this_accounts_turn = ();'''
+red = [
+    "test_a_check_takes_its_accounts_turn_before_its_session",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+]
+
+# A check's flag pass reads the account's labels that carry a keyword once
+# and matches each message against them (finding #14). Written 2026-10-15
+# by 13.2-10, each taken by hand against the whole library: the matching
+# that ignores a keyword the server holds left it at 9,103 passed and 3
+# failed, the pass that matches labels only when no label carries a keyword
+# at 9,105 and 1, each the ones named. A break that reads the labels inside
+# the loop again changes no answer, so no test can see it and it has no
+# record.
+[[guard]]
+name = "labels read once still follow a keyword the server holds"
+file = "src/data/message_cache/tags.rs"
+before = '''            let server_has_it = keywords.iter().any(|held| held == keyword);'''
+after = '''            let server_has_it = keywords.iter().any(|held| held == keyword && held.is_empty());'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_label_put_on_or_taken_off_elsewhere_reaches_the_row_at_the_next_check",
+    "data::message_cache::tags::keyword_tests::test_a_label_set_on_another_device_arrives",
+    "data::message_cache::tags::keyword_tests::test_labels_read_once_match_keywords_as_reading_them_each_time_did",
+]
+tests_last_seen = [
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
+    { file = "src/data/message_cache/tags.rs", tests = 15 },
+]
+
+[[guard]]
+name = "a check's flag pass matches labels when a label carries a keyword"
+file = "src/application/mail_sync.rs"
+before = '''        if !keyword_labels.is_empty()
+            && let Some(row) = row'''
+after = '''        if keyword_labels.is_empty()
+            && let Some(row) = row'''
+red = [
+    "application::what_rules_tell_the_server::tests::test_a_label_put_on_or_taken_off_elsewhere_reaches_the_row_at_the_next_check",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]

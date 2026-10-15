@@ -4042,6 +4042,16 @@ provider does.
     bounds only a first look at an empty folder and the older mail below the newest held.
     Held by three cases in `mail_sync` and a new record. Seeing it on the tester's account
     is ledger 850. No `[D]` clause is added and the box stays ticked.
+  - 13.2-10 on 2026-10-15: one check of an account runs at a time (finding #15). F9, a start,
+    the schedule and a watch waking each start a check; `spawn_mail_sync` now takes the
+    account's turn, `mail_session::one_check_at_a_time`, as the first statement of each
+    account's pass, before the POP branch and the session, so a second check waits and then
+    finds nothing new. And a check's flag pass reads the account and its labels that carry a
+    keyword once rather than once a message (finding #14). Held by three cases in
+    `mail_session`, a reading with planted companions in
+    `tests/mail_keeps_arriving_on_its_own.rs`, a case in `what_rules_tell_the_server` for
+    labels arriving through the pass, and five new records. Hearing and seeing it is ledger
+    852. No `[D]` clause is added and the box stays ticked.
 
 - [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
@@ -4122,6 +4132,14 @@ provider does.
     conversation view; opening a folder and a check that found mail still say it. Held by
     `test_a_chunks_reread_shows_the_count_and_does_not_speak_it` with its companion. Hearing it
     is ledger 851. No `[D]` clause is added and the box stays ticked.
+  - 13.2-10 on 2026-10-15: what arrived is said once a check, not once per check running
+    (finding #15): F9 pressed during a check, or a watch waking during one, no longer starts a
+    second check of the same account beside it, which fetched the same mail and said it
+    arrived, with the new-mail sound, a second time. The second check waits for the first,
+    finds nothing new and sends no `WhatArrived`. Held by
+    `test_a_second_check_of_one_account_waits_for_the_first` and
+    `test_a_check_takes_its_accounts_turn_before_its_session` with its companion. Hearing it is
+    ledger 852. No `[D]` clause is added and the box stays ticked.
 
 ### Reading, and the list
 
@@ -7729,8 +7747,8 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, the open folder read again at most every ten seconds during the download and a text refusal ending one account, ledger 851 |
 | MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850 |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, each message's text asked for at most once a run, ledger 851 |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850 |
-| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851 |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852 |
+| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |

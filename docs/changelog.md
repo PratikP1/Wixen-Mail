@@ -1427,6 +1427,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **New mail is announced once, and your rules run on it once (2026-10-15, MAIL-04,
+  MAIL-05).** Pressing F9 while a check for mail was already running, or the inbox watch
+  waking during one, started a second check of the same account beside the first. Both
+  fetched the same new messages, both ran your rules on them, and both said what arrived, so
+  you heard "1 new message" and the new-mail sound twice. Now a second check of an account
+  waits for the one already running, then finds nothing new and says nothing. Different
+  accounts are still checked at the same time. A check of a large mailbox on a server that
+  cannot say which messages changed also does less work on this computer. This has not yet
+  been heard on a real mailbox.
 - **The download of everything stops asking over and over, and stops reading the count out
   (2026-10-15, MAIL-01, MAIL-03, MAIL-05).** When the text of a message could not be fetched,
   the download asked for it again straight away, over and over, until a later check for mail

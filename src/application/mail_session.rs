@@ -150,6 +150,50 @@ pub(crate) async fn the_session_at(
     Ok(session)
 }
 
+/// An account's turn to be checked, held by the check that has it and given
+/// back when that check lets go of it, however it ends.
+pub(crate) type AnAccountsTurn = tokio::sync::OwnedMutexGuard<()>;
+
+/// Every account's turn to be checked, by the account's own id, in the same
+/// shape as [`the_sessions_being_held`] and for the same reason: the checks
+/// that share a turn run on different threads.
+///
+/// An account removed keeps its entry, an unheld lock, until the program
+/// closes. Forgetting it while a check held it would hand the next check a
+/// fresh one beside it, which is the defect this exists to stop.
+fn the_turns_being_held() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static TURNS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    TURNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Wait for this account's turn to be checked, and hold it.
+///
+/// One check of an account at a time (finding #15 of the audit of
+/// 2026-10-14). F9, a start, the schedule and a watch waking each start a
+/// check, and only the schedule asks whether one is already running. Two
+/// checks of one account took turns on its session command by command, both
+/// read what was held before either wrote, both fetched the same messages,
+/// both ran the rules over them and both said what arrived, so one new
+/// message was announced twice with its sound twice. The second now waits
+/// for the first, then finds nothing new and says nothing.
+///
+/// A lock rather than a mark saying "being checked", because a check leaves
+/// an account by about eight `continue`s and an early return, and a mark
+/// that one of them forgot to clear would stop that account being checked
+/// until the program closed. The guard is let go on every one of them, and
+/// on a panic, by being dropped. Another account's turn is its own, so two
+/// accounts are still checked side by side.
+///
+/// The map's lock is let go before the turn is waited for, so a check
+/// waiting on one account never stops another account's turn being found.
+pub(crate) async fn one_check_at_a_time(account_id: &str) -> AnAccountsTurn {
+    let turn = {
+        let mut turns = the_turns_being_held().lock().await;
+        turns.entry(account_id.to_string()).or_default().clone()
+    };
+    turn.lock_owned().await
+}
+
 /// The accounts set up on this computer, as a crossing's replay opens their
 /// sessions.
 ///
@@ -753,5 +797,72 @@ mod tests {
 
         let _ = watching.stop().await;
         no_longer_signed_in_to(&account.id).await;
+    }
+
+    // ── One check of an account at a time (finding #15) ─────────────────────
+    //
+    // Each case names an account of its own, because the turns live in one
+    // map for the whole program and two cases sharing an id would wait on
+    // each other.
+
+    /// How long a check that should be waiting is given to finish anyway.
+    ///
+    /// Short, because a second check of one account that is not held back
+    /// finishes at once: asking for an unheld lock takes no time at all.
+    const A_SHORT_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+
+    #[tokio::test]
+    async fn test_a_second_check_of_one_account_waits_for_the_first() {
+        // F9 pressed while the start-up check runs: the second waits, so the
+        // mail the first fetches is announced once and its rules run once.
+        let first = one_check_at_a_time("turn-waits").await;
+        let mut second = tokio::spawn(one_check_at_a_time("turn-waits"));
+
+        assert!(
+            tokio::time::timeout(A_SHORT_WAIT, &mut second)
+                .await
+                .is_err(),
+            "a second check of one account had its turn while the first held it"
+        );
+
+        drop(first);
+        assert!(
+            tokio::time::timeout(LONG_ENOUGH, second).await.is_ok(),
+            "the second check never had its turn after the first let go of it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_accounts_are_checked_side_by_side() {
+        // The turn is the account's, not the program's: a slow server for one
+        // account holds up nothing for another.
+        let _work = one_check_at_a_time("turn-side-by-side-work").await;
+
+        let home =
+            tokio::time::timeout(LONG_ENOUGH, one_check_at_a_time("turn-side-by-side-home")).await;
+
+        assert!(
+            home.is_ok(),
+            "one account's check waited for another account's"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_check_that_panics_gives_its_turn_back() {
+        // A turn kept by a check that died would stop that account being
+        // checked until the program closed.
+        let dying = tokio::spawn(async {
+            let _turn = one_check_at_a_time("turn-after-a-panic").await;
+            panic!("a check that fails part way through");
+        });
+        assert!(dying.await.is_err(), "the check was meant to panic");
+
+        let again =
+            tokio::time::timeout(LONG_ENOUGH, one_check_at_a_time("turn-after-a-panic")).await;
+
+        assert!(
+            again.is_ok(),
+            "the account's turn was kept by a check that panicked"
+        );
     }
 }

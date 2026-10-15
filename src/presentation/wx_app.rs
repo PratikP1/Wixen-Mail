@@ -31434,6 +31434,16 @@ fn spawn_mail_sync(
         // with no password saved.
         let mut nothing_went_through = true;
         for mut account in accounts {
+            // This account's turn, before anything else of its pass, so a
+            // check started while another of the same account runs waits for
+            // it and then finds nothing new rather than fetching, filing and
+            // announcing the same mail a second time (finding #15). Held to
+            // the end of the pass by its name and given back by every
+            // `continue`, the end of the pass and a panic alike. POP takes
+            // its turn too.
+            let _this_accounts_turn = handle.block_on(
+                crate::application::mail_session::one_check_at_a_time(&account.id),
+            );
             // POP and IMAP are different enough that they are different paths
             // rather than one with branches through it. POP has no folders, no
             // flags and nothing to select, so almost none of what follows applies.

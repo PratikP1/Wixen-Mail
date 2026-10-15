@@ -2100,16 +2100,21 @@ impl MessageCache {
     /// columns can hold nothing at all. With `<>` a row holding nothing would
     /// match no comparison, and would then never take another update from the
     /// server for as long as the account existed.
+    ///
+    /// Prepared once and kept, because a check's flag pass asks it of every
+    /// message it holds (finding #14).
     pub fn set_message_flags(&self, folder_id: i64, uid: u32, flags: &[String]) -> Result<usize> {
         let has = |wanted: &str| flags.iter().any(|flag| flag.eq_ignore_ascii_case(wanted));
         self.conn
-            .execute(
+            .prepare_cached(
                 "UPDATE messages
                  SET read = ?3, starred = ?4, answered = ?5, draft = ?6, deleted = ?7
                  WHERE folder_id = ?1 AND uid = ?2
                    AND (read IS NOT ?3 OR starred IS NOT ?4 OR answered IS NOT ?5
                         OR draft IS NOT ?6 OR deleted IS NOT ?7)",
-                params![
+            )
+            .and_then(|mut statement| {
+                statement.execute(params![
                     folder_id,
                     uid,
                     has(flag::SEEN),
@@ -2117,8 +2122,8 @@ impl MessageCache {
                     has(flag::ANSWERED),
                     has(flag::DRAFT),
                     has(flag::DELETED),
-                ],
-            )
+                ])
+            })
             .map_err(|e| Error::Other(format!("Failed to update the message flags: {}", e)))
     }
 
@@ -2938,14 +2943,17 @@ impl MessageCache {
     /// tables speak in row ids. `None` for a uid this cache does not hold,
     /// which happens whenever the server reports a message that has not been
     /// downloaded.
+    ///
+    /// Prepared once and kept, because a check's flag pass asks it of every
+    /// message it holds (finding #14).
     pub fn message_row_for_uid(&self, folder_id: i64, uid: u32) -> Result<Option<i64>> {
         self.conn
-            .query_row(
-                "SELECT id FROM messages WHERE folder_id = ?1 AND uid = ?2",
-                params![folder_id, uid],
-                |row| row.get(0),
-            )
-            .optional()
+            .prepare_cached("SELECT id FROM messages WHERE folder_id = ?1 AND uid = ?2")
+            .and_then(|mut statement| {
+                statement
+                    .query_row(params![folder_id, uid], |row| row.get(0))
+                    .optional()
+            })
             .map_err(|e| Error::Other(format!("Failed to find the message: {}", e)))
     }
 

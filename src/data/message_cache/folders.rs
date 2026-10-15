@@ -757,21 +757,6 @@ impl MessageCache {
     ///
     /// Asked before a folder is listed, because the Outbox is not read from the
     /// messages table and nothing else can tell from the id alone.
-    /// Which account a folder belongs to.
-    ///
-    /// The sync works in folder ids and the tag tables work in account ids, and
-    /// this is the one row that knows both.
-    pub fn folder_account(&self, folder_id: i64) -> Result<Option<String>> {
-        self.conn
-            .query_row(
-                "SELECT account_id FROM folders WHERE id = ?1",
-                params![folder_id],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| Error::Other(format!("Failed to read the folder: {}", e)))
-    }
-
     pub fn folder_kind(&self, folder_id: i64) -> Result<Option<crate::common::types::FolderType>> {
         self.conn
             .query_row(
@@ -784,11 +769,12 @@ impl MessageCache {
             .map(|found| found.map(|kind| crate::common::types::FolderType::from_stored(&kind)))
     }
 
-    /// Get folder by account and path
     /// Which account a stored folder belongs to.
     ///
     /// Asked where only the folder's own id is in hand, which is how the
-    /// sync reaches the account's other folders to file mail into one.
+    /// sync reaches the account's other folders to file mail into one, and
+    /// its flag pass the account's labels. The sync works in folder ids and
+    /// the tag tables in account ids, and this is the one row that knows both.
     pub fn account_of_folder(&self, folder_id: i64) -> Result<Option<String>> {
         self.conn
             .query_row(
@@ -800,6 +786,7 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to read the folder's account: {e}")))
     }
 
+    /// Get folder by account and path
     pub fn get_folder(&self, account_id: &str, path: &str) -> Result<Option<CachedFolder>> {
         let mut stmt = self
             .conn
@@ -1770,15 +1757,15 @@ mod tests {
         let theirs_id = cache.save_folder(&theirs).unwrap();
 
         assert_eq!(
-            cache.folder_account(mine_id).unwrap(),
+            cache.account_of_folder(mine_id).unwrap(),
             Some("acc-mine".to_string())
         );
         assert_eq!(
-            cache.folder_account(theirs_id).unwrap(),
+            cache.account_of_folder(theirs_id).unwrap(),
             Some("acc-theirs".to_string())
         );
         assert_eq!(
-            cache.folder_account(999_999).unwrap(),
+            cache.account_of_folder(999_999).unwrap(),
             None,
             "a folder that is not there was given an account"
         );
