@@ -199,6 +199,24 @@ pub fn whether_to_watch_again(reason: &WhyTheWatchEnded, failures_in_a_row: u32)
     }
 }
 
+/// The ids of the accounts whose watch stops after a visit to the Account
+/// Manager: each gone from `after`, and each that was switched on in `before`
+/// and is switched off in `after`.
+///
+/// Until 2026-10-14 nothing stopped them, so an account removed or switched
+/// off went on being watched until the program closed, and every wake checked
+/// it, ran its rules and sent its waiting changes (finding #33).
+pub fn which_watches_stop(before: &[Account], after: &[Account]) -> Vec<String> {
+    before
+        .iter()
+        .filter(|held| match after.iter().find(|kept| kept.id == held.id) {
+            None => true,
+            Some(kept) => held.enabled && !kept.enabled,
+        })
+        .map(|held| held.id.clone())
+        .collect()
+}
+
 /// What the watch on an account is doing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TheWatch {
@@ -516,6 +534,46 @@ mod tests {
                 "{reason}"
             );
         }
+    }
+
+    // ── Which watches stop after the Account Manager ─────────────────────
+
+    fn an_account_row(id: &str, enabled: bool) -> Account {
+        Account {
+            id: id.to_string(),
+            enabled,
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn test_an_account_removed_in_the_account_manager_has_its_watch_stopped() {
+        let before = [an_account_row("work", true), an_account_row("home", true)];
+        let after = [an_account_row("work", true)];
+
+        assert_eq!(
+            which_watches_stop(&before, &after),
+            vec!["home".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_an_account_switched_off_has_its_watch_stopped() {
+        let before = [an_account_row("work", true), an_account_row("home", true)];
+        let after = [an_account_row("work", false), an_account_row("home", true)];
+
+        assert_eq!(
+            which_watches_stop(&before, &after),
+            vec!["work".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_an_account_switched_on_or_left_as_it_was_keeps_its_watch() {
+        let before = [an_account_row("work", false), an_account_row("home", true)];
+        let after = [an_account_row("work", true), an_account_row("home", true)];
+
+        assert!(which_watches_stop(&before, &after).is_empty());
     }
 
     // ── What the status line says ────────────────────────────────────────

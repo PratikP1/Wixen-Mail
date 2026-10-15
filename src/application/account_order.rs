@@ -37,6 +37,22 @@ pub fn moved(accounts: &[(String, String)], which: &str, direction: Move) -> Mov
     crate::application::reordering::moved(accounts, which, direction, WHICH_ACCOUNT)
 }
 
+/// The accounts in the order `order` gives by id, any it does not name kept
+/// at the end in the order they had.
+pub fn in_this_order(
+    mut accounts: Vec<crate::data::account::Account>,
+    order: &[String],
+) -> Vec<crate::data::account::Account> {
+    // A stable sort, so the accounts the order does not name keep theirs.
+    accounts.sort_by_key(|account| {
+        order
+            .iter()
+            .position(|id| id == &account.id)
+            .unwrap_or(order.len())
+    });
+    accounts
+}
+
 /// Where the command that moves an account is written, so the check below can
 /// read it.
 ///
@@ -161,6 +177,59 @@ mod nothing_here_reaches_a_server {
     }
 }
 
+/// The window's own list of accounts is put in the new order when one moves.
+///
+/// The sidebar reads the order back from the store, and the Account Manager is
+/// opened with the window's list, which nothing else puts in order until the
+/// program starts again. So a move the sidebar showed was undone in the
+/// Account Manager's list, and the next save from there wrote the old order
+/// back. Read from the source, with a companion that proves the reading can
+/// see the call missing.
+#[cfg(test)]
+mod the_window_learns_the_new_order {
+    use super::{THE_COMMAND, WHERE_THE_COMMAND_LIVES};
+
+    const PUTS_THE_LIST_IN_ORDER: &str = "in_this_order(";
+
+    fn the_body_of(source: &str) -> &str {
+        let from = source
+            .find(THE_COMMAND)
+            .unwrap_or_else(|| panic!("{THE_COMMAND} to be in the file"));
+        let rest = &source[from..];
+        let ends = rest.find("\n}").map(|at| at + 2).unwrap_or(rest.len());
+        &rest[..ends]
+    }
+
+    fn puts_the_list_in_order(body: &str) -> bool {
+        body.contains(PUTS_THE_LIST_IN_ORDER)
+    }
+
+    #[test]
+    fn test_moving_an_account_puts_the_windows_list_in_the_new_order() {
+        let source = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string(WHERE_THE_COMMAND_LIVES).expect("the command"),
+        );
+
+        assert!(
+            puts_the_list_in_order(the_body_of(&source)),
+            "moving an account writes the order to the store and leaves the \
+             window's list as it was, so the Account Manager lists the old \
+             order and its next save writes it back"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_can_see_the_list_left_alone() {
+        let left_alone = "fn move_the_chosen_account(app: AppHandles) {\n    \
+                          cache.set_account_order(id, at);\n}";
+        let put_in_order = "fn move_the_chosen_account(app: AppHandles) {\n    \
+                            s.accounts = in_this_order(accounts, &after.order);\n}";
+
+        assert!(!puts_the_list_in_order(the_body_of(left_alone)));
+        assert!(puts_the_list_in_order(the_body_of(put_in_order)));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,5 +324,26 @@ mod tests {
             sorted.sort();
             assert_eq!(sorted, vec!["a", "b", "c"], "{which} {direction:?}");
         }
+    }
+
+    #[test]
+    fn test_accounts_are_put_in_the_order_given_and_any_it_does_not_name_go_last() {
+        let accounts: Vec<crate::data::account::Account> = ["a", "b", "c", "d"]
+            .iter()
+            .map(|id| {
+                let mut account =
+                    crate::data::account::Account::new(id.to_string(), format!("{id}@example.com"));
+                account.id = id.to_string();
+                account
+            })
+            .collect();
+        let order: Vec<String> = ["c", "a", "b"].iter().map(|id| id.to_string()).collect();
+
+        let ids: Vec<String> = in_this_order(accounts, &order)
+            .into_iter()
+            .map(|account| account.id)
+            .collect();
+
+        assert_eq!(ids, vec!["c", "a", "b", "d"]);
     }
 }

@@ -11413,6 +11413,14 @@ fn move_the_chosen_account(
             return refuse_a_command(tx, "Where the accounts sit could not be saved.");
         }
     }
+    // And the window's own list, which the Account Manager opens with. Left
+    // alone, the Account Manager listed the old order until a restart, and its
+    // next save wrote that order back.
+    {
+        let mut s = lock_state(state);
+        let accounts = std::mem::take(&mut s.accounts);
+        s.accounts = crate::application::account_order::in_this_order(accounts, &after.order);
+    }
     // The sidebar is where the new order shows, now that the tree holds every
     // account, so writing the ordinal and leaving the tree alone would announce
     // a move that had not happened on screen. Read back before the sentence and
@@ -22686,7 +22694,18 @@ fn handle_account_mgr(
             .cloned()
             .collect()
         };
+        // The watch of each account removed or switched off, stopped now.
+        // Nothing stopped them, so such an account went on being watched and
+        // checked, its rules run and its waiting changes sent, until the
+        // program closed (finding #33).
+        let stopping =
+            crate::application::checking_on_a_schedule::which_watches_stop(&accounts, &new);
         let mut s = lock_state(state);
+        let watches_to_stop: Vec<_> = stopping
+            .iter()
+            .filter_map(|id| s.mail_watches.remove(id))
+            .filter_map(|watch| watch.handle)
+            .collect();
         // What Set Active chose, when it named an account that is still
         // there. This used to be dropped on the way out of the dialog and
         // only ever corrected when it named nothing or named a deleted
@@ -22739,6 +22758,13 @@ fn handle_account_mgr(
         // Let go before anything is said to a server. This lock is the window's
         // own, and a sign-off is a round trip.
         drop(s);
+        // What the stop answers is not this window's to say, as where a watch
+        // is replaced.
+        for watch in watches_to_stop {
+            rt.spawn(async move {
+                let _ = watch.stop().await;
+            });
+        }
         for id in removed {
             signing_off(
                 rt,
@@ -24689,18 +24715,24 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // Re-reading the whole account because one message arrived is
             // work nobody asked for, and reading the active account when
             // another's watch woke is somebody else's mail (#37).
+            //
+            // And only while it is switched on. A watch waking for an account
+            // removed or switched off since checks nothing: handed no account,
+            // the check would say to add one (finding #33).
             let woken: Vec<Account> = lock_state(state)
                 .accounts
                 .iter()
-                .filter(|account| account.id == folder.account_id)
+                .filter(|account| account.id == folder.account_id && account.enabled)
                 .cloned()
                 .collect();
-            spawn_mail_sync(
-                AppHandles { state, tx, rt },
-                woken,
-                Some(folder.path.clone()),
-                crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
-            );
+            if !woken.is_empty() {
+                spawn_mail_sync(
+                    AppHandles { state, tx, rt },
+                    woken,
+                    Some(folder.path.clone()),
+                    crate::application::mail_sync::WhatThisSyncIsFor::WhateverHasChanged,
+                );
+            }
         }
         UIUpdate::FolderMessagesArrived(folder_id) => {
             reread_folder_if_open(state, message_cache, *folder_id, tx);
@@ -28581,7 +28613,14 @@ fn spawn_mail_watch(app: AppHandles<'_>, account_id: &str) {
     let (account, previous, how_many_enabled) = {
         let mut s = lock_state(state);
         let how_many_enabled = s.accounts.iter().filter(|a| a.enabled).count();
-        let account = s.accounts.iter().find(|a| a.id == account_id).cloned();
+        // Switched on as well: the end of a check already running and a
+        // wait running out both ask, and neither knows the account was
+        // switched off since (finding #33).
+        let account = s
+            .accounts
+            .iter()
+            .find(|a| a.id == account_id && a.enabled)
+            .cloned();
         let entry = s.mail_watches.entry(account_id.to_string()).or_default();
         if entry.on_the_schedule_alone.is_some() || entry.is_watching() {
             return;

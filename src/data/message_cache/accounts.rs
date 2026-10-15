@@ -6,9 +6,21 @@ use crate::service::credentials::{self, StoredPassword};
 use rusqlite::params;
 
 impl MessageCache {
-    /// Save an account to the database
+    /// Save an account to the database, adding it or bringing its row up to
+    /// date.
+    ///
+    /// An address another stored account uses is refused, in a sentence for
+    /// the person, before anything reaches the credential store: a password
+    /// kept for an account that is then refused would be a secret with no row
+    /// to name it.
+    ///
+    /// An account already stored keeps the day it was added and where it sits
+    /// in the list. This used to replace the row, which deleted any other
+    /// account on the same address and emptied both (finding #3).
     pub fn save_account(&self, account: &crate::data::account::Account) -> Result<()> {
         use chrono::Utc;
+
+        self.refuse_an_address_another_account_uses(account)?;
 
         // The password goes to the credential store and the column is left
         // empty. Failing here rather than falling back to the database on
@@ -20,7 +32,7 @@ impl MessageCache {
 
         self.conn
             .execute(
-                "INSERT OR REPLACE INTO accounts
+                "INSERT INTO accounts
              (id, name, email, imap_server, imap_port, imap_use_tls,
               smtp_server, smtp_port, smtp_use_tls, username, password,
               enabled, check_interval_minutes, provider, last_sync, color,
@@ -29,7 +41,24 @@ impl MessageCache {
               pop_leave_on_server, pop_remove_after_days, sender_name,
               allow_deleting_here, use_oauth)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
-                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)",
+                     ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+             ON CONFLICT(id) DO UPDATE SET
+              name = excluded.name, email = excluded.email,
+              imap_server = excluded.imap_server, imap_port = excluded.imap_port,
+              imap_use_tls = excluded.imap_use_tls, smtp_server = excluded.smtp_server,
+              smtp_port = excluded.smtp_port, smtp_use_tls = excluded.smtp_use_tls,
+              username = excluded.username, password = excluded.password,
+              enabled = excluded.enabled,
+              check_interval_minutes = excluded.check_interval_minutes,
+              provider = excluded.provider, last_sync = excluded.last_sync,
+              color = excluded.color, updated_at = excluded.updated_at,
+              protocol = excluded.protocol, pop_server = excluded.pop_server,
+              pop_port = excluded.pop_port, pop_use_tls = excluded.pop_use_tls,
+              pop_leave_on_server = excluded.pop_leave_on_server,
+              pop_remove_after_days = excluded.pop_remove_after_days,
+              sender_name = excluded.sender_name,
+              allow_deleting_here = excluded.allow_deleting_here,
+              use_oauth = excluded.use_oauth",
                 params![
                     &account.id,
                     &account.name,
@@ -71,6 +100,36 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to save account: {}", e)))?;
 
         Ok(())
+    }
+
+    /// Refuse `account` when another stored account already uses its address.
+    ///
+    /// Reads only the ids, names and addresses, never `load_accounts`, which
+    /// reads every password from the credential store.
+    fn refuse_an_address_another_account_uses(
+        &self,
+        account: &crate::data::account::Account,
+    ) -> Result<()> {
+        use crate::application::one_address_one_account::{Mailbox, who_already_uses};
+
+        let mut statement = self
+            .conn
+            .prepare_cached("SELECT id, name, email FROM accounts")
+            .map_err(|e| Error::Other(format!("Failed to read the stored addresses: {e}")))?;
+        let held: Vec<(String, String, String)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+            .and_then(Iterator::collect)
+            .map_err(|e| Error::Other(format!("Failed to read the stored addresses: {e}")))?;
+
+        let taken = who_already_uses(
+            Mailbox::from(account),
+            held.iter()
+                .map(|(id, name, address)| Mailbox { id, name, address }),
+        );
+        match taken {
+            Some(taken) => Err(Error::InPlainWords(taken.to_string())),
+            None => Ok(()),
+        }
     }
 
     /// Make the stored accounts be exactly these, saving each and removing
@@ -505,6 +564,93 @@ mod tests {
         let kept = cache.load_accounts().expect("the accounts load");
         let kept = kept.iter().find(|a| a.id == "kept").expect("kept is there");
         assert_eq!(kept.name, "Renamed", "an edit did not reach the database");
+    }
+
+    #[test]
+    fn test_saving_the_accounts_again_keeps_the_order_somebody_chose() {
+        // The Account Manager saves every account on every change, and the
+        // save used to replace each row, which emptied the column holding
+        // where the account sits. So any change there undid the order chosen
+        // with Alt+Shift+Up and Alt+Shift+Down (finding #3).
+        let cache = a_cache("accounts-saved-again-keep-their-order");
+        three_saved_in_order(&cache);
+        for (at, id) in ["c", "b", "a"].iter().enumerate() {
+            cache
+                .set_account_order(id, at as i64)
+                .expect("an order to save");
+        }
+
+        let as_the_manager_holds_them = [
+            an_account("a", "one@example.com", "pw"),
+            an_account("b", "two@example.com", "pw"),
+            an_account("c", "three@example.com", "pw"),
+        ];
+        cache
+            .replace_accounts(&as_the_manager_holds_them)
+            .expect("the accounts to save again");
+
+        assert_eq!(in_order(&cache), vec!["c", "b", "a"]);
+    }
+
+    #[test]
+    fn test_saving_an_account_again_keeps_the_day_it_was_added() {
+        let cache = a_cache("an-account-saved-again-keeps-its-day");
+        let account = an_account("acc-day", "day@example.com", "pw");
+        cache.save_account(&account).expect("the account to save");
+        let added = created_at(&cache, "acc-day");
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        cache
+            .save_account(&account)
+            .expect("the account to save again");
+
+        assert_eq!(created_at(&cache, "acc-day"), added);
+    }
+
+    #[test]
+    fn test_a_second_account_on_a_taken_address_is_refused_and_deletes_nothing() {
+        // The second account used to replace the first on the next save, and
+        // the first one's password and tokens stayed in the credential store
+        // with nothing left able to name them (finding #3).
+        let cache = a_cache("a-second-account-on-a-taken-address");
+        let mut first = an_account("acc-first", "ada@example.com", "hunter2");
+        first.name = "Work".to_string();
+        cache
+            .save_account(&first)
+            .expect("the first account to save");
+        let mut second = an_account("acc-second", "ada@example.com", "another");
+        second.name = "Home".to_string();
+
+        let outcome = cache.replace_accounts(&[first, second]);
+
+        assert_eq!(
+            outcome
+                .expect_err("the second account to be refused")
+                .to_string(),
+            "Work already uses ada@example.com. Edit that account rather than adding the address again."
+        );
+        let stored: Vec<String> = in_order(&cache);
+        assert_eq!(stored, vec!["acc-first"], "the first account was deleted");
+        assert_eq!(
+            credentials::load("acc-second").expect("the credential store to answer"),
+            None,
+            "a refused account's password was kept, with no row to name it"
+        );
+
+        credentials::forget("acc-first").ok();
+        credentials::forget("acc-second").ok();
+    }
+
+    /// The day an account was added, straight out of the table.
+    fn created_at(cache: &MessageCache, account_id: &str) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT created_at FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("the account to be in the table")
     }
 
     #[test]
