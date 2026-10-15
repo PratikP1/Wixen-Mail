@@ -3333,6 +3333,13 @@ pub(crate) mod tests {
                 .map_err(crate::common::Error::Protocol)
         }
 
+        async fn the_identifier_at(&self, _folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(crate::application::renumbered::the_identifier_among(
+                self.headers.clone(),
+                uid,
+            ))
+        }
+
         async fn mark_it(
             &self,
             _folder: &str,

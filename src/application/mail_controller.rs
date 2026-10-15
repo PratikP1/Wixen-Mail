@@ -755,6 +755,19 @@ impl MailController {
         })
     }
 
+    /// The `Message-ID` the message a folder holds under this number carries,
+    /// or nothing when the folder holds no message there or it carries none.
+    ///
+    /// What [`Self::uids_with_message_id`] cannot say: its search matches a
+    /// header that contains the text asked for, so a number it answers is a
+    /// candidate until this has read what is there.
+    pub async fn message_id_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+        Ok(crate::application::renumbered::the_identifier_among(
+            self.fetch_headers(folder, &[uid]).await?,
+            uid,
+        ))
+    }
+
     /// Take these messages out of a folder, and say how many really went.
     pub async fn remove_these(&self, folder: &str, uids: &[u32]) -> Result<usize> {
         once_more_if_the_connection_went!(self, session, {

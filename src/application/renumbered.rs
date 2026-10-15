@@ -20,9 +20,17 @@
 //!   does not say its numbering now: sent to the kept number, as it always was;
 //! - the same: sent to the kept number;
 //! - different: the folder is asked which number holds the message's
-//!   identifier, its `Message-ID`, and the change goes to that one number;
-//!   found nowhere, found twice, or with no identifier to ask about, the change
-//!   is put back here and said, and nothing is sent.
+//!   identifier, its `Message-ID`, and the change goes to that one number once
+//!   the message there is read and carries exactly that identifier; found
+//!   nowhere, found twice, found carrying another identifier, or with no
+//!   identifier to ask about, the change is put back here and said, and
+//!   nothing is sent.
+//!
+//! The reading is not a formality. The search, `HEADER MESSAGE-ID`, matches
+//! any message whose header *contains* the text asked for (RFC 3501, section
+//! 6.4.4), so one answer can be a different message whose identifier merely
+//! holds this one, and a waiting delete sent to it would take that message
+//! off the server.
 //!
 //! A number nothing holds does no harm; a number that now names another
 //! message is the harm, which is why the decision never guesses.
@@ -30,6 +38,7 @@
 use std::future::Future;
 
 use crate::common::Result;
+use crate::service::protocols::imap::ImapMessage;
 
 /// The words a change put back after a renumbering carries, said after
 /// "Could not delete Lunch:" and its kin.
@@ -81,26 +90,58 @@ pub fn the_number_found(found: &[u32]) -> Option<u32> {
     }
 }
 
+/// The identifier of the message read under `uid`, out of what a header
+/// fetch for it answered; nothing when the answer held no such message.
+pub fn the_identifier_among(read: Vec<ImapMessage>, uid: u32) -> Option<String> {
+    read.into_iter()
+        .find(|message| message.uid == uid)
+        .and_then(|message| message.message_id)
+}
+
+/// The number found, once the message the folder holds there has been read:
+/// `candidate` when it carries the kept identifier exactly, and nothing when
+/// it carries another, or none, or the kept identifier is blank.
+pub fn the_number_confirmed(kept: &str, candidate: u32, held: Option<&str>) -> Option<u32> {
+    let _ = (kept, held);
+    Some(candidate)
+}
+
 /// The number a kept change is sent to, or nothing when it is put back.
 ///
 /// `numbering_now` is awaited only when the change kept a numbering, so a
 /// change kept by an older build costs no question; `found_by_identifier`
-/// only when the folder was renumbered. A future does nothing until it is
-/// awaited, so the caller builds both and this decides which are asked.
-pub async fn the_number_to_send_to(
+/// only when the folder was renumbered; and `the_identifier_at` only for the
+/// one number the search answered, to read the identifier the message there
+/// really carries. A future does nothing until it is awaited, so the caller
+/// builds them and this decides which are asked.
+pub async fn the_number_to_send_to<Held>(
     kept: &Kept<'_>,
     numbering_now: impl Future<Output = Result<Option<u32>>>,
     found_by_identifier: impl Future<Output = Result<Vec<u32>>>,
-) -> Result<Option<u32>> {
+    the_identifier_at: impl FnOnce(u32) -> Held,
+) -> Result<Option<u32>>
+where
+    Held: Future<Output = Result<Option<String>>>,
+{
     let numbered_now = match kept.numbering {
         Some(_) => numbering_now.await?,
         None => None,
     };
-    Ok(match what_it_needs(kept, numbered_now) {
-        BeforeItIsSent::SendItTo(uid) => Some(uid),
-        BeforeItIsSent::FindItByItsIdentifier => the_number_found(&found_by_identifier.await?),
-        BeforeItIsSent::PutItBack => None,
-    })
+    match what_it_needs(kept, numbered_now) {
+        BeforeItIsSent::SendItTo(uid) => Ok(Some(uid)),
+        BeforeItIsSent::PutItBack => Ok(None),
+        BeforeItIsSent::FindItByItsIdentifier => {
+            let Some(candidate) = the_number_found(&found_by_identifier.await?) else {
+                return Ok(None);
+            };
+            let held = the_identifier_at(candidate).await?;
+            Ok(the_number_confirmed(
+                kept.identifier,
+                candidate,
+                held.as_deref(),
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -190,9 +231,61 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_a_message_carrying_exactly_the_kept_identifier_is_the_one_sent_to() {
+        // Kept here bare, as the parser hands it over, or in angle brackets,
+        // as a draft's own is written; read at the server either way.
+        for (kept, held) in [
+            (THE_IDENTIFIER, THE_IDENTIFIER),
+            (THE_IDENTIFIER, "<lunch.42@example.com>"),
+            ("<lunch.42@example.com>", THE_IDENTIFIER),
+            (" <lunch.42@example.com> ", "lunch.42@example.com\r\n"),
+        ] {
+            assert_eq!(
+                the_number_confirmed(kept, 9, Some(held)),
+                Some(9),
+                "{kept:?} against {held:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_whose_identifier_only_holds_the_kept_one_is_put_back() {
+        // The search matches a header that contains the text asked for, so
+        // these are what one answer can be (RFC 3501, section 6.4.4).
+        for held in [
+            "<lunch.42@example.com.forwarded>",
+            "<re.lunch.42@example.com>",
+            "<lunch.42@example.com> <another@example.com>",
+        ] {
+            assert_eq!(
+                the_number_confirmed(THE_IDENTIFIER, 9, Some(held)),
+                None,
+                "sent to a message whose identifier is {held:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_carrying_another_identifier_or_none_is_put_back() {
+        assert_eq!(
+            the_number_confirmed(THE_IDENTIFIER, 9, Some("<someone.else@example.com>")),
+            None
+        );
+        assert_eq!(the_number_confirmed(THE_IDENTIFIER, 9, None), None);
+        assert_eq!(
+            the_number_confirmed("<>", 9, Some("<>")),
+            None,
+            "a blank identifier names no message"
+        );
+    }
+
     #[tokio::test]
     async fn test_a_change_kept_with_no_numbering_asks_the_folder_nothing() {
-        let sent_to = the_number_to_send_to(&kept_under(None), never_asked(), never_asked())
+        let sent_to =
+            the_number_to_send_to(&kept_under(None), never_asked(), never_asked(), |_| {
+                never_asked()
+            })
             .await
             .expect("an answer");
         assert_eq!(sent_to, Some(42));
@@ -200,28 +293,57 @@ mod tests {
 
     #[tokio::test]
     async fn test_a_change_under_an_unchanged_numbering_is_not_searched_for() {
-        let sent_to =
-            the_number_to_send_to(&kept_under(Some(7)), async { Ok(Some(7)) }, never_asked())
-                .await
-                .expect("an answer");
+        let sent_to = the_number_to_send_to(
+            &kept_under(Some(7)),
+            async { Ok(Some(7)) },
+            never_asked(),
+            |_| never_asked(),
+        )
+        .await
+        .expect("an answer");
         assert_eq!(sent_to, Some(42));
     }
 
     #[tokio::test]
     async fn test_a_renumbered_change_goes_to_the_number_its_identifier_is_under() {
-        let sent_to = the_number_to_send_to(&kept_under(Some(7)), async { Ok(Some(8)) }, async {
-            Ok(vec![9])
-        })
+        let sent_to = the_number_to_send_to(
+            &kept_under(Some(7)),
+            async { Ok(Some(8)) },
+            async { Ok(vec![9]) },
+            |at| async move {
+                assert_eq!(at, 9, "the message read was not the one the search found");
+                Ok(Some("<lunch.42@example.com>".to_string()))
+            },
+        )
         .await
         .expect("an answer");
         assert_eq!(sent_to, Some(9));
     }
 
     #[tokio::test]
+    async fn test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back() {
+        let sent_to = the_number_to_send_to(
+            &kept_under(Some(7)),
+            async { Ok(Some(8)) },
+            async { Ok(vec![9]) },
+            |_| async { Ok(Some("<lunch.42@example.com.forwarded>".to_string())) },
+        )
+        .await
+        .expect("an answer");
+        assert_eq!(
+            sent_to, None,
+            "sent to a message whose identifier only holds the kept one"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_renumbered_change_found_nowhere_is_put_back() {
-        let sent_to = the_number_to_send_to(&kept_under(Some(7)), async { Ok(Some(8)) }, async {
-            Ok(Vec::new())
-        })
+        let sent_to = the_number_to_send_to(
+            &kept_under(Some(7)),
+            async { Ok(Some(8)) },
+            async { Ok(Vec::new()) },
+            |_| never_asked(),
+        )
         .await
         .expect("an answer");
         assert_eq!(
@@ -236,6 +358,19 @@ mod tests {
             &kept_under(Some(7)),
             async { Err(Error::Network("the connection went".to_string())) },
             never_asked(),
+            |_| never_asked(),
+        )
+        .await;
+        assert!(asked.is_err(), "{asked:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_match_that_cannot_be_read_is_an_error_not_a_number() {
+        let asked = the_number_to_send_to(
+            &kept_under(Some(7)),
+            async { Ok(Some(8)) },
+            async { Ok(vec![9]) },
+            |_| async { Err(Error::Network("the connection went".to_string())) },
         )
         .await;
         assert!(asked.is_err(), "{asked:?}");

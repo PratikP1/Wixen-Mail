@@ -499,6 +499,13 @@ fn the_replay_asks_the_number_before_it_sends(source: &str) -> Result<(), String
                 .into(),
         );
     }
+    // The search for an identifier matches a header containing it, so the
+    // number it finds is read at the server before it is trusted.
+    if !asked_before_sending("message_id_at(") {
+        return Err(
+            "the replay trusts a number the search found without reading the message there".into(),
+        );
+    }
     let decided = replay.find("the_number_to_send_to(").unwrap_or_default();
     if replay[decided..].contains("change.uid") {
         return Err("the replay sends to the number kept, whatever the decision said".into());
@@ -539,6 +546,15 @@ fn test_the_reading_refuses_a_flag_replay_that_sends_the_kept_number() {
     assert!(
         the_replay_asks_the_number_before_it_sends(asked_and_ignored).is_err(),
         "a replay that asks and then sends the kept number was read as asking"
+    );
+    let found_and_trusted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                             \x20   let now = the_numbering_now(controller, handle, folder);\n\
+                             \x20   let sent_to = the_number_to_send_to(&kept, now, found, |_| async { Ok(Some(identifier.clone())) });\n\
+                             \x20   handle.block_on(controller.set_flag(&change.folder_path, uid));\n\
+                             }\n";
+    assert!(
+        the_replay_asks_the_number_before_it_sends(found_and_trusted).is_err(),
+        "a replay that trusts the search's one answer unread was read as asking"
     );
 }
 

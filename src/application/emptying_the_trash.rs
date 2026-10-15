@@ -1008,6 +1008,14 @@ mod tests {
                 .unwrap_or_default())
         }
 
+        async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(self.folders.borrow().get(folder).and_then(|held| {
+                held.iter()
+                    .find(|(held_uid, _)| *held_uid == uid)
+                    .map(|(_, id)| id.clone())
+            }))
+        }
+
         async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {
             Ok(())
         }

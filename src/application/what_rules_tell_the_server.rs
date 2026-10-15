@@ -678,6 +678,14 @@ mod tests {
                 .collect())
         }
 
+        async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(self
+                .in_folder(folder)
+                .into_iter()
+                .find(|held| held.uid == uid)
+                .map(|held| held.message_id))
+        }
+
         async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
             if let Some(read) = marks.read {
                 Mailbox::set_flag(self, folder, uid, SEEN, read).await?;

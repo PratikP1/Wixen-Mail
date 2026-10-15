@@ -18906,6 +18906,7 @@ fn send_the_flag_changes_that_were_waiting(
             &kept,
             async { numbered_now },
             controller.uids_with_message_id(&change.folder_path, &identifier),
+            |found| controller.message_id_at(&change.folder_path, found),
         ));
         let offered = match the_number_to_offer_it_at(sent_to) {
             Err(not_offered) => Err(not_offered),
