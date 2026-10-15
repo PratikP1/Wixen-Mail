@@ -24,6 +24,7 @@ use crate::application::directory_sign_in::{
     A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, TheBox, what_the_window_keeps,
 };
 use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
+use crate::application::one_address_one_account::AddressTaken;
 use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::application::who_holds_the_calendars::{self, WhatTheSeparateSignInDoes};
 use crate::application::who_runs_the_mail::{WhatIsKnown, WhoRunsTheMail};
@@ -1776,6 +1777,21 @@ fn remember_where_to_look_people_up(
         tracing::warn!("Where to look people up could not be saved: {why}");
         return Some(format!("{why}"));
     }
+    None
+}
+
+/// Why `typed` cannot be kept beside the accounts already in the list: another
+/// of them uses its address (finding #3). The store asks the same rule again
+/// before it writes.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the Add and Edit arms ask it from 13.2-06's green commit"
+    )
+)]
+fn refusal_for(working: &[Account], typed: &Account) -> Option<AddressTaken> {
+    let _ = (working, typed);
     None
 }
 
@@ -4033,5 +4049,151 @@ mod tests {
                  that on_click answers it directly"
             );
         }
+    }
+
+    // ── One address belongs to one account (finding #3) ───────────────────
+
+    fn an_account(id: &str, name: &str, email: &str) -> Account {
+        Account {
+            id: id.to_string(),
+            name: name.to_string(),
+            email: email.to_string(),
+            ..Account::default()
+        }
+    }
+
+    #[test]
+    fn test_adding_an_address_another_account_in_the_list_uses_is_refused_with_the_sentence() {
+        let working = [an_account("work", "Work", "pratik@example.com")];
+        let typed = an_account("new", "Home", "Pratik@example.com");
+
+        assert_eq!(
+            refusal_for(&working, &typed).map(|taken| taken.to_string()),
+            Some(
+                "Work already uses pratik@example.com. Edit that account rather than adding \
+                 the address again."
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn test_editing_an_account_onto_another_accounts_address_is_refused() {
+        let working = [
+            an_account("work", "Work", "pratik@example.com"),
+            an_account("home", "Home", "home@example.com"),
+        ];
+        let edited = an_account("home", "Home", "pratik@example.com");
+
+        assert_eq!(
+            refusal_for(&working, &edited).map(|taken| taken.by),
+            Some("Work".to_string())
+        );
+    }
+
+    #[test]
+    fn test_a_free_address_and_an_account_keeping_its_own_go_on() {
+        let working = [
+            an_account("work", "Work", "pratik@example.com"),
+            an_account("home", "Home", "home@example.com"),
+        ];
+
+        assert_eq!(
+            refusal_for(&working, &an_account("new", "Other", "other@example.com")),
+            None
+        );
+        assert_eq!(
+            refusal_for(
+                &working,
+                &an_account("home", "Home renamed", "home@example.com")
+            ),
+            None
+        );
+    }
+
+    /// Which of the Add and Edit arms keep an account without asking whether
+    /// its address is taken.
+    fn arms_that_keep_an_account_without_asking(screen: &str) -> Vec<&'static str> {
+        let (_, after) = screen
+            .split_once("fn run_account_manager_loop(")
+            .expect("run_account_manager_loop to still be here");
+        let loop_body = &after[..after.find("\n}").unwrap_or(after.len())];
+        let add = between(loop_body, "r if r == ID_ADD =>", "r if r == ID_EDIT =>");
+        let edit = between(loop_body, "r if r == ID_EDIT =>", "_ => break");
+        [("Add", add), ("Edit", edit)]
+            .into_iter()
+            .filter(|(_, arm)| !arm.is_some_and(|arm| arm.contains("refusal_for(")))
+            .map(|(which, _)| which)
+            .collect()
+    }
+
+    fn between<'a>(text: &'a str, from: &str, to: &str) -> Option<&'a str> {
+        let start = text.find(from)?;
+        let end = text[start..].find(to)? + start;
+        Some(&text[start..end])
+    }
+
+    #[test]
+    fn test_the_add_and_the_edit_arms_both_ask_before_an_account_is_kept() {
+        // A second account on an address another uses was kept, and the next
+        // save deleted the first one (finding #3). Asked in the editor, so a
+        // refused account reaches neither the browser sign-in nor the list.
+        assert_eq!(
+            arms_that_keep_an_account_without_asking(&the_account_manager()),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn test_the_arm_reading_can_see_an_arm_that_does_not_ask() {
+        let asking_in_one = "fn run_account_manager_loop() {\n\
+                             r if r == ID_ADD => { show_edit(dlg, None, &|typed| refusal_for(&working, typed)); }\n\
+                             r if r == ID_EDIT => { show_edit(dlg, Some(&existing), &|_| None); }\n\
+                             _ => break,\n}\n";
+
+        assert_eq!(
+            arms_that_keep_an_account_without_asking(asking_in_one),
+            vec!["Edit"]
+        );
+    }
+
+    /// Whether the editor asks about the address before it keeps anything
+    /// for the account: what it may change, when its Trash is emptied, and
+    /// its signature are all written under its id.
+    fn the_editor_asks_before_keeping_anything(screen: &str) -> bool {
+        let Some((_, after)) = screen.split_once("fn show_edit(") else {
+            return false;
+        };
+        let body = &after[..after.find("\n}").unwrap_or(after.len())];
+        let asked = body.find("refuse(&typed)");
+        let first_kept = [
+            "remember_what_this_account_may_change(",
+            "remember_when_this_accounts_trash_is_emptied(",
+            "keep_the_signature_choice(",
+        ]
+        .iter()
+        .filter_map(|kept| body.find(kept))
+        .min();
+        matches!((asked, first_kept), (Some(asked), Some(kept)) if asked < kept)
+    }
+
+    #[test]
+    fn test_the_editor_asks_before_it_keeps_anything_for_the_account() {
+        assert!(
+            the_editor_asks_before_keeping_anything(&the_account_manager()),
+            "the editor keeps settings for an account before asking whether its address is \
+             taken, so a refused account leaves them behind under an id nothing stores"
+        );
+    }
+
+    #[test]
+    fn test_the_editor_reading_can_see_a_question_asked_too_late() {
+        let too_late = "fn show_edit() {\n    remember_what_this_account_may_change(&id);\n    \
+                        if let Some(taken) = refuse(&typed) {}\n}\n";
+        let in_time = "fn show_edit() {\n    if let Some(taken) = refuse(&typed) {}\n    \
+                       remember_what_this_account_may_change(&id);\n}\n";
+
+        assert!(!the_editor_asks_before_keeping_anything(too_late));
+        assert!(the_editor_asks_before_keeping_anything(in_time));
     }
 }
