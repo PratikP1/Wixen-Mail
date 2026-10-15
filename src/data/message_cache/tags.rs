@@ -69,6 +69,33 @@ impl MessageCache {
         Ok(changed)
     }
 
+    /// An account's labels that carry a keyword, the only ones the server's
+    /// keywords can say anything about.
+    ///
+    /// Read once for a check's whole flag pass rather than once a message
+    /// (finding #14), and empty when no label carries one, which is how the
+    /// pass knows to leave labels alone altogether.
+    pub fn labels_with_a_keyword(&self, account_id: &str) -> Result<Vec<Tag>> {
+        let _ = account_id;
+        Ok(Vec::new())
+    }
+
+    /// Make a message's labels match the keywords the server reports, over
+    /// labels already read.
+    ///
+    /// What [`Self::match_labels_to_keywords`] does for one message, for a
+    /// pass that reads the account's labels once and asks this of every
+    /// message it holds. A label with no keyword among `labels` is left alone.
+    pub fn match_these_labels_to_keywords(
+        &self,
+        message_id: i64,
+        labels: &[Tag],
+        keywords: &[String],
+    ) -> Result<usize> {
+        let _ = (message_id, labels, keywords);
+        Ok(0)
+    }
+
     /// An account's labels, in the order the person keeps them.
     ///
     /// The one order: the Label menu shows it, the number keys apply by it,
@@ -620,6 +647,88 @@ mod keyword_tests {
             .expect("second");
 
         assert_eq!(again, 0);
+    }
+
+    // ── Labels read once for a whole flag pass (finding #14) ────────────────
+
+    /// A message labelled Home and Local, in an account whose Work and Home
+    /// carry keywords and whose Local carries none.
+    fn a_message_labelled_home_and_local(cache: &MessageCache) -> i64 {
+        let message = a_message(cache);
+        a_label(cache, "Work", Some("$label2"));
+        let home = a_label(cache, "Home", Some("$label3"));
+        let local = a_label(cache, "Local", None);
+        cache.add_tag_to_message(message, &home).expect("labelled");
+        cache.add_tag_to_message(message, &local).expect("labelled");
+        message
+    }
+
+    /// The names of the labels on a message, sorted, so two caches compare.
+    fn the_labels_on(cache: &MessageCache, message: i64) -> Vec<String> {
+        let mut names: Vec<String> = cache
+            .get_tags_for_message(message)
+            .expect("read back")
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn test_labels_read_once_match_keywords_as_reading_them_each_time_did() {
+        // Every case the reading-each-time form holds, at once: the server's
+        // $label2 puts Work on, its silence about $label3 takes Home off, and
+        // Local, which carries no keyword, stays. Every label is handed in,
+        // Local among them, so the new form has to leave it alone itself.
+        let keywords = vec!["$label2".to_string()];
+        let each_time = cache();
+        let first = a_message_labelled_home_and_local(&each_time);
+        let changed_each_time = each_time
+            .match_labels_to_keywords(first, "acct", &keywords)
+            .expect("reconciled");
+
+        let once = cache();
+        let second = a_message_labelled_home_and_local(&once);
+        let labels = once.get_tags_for_account("acct").expect("the labels");
+        let changed_once = once
+            .match_these_labels_to_keywords(second, &labels, &keywords)
+            .expect("reconciled");
+
+        assert_eq!(changed_once, 2, "Work on and Home off is two changes");
+        assert_eq!(the_labels_on(&once, second), vec!["Local", "Work"]);
+        assert_eq!(changed_once, changed_each_time);
+        assert_eq!(
+            the_labels_on(&once, second),
+            the_labels_on(&each_time, first)
+        );
+    }
+
+    #[test]
+    fn test_the_labels_read_once_are_only_those_that_carry_a_keyword() {
+        let mixed = cache();
+        a_label(&mixed, "Work", Some("$label2"));
+        a_label(&mixed, "Local", None);
+
+        let names: Vec<String> = mixed
+            .labels_with_a_keyword("acct")
+            .expect("the labels")
+            .into_iter()
+            .map(|tag| tag.name)
+            .collect();
+        assert_eq!(names, vec!["Work"], "a label with no keyword was read");
+
+        // None at all when no label carries one, which is what lets the pass
+        // skip label matching for every message.
+        let none_carry = cache();
+        a_label(&none_carry, "Local", None);
+        assert!(
+            none_carry
+                .labels_with_a_keyword("acct")
+                .expect("the labels")
+                .is_empty(),
+            "an account whose labels carry no keyword read as having some"
+        );
     }
 }
 
