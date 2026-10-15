@@ -12,7 +12,7 @@
 
 use crate::application::finding_what_was_deleted;
 use crate::application::mail_controller::MailController;
-use crate::application::moves_waiting::ReplaysAMove;
+use crate::application::moves_waiting::{ReplaysAMove, settle_a_moved_row};
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{
@@ -381,27 +381,40 @@ pub struct Moving {
     pub into: String,
 }
 
-/// Which messages to fetch headers for, newest first, bounded.
+/// Which messages to fetch headers for: everything that arrived, and the
+/// newest of the rest up to `limit`.
 ///
-/// Newest first because that is where a reader starts, and bounded because the
-/// alternative on a large mailbox is a sync that never visibly finishes.
+/// A uid above the newest one held is a message that arrived since this
+/// computer last looked, and every one of them is taken, however many: the
+/// rules run over what a check fetches and the check counts it as arrived, so
+/// cutting them at `limit` left a week's mail beyond the newest 500 unsorted
+/// and uncounted, brought down later by a download that runs no rules (#12,
+/// 2026-10-15). `fetch_headers` splits a long set into pieces a server takes.
+///
+/// `limit` bounds the rest: a first look at a folder holding nothing here,
+/// newest first because that is where a reader starts, and the older mail
+/// missing below the newest held, because on a large mailbox the alternative
+/// is a sync that never visibly finishes. A limit of nothing asks for nothing.
+///
 /// Returned in ascending order, which is how they go into a sequence set.
 fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     if limit == 0 {
         return Vec::new();
     }
     let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
-    let mut missing: Vec<u32> = on_server
+    let newest_held = stored.iter().copied().max();
+    let (mut arrived, mut older): (Vec<u32>, Vec<u32>) = on_server
         .iter()
         .copied()
         .filter(|uid| !held.contains(uid))
-        .collect();
+        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest));
 
     // Descending to take the newest, then back to ascending for the caller.
-    missing.sort_unstable_by(|a, b| b.cmp(a));
-    missing.truncate(limit);
-    missing.sort_unstable();
-    missing
+    older.sort_unstable_by(|a, b| b.cmp(a));
+    older.truncate(limit);
+    arrived.append(&mut older);
+    arrived.sort_unstable();
+    arrived
 }
 
 /// What the server answered when it was asked which messages a folder holds,
@@ -1297,7 +1310,7 @@ pub(crate) enum Carried {
 /// A folder the account does not have is passed over with a word in the log
 /// rather than failing the whole sync: a rule naming a folder somebody has
 /// since renamed should not stop their mail arriving.
-async fn carry_out_the_moves<M: Mailbox>(
+async fn carry_out_the_moves<M: Mailbox + ReplaysAMove>(
     controller: &M,
     cache: &MessageCache,
     from: &ImapFolder,
@@ -1375,6 +1388,32 @@ async fn carry_out_the_moves<M: Mailbox>(
                     into.name
                 ));
                 continue;
+            }
+        }
+        // Then where the server numbered it, the way a replayed move settles,
+        // or the row filed here sits beside the real message once the
+        // destination is read (#10). A question the server would not answer
+        // lets the row go, since nothing waits to ask again. Counted either
+        // way: the server has the message where the rule wanted it.
+        if let Err(why) = settle_a_moved_row(
+            controller,
+            cache,
+            moving.message_row,
+            &account_id,
+            &into.path,
+        )
+        .await
+        {
+            tracing::warn!(
+                "Where {} holds a message filed from {} could not be asked: {why}",
+                into.name,
+                from.name
+            );
+            if let Err(why) = cache.let_the_next_read_bring_it(moving.message_row) {
+                tracing::warn!(
+                    "A message filed into {} may show there twice until it is read again: {why}",
+                    into.name
+                );
             }
         }
         done += 1;
@@ -3164,6 +3203,10 @@ pub(crate) mod tests {
         /// has had enough of a run looks like from in here, as against
         /// `bodies`, which is about one message.
         refuses_from_the_nth_fetch: Option<usize>,
+        /// What this server answers when asked which numbers a folder holds
+        /// a message under, or the words it refuses with. Nothing by default,
+        /// which is a server that cannot say.
+        finds_it_at: std::result::Result<Vec<u32>, String>,
     }
 
     /// How a scripted server answers a request for one message's whole text.
@@ -3197,6 +3240,7 @@ pub(crate) mod tests {
                 bodies: std::collections::HashMap::new(),
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
                 refuses_from_the_nth_fetch: None,
+                finds_it_at: Ok(Vec::new()),
             }
         }
     }
@@ -3259,7 +3303,9 @@ pub(crate) mod tests {
         }
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
-            Ok(Vec::new())
+            self.finds_it_at
+                .clone()
+                .map_err(crate::common::Error::Protocol)
         }
 
         async fn mark_it(
@@ -4295,12 +4341,15 @@ pub(crate) mod tests {
             allowed: crate::application::allowed::Allowed::EVERYTHING,
         };
 
+        // A server that can say where it put the message, since 2026-10-15:
+        // one that cannot leaves no row here, for the next read to bring (#10).
         let server = Scripted {
             on_server: vec![7],
             headers: vec![ImapMessage {
                 subject: "Invoice #4021".to_string(),
                 ..message(7)
             }],
+            finds_it_at: Ok(vec![3]),
             ..Default::default()
         };
         let folder = folder("INBOX", FolderType::Inbox, true);
@@ -4506,6 +4555,139 @@ pub(crate) mod tests {
             0,
             "the message was filed here as though the move had happened"
         );
+    }
+
+    /// The folder `an_account_with_rules` files into, as its server lists it.
+    fn the_invoices_folder() -> ImapFolder {
+        ImapFolder {
+            name: "Invoices".into(),
+            display_path: "INBOX/Invoices".into(),
+            path: "INBOX/Invoices".into(),
+            folder_type: FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+            delimiter: None,
+        }
+    }
+
+    /// A server whose Invoices holds the invoice under number 12, which is
+    /// where a server that moved it there numbered it.
+    fn invoices_holding_the_invoice_at_twelve() -> Scripted {
+        Scripted {
+            on_server: vec![12],
+            headers: vec![ImapMessage {
+                subject: "Invoice #4021".to_string(),
+                ..message(12)
+            }],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 1,
+                unread: 0,
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_a_message_a_rule_filed_is_one_row_at_the_number_the_server_gave_it() {
+        // The row moved here took a reserved number and the mark saying this
+        // program filed it, which the next read of the destination never
+        // matches, so every message a rule filed showed there twice for good
+        // (#10). The manual move's replay settled its row; a rule's never did.
+        let (_dir, cache, inbox, invoices, folder, engine) =
+            an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+        let server = Scripted {
+            finds_it_at: Ok(vec![12]),
+            ..a_server_holding_one_invoice()
+        };
+
+        sync_with_rules(&server, &cache, &folder, inbox, &engine);
+
+        let filed = cache
+            .get_message_list_sorted(invoices, "acct", None, Some(50))
+            .expect("the folder reads");
+        assert_eq!(
+            filed.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            [12],
+            "the filed row is not at the number the server gave it"
+        );
+        assert_eq!(
+            cache.stored_uids(invoices).expect("the folder reads"),
+            [12],
+            "the filed row still carries the mark of one this program filed"
+        );
+
+        let read = sync_with_rules(
+            &invoices_holding_the_invoice_at_twelve(),
+            &cache,
+            &the_invoices_folder(),
+            invoices,
+            &engine,
+        );
+
+        assert_eq!(
+            read.fetched, 0,
+            "the next read fetched the filed message again"
+        );
+        assert_eq!(
+            cache
+                .get_message_list_sorted(invoices, "acct", None, Some(50))
+                .expect("the folder reads")
+                .len(),
+            1,
+            "the filed message shows twice in the folder it went to"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_filed_message_whose_place_cannot_be_asked_comes_back_once() {
+        // A destination that cannot say where the message is, says two
+        // places, or refuses: the row goes, so the next read brings exactly
+        // one copy rather than one beside the row filed here.
+        let answers: [std::result::Result<Vec<u32>, String>; 3] = [
+            Ok(Vec::new()),
+            Ok(vec![12, 13]),
+            Err("The mail server refused while searching the folder.".to_string()),
+        ];
+        for answer in answers {
+            let (_dir, cache, inbox, invoices, folder, engine) =
+                an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+            let server = Scripted {
+                finds_it_at: answer.clone(),
+                ..a_server_holding_one_invoice()
+            };
+
+            let done = sync_with_rules(&server, &cache, &folder, inbox, &engine);
+
+            assert_eq!(
+                done.filtered.changed, 1,
+                "a move the server made was not counted, answered {answer:?}"
+            );
+            assert!(
+                cache
+                    .get_message_list_sorted(invoices, "acct", None, Some(50))
+                    .expect("the folder reads")
+                    .is_empty(),
+                "the row filed under a number the server never gave stayed, answered {answer:?}"
+            );
+
+            sync_with_rules(
+                &invoices_holding_the_invoice_at_twelve(),
+                &cache,
+                &the_invoices_folder(),
+                invoices,
+                &engine,
+            );
+
+            assert_eq!(
+                cache
+                    .get_message_list_sorted(invoices, "acct", None, Some(50))
+                    .expect("the folder reads")
+                    .len(),
+                1,
+                "the next read did not bring exactly one copy, answered {answer:?}"
+            );
+        }
     }
 
     #[test]
@@ -6581,6 +6763,78 @@ pub(crate) mod tests {
     fn test_an_unordered_server_list_still_yields_the_newest() {
         let wanted = uids_to_fetch(&[7, 2, 99, 41, 5], &[], 2);
         assert_eq!(wanted, vec![41, 99]);
+    }
+
+    #[test]
+    fn test_a_check_after_more_than_five_hundred_arrived_takes_all_of_them() {
+        // A week away. The bound kept the newest 500 of what arrived, the next
+        // check started above the new top, and the rest came down through the
+        // download, which runs no rules and counts nothing as arrived (#12).
+        let held: Vec<u32> = (1..=10).collect();
+        let on_server: Vec<u32> = (1..=810).collect();
+
+        let wanted = uids_to_fetch(&on_server, &held, 500);
+
+        assert_eq!(wanted, (11..=810).collect::<Vec<u32>>());
+    }
+
+    #[test]
+    fn test_the_backfill_below_the_newest_held_stays_bounded() {
+        // Everything above the newest held is new mail and all of it comes;
+        // what is missing below it is older mail, and that is what the bound
+        // is for.
+        let held: Vec<u32> = (300..=310).collect();
+        let on_server: Vec<u32> = (1..=900).collect();
+
+        let wanted = uids_to_fetch(&on_server, &held, 50);
+
+        let expected: Vec<u32> = (250..300).chain(311..=900).collect();
+        assert_eq!(wanted, expected);
+    }
+
+    #[test]
+    fn test_the_rules_run_over_everything_a_large_arrival_brought() {
+        // A blocked sender or a filing rule has to see every message that
+        // arrived, not the newest few, and the check has to count all of them.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("mark_as_read", None)]);
+        let already_here = Scripted {
+            on_server: (1..=10).collect(),
+            headers: (1..=10).map(message_numbered).collect(),
+            ..Scripted::default()
+        };
+        sync_with_rules(&already_here, &cache, &folder, inbox, &engine);
+
+        let a_week_later = Scripted {
+            on_server: (1..=810).collect(),
+            headers: (1..=810)
+                .map(|uid| ImapMessage {
+                    subject: format!("Invoice #{uid}"),
+                    flags: Vec::new(),
+                    ..message_numbered(uid)
+                })
+                .collect(),
+            ..Scripted::default()
+        };
+        let done = sync_with_rules(&a_week_later, &cache, &folder, inbox, &engine);
+
+        assert_eq!(
+            done.fetched, 800,
+            "the check did not fetch all that arrived"
+        );
+        assert_eq!(
+            done.filtered.changed, 800,
+            "the rules did not run over everything that arrived"
+        );
+    }
+
+    /// [`message`] under its own number and identifier, for a test holding
+    /// many of them.
+    fn message_numbered(uid: u32) -> ImapMessage {
+        ImapMessage {
+            message_id: Some(format!("message-{uid}@example.com")),
+            ..message(uid)
+        }
     }
 
     #[test]

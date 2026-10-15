@@ -3374,6 +3374,12 @@ mod tests {
         // the sync reads that number as already held and never fetches the
         // real message, and anything that does fetch it writes over the row
         // that took its number.
+        //
+        // This is about the cache's own move, and the eleventh here is a
+        // different message. It does not keep a second row for one message:
+        // since 2026-10-15 a rule's move settles its row at the number the
+        // server gave it (#10, `moves_waiting::settle_a_moved_row`), so a real
+        // arrival of the same message finds it there.
         let cache = fresh("move_into_a_folder_a_server_fills");
         let inbox = folder(&cache, "INBOX");
         let archive = folder(&cache, "Archive");
