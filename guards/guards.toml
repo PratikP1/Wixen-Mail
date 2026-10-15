@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 718 records have arrived since and have not been through it.
+# 719 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4521,7 +4521,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/deleting_at_the_server.rs", tests = 5 },
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "src/application/emptying.rs", tests = 24 },
+    { file = "src/application/emptying.rs", tests = 27 },
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 27 },
 ]
@@ -4613,7 +4613,7 @@ red = [
     "application::server_delete::tests::test_a_message_the_server_still_holds_unflagged_keeps_its_row",
 ]
 tests_last_seen = [
-    { file = "src/application/server_delete.rs", tests = 17 },
+    { file = "src/application/server_delete.rs", tests = 21 },
 ]
 
 [[guard]]
@@ -13408,7 +13408,7 @@ red = [
     "application::emptying::tests::test_the_reach_on_takes_the_folder_and_everything_under_it_deepest_first",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 24 },
+    { file = "src/application/emptying.rs", tests = 27 },
     { file = "src/application/folders_underneath.rs", tests = 15 },
 ]
 
@@ -13922,7 +13922,7 @@ red = [
     "application::emptying::tests::test_the_permission_gates_emptying_here_and_says_nothing_about_a_folder_on_a_server",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 24 },
+    { file = "src/application/emptying.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -38262,7 +38262,7 @@ red = [
     "application::emptying::tests::test_taking_mail_off_this_computer_says_what_wixen_mail_keeps_not_what_a_server_does",
 ]
 tests_last_seen = [
-    { file = "src/application/emptying.rs", tests = 24 },
+    { file = "src/application/emptying.rs", tests = 27 },
 ]
 
 # A saved Outlook message of class IPM.Note.SMIME is read as having arrived
@@ -39893,4 +39893,28 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/imap/special_use.rs", tests = 22 },
+]
+
+# Empty Folder counting a message the server only marked, or copied to the
+# Trash and left, as one that left the folder, so a folder still full was
+# reported emptied (finding #34, 13.2-07). The break answers that every
+# ending left the folder.
+#
+# Measured by hand on 2026-10-15: the whole library at 9,085 passed and 4
+# failed, these four. The reading of spawn_the_folder_empty stays green under
+# it, which is right: the loop still asks; what it is told is what broke.
+[[guard]]
+name = "a message a server only marked or copied has not left the folder it was emptied from"
+file = "src/application/server_delete.rs"
+before = '''        | Deletion::CopiedToTrashAndNotFlagged(_) => Err(deletion.spoken()),'''
+after = '''        | Deletion::CopiedToTrashAndNotFlagged(_) => Ok(()),'''
+red = [
+    "application::emptying::tests::test_an_empty_a_server_only_marked_stops_at_that_folder_and_says_why",
+    "application::server_delete::tests::test_a_message_copied_to_the_trash_and_flagged_has_not_left_the_folder",
+    "application::server_delete::tests::test_a_message_copied_to_the_trash_and_not_flagged_has_not_left_the_folder",
+    "application::server_delete::tests::test_a_message_the_server_only_marked_has_not_left_the_folder",
+]
+tests_last_seen = [
+    { file = "src/application/emptying.rs", tests = 27 },
+    { file = "src/application/server_delete.rs", tests = 21 },
 ]

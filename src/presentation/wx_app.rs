@@ -10327,6 +10327,11 @@ struct EmptyingAFolder {
 /// [`crate::application::how_far_it_got`]'s reasoning and D-36's. Running it
 /// again finishes the job, because what went is gone and is not in the list the
 /// next run walks.
+///
+/// Corrected 2026-10-15 (finding #34): that last sentence holds where the
+/// server removes or moves a message. Where it can only mark one, or copy it
+/// to the Trash and leave it, a second run would find it again, so the empty
+/// now stops at the first such message and says why.
 fn spawn_the_folder_empty(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
@@ -10384,12 +10389,21 @@ fn spawn_the_folder_empty(
             // is refused in the words "replace a saved draft", because that is
             // the caller it was written for. Somebody emptying their Trash
             // without permission to change this account would have heard it.
+            //
+            // An answer that is not an error is not yet a message gone: a
+            // server that only marked it, or copied it to the Trash and left
+            // it, stops this folder exactly as a refusal does, in the words
+            // one Delete would have said (finding #34).
             let mut outcome = None;
             for (done, uid) in uids.iter().enumerate() {
-                if let Err(why) =
-                    handle.block_on(controller.delete_message(path, *uid, emptying.into.as_deref()))
-                {
-                    outcome = Some((why.to_string(), uids.len() - done));
+                let deleted = handle
+                    .block_on(controller.delete_message(path, *uid, emptying.into.as_deref()))
+                    .map_err(|why| why.to_string())
+                    .and_then(|deletion| {
+                        crate::application::server_delete::the_message_left_the_folder(&deletion)
+                    });
+                if let Err(because) = deleted {
+                    outcome = Some((because, uids.len() - done));
                     break;
                 }
             }
