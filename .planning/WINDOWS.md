@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 715
+open_count: 717
 waived_count: 0
 fixed_count: 126
-total_count: 841
-last_updated: 2026-10-14T23:30:00.000Z
+total_count: 843
+last_updated: 2026-10-14T23:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -856,6 +856,8 @@ last_updated: 2026-10-14T23:30:00.000Z
 | 839 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03, Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03's merge: the menu key on a message heard raising that message's menu; Delete heard deleting that message and the window coming back on its neighbour with no second Conversation sentence; M heard saying read or unread; and Delete on the last message left heard putting him in the list on the next conversation. The dialog is held on its own desktop in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the loop by a reading of its source. Closed when he has heard all four on his own mailbox | open |  | 2026-10-14T23:00:00.000Z |  |
 | 840 | 13.2 | todo | src/presentation/wx_app.rs |  | 13.2-03, carried from REGRESSIONS.md's investigation 4: the reader window and the headings window offer no message command of their own, for a message opened from a conversation and for a lone message too. In the flat view this is hidden, because closing returns to a row that is that message; from a conversation, closing returns to the tree, where 13.2-03 answers the menu key, Delete and M. Closed when a message's commands are reachable from the window it is read in, with a case, or Pratik decides the tree and the list are where they belong | open |  | 2026-10-14T23:00:00.000Z |  |
 | 841 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03.1, the rest of Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03.1's merge: Ctrl+R on a message heard opening a reply to the message under the cursor; Ctrl+1 heard labelling it and the window coming back on it with no second Conversation sentence; and a message other than the row's own, opened from the conversation, heard as read when he comes back to it after the wait Mark as read after names. The keys are held on the dialog on its own desktop and by the comparison with the main window's menu in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the mark by WxUIState::what_reading_may_mark's cases there. Closed when he has heard all three on his own mailbox | open |  | 2026-10-14T23:30:00.000Z |  |
+| 842 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-04, findings #31 and #6 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-04's merge: Undo Send pressed in the last second of a hold heard saying either Taken back, with the message reopened and nothing arriving at the recipient, or Too late to take that back, with one copy arriving and none in Drafts; and Send Queued Mail pressed twice in quick succession with a message waiting heard saying The Outbox is already being sent. on the second press, with one copy arriving and one in Sent. The claim is held by the cases in src/data/message_cache/outbox.rs and the send loop's order by a reading in tests/nothing_leaves_the_outbox_unasked.rs; neither has met a real server. Closed when he has heard both on his own account | open |  | 2026-10-14T23:45:00.000Z |  |
+| 843 | 13.2 | todo | src/data/message_cache/outbox.rs |  | 13.2-04: the Outbox's own Delete, cancel_queued, still takes out a message a pass of the send loop has claimed and says it was cancelled, while the pass goes on and sends it. The audit's verdict on finding #6 said to leave it as it is and gave no reason. Recommended: refuse a claimed row there too, with a sentence saying the message is being sent, the way Undo Send now does. Closed when Pratik answers and the answer is carried out with a case, or he decides it stays | open |  | 2026-10-14T23:45:00.000Z |  |
 
 ````json
 [
@@ -10949,6 +10951,30 @@ last_updated: 2026-10-14T23:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 842,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-04, findings #31 and #6 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-04's merge: Undo Send pressed in the last second of a hold heard saying either Taken back, with the message reopened and nothing arriving at the recipient, or Too late to take that back, with one copy arriving and none in Drafts; and Send Queued Mail pressed twice in quick succession with a message waiting heard saying The Outbox is already being sent. on the second press, with one copy arriving and one in Sent. The claim is held by the cases in src/data/message_cache/outbox.rs and the send loop's order by a reading in tests/nothing_leaves_the_outbox_unasked.rs; neither has met a real server. Closed when he has heard both on his own account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 843,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/message_cache/outbox.rs",
+    "line": null,
+    "description": "13.2-04: the Outbox's own Delete, cancel_queued, still takes out a message a pass of the send loop has claimed and says it was cancelled, while the pass goes on and sends it. The audit's verdict on finding #6 said to leave it as it is and gave no reason. Recommended: refuse a claimed row there too, with a sentence saying the message is being sent, the way Undo Send now does. Closed when Pratik answers and the answer is carried out with a case, or he decides it stays",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-14T23:45:00.000Z",
     "resolved_at": null
   }
 ]

@@ -2561,6 +2561,19 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     that went (#35). The double send and the sent draft's copy in Drafts sit under no
     requirement, and each plan's line says so. They add no `[D]` clause and the box stays
     ticked.
+  - 13.2-04 on 2026-10-14: Undo Send's answer is true while the send loop runs. The Outbox's
+    rows carry `sending_since`, a pass claims each ready message through
+    `claim_for_sending` before it counts or sends, and `delete_outbox_message`, Undo Send's
+    delete, refuses a claimed row, so a message a pass holds is answered "Too late to take
+    that back" rather than "Taken back" (finding #6). The same claim stops two passes, or two
+    copies of the program, sending one message twice (finding #31); that double send sits
+    under no requirement. A pass that claims nothing says "The Outbox is already being
+    sent."; a failed send lets go in the statement that counts it; `WxMailApp::new` lets go of
+    every claim only when the running marker said this copy is alone. Held by seven cases in
+    `src/data/message_cache/outbox.rs`, two readings with their planted companions in
+    `tests/nothing_leaves_the_outbox_unasked.rs`, and three new records. Hearing it is ledger
+    842; whether the Outbox's own Delete should refuse a claimed message too is ledger 843.
+    No `[D]` clause is added and the box stays ticked.
 
 - [x] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
   the organiser has been told only once it has gone.
@@ -7623,7 +7636,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
 | FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
-| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, adding no `[D]` clause |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843) |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |

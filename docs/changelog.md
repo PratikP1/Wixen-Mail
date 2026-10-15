@@ -1427,6 +1427,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message is no longer sent twice, and Undo Send no longer says it took back a message
+  that was already going (2026-10-14, FOUND-04).** Two held messages coming due a few seconds
+  apart, or Send Queued Mail pressed while the Outbox was already sending, could send the same
+  message twice, so the person you wrote to received two copies and Sent held two. And Undo
+  Send, pressed in the last moment of the hold, could say "Taken back" about a message that was
+  already on its way to the server. Now the Outbox takes hold of each message before it sends
+  it, and only one send can hold a message at a time. Undo Send says "Too late to take that
+  back" when a send already holds it. Send Queued Mail pressed while everything ready is
+  already being sent says "The Outbox is already being sent." instead of sending again. A
+  message whose send fails goes back in the queue for the next try, as before. If Wixen Mail
+  closes in the middle of sending, the messages it was sending stay in the Outbox, and the next
+  time it starts they can go again: a held or scheduled message goes on its own, and any other
+  waits for Send Queued Mail. A second copy of the program, opened while the first is running,
+  leaves them alone. The version does not move.
 - **Inside an opened conversation, the message list's other keys act on the message the
   cursor is on, and a message you read there is marked read (2026-10-14, LIST-05, LIST-03).**
   These were the two known limitations of the change below. In the conversation window,
