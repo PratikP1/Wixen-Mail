@@ -344,7 +344,7 @@ pub struct CompositionData {
     pub from_address: Option<String>,
 }
 
-/// Why the open folder's conversations were read again.
+/// Why the open folder's rows were read again.
 ///
 /// THREAD-02 turns on this distinction. Reading them because somebody asked is
 /// a whole new list and the control is told so; reading them because mail
@@ -353,7 +353,12 @@ pub struct CompositionData {
 /// re-announces every row it is told to refresh, so the two readings cannot
 /// share one answer about how much of the list to touch.
 ///
-/// A named pair rather than a boolean, because at the call site
+/// Carried by the messages as well as the conversations since 2026-10-15,
+/// because the third reason decides what is said as well as what is
+/// repainted: a chunk of the download shows the folder's count and does not
+/// speak it, in either view (finding #36).
+///
+/// Named reasons rather than a boolean, because at the call site
 /// `MailArrived` says what the caller knows and `true` would not.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WhyTheRowsWereRead {
@@ -365,6 +370,12 @@ pub enum WhyTheRowsWereRead {
     /// contents changed are repainted, the size is set only if it changed, and
     /// the selection is left exactly where the reader left it.
     MailArrived,
+    /// A chunk of the download of everything landed in the folder on
+    /// screen. Repainted as an arrival is, and the count is shown on the
+    /// status bar and not spoken: a first download of a large folder lands a
+    /// chunk every few seconds, and a count read out each time is noise in a
+    /// room where mail is private (guardrail 5).
+    AChunkOfTheDownloadLanded,
 }
 
 /// A folder a watch is on, by the account it belongs to and its path.
@@ -428,7 +439,9 @@ pub enum UIUpdate {
     /// Each row carries its own identity, its depth, and whether anything hangs
     /// under it.
     FoldersLoaded(Vec<crate::presentation::folder_tree::TreeRow>),
-    MessagesLoaded(Vec<MessageItem>),
+    /// The rows of the list, and why they were read, which decides whether
+    /// the count they come to is spoken. See [`WhyTheRowsWereRead`].
+    MessagesLoaded(Vec<MessageItem>, WhyTheRowsWereRead),
     /// The open folder's conversations, one per collapsed row (D-01).
     ///
     /// Separate from [`UIUpdate::MessagesLoaded`] rather than a second shape
@@ -871,15 +884,15 @@ pub enum UIUpdate {
     /// in the same sync; re-reading its message list as well would be work
     /// with nothing to show for it.
     FolderMessagesArrived(i64),
-    /// Another chunk of a whole-folder request landed, so the list may show
-    /// more of the folder than it did.
+    /// Another chunk of the download of everything landed, so the list may
+    /// show more of the folder than it did.
     ///
-    /// Apart from [`UIUpdate::FolderMessagesArrived`] because it moves the
-    /// bound as well as re-reading. There are two five hundreds and they are
-    /// separate decisions: one bounds what comes down from the server and the
-    /// other bounds what is read out of the cache into the list, and a request
-    /// that moves one alone appears to do nothing because the other still
-    /// binds. This is the update that moves the second.
+    /// Apart from [`UIUpdate::FolderMessagesArrived`] because it does not
+    /// read the folder: it marks it, and the main timer reads the marked
+    /// folder at most every ten seconds with
+    /// [`WhyTheRowsWereRead::AChunkOfTheDownloadLanded`] (finding #36). Until
+    /// 2026-10-15 every chunk read the whole folder and spoke its count, and
+    /// until 2026-09-17 it moved a bound on the list as well.
     MoreOfTheFolderArrived(i64),
     /// A step on the way: connecting, a folder being checked, a chunk landed,
     /// a module's sync requested (#38).

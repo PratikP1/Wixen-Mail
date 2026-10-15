@@ -548,7 +548,7 @@ const THE_REMOVAL: &str = "fn take_row_out_of_the_list(";
 const THE_LANDING: &str = "pub fn land_the_cursor_after(";
 const THE_FOLLOWING: &str = "pub fn keep_the_cursor_on_its_message(";
 const THE_CURSOR_SETTER: &str = "fn put_the_cursor_on(";
-const THE_LOAD_ARM: &str = "        UIUpdate::MessagesLoaded(messages) => {";
+const THE_LOAD_ARM: &str = "        UIUpdate::MessagesLoaded(messages, why) => {";
 
 /// A removal lands the cursor on the control: the removal path calls the
 /// landing helper, the helper asks the rule and sets the control's focused

@@ -88,7 +88,7 @@ const THE_LABEL_ARM: (&str, &str) = (
 );
 const THE_SAVED_SEARCH_RAN_ARM: (&str, &str) = (
     "UIUpdate::SavedSearchRan { messages, said } => {",
-    "UIUpdate::MessagesLoaded(messages) => {",
+    "UIUpdate::MessagesLoaded(messages, why) => {",
 );
 
 const THE_REFUSAL: &str =

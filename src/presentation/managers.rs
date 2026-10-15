@@ -2411,7 +2411,10 @@ pub fn search_messages(
                 .map(crate::presentation::ui_types::MessageItem::from_row)
                 .collect();
             let found = items.len();
-            let _ = tx.try_send(UIUpdate::MessagesLoaded(items));
+            let _ = tx.try_send(UIUpdate::MessagesLoaded(
+                items,
+                crate::presentation::ui_types::WhyTheRowsWereRead::SomebodyAskedForThem,
+            ));
             if found == 0 {
                 // Signalled rather than reported as plain status text, so a
                 // search that comes up empty reaches the earcon channel too,
@@ -5197,7 +5200,7 @@ mod tests {
             UIUpdate::ContactsLoaded(items) => {
                 assert_eq!(items.len(), 1, "{items:#?}");
             }
-            UIUpdate::MessagesLoaded(_) => {
+            UIUpdate::MessagesLoaded(..) => {
                 panic!("searching the contacts replaced them with a list of messages")
             }
             other => panic!("searching the contacts sent {other:?}"),

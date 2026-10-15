@@ -111,8 +111,10 @@ impl ReadingTheOpenFolderAgain {
     /// Marked only when it is the folder on screen: a chunk landing in a
     /// folder nobody is looking at would otherwise take the mark from the
     /// one somebody is, and that folder's last chunk would never be shown.
-    pub fn a_chunk_landed(&mut self, folder_id: i64, _on_screen: Option<i64>) {
-        self.marked = Some(folder_id);
+    pub fn a_chunk_landed(&mut self, folder_id: i64, on_screen: Option<i64>) {
+        if on_screen == Some(folder_id) {
+            self.marked = Some(folder_id);
+        }
     }
 
     /// The folder to read again now, if any.
@@ -120,8 +122,15 @@ impl ReadingTheOpenFolderAgain {
     /// Answering forgets the mark and remembers the moment, so the next
     /// answer waits for the next chunk and for the interval both.
     pub fn the_folder_due(&mut self, now: Instant) -> Option<i64> {
-        self.last_read_again_at.replace(now);
-        self.marked
+        let waited = self.last_read_again_at.is_none_or(|last| {
+            now.saturating_duration_since(last) >= HOW_OFTEN_THE_OPEN_FOLDER_IS_READ_AGAIN
+        });
+        if !waited {
+            return None;
+        }
+        let due = self.marked.take()?;
+        self.last_read_again_at = Some(now);
+        Some(due)
     }
 }
 
