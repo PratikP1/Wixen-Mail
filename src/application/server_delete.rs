@@ -71,6 +71,27 @@ pub fn after_a_delete(deletion: &Deletion, subject: &str) -> WhatToDoNext {
     }
 }
 
+/// Whether a delete took the message out of the folder it was in.
+///
+/// Empty Folder asks this of every message (finding #34). It used to count
+/// any answer that was not an error as a message gone, so a server that only
+/// marked the messages, or copied them to the Trash and left them, was
+/// reported as having emptied the folder, and a second Empty copied them all
+/// into the Trash again. Three of the five endings leave the message where it
+/// was, and the `Err` carries what one Delete would have said about it, which
+/// becomes the reason the empty stopped.
+///
+/// Every ending is written out, so a sixth stops this compiling until
+/// somebody says which side of the line it is on.
+pub fn the_message_left_the_folder(deletion: &Deletion) -> Result<(), String> {
+    match deletion {
+        Deletion::MovedToTrash | Deletion::Removed => Ok(()),
+        Deletion::MarkedOnly(_)
+        | Deletion::CopiedToTrashAndFlagged(_)
+        | Deletion::CopiedToTrashAndNotFlagged(_) => Err(deletion.spoken()),
+    }
+}
+
 /// What to do and what to say after the server answered a move.
 pub fn after_a_move(moved: &Moved, into: &str, subject: &str) -> WhatToDoNext {
     let then = match moved {
@@ -343,6 +364,37 @@ mod tests {
             Copied::WithinTheAccount => "copied inside the account",
             Copied::IntoTheAccount(_) => "copied into another account",
         }
+    }
+
+    #[test]
+    fn test_a_message_removed_or_moved_to_the_trash_has_left_the_folder() {
+        assert_eq!(the_message_left_the_folder(&Deletion::Removed), Ok(()));
+        assert_eq!(the_message_left_the_folder(&Deletion::MovedToTrash), Ok(()));
+    }
+
+    #[test]
+    fn test_a_message_the_server_only_marked_has_not_left_the_folder() {
+        // Finding #34. Empty Folder counted this as emptied.
+        let marked = Deletion::MarkedOnly(StillHere::TheServerCannotRemoveOneMessage);
+        assert_eq!(
+            the_message_left_the_folder(&marked),
+            Err(marked.spoken()),
+            "the reason is the deletion's own words"
+        );
+    }
+
+    #[test]
+    fn test_a_message_copied_to_the_trash_and_flagged_has_not_left_the_folder() {
+        let copied = Deletion::CopiedToTrashAndFlagged(refused());
+        assert_eq!(the_message_left_the_folder(&copied), Err(copied.spoken()));
+    }
+
+    #[test]
+    fn test_a_message_copied_to_the_trash_and_not_flagged_has_not_left_the_folder() {
+        // The third, which the audit missed. A second Empty would copy it into
+        // the Trash again.
+        let copied = Deletion::CopiedToTrashAndNotFlagged("over quota".to_string());
+        assert_eq!(the_message_left_the_folder(&copied), Err(copied.spoken()));
     }
 
     #[test]

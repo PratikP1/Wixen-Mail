@@ -849,15 +849,36 @@ impl ImapSession {
 
         let subscribed = self.subscribed_paths().await;
 
+        // Every role is decided over the whole listing at once, because
+        // whether a folder called Deleted is the Trash depends on whether
+        // another folder says it is (finding #9, 2026-10-15).
+        let display_paths: Vec<String> = names
+            .iter()
+            .map(|(_, _, path)| mailbox_name::decode(path))
+            .collect();
+        let listed: Vec<special_use::Listed<'_>> = names
+            .iter()
+            .zip(&display_paths)
+            .map(|((attributes, delimiter, _), path)| special_use::Listed {
+                attributes,
+                path,
+                delimiter: delimiter.as_deref(),
+            })
+            .collect();
+        let roles = special_use::roles_of_the_listing(&listed);
+
         let mut folders: Vec<ImapFolder> = names
             .into_iter()
-            .map(|(attributes, delimiter, path)| {
-                let display_path = mailbox_name::decode(&path);
-                // The separator is read here to find the last segment and to
-                // classify the folder, and carried on the struct as well,
-                // because the tree now nests and the sync splits the path once
-                // to work out which folder each one sits under. It is the
-                // server's answer for this mailbox alone; see the field.
+            .zip(display_paths)
+            .zip(roles)
+            .map(|((listed, display_path), folder_type)| {
+                let (attributes, delimiter, path) = listed;
+                // The separator is read here to find the last segment, as it
+                // was read above to place the folder for its role, and carried
+                // on the struct as well, because the tree now nests and the
+                // sync splits the path once to work out which folder each one
+                // sits under. It is the server's answer for this mailbox
+                // alone; see the field.
                 let carried = delimiter
                     .as_deref()
                     .filter(|d| !d.is_empty())
@@ -868,11 +889,7 @@ impl ImapSession {
                 };
                 ImapFolder {
                     name: leaf.to_string(),
-                    folder_type: special_use::classify(
-                        &attributes,
-                        &display_path,
-                        delimiter.as_deref(),
-                    ),
+                    folder_type,
                     selectable: special_use::selectable(&attributes),
                     holds_all_mail: special_use::holds_all_mail(&attributes),
                     subscribed: subscribed.contains(&path),

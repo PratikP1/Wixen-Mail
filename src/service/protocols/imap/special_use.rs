@@ -11,15 +11,137 @@
 //! the folder's own name, matched whole against the names in common use. Whole,
 //! not by substring: a folder called "Sent me this" is not the sent folder, and
 //! filing a copy of every outgoing message into it would be a real loss.
+//!
+//! Since 2026-10-15 the name is trusted less than that (finding #9). Every
+//! role is decided over the whole listing, because whether a folder called
+//! Deleted is the Trash depends on whether another folder says it is; see
+//! [`roles_of_the_listing`].
 
 use crate::common::types::FolderType;
 
-/// What the server says this mailbox is for, or what its name suggests.
+/// One mailbox as the server listed it: the facts its role is decided from.
+#[derive(Debug, Clone, Copy)]
+pub struct Listed<'a> {
+    pub attributes: &'a [String],
+    /// The path as somebody reads it, decoded from the server's spelling.
+    pub path: &'a str,
+    pub delimiter: Option<&'a str>,
+}
+
+/// The role of every mailbox in one listing, in the order they were listed.
+///
+/// Decided per role over the whole listing, by three rules:
+///
+/// - INBOX is the inbox by its name, whatever the server declares. RFC 3501
+///   reserves that name, in any case, for the primary mailbox, and Gmail and
+///   Dovecot list it with no role attribute beside every other role declared.
+/// - A role any mailbox declares is taken from declarations alone, and never
+///   guessed for another folder by its name. A server that says which folder
+///   is its Trash has answered the question; a person's own folder called Bin
+///   or Deleted is their folder. Guessing it as well sent every Delete into
+///   somebody's archive, made Delete inside it permanent, and let an emptying
+///   schedule expunge it with nobody at the keyboard.
+/// - A role nobody declares falls back to the name, and only for a mailbox at
+///   the top level or directly under INBOX, which is where a server that does
+///   not declare keeps its own. Where two names suggest one role, the earlier
+///   in that role's list wins ("Trash" before "Bin"), then the earlier listed.
+pub fn roles_of_the_listing(listing: &[Listed<'_>]) -> Vec<FolderType> {
+    let declared: Vec<FolderType> = listing
+        .iter()
+        .filter_map(|mailbox| from_attributes(mailbox.attributes))
+        .collect();
+    let suggested: Vec<Option<Suggested>> = listing
+        .iter()
+        .enumerate()
+        .map(|(listed_at, mailbox)| suggested_by_name(mailbox, listed_at, &declared))
+        .collect();
+    listing
+        .iter()
+        .zip(&suggested)
+        .map(|(mailbox, suggestion)| {
+            if is_the_inbox(mailbox.path) {
+                return FolderType::Inbox;
+            }
+            if let Some(role) = from_attributes(mailbox.attributes) {
+                return role;
+            }
+            match suggestion {
+                Some(candidate) if wins_its_role(candidate, &suggested) => candidate.role,
+                _ => FolderType::Custom,
+            }
+        })
+        .collect()
+}
+
+/// What the server says this mailbox is for, or what its name suggests, for a
+/// listing of one.
 pub fn classify(attributes: &[String], path: &str, delimiter: Option<&str>) -> FolderType {
-    if let Some(from_attributes) = from_attributes(attributes) {
-        return from_attributes;
+    roles_of_the_listing(&[Listed {
+        attributes,
+        path,
+        delimiter,
+    }])
+    .into_iter()
+    .next()
+    .unwrap_or(FolderType::Custom)
+}
+
+/// A role a mailbox's name suggests, and how strongly.
+#[derive(Debug, Clone, Copy)]
+struct Suggested {
+    role: FolderType,
+    /// The name's place in that role's list: lower is the likelier name.
+    rank: usize,
+    /// The mailbox's place in the listing, which breaks a tie in rank.
+    listed_at: usize,
+}
+
+/// The role a mailbox's name suggests, where a name is allowed to say.
+fn suggested_by_name(
+    mailbox: &Listed<'_>,
+    listed_at: usize,
+    declared: &[FolderType],
+) -> Option<Suggested> {
+    let (parent, leaf) = parent_and_leaf(mailbox);
+    if !parent.is_none_or(is_the_inbox) {
+        return None;
     }
-    from_name(leaf(path, delimiter))
+    let (role, rank) = from_name(leaf)?;
+    (!declared.contains(&role)).then_some(Suggested {
+        role,
+        rank,
+        listed_at,
+    })
+}
+
+/// Whether no other name suggesting the same role is a likelier one.
+fn wins_its_role(candidate: &Suggested, suggested: &[Option<Suggested>]) -> bool {
+    suggested
+        .iter()
+        .flatten()
+        .filter(|other| other.role == candidate.role)
+        .min_by_key(|other| (other.rank, other.listed_at))
+        .is_some_and(|strongest| strongest.listed_at == candidate.listed_at)
+}
+
+/// Whether a path is the name RFC 3501 reserves for the primary mailbox.
+fn is_the_inbox(path: &str) -> bool {
+    path.eq_ignore_ascii_case("INBOX")
+}
+
+/// The mailbox a path sits inside, if any, and its own last segment.
+///
+/// `INBOX.Sent` is `Sent` under `INBOX`. With no separator the server has no
+/// hierarchy, so the whole path is the name.
+fn parent_and_leaf<'a>(mailbox: &Listed<'a>) -> (Option<&'a str>, &'a str) {
+    match mailbox
+        .delimiter
+        .filter(|d| !d.is_empty())
+        .and_then(|separator| mailbox.path.rsplit_once(separator))
+    {
+        Some((parent, leaf)) => (Some(parent), leaf),
+        None => (None, mailbox.path),
+    }
 }
 
 /// Whether the mailbox can hold messages.
@@ -67,31 +189,45 @@ fn from_attributes(attributes: &[String]) -> Option<FolderType> {
     })
 }
 
-/// The role a folder's own name suggests, for servers that do not say.
+/// The names mail systems actually ship for each role, likeliest first.
 ///
-/// The lists are the names mail systems actually ship: Exchange writes "Sent
-/// Items" and "Deleted Items", Gmail writes "Sent Mail" and "Bin" in some
-/// locales, Apple writes "Sent Messages".
-fn from_name(leaf: &str) -> FolderType {
-    let name = leaf.trim().to_ascii_lowercase();
-    match name.as_str() {
-        "inbox" => FolderType::Inbox,
-        "sent" | "sent items" | "sent mail" | "sent messages" => FolderType::Sent,
-        "drafts" | "draft" => FolderType::Drafts,
-        "trash" | "bin" | "deleted" | "deleted items" | "deleted messages" => FolderType::Trash,
-        "junk" | "spam" | "junk e-mail" | "junk email" | "bulk mail" => FolderType::Spam,
-        "archive" | "archives" | "all mail" => FolderType::Archive,
-        _ => FolderType::Custom,
-    }
-}
+/// Exchange writes "Sent Items" and "Deleted Items", Gmail writes "Sent Mail"
+/// and "Bin" in some locales, Apple writes "Sent Messages". The order decides
+/// between two folders whose names suggest one role. The inbox is not here: it
+/// is known by the one name RFC 3501 reserves, in [`is_the_inbox`].
+const NAMES_IN_COMMON_USE: [(FolderType, &[&str]); 5] = [
+    (
+        FolderType::Sent,
+        &["sent", "sent items", "sent mail", "sent messages"],
+    ),
+    (FolderType::Drafts, &["drafts", "draft"]),
+    (
+        FolderType::Trash,
+        &[
+            "trash",
+            "bin",
+            "deleted",
+            "deleted items",
+            "deleted messages",
+        ],
+    ),
+    (
+        FolderType::Spam,
+        &["junk", "spam", "junk e-mail", "junk email", "bulk mail"],
+    ),
+    (FolderType::Archive, &["archive", "archives", "all mail"]),
+];
 
-/// The last segment of a hierarchical path.
-///
-/// `INBOX.Sent` and `[Gmail]/Sent Mail` are both the sent folder, and neither
-/// matches on the whole path.
-fn leaf<'a>(path: &'a str, delimiter: Option<&str>) -> &'a str {
-    let delimiter = delimiter.filter(|d| !d.is_empty()).unwrap_or("/");
-    path.rsplit(delimiter).next().unwrap_or(path)
+/// The role a folder's own name suggests and the name's place in that role's
+/// list, matched whole and whatever the case.
+fn from_name(leaf: &str) -> Option<(FolderType, usize)> {
+    let name = leaf.trim().to_ascii_lowercase();
+    NAMES_IN_COMMON_USE.iter().find_map(|(role, names)| {
+        names
+            .iter()
+            .position(|known| *known == name)
+            .map(|rank| (*role, rank))
+    })
 }
 
 /// Compare a LIST attribute against a bare name, ignoring case and any
@@ -189,9 +325,12 @@ mod tests {
     #[test]
     fn test_only_the_last_segment_of_a_path_is_matched() {
         assert_eq!(classify(&[], "INBOX.Sent", Some(".")), FolderType::Sent);
+        // Since 2026-10-15 a name counts only at the top level or directly
+        // under INBOX. Gmail declares every folder of its own, so a bare
+        // "[Gmail]/Sent Mail" is somebody's label rather than Gmail's.
         assert_eq!(
             classify(&[], "[Gmail]/Sent Mail", Some("/")),
-            FolderType::Sent
+            FolderType::Custom
         );
         assert_eq!(
             classify(&[], "Archive/2026/January", Some("/")),
@@ -254,5 +393,140 @@ mod tests {
         assert!(!selectable(&attrs(&["\\NonExistent"])));
         assert!(selectable(&attrs(&["\\HasChildren"])));
         assert!(selectable(&[]));
+    }
+
+    /// The roles of one listing whose mailboxes share a separator.
+    fn roles(listing: &[(&[&str], &str)], delimiter: &str) -> Vec<FolderType> {
+        let attributes: Vec<Vec<String>> = listing.iter().map(|(said, _)| attrs(said)).collect();
+        let listed: Vec<Listed<'_>> = listing
+            .iter()
+            .zip(&attributes)
+            .map(|((_, path), attributes)| Listed {
+                attributes,
+                path,
+                delimiter: Some(delimiter),
+            })
+            .collect();
+        roles_of_the_listing(&listed)
+    }
+
+    #[test]
+    fn test_a_declared_trash_leaves_a_nested_deleted_folder_ordinary() {
+        // Finding #9. "Deleted" sorts before "Trash", so a person's
+        // Clients/Deleted took the Trash's role and every Delete went into it.
+        assert_eq!(
+            roles(&[(&["\\Trash"], "Trash"), (&[], "Clients/Deleted")], "/"),
+            [FolderType::Trash, FolderType::Custom]
+        );
+    }
+
+    #[test]
+    fn test_a_declared_trash_leaves_a_top_level_bin_ordinary() {
+        // Depth alone would not have saved this one, which is why a declared
+        // role is never guessed for a second folder.
+        assert_eq!(
+            roles(&[(&["\\Trash"], "Trash"), (&[], "Bin")], "/"),
+            [FolderType::Trash, FolderType::Custom]
+        );
+    }
+
+    #[test]
+    fn test_a_declared_trash_called_deleted_items_wins_over_a_bare_trash() {
+        assert_eq!(
+            roles(&[(&["\\Trash"], "Deleted Items"), (&[], "Trash")], "/"),
+            [FolderType::Trash, FolderType::Custom]
+        );
+    }
+
+    #[test]
+    fn test_with_nothing_declared_a_name_counts_only_at_the_top_or_under_inbox() {
+        assert_eq!(roles(&[(&[], "Imported/Trash")], "/"), [FolderType::Custom]);
+        assert_eq!(roles(&[(&[], "INBOX.Trash")], "."), [FolderType::Trash]);
+    }
+
+    #[test]
+    fn test_with_nothing_declared_the_first_name_in_the_roles_list_wins() {
+        // "Bin" is listed first so the listing's order is not what decides.
+        assert_eq!(
+            roles(&[(&[], "Bin"), (&[], "Trash")], "/"),
+            [FolderType::Custom, FolderType::Trash]
+        );
+    }
+
+    #[test]
+    fn test_a_role_nobody_declared_still_falls_back_to_the_name() {
+        // The rule is per role. Taking every role from declarations once any
+        // folder declared one would leave this account with no Junk folder.
+        assert_eq!(
+            roles(&[(&["\\Sent"], "Sent"), (&[], "Junk")], "/"),
+            [FolderType::Sent, FolderType::Spam]
+        );
+    }
+
+    #[test]
+    fn test_inbox_is_the_inbox_by_name_beside_roles_that_leave_it_out() {
+        // Gmail and Dovecot declare \Trash and \Sent and list INBOX with no
+        // role at all; RFC 3501 reserves the name.
+        assert_eq!(
+            roles(
+                &[
+                    (&[], "INBOX"),
+                    (&["\\Sent"], "Sent"),
+                    (&["\\Trash"], "Trash")
+                ],
+                "/"
+            ),
+            [FolderType::Inbox, FolderType::Sent, FolderType::Trash]
+        );
+    }
+}
+
+/// `list_folders` asks for the roles of the whole listing, once.
+///
+/// A role decided one folder at a time cannot know whether another folder
+/// declared it, which is finding #9. The behaviour is held by the cases above;
+/// this holds that the listing really goes through them, because a call to
+/// `classify` per folder compiles just as well and passes every one of them.
+#[cfg(test)]
+mod list_folders_asks_over_the_whole_listing {
+    const THE_LISTING: &str = "src/service/protocols/imap.rs";
+    const WHERE_IT_IS_LISTED: &str = "pub async fn list_folders";
+
+    /// The body of one method, from its signature to the brace that ends it.
+    fn the_body_of(source: &str, signature: &str) -> String {
+        let from = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature} to be in the file"));
+        let rest = &source[from..];
+        let ends = rest.find("\n    }").map(|at| at + 6).unwrap_or(rest.len());
+        rest[..ends].to_string()
+    }
+
+    fn asks_once_over_the_listing(body: &str) -> bool {
+        body.matches("special_use::roles_of_the_listing(").count() == 1
+            && !body.contains("special_use::classify(")
+    }
+
+    #[test]
+    fn test_list_folders_asks_for_the_roles_of_the_whole_listing_once() {
+        let source = std::fs::read_to_string(THE_LISTING).expect("the IMAP client");
+        let body = the_body_of(&source, WHERE_IT_IS_LISTED);
+        assert!(
+            asks_once_over_the_listing(&body),
+            "list_folders decides roles one folder at a time:\n{body}"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_tells_a_per_folder_role_from_a_listing_wide_one() {
+        // The companion: without it the check above could be green over a
+        // reading that had stopped seeing anything.
+        let per_folder = "    folder_type: special_use::classify(\n        &attributes,\n";
+        let listing_wide = "    let roles = special_use::roles_of_the_listing(&listed);\n";
+        assert!(!asks_once_over_the_listing(per_folder));
+        assert!(asks_once_over_the_listing(listing_wide));
+        assert!(!asks_once_over_the_listing(&format!(
+            "{listing_wide}{listing_wide}"
+        )));
     }
 }

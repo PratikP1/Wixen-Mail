@@ -704,6 +704,81 @@ mod tests {
 
         assert_eq!(what_emptying_did(&how_far), "Emptied Archive.");
     }
+
+    #[test]
+    fn test_an_empty_a_server_only_marked_stops_at_that_folder_and_says_why() {
+        // Finding #34. The reason is what one Delete would have said, and the
+        // message that stayed is counted among those not removed.
+        use crate::application::how_far_it_got::StoppedAt;
+        use crate::application::server_delete::the_message_left_the_folder;
+        use crate::service::protocols::imap::{Deletion, StillHere};
+
+        let because = the_message_left_the_folder(&Deletion::MarkedOnly(
+            StillHere::TheServerCannotRemoveOneMessage,
+        ))
+        .expect_err("a message only marked is still in the folder");
+        let how_far = HowFarItGot {
+            done: Vec::new(),
+            stopped_at: Some(StoppedAt {
+                name: "Trash".to_string(),
+                because,
+            }),
+            left_behind: 3,
+        };
+
+        assert_eq!(
+            what_emptying_did(&how_far),
+            "Stopped at Trash: Marked for removal, and still in this folder, because this \
+             server cannot remove one message at a time. 3 messages were not removed."
+        );
+    }
+}
+
+/// Empty Folder reads what each delete did, not only whether it failed.
+///
+/// Finding #34: the loop in `spawn_the_folder_empty` counted every answer that
+/// was not an error as a message gone, so a server that only marked or copied
+/// the messages was reported as having emptied the folder. The behaviour is
+/// held in `server_delete`; this holds that the loop asks it, because the loop
+/// lives in `wx_app.rs`, where no test reaches.
+#[cfg(test)]
+mod empty_folder_reads_what_each_delete_did {
+    const THE_WINDOW: &str = "src/presentation/wx_app.rs";
+    const THE_EMPTY: &str = "fn spawn_the_folder_empty(";
+
+    /// The body of one function at the margin, to the brace that ends it.
+    fn the_body_of(source: &str, signature: &str) -> String {
+        let from = source
+            .find(signature)
+            .unwrap_or_else(|| panic!("{signature} to be in the file"));
+        let rest = &source[from..];
+        let ends = rest.find("\n}\n").map(|at| at + 2).unwrap_or(rest.len());
+        rest[..ends].to_string()
+    }
+
+    fn reads_what_the_delete_did(body: &str) -> bool {
+        body.contains("the_message_left_the_folder(&deletion)")
+    }
+
+    #[test]
+    fn test_empty_folder_asks_whether_each_message_left_the_folder() {
+        let source = std::fs::read_to_string(THE_WINDOW).expect("the window");
+        let body = the_body_of(&source, THE_EMPTY);
+        assert!(
+            reads_what_the_delete_did(&body),
+            "Empty Folder counts any answer that was not an error as emptied:\n{body}"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_tells_a_loop_that_reads_the_outcome_from_one_that_does_not() {
+        // The companion, against the loop as it stood before the fix.
+        let tests_only_for_an_error = "if let Err(why) =\n    handle.block_on(controller\
+                                       .delete_message(path, *uid, into))\n";
+        let reads_the_outcome = ".and_then(|deletion| the_message_left_the_folder(&deletion));";
+        assert!(!reads_what_the_delete_did(tests_only_for_an_error));
+        assert!(reads_what_the_delete_did(reads_the_outcome));
+    }
 }
 
 /// Nothing that composes the question reaches a server.
