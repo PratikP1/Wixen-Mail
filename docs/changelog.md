@@ -1427,6 +1427,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Delete uses the folder your mail server calls its Trash, and Empty Folder says a folder
+  was emptied only when it was (2026-10-15, GAP-14, FOLDER-01).** A folder of your own named
+  Bin, Deleted, Deleted Items, Deleted Messages or Trash, anywhere in the folder list, could be
+  taken for the Trash even when the mail server said another folder was the Trash, because
+  those names sort before Trash. Every Delete then moved mail into your folder, a Delete inside
+  it removed mail for good, and an emptying schedule could empty it at the server. Now the
+  folder the server names is the Trash, and your own folder is an ordinary folder that keeps
+  its mail, emptying schedule included. The same holds for Sent, Drafts, Junk and Archive.
+  Where the server names no folder for a role, a folder is taken for it by its name only at
+  the top of the list or directly inside the Inbox, and Trash comes before Bin. A folder an
+  earlier version took for the Trash is put right the next time the account checks for mail.
+  Empty Folder used to say a folder was emptied when the server had only marked its messages
+  for removal, or copied them to the Trash and left them where they were; it now stops at the
+  first such message, says what the server did with it, and says how many messages were not
+  removed. Nothing here has been tried against a real mail server yet. The version does not
+  move.
 - **Adding a mailbox you already have is refused, the account order you chose stays, and an
   account you switch off or remove stops being checked (2026-10-15, MAIL-04).** Adding a
   second account on an address another account already uses used to be accepted, and the next
@@ -6715,7 +6731,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   emptied, which one it stopped at and what was said about it, and how many
   messages were not removed. Running it again finishes the job. Nothing is put
   back, because a message put back on a mail server comes back as a new message
-  and everything that pointed at the old one stops working.
+  and everything that pointed at the old one stops working. Corrected 2026-10-15:
+  running it again finishes the job where the server removes or moves a message.
+  Where the server can only mark a message for removal, or copy it to the Trash
+  and leave it, Empty Folder now stops at that message and says so, rather than
+  saying the folder was emptied.
 
   **On a folder that is already empty it says so and does not open a dialog.**
   The menu item stays there and stays available, because an item that goes grey
