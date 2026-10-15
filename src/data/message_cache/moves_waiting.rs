@@ -440,6 +440,13 @@ impl MessageCache {
         Ok(marks.unwrap_or_default())
     }
 
+    /// The numbering the source folder had when the row's move was first
+    /// kept, or nothing when it was not known then or the row was kept by an
+    /// older build.
+    pub fn the_numbering_a_move_was_kept_under(&self, _message_row_id: i64) -> Result<Option<u32>> {
+        Ok(None)
+    }
+
     /// Let one waiting move go, because it went or because it was put back.
     pub fn stop_waiting_for_a_move(&self, message_row_id: i64) -> Result<()> {
         self.conn
@@ -710,6 +717,61 @@ mod tests {
             home.the_marks_before_the_move(row)
                 .expect("the marks")
                 .is_nothing()
+        );
+    }
+
+    #[test]
+    fn test_a_kept_move_records_the_numbering_its_folder_had() {
+        // Finding #5 of the audit of 2026-10-14: a number names one message
+        // only within one numbering, so the move keeps the numbering too.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 7)
+            .expect("the numbering");
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn test_a_second_ask_keeps_the_numbering_of_the_first() {
+        // The row keeps where the server still has the message, and the
+        // numbering that number belongs to goes with it.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 7)
+            .expect("the numbering");
+        home.set_folder_uid_validity(the_folder(&home, "Archive"), 30)
+            .expect("the numbering");
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 8)
+            .expect("renumbered");
+        home.keep_a_move_waiting(&a_move_of(row, 5, "Archive", "Trash"))
+            .expect("a second move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn test_a_move_kept_with_no_numbering_known_reads_back_nothing() {
+        // A folder never opened, or a row an older build kept: sent as it
+        // always was.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            None
         );
     }
 
