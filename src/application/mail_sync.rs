@@ -3177,6 +3177,10 @@ pub(crate) mod tests {
         /// has had enough of a run looks like from in here, as against
         /// `bodies`, which is about one message.
         refuses_from_the_nth_fetch: Option<usize>,
+        /// What this server answers when asked which numbers a folder holds
+        /// a message under, or the words it refuses with. Nothing by default,
+        /// which is a server that cannot say.
+        finds_it_at: std::result::Result<Vec<u32>, String>,
     }
 
     /// How a scripted server answers a request for one message's whole text.
@@ -3210,6 +3214,7 @@ pub(crate) mod tests {
                 bodies: std::collections::HashMap::new(),
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
                 refuses_from_the_nth_fetch: None,
+                finds_it_at: Ok(Vec::new()),
             }
         }
     }
@@ -3272,7 +3277,9 @@ pub(crate) mod tests {
         }
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
-            Ok(Vec::new())
+            self.finds_it_at
+                .clone()
+                .map_err(crate::common::Error::Protocol)
         }
 
         async fn mark_it(
@@ -4519,6 +4526,139 @@ pub(crate) mod tests {
             0,
             "the message was filed here as though the move had happened"
         );
+    }
+
+    /// The folder `an_account_with_rules` files into, as its server lists it.
+    fn the_invoices_folder() -> ImapFolder {
+        ImapFolder {
+            name: "Invoices".into(),
+            display_path: "INBOX/Invoices".into(),
+            path: "INBOX/Invoices".into(),
+            folder_type: FolderType::Custom,
+            selectable: true,
+            holds_all_mail: false,
+            subscribed: true,
+            delimiter: None,
+        }
+    }
+
+    /// A server whose Invoices holds the invoice under number 12, which is
+    /// where a server that moved it there numbered it.
+    fn invoices_holding_the_invoice_at_twelve() -> Scripted {
+        Scripted {
+            on_server: vec![12],
+            headers: vec![ImapMessage {
+                subject: "Invoice #4021".to_string(),
+                ..message(12)
+            }],
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: 1,
+                unread: 0,
+            },
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_a_message_a_rule_filed_is_one_row_at_the_number_the_server_gave_it() {
+        // The row moved here took a reserved number and the mark saying this
+        // program filed it, which the next read of the destination never
+        // matches, so every message a rule filed showed there twice for good
+        // (#10). The manual move's replay settled its row; a rule's never did.
+        let (_dir, cache, inbox, invoices, folder, engine) =
+            an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+        let server = Scripted {
+            finds_it_at: Ok(vec![12]),
+            ..a_server_holding_one_invoice()
+        };
+
+        sync_with_rules(&server, &cache, &folder, inbox, &engine);
+
+        let filed = cache
+            .get_message_list_sorted(invoices, "acct", None, Some(50))
+            .expect("the folder reads");
+        assert_eq!(
+            filed.iter().map(|m| m.uid).collect::<Vec<_>>(),
+            [12],
+            "the filed row is not at the number the server gave it"
+        );
+        assert_eq!(
+            cache.stored_uids(invoices).expect("the folder reads"),
+            [12],
+            "the filed row still carries the mark of one this program filed"
+        );
+
+        let read = sync_with_rules(
+            &invoices_holding_the_invoice_at_twelve(),
+            &cache,
+            &the_invoices_folder(),
+            invoices,
+            &engine,
+        );
+
+        assert_eq!(
+            read.fetched, 0,
+            "the next read fetched the filed message again"
+        );
+        assert_eq!(
+            cache
+                .get_message_list_sorted(invoices, "acct", None, Some(50))
+                .expect("the folder reads")
+                .len(),
+            1,
+            "the filed message shows twice in the folder it went to"
+        );
+    }
+
+    #[test]
+    fn test_a_rule_filed_message_whose_place_cannot_be_asked_comes_back_once() {
+        // A destination that cannot say where the message is, says two
+        // places, or refuses: the row goes, so the next read brings exactly
+        // one copy rather than one beside the row filed here.
+        let answers: [std::result::Result<Vec<u32>, String>; 3] = [
+            Ok(Vec::new()),
+            Ok(vec![12, 13]),
+            Err("The mail server refused while searching the folder.".to_string()),
+        ];
+        for answer in answers {
+            let (_dir, cache, inbox, invoices, folder, engine) =
+                an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
+            let server = Scripted {
+                finds_it_at: answer.clone(),
+                ..a_server_holding_one_invoice()
+            };
+
+            let done = sync_with_rules(&server, &cache, &folder, inbox, &engine);
+
+            assert_eq!(
+                done.filtered.changed, 1,
+                "a move the server made was not counted, answered {answer:?}"
+            );
+            assert!(
+                cache
+                    .get_message_list_sorted(invoices, "acct", None, Some(50))
+                    .expect("the folder reads")
+                    .is_empty(),
+                "the row filed under a number the server never gave stayed, answered {answer:?}"
+            );
+
+            sync_with_rules(
+                &invoices_holding_the_invoice_at_twelve(),
+                &cache,
+                &the_invoices_folder(),
+                invoices,
+                &engine,
+            );
+
+            assert_eq!(
+                cache
+                    .get_message_list_sorted(invoices, "acct", None, Some(50))
+                    .expect("the folder reads")
+                    .len(),
+                1,
+                "the next read did not bring exactly one copy, answered {answer:?}"
+            );
+        }
     }
 
     #[test]
