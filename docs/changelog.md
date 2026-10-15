@@ -1427,6 +1427,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The download of everything stops asking over and over, and stops reading the count out
+  (2026-10-15, MAIL-01, MAIL-03, MAIL-05).** When the text of a message could not be fetched,
+  the download asked for it again straight away, over and over, until a later check for mail
+  stopped it, and if a mail server stopped answering one account, every account after it waited
+  too. Now the download asks for each message's text once each time it runs and moves on, the
+  next check's run tries it again, and one account's trouble no longer holds up the others.
+  While it brings down a folder you have open, the list is brought up to date every ten seconds
+  rather than after every 500 messages, so a very large folder no longer makes the window stop
+  answering every few seconds, and the folder's count is shown on the status bar without being
+  read out each time. Opening a folder and a check that found new mail still say the count. This
+  has not yet been heard on a real mailbox.
 - **Every new message reaches your rules, and a message a rule files shows once (2026-10-15,
   MAIL-02, MAIL-04, MAIL-05).** When more than 500 messages arrived in a folder between two
   checks, for example after a week away, the check took only the newest 500. Your rules ran
