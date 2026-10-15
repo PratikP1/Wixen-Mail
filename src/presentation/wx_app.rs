@@ -30858,6 +30858,10 @@ fn start_the_download(app: AppHandles<'_>) {
                 stopped_at_the_budget: None,
             };
             let mut text_to_fetch: Option<usize> = None;
+            // Each message's text at most once in this account's run, so one
+            // that always fails is not asked for again with no wait (#11).
+            let mut asked =
+                crate::application::bringing_everything_down::TextAskedThisRun::default();
             let mut did_anything = false;
 
             loop {
@@ -30877,10 +30881,11 @@ fn start_the_download(app: AppHandles<'_>) {
                     }
                 };
                 let kept_bytes = cache.cached_body_bytes().unwrap_or(0).max(0) as u64;
+                let not_yet_asked = asked.not_yet_asked(&missing);
                 let next = crate::application::bringing_everything_down::what_to_do_next(
                     &here,
                     crate::application::bringing_everything_down::TextStillMissing {
-                        messages: &missing,
+                        messages: &not_yet_asked,
                         kept_bytes,
                     },
                     budget,
@@ -30949,7 +30954,6 @@ fn start_the_download(app: AppHandles<'_>) {
                         }
                     }
                     WhatToDoNext::TheNextChunkOfText { messages, .. } => {
-                        did_anything = true;
                         let to_fetch = *text_to_fetch.get_or_insert(missing.len());
                         let done = handle.block_on(
                             crate::application::mail_sync::fetch_over_a_mailbox(
@@ -30960,6 +30964,8 @@ fn start_the_download(app: AppHandles<'_>) {
                                 &|_| {},
                             ),
                         );
+                        asked.remember(&messages);
+                        did_anything |= crate::application::bringing_everything_down::a_chunk_of_text_did_work(done.fetched);
                         text.fetched += done.fetched;
                         text.could_not += done.could_not;
                         use crate::application::mail_sync::Ending;
@@ -30999,8 +31005,11 @@ fn start_the_download(app: AppHandles<'_>) {
                                 say(UIUpdate::Progress(
                                     crate::application::bringing_everything_down::what_the_text_download_came_to(&text),
                                 ));
+                                // This account's run ends and the next
+                                // account's begins; the run as a whole still
+                                // waits and is tried again.
                                 ended = WhyTheRunEnded::AServerStopped;
-                                break 'accounts;
+                                break;
                             }
                         }
                     }

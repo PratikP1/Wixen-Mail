@@ -245,7 +245,11 @@ impl TextAskedThisRun {
     /// What is missing that this run has not asked for yet, in the order it
     /// came.
     pub fn not_yet_asked(&self, missing: &[MessageToFetch]) -> Vec<MessageToFetch> {
-        missing.to_vec()
+        missing
+            .iter()
+            .filter(|message| !self.0.contains(&message.message_id))
+            .cloned()
+            .collect()
     }
 }
 
@@ -255,8 +259,8 @@ impl TextAskedThisRun {
 /// chunk that fetched nothing did nothing: with each message asked once a
 /// run, a run whose only text work asked again for messages that fail would
 /// otherwise say the download is done at every check.
-pub fn a_chunk_of_text_did_work(_fetched: usize) -> bool {
-    true
+pub fn a_chunk_of_text_did_work(fetched: usize) -> bool {
+    fetched > 0
 }
 
 /// Why a download of everything has nothing more to do.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 721 records have arrived since and have not been through it.
+# 725 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -718,7 +718,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 26 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
@@ -4839,7 +4839,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
 
 # ── Every check ends by starting the download (#20, #23) ────────────────────
@@ -4871,7 +4871,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
 
 # ── The download asks whether to stop between chunks ─────────────────────────
@@ -4903,7 +4903,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
 
 # ── A failed chunk waits before the download is tried again ──────────────────
@@ -4930,7 +4930,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
 
 # ── Pausing the download ticks the item as well as flipping the flag ─────────
@@ -4958,7 +4958,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 18 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
 
 # ── The download's warning says what Gmail did, not that it never ran ────────
@@ -25493,7 +25493,7 @@ red = [
     "application::bringing_everything_down::tests::test_the_folder_on_screen_comes_first_then_the_inbox_then_the_tree_order",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 26 },
 ]
 
 # A text budget somebody chose ends the text run when the next chunk would
@@ -25514,7 +25514,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_chunk_of_text_shrinks_to_what_the_budget_still_allows",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 26 },
 ]
 
 # A folder is reported as stopped only when a chunk brought nothing new.
@@ -25542,7 +25542,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_finished_folder_brings_nothing_new_and_is_not_a_server_that_stopped",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 23 },
+    { file = "src/application/bringing_everything_down.rs", tests = 26 },
 ]
 
 # The list of messages with no text here carries each row's size, so a
@@ -39979,4 +39979,76 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
+]
+
+# ── A message's text asked for at most once a run (finding #11, 13.2-09) ─────
+#
+# Nothing on this computer records a message whose text failed, so the list
+# of what has no text here handed it back after every chunk and the download
+# asked for it again with no wait, until a check forgot it. The run now keeps
+# what it asked for and hands the model only the rest. Four records: the
+# model's filter, and the three things the runner does with it.
+#
+# Each measured by hand on 2026-10-15, the break applied with the rest of the
+# tree green: the whole library and `everything_comes_down_without_being_asked`.
+# The model's break left the library at 9,095 passed and 2 failed, these two,
+# and the target green; each runner break left the library at 9,097 passed and
+# the target at 23 passed and 1 failed, the one named.
+[[guard]]
+name = "a message's text is asked for at most once a run"
+file = "src/application/bringing_everything_down.rs"
+before = '''            .filter(|message| !self.0.contains(&message.message_id))'''
+after = '''            .filter(|_| true)'''
+red = [
+    "application::bringing_everything_down::tests::test_a_message_asked_for_in_this_run_is_not_asked_for_again",
+    "application::bringing_everything_down::tests::test_a_run_with_only_failed_text_left_finds_everything_here",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 26 },
+]
+
+[[guard]]
+name = "the download leaves out the text this run already asked for"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                let not_yet_asked = asked.not_yet_asked(&missing);'''
+after = '''                let not_yet_asked = missing.clone();'''
+red = [
+    "test_the_download_leaves_out_the_text_this_run_already_asked_for",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
+]
+
+[[guard]]
+name = "a chunk of text counts as work only when it fetched something"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                        did_anything |= crate::application::bringing_everything_down::a_chunk_of_text_did_work(done.fetched);'''
+after = '''                        did_anything = true;'''
+red = [
+    "test_a_chunk_of_text_is_remembered_and_is_work_only_when_it_fetched_something",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
+]
+
+[[guard]]
+name = "a refused chunk of text ends its own account and not every account"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                                // waits and is tried again.
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break;'''
+after = '''                                // waits and is tried again.
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;'''
+red = [
+    "test_a_text_refusal_ends_its_own_account_and_not_every_account",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 24 },
 ]
