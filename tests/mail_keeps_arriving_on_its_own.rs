@@ -992,3 +992,113 @@ fn test_the_reading_would_see_a_wake_that_checks_a_gone_account() {
     assert_eq!(what_is_wrong_with_a_wake(the_wake(today)).len(), 2);
     assert!(what_is_wrong_with_a_wake(the_wake(switched_on)).is_empty());
 }
+
+// ── One check of an account at a time (finding #15) ──────────────────────────
+
+/// What is wrong with how the check takes its account's turn, as sentences;
+/// nothing when the per-account loop's first statement takes the turn, binds
+/// the guard to a name so it is held to the end of the pass, and does so
+/// before the POP branch and before the session.
+///
+/// By statement rather than by line, because rustfmt breaks the call over
+/// several lines. `let _ =` drops the guard at once, which is a turn taken
+/// and given back before the check starts, so it is refused.
+fn what_is_wrong_with_the_turn(check: Option<&str>) -> Vec<String> {
+    let Some(check) = check else {
+        return vec!["the window no longer checks for mail at all".into()];
+    };
+    let Some(the_loop) = check.find(" account in accounts {").map(|at| &check[at..]) else {
+        return vec!["the check no longer walks the accounts it is handed".into()];
+    };
+    let Some(turn) = the_loop.find("one_check_at_a_time(") else {
+        return vec![
+            "the check takes no turn on its account, so F9 pressed during a check runs a second \
+             one beside it, which announces the same new mail twice and runs the rules twice"
+                .into(),
+        ];
+    };
+    let mut wrong = Vec::new();
+    // The code before the call, comments left out: a comment saying the turn
+    // is "let go" would otherwise pass for a binding.
+    let before: Vec<&str> = the_loop[..turn]
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect();
+    let joined = before.join("\n");
+    let taken = joined.rsplit(';').next().unwrap_or_default();
+    if !taken.contains("let ") || taken.contains("let _ =") {
+        wrong.push(
+            "the turn is not held by a name, so it is given back before the check starts".into(),
+        );
+    }
+    if the_loop
+        .find("Protocol::Pop3")
+        .is_some_and(|pop| pop < turn)
+    {
+        wrong.push("a POP account is checked before its turn is taken".into());
+    }
+    if the_loop
+        .find("the_session_at(")
+        .is_none_or(|session| session < turn)
+    {
+        wrong.push("the session is opened before the account's turn is taken".into());
+    }
+    wrong
+}
+
+#[test]
+fn test_a_check_takes_its_accounts_turn_before_its_session() {
+    let wrong = what_is_wrong_with_the_turn(
+        the_item_starting_with(&the_window_itself(), THE_CHECK).as_deref(),
+    );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_check_that_takes_no_turn() {
+    let today = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+                 for mut account in accounts {\n        \
+                 if account.protocol() == crate::common::types::Protocol::Pop3 {\n            \
+                 check_pop_mail(&account, &handle, &tx);\n            continue;\n        }\n        \
+                 let controller = match handle.block_on(the_session_at(&account)) {};\n    }\n}\n";
+    let dropped_at_once = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+                           for mut account in accounts {\n        \
+                           let _ = handle.block_on(one_check_at_a_time(&account.id));\n        \
+                           let controller = match handle.block_on(the_session_at(&account)) {};\n    }\n}\n";
+    let after_the_pop_branch = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+                                for mut account in accounts {\n        \
+                                if account.protocol() == crate::common::types::Protocol::Pop3 {\n            \
+                                continue;\n        }\n        \
+                                let _turn = handle.block_on(one_check_at_a_time(&account.id));\n        \
+                                let controller = match handle.block_on(the_session_at(&account)) {};\n    }\n}\n";
+    let held = "fn spawn_mail_sync(app: AppHandles<'_>, accounts: Vec<Account>) {\n    \
+                for mut account in accounts {\n        \
+                let _turn = handle.block_on(\n            one_check_at_a_time(&account.id),\n        );\n        \
+                if account.protocol() == crate::common::types::Protocol::Pop3 {\n            \
+                continue;\n        }\n        \
+                let controller = match handle.block_on(the_session_at(&account)) {};\n    }\n}\n";
+
+    assert!(
+        what_is_wrong_with_the_turn(Some(today))
+            .iter()
+            .any(|w| w.contains("takes no turn")),
+        "the reading did not see a check that takes no turn"
+    );
+    assert!(
+        what_is_wrong_with_the_turn(Some(dropped_at_once))
+            .iter()
+            .any(|w| w.contains("not held by a name")),
+        "the reading did not see a turn given back at once"
+    );
+    assert!(
+        what_is_wrong_with_the_turn(Some(after_the_pop_branch))
+            .iter()
+            .any(|w| w.contains("POP account")),
+        "the reading did not see a POP account checked before its turn"
+    );
+    let wrong = what_is_wrong_with_the_turn(Some(held));
+    assert!(
+        wrong.is_empty(),
+        "the reading complained about a check that holds its turn: {wrong:?}"
+    );
+}
