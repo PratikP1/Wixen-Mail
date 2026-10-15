@@ -6584,6 +6584,78 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn test_a_check_after_more_than_five_hundred_arrived_takes_all_of_them() {
+        // A week away. The bound kept the newest 500 of what arrived, the next
+        // check started above the new top, and the rest came down through the
+        // download, which runs no rules and counts nothing as arrived (#12).
+        let held: Vec<u32> = (1..=10).collect();
+        let on_server: Vec<u32> = (1..=810).collect();
+
+        let wanted = uids_to_fetch(&on_server, &held, 500);
+
+        assert_eq!(wanted, (11..=810).collect::<Vec<u32>>());
+    }
+
+    #[test]
+    fn test_the_backfill_below_the_newest_held_stays_bounded() {
+        // Everything above the newest held is new mail and all of it comes;
+        // what is missing below it is older mail, and that is what the bound
+        // is for.
+        let held: Vec<u32> = (300..=310).collect();
+        let on_server: Vec<u32> = (1..=900).collect();
+
+        let wanted = uids_to_fetch(&on_server, &held, 50);
+
+        let expected: Vec<u32> = (250..300).chain(311..=900).collect();
+        assert_eq!(wanted, expected);
+    }
+
+    #[test]
+    fn test_the_rules_run_over_everything_a_large_arrival_brought() {
+        // A blocked sender or a filing rule has to see every message that
+        // arrived, not the newest few, and the check has to count all of them.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("mark_as_read", None)]);
+        let already_here = Scripted {
+            on_server: (1..=10).collect(),
+            headers: (1..=10).map(message_numbered).collect(),
+            ..Scripted::default()
+        };
+        sync_with_rules(&already_here, &cache, &folder, inbox, &engine);
+
+        let a_week_later = Scripted {
+            on_server: (1..=810).collect(),
+            headers: (1..=810)
+                .map(|uid| ImapMessage {
+                    subject: format!("Invoice #{uid}"),
+                    flags: Vec::new(),
+                    ..message_numbered(uid)
+                })
+                .collect(),
+            ..Scripted::default()
+        };
+        let done = sync_with_rules(&a_week_later, &cache, &folder, inbox, &engine);
+
+        assert_eq!(
+            done.fetched, 800,
+            "the check did not fetch all that arrived"
+        );
+        assert_eq!(
+            done.filtered.changed, 800,
+            "the rules did not run over everything that arrived"
+        );
+    }
+
+    /// [`message`] under its own number and identifier, for a test holding
+    /// many of them.
+    fn message_numbered(uid: u32) -> ImapMessage {
+        ImapMessage {
+            message_id: Some(format!("message-{uid}@example.com")),
+            ..message(uid)
+        }
+    }
+
+    #[test]
     fn test_a_message_deleted_elsewhere_is_forgotten() {
         // Otherwise the reader arrows onto a row, presses Enter, and gets an
         // error instead of a message.
