@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 735 records have arrived since and have not been through it.
+# 737 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -16706,7 +16706,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 7 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -40248,4 +40248,44 @@ red = [
 tests_last_seen = [
     { file = "src/application/mail_sync.rs", tests = 155 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
+]
+
+# A read or star that reaches the server lets go of the older change kept
+# waiting for it, and the replay of waiting changes lets go of exactly the
+# one it sent (finding #2 of the audit of 2026-10-14). Written 2026-10-15
+# by 13.2-11, each taken by hand: the whole library stayed green at 9,111
+# passed under both, and the target went to 10 passed and 1 failed, the one
+# named.
+[[guard]]
+name = "a change that reached the server ends the older one waiting"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = '''                    && let Err(why) = cache.stop_waiting_for_what_came_before(
+                        message_row_id,
+                        which_flag,
+                        asked_at,
+                    )'''
+after = '''                    && let Err(why) = cache.flag_changes_waiting_for(&account.id).map(|_| which_flag)'''
+red = [
+    "test_the_push_of_a_change_ends_the_older_one_waiting",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
+]
+
+[[guard]]
+name = "the flag replay lets go only of the change it sent"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = '''            WhatToDoWithAWaitingChange::ItWent => {
+                let _ = cache.stop_waiting_for_this_change(change);'''
+after = '''            WhatToDoWithAWaitingChange::ItWent => {
+                let _ = change;'''
+red = [
+    "test_the_flag_replay_lets_go_only_of_what_it_sent",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 11 },
 ]

@@ -18887,9 +18887,11 @@ fn send_the_flag_changes_that_were_waiting(
             )),
         };
         match what_became_of_it(&offered) {
+            // Each answer lets go of exactly the change it sent. A change kept
+            // while this one waited on the server replaced the row, and is
+            // newer, so it stays (finding #2 of the audit of 2026-10-14).
             WhatToDoWithAWaitingChange::ItWent => {
-                let _ = cache
-                    .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);
+                let _ = cache.stop_waiting_for_this_change(change);
             }
             WhatToDoWithAWaitingChange::PutItBackAndStopWaiting => {
                 match change.which_flag {
@@ -18902,8 +18904,7 @@ fn send_the_flag_changes_that_were_waiting(
                         !change.changed_to,
                     )),
                 }
-                let _ = cache
-                    .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);
+                let _ = cache.stop_waiting_for_this_change(change);
                 put_back += 1;
                 if let Err(why) = &offered {
                     last_refusal = why.to_string();
@@ -28943,6 +28944,20 @@ impl FlagChange {
             }
         }
     }
+
+    /// The flag the waiting queue keeps this change as, if it keeps it.
+    ///
+    /// A label is a keyword rather than one of the two flags the queue
+    /// models, so there is nothing to keep it as; it takes the path it always
+    /// took, and the changelog says so.
+    fn kept_as(&self) -> Option<crate::application::flag_changes_waiting::WhichFlag> {
+        use crate::application::flag_changes_waiting::WhichFlag;
+        match self {
+            FlagChange::Read(_) => Some(WhichFlag::Read),
+            FlagChange::Flagged(_) => Some(WhichFlag::Starred),
+            FlagChange::Labelled { .. } => None,
+        }
+    }
 }
 
 /// The folder a message is in as a change to it is asked for, which is the
@@ -29004,6 +29019,12 @@ fn spawn_server_change(
             s.active_account_id.as_deref(),
         )
     };
+    // When this change was asked for, before the worker starts (finding #2 of
+    // the audit of 2026-10-14). A change kept waiting at or before it is older
+    // and is let go when this one reaches the server; one kept after it,
+    // while this travelled, is newer and stays. The same moment is what a
+    // change kept by this push carries.
+    let asked_at = chrono::Utc::now();
 
     rt.spawn_blocking(move || {
         let say = |update: UIUpdate| {
@@ -29143,17 +29164,10 @@ fn spawn_server_change(
         // local change back.
         let answer_a_failed_push = |error: crate::common::Error| {
             use crate::application::flag_changes_waiting::{
-                WhatAFailedPushCallsFor, WhichFlag, kept_because_the_server_was_not_there,
+                WhatAFailedPushCallsFor, kept_because_the_server_was_not_there,
                 put_back_because_the_server_refused, what_to_do_about_it, why_the_push_failed,
             };
-            let which_flag = match flag {
-                FlagChange::Read(_) => Some(WhichFlag::Read),
-                FlagChange::Flagged(_) => Some(WhichFlag::Starred),
-                // A label is a keyword rather than one of the two flags the
-                // waiting queue models, so there is nothing to keep it as. It
-                // takes the path it always took, and the changelog says so.
-                FlagChange::Labelled { .. } => None,
-            };
+            let which_flag = flag.kept_as();
             let changed_to = match flag {
                 FlagChange::Read(to) | FlagChange::Flagged(to) => *to,
                 FlagChange::Labelled { on, .. } => *on,
@@ -29173,7 +29187,7 @@ fn spawn_server_change(
                 uid,
                 which_flag,
                 changed_to,
-                changed_at: chrono::Utc::now().to_rfc3339(),
+                changed_at: asked_at.to_rfc3339(),
             };
             if let Err(unwritable) = cache.keep_a_flag_change_waiting(&waiting) {
                 // The change cannot be kept, so keeping it is not an option and
@@ -29222,7 +29236,21 @@ fn spawn_server_change(
         // a sync or another flag is part way through using.
 
         match outcome {
-            Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),
+            Ok(()) => {
+                if let Some(which_flag) = flag.kept_as()
+                    && let Err(why) = cache.stop_waiting_for_what_came_before(
+                        message_row_id,
+                        which_flag,
+                        asked_at,
+                    )
+                {
+                    tracing::warn!(
+                        "An older waiting change to message {message_row_id} could not be let \
+                         go, and the next check may send it: {why}"
+                    );
+                }
+                say(UIUpdate::StatusUpdated(flag.done(&subject)));
+            }
             // Two endings now rather than one. A server that answered and said
             // no still puts the change back; a server that was never reached
             // keeps it and says something different.

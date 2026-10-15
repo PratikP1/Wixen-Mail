@@ -13,7 +13,8 @@
 use super::MessageCache;
 use crate::application::flag_changes_waiting::WhichFlag;
 use crate::common::{Error, Result};
-use rusqlite::params;
+use chrono::{DateTime, Utc};
+use rusqlite::{OptionalExtension, params};
 
 /// One flag change waiting to go.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,34 +107,66 @@ impl MessageCache {
 
     /// Let go of a waiting change to this flag that was kept at or before
     /// `asked_at`, because a change asked for at `asked_at` has reached the
-    /// server and is newer.
+    /// server and is newer (finding #2 of the audit of 2026-10-14).
+    ///
+    /// Left waiting, it would be sent at the next check and undo the change
+    /// that reached the server, here and there. A change kept after
+    /// `asked_at` is newer than what reached the server and stays.
+    ///
+    /// The kept time is read as a time rather than compared as text in SQL,
+    /// for the reason `outbox_messages_that_may_go_now` gives: text compares
+    /// whether or not it is a time, and two times written with different
+    /// offsets or numbers of fractional digits sort wrongly as text. A kept
+    /// time that cannot be read is not known to come before, so it stays.
     pub fn stop_waiting_for_what_came_before(
-        &self,
-        _message_row_id: i64,
-        _which_flag: WhichFlag,
-        _asked_at: chrono::DateTime<chrono::Utc>,
-    ) -> Result<()> {
-        Ok(())
-    }
-
-    /// Let go of exactly the change that was sent, and of nothing kept in its
-    /// place since.
-    pub fn stop_waiting_for_this_change(&self, _sent: &AWaitingFlagChange) -> Result<()> {
-        Ok(())
-    }
-
-    /// Let one waiting change go, because it went or because it was put back.
-    pub fn stop_waiting_to_send_a_flag_change(
         &self,
         message_row_id: i64,
         which_flag: WhichFlag,
+        asked_at: DateTime<Utc>,
     ) -> Result<()> {
-        self.conn
-            .execute(
-                "DELETE FROM waiting_flag_changes
+        let kept_at: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT changed_at FROM waiting_flag_changes
                  WHERE message_row_id = ?1 AND which_flag = ?2",
                 params![message_row_id, which_flag.as_stored()],
+                |row| row.get(0),
             )
+            .optional()
+            .map_err(|e| Error::Other(format!("The waiting change could not be read: {e}")))?;
+        let came_before = |kept_at: &str| {
+            DateTime::parse_from_rfc3339(kept_at).is_ok_and(|kept| kept <= asked_at)
+        };
+        match kept_at {
+            Some(kept_at) if came_before(&kept_at) => self.let_go(
+                "WHERE message_row_id = ?1 AND which_flag = ?2 AND changed_at = ?3",
+                params![message_row_id, which_flag.as_stored(), kept_at],
+            ),
+            _ => Ok(()),
+        }
+    }
+
+    /// Let go of exactly the change that was sent, because it went or because
+    /// it was put back, and of nothing kept in its place since.
+    ///
+    /// A change made while the replay waited on the server replaces the row,
+    /// and letting go by message and flag alone would lose it.
+    pub fn stop_waiting_for_this_change(&self, sent: &AWaitingFlagChange) -> Result<()> {
+        self.let_go(
+            "WHERE message_row_id = ?1 AND which_flag = ?2
+               AND changed_to = ?3 AND changed_at = ?4",
+            params![
+                sent.message_row_id,
+                sent.which_flag.as_stored(),
+                sent.changed_to,
+                sent.changed_at,
+            ],
+        )
+    }
+
+    fn let_go(&self, which: &str, values: impl rusqlite::Params) -> Result<()> {
+        self.conn
+            .execute(&format!("DELETE FROM waiting_flag_changes {which}"), values)
             .map_err(|e| Error::Other(format!("A waiting change could not be let go: {e}")))?;
         Ok(())
     }
@@ -350,7 +383,7 @@ mod tests {
             .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
             .expect("a change kept");
         cache
-            .stop_waiting_to_send_a_flag_change(1, WhichFlag::Read)
+            .stop_waiting_for_this_change(&a_waiting_change(1, WhichFlag::Read, true))
             .expect("letting go");
         assert!(
             cache
