@@ -3306,6 +3306,10 @@ pub(crate) mod tests {
     /// the replay's own steps. These scripts hold no rule that deletes, so
     /// nothing here is asked.
     impl crate::application::moves_waiting::ReplaysAMove for Scripted {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(self.uid_validity)
+        }
+
         async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
             Ok(format!("Moved to {into}"))
         }

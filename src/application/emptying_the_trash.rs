@@ -959,6 +959,10 @@ mod tests {
     }
 
     impl ReplaysAMove for AServerThatHoldsTheTrash {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
         async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             self.log
                 .borrow_mut()

@@ -640,6 +640,10 @@ mod tests {
 
     /// What the menu's replay asks, which a rule's Delete is sent through.
     impl ReplaysAMove for AServerThatKeepsFlags {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
         async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             Ok(Mailbox::move_message(self, from, uid, into)
                 .await?

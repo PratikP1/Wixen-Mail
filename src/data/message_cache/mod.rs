@@ -2367,6 +2367,11 @@ impl MessageCache {
         // And the keywords of the labels a run puts on (13-44.3, ledger 748),
         // separated by spaces, which no keyword can hold; nothing when none.
         self.ensure_column_exists("moves_waiting", "keywords_first", "TEXT")?;
+        // The numbering, UIDVALIDITY, the source folder had when the row was
+        // first kept (finding #5 of the audit of 2026-10-14): `uid` names the
+        // message only within it. Nothing when it was not known, and on every
+        // row an older build kept.
+        self.ensure_column_exists("moves_waiting", "uid_validity", "INTEGER")?;
 
         self.conn
             .execute(

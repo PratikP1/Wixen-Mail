@@ -170,6 +170,11 @@ pub(crate) trait TheAccountItIsLeaving {
     /// Take the message off this account's server, and say what really
     /// happened to it.
     async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo>;
+    /// The folder's numbering now, its UIDVALIDITY, or nothing when the
+    /// server does not say: what a waiting crossing's kept number is checked
+    /// against before it is fetched or removed
+    /// ([`crate::application::renumbered`]).
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>>;
 }
 
 /// Whether the destination folder holds the message after all.
@@ -930,6 +935,10 @@ impl TheAccountItIsLeaving for crate::application::mail_controller::MailControll
     async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
         self.take_this_one_off(folder, uid).await
     }
+
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+        Ok(self.select_folder(folder).await?.uid_validity)
+    }
 }
 
 /// The two loopback ends of a crossing, for this module's tests and the
@@ -1073,6 +1082,16 @@ pub(crate) mod for_tests {
                 session.select_folder(folder).await?;
             }
             session.take_this_one_off(uid).await
+        }
+
+        async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+            Ok(self
+                .0
+                .lock()
+                .await
+                .select_folder(folder)
+                .await?
+                .uid_validity)
         }
     }
 

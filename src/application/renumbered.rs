@@ -59,14 +59,26 @@ pub struct Kept<'a> {
 }
 
 /// What the change needs, given the numbering the folder has now.
-pub fn what_it_needs(kept: &Kept<'_>, _numbered_now: Option<u32>) -> BeforeItIsSent {
-    BeforeItIsSent::SendItTo(kept.uid)
+pub fn what_it_needs(kept: &Kept<'_>, numbered_now: Option<u32>) -> BeforeItIsSent {
+    match (kept.numbering, numbered_now) {
+        (Some(then), Some(now)) if then != now => {
+            if kept.identifier.trim().is_empty() {
+                BeforeItIsSent::PutItBack
+            } else {
+                BeforeItIsSent::FindItByItsIdentifier
+            }
+        }
+        _ => BeforeItIsSent::SendItTo(kept.uid),
+    }
 }
 
 /// The number to send to, once the folder has said which numbers hold the
 /// message's identifier: the one, or none and the change is put back.
-pub fn the_number_found(_found: &[u32]) -> Option<u32> {
-    None
+pub fn the_number_found(found: &[u32]) -> Option<u32> {
+    match found {
+        [one] => Some(*one),
+        _ => None,
+    }
 }
 
 /// The number a kept change is sent to, or nothing when it is put back.
