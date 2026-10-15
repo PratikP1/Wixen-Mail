@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 717
+open_count: 719
 waived_count: 0
 fixed_count: 126
-total_count: 843
-last_updated: 2026-10-14T23:45:00.000Z
+total_count: 845
+last_updated: 2026-10-15T01:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -858,6 +858,8 @@ last_updated: 2026-10-14T23:45:00.000Z
 | 841 | 13.2 | unrun-verify | src/presentation/wx_thread_view.rs |  | 13.2-03.1, the rest of Pratik's fourth report of 2026-10-14, heard under NVDA in a conversation of three in his Inbox on a build holding 13.2-03.1's merge: Ctrl+R on a message heard opening a reply to the message under the cursor; Ctrl+1 heard labelling it and the window coming back on it with no second Conversation sentence; and a message other than the row's own, opened from the conversation, heard as read when he comes back to it after the wait Mark as read after names. The keys are held on the dialog on its own desktop and by the comparison with the main window's menu in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs, and the mark by WxUIState::what_reading_may_mark's cases there. Closed when he has heard all three on his own mailbox | open |  | 2026-10-14T23:30:00.000Z |  |
 | 842 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-04, findings #31 and #6 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-04's merge: Undo Send pressed in the last second of a hold heard saying either Taken back, with the message reopened and nothing arriving at the recipient, or Too late to take that back, with one copy arriving and none in Drafts; and Send Queued Mail pressed twice in quick succession with a message waiting heard saying The Outbox is already being sent. on the second press, with one copy arriving and one in Sent. The claim is held by the cases in src/data/message_cache/outbox.rs and the send loop's order by a reading in tests/nothing_leaves_the_outbox_unasked.rs; neither has met a real server. Closed when he has heard both on his own account | open |  | 2026-10-14T23:45:00.000Z |  |
 | 843 | 13.2 | todo | src/data/message_cache/outbox.rs |  | 13.2-04: the Outbox's own Delete, cancel_queued, still takes out a message a pass of the send loop has claimed and says it was cancelled, while the pass goes on and sends it. The audit's verdict on finding #6 said to leave it as it is and gave no reason. Recommended: refuse a claimed row there too, with a sentence saying the message is being sent, the way Undo Send now does. Closed when Pratik answers and the answer is carried out with a case, or he decides it stays | open |  | 2026-10-14T23:45:00.000Z |  |
+| 844 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-05, finding #35 of the audit of 2026-10-14, on the tester's account in a phase 14 sitting, on a build holding 13.2-05's merge: a message written for more than two minutes, so an automatic save filed a copy, then sent; Drafts read on his phone or in Gmail's web view, and in this program after the next check, holding no copy of it; a POP account's Drafts folder on this computer the same; and Undo Send pressed too late to stop a message leaving no copy of it in Drafts. The removal is held by cases in src/application/draft_copy.rs against a scripted server and in src/data/message_cache/drafts.rs over a real database, and the Send arm and Undo Send's order by readings in tests/wired.rs; none has met a real server. Closed when he has seen all three on his own accounts | open |  | 2026-10-15T01:30:00.000Z |  |
+| 845 | 13.2 | todo | src/presentation/wx_app.rs |  | 13.2-05: a sent draft's copy that could not be taken out of Drafts, because the server could not be reached or refused, is said once on the status line and never tried again, so a message sent while offline leaves its copy in Drafts on every device. Recommended: keep the Message-ID of a removal that did not finish and try it again on the next check for mail of that account, saying nothing unless it fails again. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence is enough | open |  | 2026-10-15T01:30:00.000Z |  |
 
 ````json
 [
@@ -10975,6 +10977,30 @@ last_updated: 2026-10-14T23:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-14T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 844,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-05, finding #35 of the audit of 2026-10-14, on the tester's account in a phase 14 sitting, on a build holding 13.2-05's merge: a message written for more than two minutes, so an automatic save filed a copy, then sent; Drafts read on his phone or in Gmail's web view, and in this program after the next check, holding no copy of it; a POP account's Drafts folder on this computer the same; and Undo Send pressed too late to stop a message leaving no copy of it in Drafts. The removal is held by cases in src/application/draft_copy.rs against a scripted server and in src/data/message_cache/drafts.rs over a real database, and the Send arm and Undo Send's order by readings in tests/wired.rs; none has met a real server. Closed when he has seen all three on his own accounts",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T01:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 845,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-05: a sent draft's copy that could not be taken out of Drafts, because the server could not be reached or refused, is said once on the status line and never tried again, so a message sent while offline leaves its copy in Drafts on every device. Recommended: keep the Message-ID of a removal that did not finish and try it again on the next check for mail of that account, saying nothing unless it fails again. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence is enough",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T01:30:00.000Z",
     "resolved_at": null
   }
 ]
