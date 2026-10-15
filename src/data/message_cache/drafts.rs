@@ -122,9 +122,17 @@ impl MessageCache {
     /// is not marked as filed here (`replace_local_draft` says why), so that
     /// statement reaches it. Answers whether there was a copy to remove.
     pub fn forget_the_filed_draft(&self, folder_id: i64, message_id: &str) -> Result<bool> {
-        Ok(self
-            .message_uid_by_message_id(folder_id, message_id)?
-            .is_some())
+        let Some(uid) = self.message_uid_by_message_id(folder_id, message_id)? else {
+            return Ok(false);
+        };
+        let removed = self
+            .conn
+            .execute(
+                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",
+                params![folder_id, uid],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove the sent draft's copy: {}", e)))?;
+        Ok(removed > 0)
     }
 
     /// Clear all drafts for an account

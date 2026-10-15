@@ -196,21 +196,34 @@ impl TakenAway {
 /// Take a sent draft's copies out of the server's Drafts folder.
 ///
 /// Ask which copies the folder holds under the draft's identifier, then
-/// remove exactly those. A sweep that finds and removes in one step would do
-/// as well here only because nothing files this draft again once it is sent;
-/// naming what was found keeps the one rule this module has, and the removal
-/// can never reach a message that is not this draft.
+/// remove exactly those, the same rule the replacement above keeps: the
+/// removal names what the server said it holds and can reach nothing else.
+/// Run under [`one_filing_at_a_time`], so no filing is in flight while it asks.
 #[cfg_attr(
     not(test),
     expect(dead_code, reason = "the Send arm calls it from 13.2-05's next commit")
 )]
 pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
-    _server: &K,
-    _folder: &str,
-    _message_id: &str,
+    server: &K,
+    folder: &str,
+    message_id: &str,
 ) -> TakenAway {
-    TakenAway::NothingWasFiled
+    let there = match server.copies_already_there(folder, message_id).await {
+        Ok(there) => there,
+        Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
+    };
+    if there.is_empty() {
+        return TakenAway::NothingWasFiled;
+    }
+    match server.remove_these(folder, &there).await {
+        Ok(removed) if removed == there.len() => TakenAway::Gone,
+        Ok(_) => TakenAway::ACopyMayStillBeThere(CANNOT_REMOVE_ONE.to_string()),
+        Err(refused) => TakenAway::ACopyMayStillBeThere(refused),
+    }
 }
+
+/// The lock behind [`one_filing_at_a_time`]. One for the whole process.
+static THE_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// The one turn every filing and every removal at a server takes.
 ///
@@ -230,7 +243,7 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     )
 )]
 pub(crate) fn one_filing_at_a_time() -> &'static tokio::sync::Mutex<()> {
-    Box::leak(Box::new(tokio::sync::Mutex::const_new(())))
+    &THE_TURN
 }
 
 /// The account's Drafts folder at its own mail server.
