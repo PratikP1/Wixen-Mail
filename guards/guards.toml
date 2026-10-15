@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 714 records have arrived since and have not been through it.
+# 717 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -26205,7 +26205,7 @@ red = [
     "application::checking_on_a_schedule::tests::test_a_disabled_account_is_never_due",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "src/application/checking_on_a_schedule.rs", tests = 23 },
 ]
 
 # ── A watch somebody stopped is not started again from the arm (#37) ────────
@@ -26229,7 +26229,7 @@ red = [
     "application::checking_on_a_schedule::tests::test_every_reason_the_watch_can_end_with_has_an_answer_that_is_not_a_guess",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "src/application/checking_on_a_schedule.rs", tests = 23 },
 ]
 
 # ── A stored interval of nought is a minute, not every tick (#37) ───────────
@@ -26254,7 +26254,7 @@ red = [
     "application::checking_on_a_schedule::tests::test_a_stored_interval_above_sixty_is_read_as_sixty",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "src/application/checking_on_a_schedule.rs", tests = 23 },
 ]
 
 # ── A watch that ends is asked about, not broken from (#37) ─────────────────
@@ -26291,7 +26291,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── A watch that never started is asked about before the branch returns ─────
@@ -26322,7 +26322,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── The network coming back starts the watches at once (#37) ────────────────
@@ -26349,7 +26349,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── The timer checks the accounts that are due (#37) ────────────────────────
@@ -26377,7 +26377,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── The schedule reads the interval off the account row (#37) ───────────────
@@ -26413,7 +26413,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── A start checks without a keystroke (#37) ────────────────────────────────
@@ -26439,7 +26439,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── A check that went through nowhere asks for no download (#37) ────────────
@@ -26471,7 +26471,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 14 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]
 
 # ── A spelling language chosen for a region is shown as chosen, not as the checker's answer ──
@@ -30049,7 +30049,7 @@ red = [
     "test_the_sentences_the_application_layer_builds_read_to_the_shape",
 ]
 tests_last_seen = [
-    { file = "src/application/checking_on_a_schedule.rs", tests = 20 },
+    { file = "src/application/checking_on_a_schedule.rs", tests = 23 },
     { file = "tests/every_status_sentence_has_one_shape.rs", tests = 10 },
 ]
 
@@ -39802,4 +39802,65 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+]
+
+# The Account Manager asking nothing about the watches: an account it removed
+# or switched off goes on being watched and checked, its rules run and its
+# waiting changes sent, until the program closes (finding #33, 13.2-06).
+#
+# Measured by hand on 2026-10-15: the whole library at 9,073 passed and 0
+# failed, and the target at 19 passed and 1 failed, this one.
+[[guard]]
+name = "the Account Manager stops the watch of an account it removed or switched off"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''        let stopping =
+            crate::application::checking_on_a_schedule::which_watches_stop(&accounts, &new);'''
+after = '''        let stopping: Vec<String> = Vec::new();'''
+red = [
+    "test_the_account_manager_stops_the_watch_of_an_account_it_removed_or_switched_off",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+]
+
+# The watch finding its account by id alone: the end of a check already
+# running, or a wait running out, watches an account switched off since
+# (finding #33, 13.2-06).
+#
+# Measured by hand on 2026-10-15: the whole library at 9,073 passed and 0
+# failed, and the target at 19 passed and 1 failed, this one.
+[[guard]]
+name = "a watch is started only for an account that is switched on"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''            .find(|a| a.id == account_id && a.enabled)'''
+after = '''            .find(|a| a.id == account_id)'''
+red = [
+    "test_a_watch_is_started_only_for_an_account_that_is_switched_on",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+]
+
+# A watch waking checking its account whether or not it is switched on, and
+# a wake for an account removed since saying to add an account (finding #33,
+# 13.2-06).
+#
+# Measured by hand on 2026-10-15: the whole library at 9,073 passed and 0
+# failed, and the target at 19 passed and 1 failed, this one.
+[[guard]]
+name = "a watch waking checks only an account that is switched on"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''                .filter(|account| account.id == folder.account_id && account.enabled)'''
+after = '''                .filter(|account| account.id == folder.account_id)'''
+red = [
+    "test_a_watch_waking_for_an_account_that_is_gone_checks_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
 ]

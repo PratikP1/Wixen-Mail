@@ -900,12 +900,14 @@ fn what_is_wrong_with_whom_a_watch_is_for(watch: Option<&str>) -> Vec<String> {
     let Some(watch) = watch else {
         return vec!["the window no longer watches an inbox at all".into()];
     };
+    // By statement rather than by line, because rustfmt breaks a long chain
+    // over several lines and a line reader would then see none of it.
     match watch
-        .lines()
-        .find(|line| line.contains("s.accounts") && line.contains(".find("))
+        .split(';')
+        .find(|statement| statement.contains("accounts") && statement.contains(".find("))
     {
         None => vec!["the watch no longer finds its account in the window's list".into()],
-        Some(line) if !line.contains(".enabled") => vec![
+        Some(statement) if !statement.contains(".enabled") => vec![
             "the watch finds its account by id alone, so the end of a check already running, or \
              a wait running out, watches an account that is switched off again"
                 .into(),

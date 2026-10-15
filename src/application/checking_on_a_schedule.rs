@@ -207,8 +207,14 @@ pub fn whether_to_watch_again(reason: &WhyTheWatchEnded, failures_in_a_row: u32)
 /// off went on being watched until the program closed, and every wake checked
 /// it, ran its rules and sent its waiting changes (finding #33).
 pub fn which_watches_stop(before: &[Account], after: &[Account]) -> Vec<String> {
-    let _ = (before, after);
-    Vec::new()
+    before
+        .iter()
+        .filter(|held| match after.iter().find(|kept| kept.id == held.id) {
+            None => true,
+            Some(kept) => held.enabled && !kept.enabled,
+        })
+        .map(|held| held.id.clone())
+        .collect()
 }
 
 /// What the watch on an account is doing.
