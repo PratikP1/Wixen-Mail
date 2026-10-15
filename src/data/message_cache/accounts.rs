@@ -508,6 +508,93 @@ mod tests {
     }
 
     #[test]
+    fn test_saving_the_accounts_again_keeps_the_order_somebody_chose() {
+        // The Account Manager saves every account on every change, and the
+        // save used to replace each row, which emptied the column holding
+        // where the account sits. So any change there undid the order chosen
+        // with Alt+Shift+Up and Alt+Shift+Down (finding #3).
+        let cache = a_cache("accounts-saved-again-keep-their-order");
+        three_saved_in_order(&cache);
+        for (at, id) in ["c", "b", "a"].iter().enumerate() {
+            cache
+                .set_account_order(id, at as i64)
+                .expect("an order to save");
+        }
+
+        let as_the_manager_holds_them = [
+            an_account("a", "one@example.com", "pw"),
+            an_account("b", "two@example.com", "pw"),
+            an_account("c", "three@example.com", "pw"),
+        ];
+        cache
+            .replace_accounts(&as_the_manager_holds_them)
+            .expect("the accounts to save again");
+
+        assert_eq!(in_order(&cache), vec!["c", "b", "a"]);
+    }
+
+    #[test]
+    fn test_saving_an_account_again_keeps_the_day_it_was_added() {
+        let cache = a_cache("an-account-saved-again-keeps-its-day");
+        let account = an_account("acc-day", "day@example.com", "pw");
+        cache.save_account(&account).expect("the account to save");
+        let added = created_at(&cache, "acc-day");
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        cache
+            .save_account(&account)
+            .expect("the account to save again");
+
+        assert_eq!(created_at(&cache, "acc-day"), added);
+    }
+
+    #[test]
+    fn test_a_second_account_on_a_taken_address_is_refused_and_deletes_nothing() {
+        // The second account used to replace the first on the next save, and
+        // the first one's password and tokens stayed in the credential store
+        // with nothing left able to name them (finding #3).
+        let cache = a_cache("a-second-account-on-a-taken-address");
+        let mut first = an_account("acc-first", "ada@example.com", "hunter2");
+        first.name = "Work".to_string();
+        cache
+            .save_account(&first)
+            .expect("the first account to save");
+        let mut second = an_account("acc-second", "ada@example.com", "another");
+        second.name = "Home".to_string();
+
+        let outcome = cache.replace_accounts(&[first, second]);
+
+        assert_eq!(
+            outcome
+                .expect_err("the second account to be refused")
+                .to_string(),
+            "Work already uses ada@example.com. Edit that account rather than adding the address again."
+        );
+        let stored: Vec<String> = in_order(&cache);
+        assert_eq!(stored, vec!["acc-first"], "the first account was deleted");
+        assert_eq!(
+            credentials::load("acc-second").expect("the credential store to answer"),
+            None,
+            "a refused account's password was kept, with no row to name it"
+        );
+
+        credentials::forget("acc-first").ok();
+        credentials::forget("acc-second").ok();
+    }
+
+    /// The day an account was added, straight out of the table.
+    fn created_at(cache: &MessageCache, account_id: &str) -> String {
+        cache
+            .conn
+            .query_row(
+                "SELECT created_at FROM accounts WHERE id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("the account to be in the table")
+    }
+
+    #[test]
     fn test_removing_every_account_leaves_the_table_empty() {
         // The empty list is the case a diff written the obvious way gets
         // wrong, and it is the one that matters most: an account removed and
