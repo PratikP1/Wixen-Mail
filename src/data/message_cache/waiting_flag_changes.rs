@@ -164,6 +164,17 @@ impl MessageCache {
         )
     }
 
+    /// The numbering the change's folder had when it was first kept, or
+    /// nothing when it was not known then or the change was kept by an older
+    /// build.
+    pub fn the_numbering_a_flag_change_was_kept_under(
+        &self,
+        _message_row_id: i64,
+        _which_flag: WhichFlag,
+    ) -> Result<Option<u32>> {
+        Ok(None)
+    }
+
     fn let_go(&self, which: &str, values: impl rusqlite::Params) -> Result<()> {
         self.conn
             .execute(&format!("DELETE FROM waiting_flag_changes {which}"), values)
@@ -271,6 +282,77 @@ mod tests {
         cache
             .flag_changes_waiting_for("an account")
             .expect("the waiting changes")
+    }
+
+    /// The cache with the account's Inbox numbered `numbering` at the server.
+    fn an_inbox_numbered(cache: &MessageCache, numbering: u32) {
+        let inbox = cache
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: "an account".to_string(),
+                name: "INBOX".to_string(),
+                path: "INBOX".to_string(),
+                folder_type: "Inbox".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a folder");
+        cache
+            .set_folder_uid_validity(inbox, numbering)
+            .expect("the numbering");
+    }
+
+    fn the_numbering_kept(cache: &MessageCache) -> Option<u32> {
+        cache
+            .the_numbering_a_flag_change_was_kept_under(1, WhichFlag::Read)
+            .expect("the numbering kept")
+    }
+
+    #[test]
+    fn test_a_flag_change_kept_records_the_numbering_its_folder_had() {
+        // Finding #5 of the audit of 2026-10-14: the kept number names the
+        // message only within this numbering.
+        let cache = a_cache();
+        an_inbox_numbered(&cache, 7);
+        cache
+            .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
+            .expect("a change kept");
+        assert_eq!(the_numbering_kept(&cache), Some(7));
+    }
+
+    #[test]
+    fn test_a_second_keep_of_the_same_change_keeps_the_first_numbering() {
+        // Read, then unread, both with no server, and the folder renumbered
+        // between: the number kept is still the one from the first
+        // numbering, so the numbering kept is too.
+        let cache = a_cache();
+        an_inbox_numbered(&cache, 7);
+        cache
+            .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
+            .expect("a change kept");
+        cache
+            .set_folder_uid_validity(
+                cache
+                    .get_folder("an account", "INBOX")
+                    .expect("the folder")
+                    .expect("there")
+                    .id,
+                8,
+            )
+            .expect("renumbered");
+        cache
+            .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, false))
+            .expect("a change kept");
+        assert_eq!(the_numbering_kept(&cache), Some(7));
+    }
+
+    #[test]
+    fn test_a_flag_change_kept_with_no_numbering_known_reads_back_nothing() {
+        let cache = a_cache();
+        cache
+            .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
+            .expect("a change kept");
+        assert_eq!(the_numbering_kept(&cache), None);
     }
 
     #[test]

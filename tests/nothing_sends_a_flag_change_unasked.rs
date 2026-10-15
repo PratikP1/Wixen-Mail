@@ -480,6 +480,68 @@ fn test_the_reading_refuses_a_replay_that_lets_go_by_message_and_flag() {
     assert!(the_replay_lets_go_only_of_what_it_sent(planted).is_err());
 }
 
+/// Whether the replay asks the folder's numbering and which number each
+/// change goes to before it sends, and sends to that number rather than the
+/// one kept.
+fn the_replay_asks_the_number_before_it_sends(source: &str) -> Result<(), String> {
+    let replay = the_function(source, THE_REPLAY)?;
+    let sent = ["set_flag(", "set_starred("]
+        .iter()
+        .filter_map(|call| replay.find(call))
+        .min()
+        .ok_or("the replay sends nothing")?;
+    let asked_before_sending = |call: &str| replay.find(call).is_some_and(|at| at < sent);
+    if !asked_before_sending("the_numbering_now(")
+        || !asked_before_sending("the_number_to_send_to(")
+    {
+        return Err(
+            "the replay sends a kept number without asking whether its folder was renumbered"
+                .into(),
+        );
+    }
+    let decided = replay.find("the_number_to_send_to(").unwrap_or_default();
+    if replay[decided..].contains("change.uid") {
+        return Err("the replay sends to the number kept, whatever the decision said".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_flag_replay_asks_which_number_a_change_goes_to_before_it_sends() {
+    // Finding #5 of the audit of 2026-10-14, for a read or star kept from
+    // offline: after the server renumbers the folder, the kept number may name
+    // another message.
+    assert_eq!(
+        the_replay_asks_the_number_before_it_sends(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_flag_replay_that_sends_the_kept_number() {
+    // Today's replay, before the fix.
+    let planted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                   \x20   for change in &waiting {\n\
+                   \x20       let offered = match change.which_flag {\n\
+                   \x20           WhichFlag::Read => handle.block_on(controller.set_flag(\n\
+                   \x20               &change.folder_path,\n\
+                   \x20               change.uid,\n\
+                   \x20           )),\n\
+                   \x20       };\n\
+                   \x20   }\n\
+                   }\n";
+    assert!(the_replay_asks_the_number_before_it_sends(planted).is_err());
+    let asked_and_ignored = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                             \x20   let now = the_numbering_now(controller, handle, folder);\n\
+                             \x20   let sent_to = the_number_to_send_to(&kept, now, found);\n\
+                             \x20   handle.block_on(controller.set_flag(&change.folder_path, change.uid));\n\
+                             }\n";
+    assert!(
+        the_replay_asks_the_number_before_it_sends(asked_and_ignored).is_err(),
+        "a replay that asks and then sends the kept number was read as asking"
+    );
+}
+
 #[test]
 fn test_the_module_that_decides_cannot_express_sending() {
     // Held by the shape of the type rather than by a comment. The decision
