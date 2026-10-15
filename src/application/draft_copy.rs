@@ -142,11 +142,97 @@ pub(crate) async fn replace_the_filed_copy<K: KeepsTheDraft>(
     }
     match server.remove_these(folder, &older).await {
         Ok(removed) if removed == older.len() => Filed::Replaced,
-        Ok(_) => Filed::FiledAndAnOlderCopyMayStillBeThere(
-            "this server cannot remove one message at a time".to_string(),
-        ),
+        Ok(_) => Filed::FiledAndAnOlderCopyMayStillBeThere(CANNOT_REMOVE_ONE.to_string()),
         Err(refused) => Filed::FiledAndAnOlderCopyMayStillBeThere(refused),
     }
+}
+
+/// What a server that counts fewer removed than it was given has told us.
+///
+/// A server without UIDPLUS marks a message for removal and leaves it, and the
+/// only sign is the count.
+const CANNOT_REMOVE_ONE: &str = "this server cannot remove one message at a time";
+
+/// What became of a sent draft's copy in the server's Drafts folder.
+///
+/// Three answers, and only the last is worth a sentence: a copy left behind is
+/// one somebody's phone shows as an unsent draft, and sends a second time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TakenAway {
+    /// Every copy the server held under the draft's identifier is gone.
+    Gone,
+    /// The server held no copy: none was filed, or every filing was refused.
+    NothingWasFiled,
+    /// A copy may still be there, because the server would not say which
+    /// copies it held or would not take them away.
+    ACopyMayStillBeThere(String),
+}
+
+impl TakenAway {
+    /// One sentence saying where the sent draft's copy is. Never empty.
+    pub fn what_happened(&self) -> String {
+        match self {
+            Self::Gone => "The sent message's draft was taken out of Drafts.".to_string(),
+            Self::NothingWasFiled => {
+                "The sent message had no draft in Drafts on the server.".to_string()
+            }
+            Self::ACopyMayStillBeThere(reason) => format!(
+                "The message you sent may still be in Drafts on the server, so your other \
+                 devices could show it as a draft nobody has sent. The server said: {}",
+                ended(reason)
+            ),
+        }
+    }
+
+    /// Whether this is worth putting in front of the person.
+    ///
+    /// Taking the copy away is what Send is expected to do, so the ordinary
+    /// endings stay quiet and only a copy left behind is said.
+    pub fn needs_saying(&self) -> bool {
+        matches!(self, Self::ACopyMayStillBeThere(_))
+    }
+}
+
+/// Take a sent draft's copies out of the server's Drafts folder.
+///
+/// Ask which copies the folder holds under the draft's identifier, then
+/// remove exactly those, the same rule the replacement above keeps: the
+/// removal names what the server said it holds and can reach nothing else.
+/// Run under [`one_filing_at_a_time`], so no filing is in flight while it asks.
+pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
+    server: &K,
+    folder: &str,
+    message_id: &str,
+) -> TakenAway {
+    let there = match server.copies_already_there(folder, message_id).await {
+        Ok(there) => there,
+        Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
+    };
+    if there.is_empty() {
+        return TakenAway::NothingWasFiled;
+    }
+    match server.remove_these(folder, &there).await {
+        Ok(removed) if removed == there.len() => TakenAway::Gone,
+        Ok(_) => TakenAway::ACopyMayStillBeThere(CANNOT_REMOVE_ONE.to_string()),
+        Err(refused) => TakenAway::ACopyMayStillBeThere(refused),
+    }
+}
+
+/// The lock behind [`one_filing_at_a_time`]. One for the whole process.
+static THE_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// The one turn every filing and every removal at a server takes.
+///
+/// An automatic save files its copy on a thread of its own and can still be
+/// talking to the server when Send is pressed. A removal that searched while
+/// that filing was in flight would miss the copy, which would then land after
+/// it and stay in Drafts as an unsent draft. So each filing and each removal
+/// holds this for its whole length, from before its session opens until after
+/// it ends, and a removal searches only once every filing that began before it
+/// has finished. Nothing files a draft after Send for that draft, because the
+/// composer has closed.
+pub(crate) fn one_filing_at_a_time() -> &'static tokio::sync::Mutex<()> {
+    &THE_TURN
 }
 
 /// The account's Drafts folder at its own mail server.
@@ -447,6 +533,106 @@ mod tests {
                 "the server's own words were punctuated again: {said}"
             );
         }
+    }
+
+    async fn sending(server: &Scripted) -> TakenAway {
+        take_away_the_filed_copy(server, "Drafts", "<d@x>").await
+    }
+
+    #[tokio::test]
+    async fn test_sending_takes_away_exactly_the_copies_the_server_named() {
+        // Finding #35: Send took the draft out of the list on this computer
+        // and left its copy in the server's Drafts folder, where every other
+        // device showed it as a draft nobody had sent.
+        let server = Scripted::holding(vec![4, 9]);
+
+        let taken = sending(&server).await;
+
+        assert_eq!(taken, TakenAway::Gone);
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::Remove(vec![4, 9])],
+            "the removal named something other than the copies the server held"
+        );
+        assert!(!taken.needs_saying(), "{}", taken.what_happened());
+    }
+
+    #[tokio::test]
+    async fn test_a_draft_never_filed_is_taken_away_without_asking_to_remove_anything() {
+        let server = Scripted::holding(vec![]);
+
+        let taken = sending(&server).await;
+
+        assert_eq!(taken, TakenAway::NothingWasFiled);
+        assert_eq!(*server.asked.borrow(), vec![Asked::WhichCopies]);
+        assert!(!taken.needs_saying());
+    }
+
+    #[tokio::test]
+    async fn test_a_copy_the_server_would_not_remove_is_said() {
+        // Three ways a copy can be left behind, and each is said with the
+        // server's own words, because the person's phone will show it.
+        let mut refused_search = Scripted::holding(vec![4]);
+        refused_search.already_there = Err("the search was refused".to_string());
+        let mut refused_removal = Scripted::holding(vec![4]);
+        refused_removal.removal = Err("the server would not do it".to_string());
+        let mut only_marked = Scripted::holding(vec![4, 9]);
+        only_marked.removal = Ok(1);
+
+        for (server, its_words) in [
+            (&refused_search, "the search was refused."),
+            (&refused_removal, "the server would not do it."),
+            (&only_marked, "one message at a time."),
+        ] {
+            let taken = sending(server).await;
+
+            assert!(
+                matches!(taken, TakenAway::ACopyMayStillBeThere(_)),
+                "{taken:?}"
+            );
+            assert!(taken.needs_saying(), "{taken:?}");
+            let said = taken.what_happened();
+            assert!(said.ends_with(its_words), "{said}");
+            assert!(said.contains("Drafts"), "{said}");
+        }
+        assert_eq!(
+            *refused_search.asked.borrow(),
+            vec![Asked::WhichCopies],
+            "something was removed although the server would not say what it held"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_removal_waits_for_a_filing_that_began_before_it() {
+        // An automatic save's filing can still be in flight when Send is
+        // pressed. A removal that searched then would miss the copy, which
+        // would land afterwards and stay in Drafts.
+        let server = Scripted::holding(vec![4]);
+        let filing = one_filing_at_a_time().lock().await;
+        server.asked.borrow_mut().push(Asked::File);
+
+        let mut removal = std::pin::pin!(async {
+            let _turn = one_filing_at_a_time().lock().await;
+            sending(&server).await
+        });
+        let while_filing = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(std::future::Future::poll(removal.as_mut(), cx))
+        })
+        .await;
+        assert!(
+            while_filing.is_pending(),
+            "the removal ran while a filing held the turn"
+        );
+        assert_eq!(*server.asked.borrow(), vec![Asked::File]);
+
+        drop(filing);
+        let taken = removal.await;
+
+        assert_eq!(taken, TakenAway::Gone);
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::File, Asked::WhichCopies, Asked::Remove(vec![4])]
+        );
     }
 
     #[test]

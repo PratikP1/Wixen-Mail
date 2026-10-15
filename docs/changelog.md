@@ -1427,6 +1427,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message sent from a draft leaves the Drafts folder, and Undo Send leaves no draft of a
+  message it could not stop (2026-10-14, FOUND-04).** Every save of a draft, and the automatic
+  save every two minutes, puts a copy in the account's Drafts folder: on the mail server for an
+  IMAP account, so your phone and webmail see it, and on this computer for a POP account.
+  Sending the message took it off the Open Draft list and left that copy where it was, so every
+  device went on showing it as a draft nobody had sent, ready to be sent a second time. Now Send
+  takes the copy out of Drafts as well. If an automatic save is still on its way to the server
+  when you press Send, the copy is taken out once it has arrived. If the server will not say
+  what it holds, or will not remove the copy, the status line says the message may still be in
+  Drafts and gives the server's own words. Undo Send, pressed too late to stop a message, used
+  to leave a copy of that message in Drafts; it now puts the draft in Drafts only once it has
+  really taken the message back. A copy that could not be removed is not tried again later.
+  Nothing here has been tried against a real mail server yet. The version does not move.
 - **A message is no longer sent twice, and Undo Send no longer says it took back a message
   that was already going (2026-10-14, FOUND-04).** Two held messages coming due a few seconds
   apart, or Send Queued Mail pressed while the Outbox was already sending, could send the same
@@ -8592,7 +8605,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 - **A draft is removed once its message has been sent.** Nothing ever removed
   one: sending did not, and the Open Draft window only opens. Drafts save
   themselves every few minutes, so the list only ever grew, with sent
-  messages sitting in it alongside unfinished ones.
+  messages sitting in it alongside unfinished ones. Corrected 2026-10-14: this
+  was true of the Open Draft list only. The copy every save puts in the Drafts
+  folder, on the server and on this computer, stayed there after sending until
+  the entry of that date under Fixed above.
 - **Change in the spelling check no longer deletes the word when the box is
   empty.** A name the dictionary does not know has no suggestions, so the box
   opened empty while the button still said Change. Pressing it removed the

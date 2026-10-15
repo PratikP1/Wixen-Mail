@@ -115,6 +115,26 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Take a sent draft's filed copy out of a Drafts folder on this computer.
+    ///
+    /// Found by the draft's own Message-ID, which is how the copy was filed,
+    /// and removed with the statement that forgets any message here. The copy
+    /// is not marked as filed here (`replace_local_draft` says why), so that
+    /// statement reaches it. Answers whether there was a copy to remove.
+    pub fn forget_the_filed_draft(&self, folder_id: i64, message_id: &str) -> Result<bool> {
+        let Some(uid) = self.message_uid_by_message_id(folder_id, message_id)? else {
+            return Ok(false);
+        };
+        let removed = self
+            .conn
+            .execute(
+                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",
+                params![folder_id, uid],
+            )
+            .map_err(|e| Error::Other(format!("Failed to remove the sent draft's copy: {}", e)))?;
+        Ok(removed > 0)
+    }
+
     /// Clear all drafts for an account
     pub fn clear_drafts(&self, account_id: &str) -> Result<()> {
         self.conn
@@ -430,6 +450,89 @@ mod tests {
             .expect("the draft to load")
             .expect("the draft to survive");
         assert_eq!(back.protection, Choice::Plain);
+    }
+
+    /// A message in a folder, carrying the Message-ID it was filed under.
+    fn filed(cache: &MessageCache, folder_id: i64, uid: u32, message_id: &str) {
+        cache
+            .upsert_message(&crate::data::message_cache::IncomingMessage {
+                folder_id,
+                uid,
+                message_id: message_id.to_string(),
+                subject: format!("Message {uid}"),
+                from_addr: "me@example.com".to_string(),
+                to_addr: "ada@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-10-14T09:00:00Z".to_string(),
+                internal_date: None,
+                size_bytes: Some(10),
+                refs_header: None,
+                read: true,
+                starred: false,
+                answered: false,
+                draft: true,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: None,
+            })
+            .expect("a message in the folder");
+    }
+
+    #[test]
+    fn test_a_sent_drafts_copy_leaves_the_drafts_folder_here() {
+        // Finding #35, on an account with no server folder for drafts: Send
+        // took the draft out of the Open Draft list and left its copy in the
+        // Drafts folder on this computer, where it read as a draft not sent.
+        let cache = a_cache("sent_draft_copy");
+        let folder_id = cache
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: "acc-1".to_string(),
+                name: "Drafts".to_string(),
+                path: "Drafts".to_string(),
+                folder_type: "Drafts".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a Drafts folder");
+        let sent = crate::application::draft_message::message_id_for("d-1");
+        filed(&cache, folder_id, 1, &sent);
+        filed(&cache, folder_id, 2, "<another@example.com>");
+
+        assert!(
+            cache
+                .forget_the_filed_draft(folder_id, &sent)
+                .expect("the copy to be looked for"),
+            "the copy that was filed was not found"
+        );
+
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(folder_id, &sent)
+                .expect("the folder to be read"),
+            None,
+            "the sent draft's copy is still in Drafts"
+        );
+        assert_eq!(
+            cache
+                .message_uid_by_message_id(folder_id, "<another@example.com>")
+                .expect("the folder to be read"),
+            Some(2),
+            "a message that was not this draft went with it"
+        );
+        assert!(
+            !cache
+                .forget_the_filed_draft(folder_id, &sent)
+                .expect("the copy to be looked for again"),
+            "a copy already taken away was reported as taken away again"
+        );
     }
 
     #[test]

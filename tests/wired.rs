@@ -1421,6 +1421,16 @@ fn test_an_account_that_was_added_or_edited_reaches_the_database() {
 /// draft is named. It asks that sending removes one at all, and that it
 /// happens after the message is queued rather than before, because a draft
 /// removed first and a queue that then refused would lose the message.
+///
+/// Since 2026-10-14 it asks the same of the draft's filed copy. Every save
+/// files one in the account's Drafts folder, at the server for IMAP and on
+/// this computer for POP, and Send took away only the row, so every device
+/// went on showing a draft nobody had sent (finding #35, 13.2-05). The removal
+/// itself is held by cases in `application::draft_copy` and
+/// `data::message_cache::drafts`; this reads that the Send arm reaches it, and
+/// that the filing and the removal at a server each take their turn before
+/// their session opens, so an automatic save still on its way lands before
+/// the removal asks what is there.
 #[test]
 fn test_sending_a_draft_stops_it_being_a_draft() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -1449,6 +1459,52 @@ fn test_sending_a_draft_stops_it_being_a_draft() {
         "the draft is removed before the message is queued, so a queue that \
          refuses would lose the message altogether"
     );
+
+    let taken_away = sending.find("take_the_filed_copy_away(").expect(
+        "sending removes the draft's row and leaves its filed copy in Drafts, \
+         where every device shows it as a draft nobody sent",
+    );
+    assert!(
+        removed < taken_away,
+        "the filed copy is taken away before the row, so a row that would not \
+         come out leaves a draft whose copy is gone from every other device"
+    );
+
+    let both_folders = body_of(&app, "fn take_the_filed_copy_away(");
+    for (reaches, what_for) in [
+        (
+            "forget_the_filed_draft(",
+            "the Drafts folder on this computer, a POP account's",
+        ),
+        ("spawn_draft_removal(", "the server's Drafts folder"),
+    ] {
+        assert!(
+            both_folders.contains(reaches),
+            "a sent draft's copy is never taken out of {what_for}"
+        );
+    }
+
+    for (what, signature) in [
+        ("the filing", "fn spawn_draft_append("),
+        ("the removal", "fn spawn_draft_removal("),
+    ] {
+        let body = body_of(&app, signature);
+        let turn = body.find("one_filing_at_a_time()").unwrap_or_else(|| {
+            panic!(
+                "{what} at the server takes no turn, so a removal can ask what \
+                 Drafts holds while an automatic save is still on its way and \
+                 miss the copy it then files"
+            )
+        });
+        let session = body
+            .find("a_session_at(")
+            .unwrap_or_else(|| panic!("{what} no longer opens a session"));
+        assert!(
+            turn < session,
+            "{what} takes its turn after its session opens, so a filing that \
+             began first can still be connecting when the removal asks"
+        );
+    }
 }
 
 /// Set Active in the Account Manager changes which account is active.
@@ -3077,6 +3133,12 @@ fn test_the_composers_send_later_passes_the_chosen_time_to_the_queue() {
 /// draft is taken away again rather than left as a second copy of a message that
 /// is already on its way.
 ///
+/// Since 2026-10-14 the draft's row is what is saved first, and its copy is
+/// filed in Drafts only in the arm where the row came out. Saving both together
+/// left the third ending with a filed copy of a message that went, in Drafts on
+/// every device, and taking the row away again did not reach it (finding #35,
+/// 13.2-05).
+///
 /// What this cannot see: whether Undo Send is reachable, whether either call
 /// does what its name says, or whether the message that comes back is the one
 /// that was queued. It reads the order of two calls in the source. That was the
@@ -3088,7 +3150,7 @@ fn test_undo_send_saves_the_draft_before_it_empties_the_queue() {
     let body = body_of(&app, "fn undo_send(");
 
     let saved = body
-        .find("save_as_draft(")
+        .find("save_draft_row(")
         .expect("Undo Send no longer writes a draft, so a cancelled window loses the message");
     let emptied = body
         .find("delete_outbox_message(")
@@ -3098,6 +3160,29 @@ fn test_undo_send_saves_the_draft_before_it_empties_the_queue() {
         saved < emptied,
         "Undo Send takes the message out of the queue before it saves the draft, so \
          closing the window without saving loses it"
+    );
+    assert!(
+        !body.contains("save_as_draft("),
+        "Undo Send saves the draft and files its copy together, so a message it was \
+         too late to stop leaves a copy in Drafts on every device"
+    );
+
+    let caught = emptied
+        + body[emptied..]
+            .find("Ok(true)")
+            .expect("Undo Send no longer has an arm for the message it caught");
+    let too_late = caught
+        + body[caught..]
+            .find("Ok(false)")
+            .expect("Undo Send no longer has an arm for the message it was too late for");
+    let filed = body.find("file_draft_copy(").expect(
+        "Undo Send no longer files the draft it opens, so it is in no Drafts folder \
+         somebody would look in",
+    );
+    assert!(
+        caught < filed && filed < too_late,
+        "Undo Send files the draft's copy outside the arm where it caught the message, \
+         so a message that went can leave a copy in Drafts"
     );
 
     // And the spare draft is taken away when the row had already gone. Without

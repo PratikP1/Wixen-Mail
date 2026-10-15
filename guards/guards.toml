@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 706 records have arrived since and have not been through it.
+# 710 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4370,7 +4370,7 @@ red = [
     "application::draft_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 11 },
+    { file = "src/application/draft_copy.rs", tests = 15 },
 ]
 
 [[guard]]
@@ -4456,7 +4456,7 @@ red = [
     "test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 11 },
+    { file = "src/application/draft_copy.rs", tests = 15 },
     { file = "tests/house_style.rs", tests = 74 },
 ]
 
@@ -4666,7 +4666,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 11 },
+    { file = "src/application/draft_copy.rs", tests = 15 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -6674,7 +6674,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 11 },
+    { file = "src/application/draft_copy.rs", tests = 15 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -6692,7 +6692,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 11 },
+    { file = "src/application/draft_copy.rs", tests = 15 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -17637,7 +17637,7 @@ red = [
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 8 },
+    { file = "src/data/message_cache/drafts.rs", tests = 9 },
     { file = "src/presentation/html_renderer.rs", tests = 93 },
 ]
 
@@ -33189,7 +33189,7 @@ red = [
     "data::message_cache::drafts::tests::test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 8 },
+    { file = "src/data/message_cache/drafts.rs", tests = 9 },
 ]
 
 # A queued message whose key went after it was queued sent plain rather than
@@ -39644,4 +39644,82 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
+]
+
+# A sent draft's copy at the server answered as gone without anything being
+# removed: the copy stays in Drafts on every device, which is finding #35 of
+# the audit of 2026-10-14 (13.2-05).
+#
+# Measured by hand on 2026-10-14: the whole library at 9,047 passed and 3
+# failed, these three.
+[[guard]]
+name = "a sent draft's copy at the server is removed rather than answered as gone"
+file = "src/application/draft_copy.rs"
+before = '''    match server.remove_these(folder, &there).await {'''
+after = '''    match Ok::<usize, String>(there.len()) {'''
+red = [
+    "application::draft_copy::tests::test_a_copy_the_server_would_not_remove_is_said",
+    "application::draft_copy::tests::test_a_removal_waits_for_a_filing_that_began_before_it",
+    "application::draft_copy::tests::test_sending_takes_away_exactly_the_copies_the_server_named",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 15 },
+]
+
+# A sent draft's copy on this computer found and left where it is: the
+# statement matches nothing, so the copy stays in the local Drafts folder of a
+# POP account, which is finding #35's other half (13.2-05).
+#
+# Measured by hand on 2026-10-14: the whole library at 9,049 passed and 1
+# failed, this one.
+[[guard]]
+name = "a sent draft's copy leaves the Drafts folder on this computer"
+file = "src/data/message_cache/drafts.rs"
+before = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",'''
+after = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND 0",'''
+red = [
+    "data::message_cache::drafts::tests::test_a_sent_drafts_copy_leaves_the_drafts_folder_here",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+]
+
+# Every caller handed a lock of its own: a removal no longer waits for a
+# filing already in flight, so an automatic save can land its copy after the
+# removal searched and leave it in Drafts (13.2-05, premise 3).
+#
+# Measured by hand on 2026-10-14: the whole library at 9,049 passed and 1
+# failed, this one.
+[[guard]]
+name = "filings and removals at the server take one turn between them"
+file = "src/application/draft_copy.rs"
+before = '''pub(crate) fn one_filing_at_a_time() -> &'static tokio::sync::Mutex<()> {
+    &THE_TURN'''
+after = '''pub(crate) fn one_filing_at_a_time() -> &'static tokio::sync::Mutex<()> {
+    Box::leak(Box::new(tokio::sync::Mutex::const_new(())))'''
+red = [
+    "application::draft_copy::tests::test_a_removal_waits_for_a_filing_that_began_before_it",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 15 },
+]
+
+# The Send arm reading the sent draft and taking nothing away: the row goes
+# and the filed copy stays in Drafts on every device, which is finding #35
+# (13.2-05). The library cannot see it; the reading of the Send arm does.
+#
+# Measured by hand on 2026-10-14: the whole library at 9,050 passed and 0
+# failed, and the target at 76 passed and 1 failed, this one.
+[[guard]]
+name = "sending a draft takes its filed copy out of Drafts"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''                            Ok(Some(draft)) => take_the_filed_copy_away(app, cache, &draft),'''
+after = '''                            Ok(Some(_draft)) => {}'''
+red = [
+    "test_sending_a_draft_stops_it_being_a_draft",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
