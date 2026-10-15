@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 717 records have arrived since and have not been through it.
+# 718 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -39863,4 +39863,34 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+]
+
+# A folder's role taken from its last name at any depth, beside a folder the
+# server declared for that role, so a person's Bin or Clients/Deleted became
+# the Trash and every Delete went into it (finding #9, 13.2-07). The break is
+# the rule before 2026-10-15, written back in.
+#
+# Measured by hand on 2026-10-15: the whole library at 9,076 passed and 6
+# failed, these six. The two cases that keep a role nobody declared and keep
+# INBOX by name stay green under it, which is right: the old rule got those
+# two right.
+[[guard]]
+name = "a folder's role is guessed from its name only where no folder declared it and only near the top"
+file = "src/service/protocols/imap/special_use.rs"
+before = '''            match suggestion {
+                Some(candidate) if wins_its_role(candidate, &suggested) => candidate.role,
+                _ => FolderType::Custom,
+            }'''
+after = '''            let _ = (suggestion, wins_its_role);
+            from_name(parent_and_leaf(mailbox).1).map_or(FolderType::Custom, |(role, _)| role)'''
+red = [
+    "service::protocols::imap::special_use::tests::test_a_declared_trash_called_deleted_items_wins_over_a_bare_trash",
+    "service::protocols::imap::special_use::tests::test_a_declared_trash_leaves_a_nested_deleted_folder_ordinary",
+    "service::protocols::imap::special_use::tests::test_a_declared_trash_leaves_a_top_level_bin_ordinary",
+    "service::protocols::imap::special_use::tests::test_only_the_last_segment_of_a_path_is_matched",
+    "service::protocols::imap::special_use::tests::test_with_nothing_declared_a_name_counts_only_at_the_top_or_under_inbox",
+    "service::protocols::imap::special_use::tests::test_with_nothing_declared_the_first_name_in_the_roles_list_wins",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap/special_use.rs", tests = 22 },
 ]

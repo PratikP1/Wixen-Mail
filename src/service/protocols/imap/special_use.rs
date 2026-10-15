@@ -11,6 +11,11 @@
 //! the folder's own name, matched whole against the names in common use. Whole,
 //! not by substring: a folder called "Sent me this" is not the sent folder, and
 //! filing a copy of every outgoing message into it would be a real loss.
+//!
+//! Since 2026-10-15 the name is trusted less than that (finding #9). Every
+//! role is decided over the whole listing, because whether a folder called
+//! Deleted is the Trash depends on whether another folder says it is; see
+//! [`roles_of_the_listing`].
 
 use crate::common::types::FolderType;
 
@@ -18,24 +23,125 @@ use crate::common::types::FolderType;
 #[derive(Debug, Clone, Copy)]
 pub struct Listed<'a> {
     pub attributes: &'a [String],
+    /// The path as somebody reads it, decoded from the server's spelling.
     pub path: &'a str,
     pub delimiter: Option<&'a str>,
 }
 
 /// The role of every mailbox in one listing, in the order they were listed.
+///
+/// Decided per role over the whole listing, by three rules:
+///
+/// - INBOX is the inbox by its name, whatever the server declares. RFC 3501
+///   reserves that name, in any case, for the primary mailbox, and Gmail and
+///   Dovecot list it with no role attribute beside every other role declared.
+/// - A role any mailbox declares is taken from declarations alone, and never
+///   guessed for another folder by its name. A server that says which folder
+///   is its Trash has answered the question; a person's own folder called Bin
+///   or Deleted is their folder. Guessing it as well sent every Delete into
+///   somebody's archive, made Delete inside it permanent, and let an emptying
+///   schedule expunge it with nobody at the keyboard.
+/// - A role nobody declares falls back to the name, and only for a mailbox at
+///   the top level or directly under INBOX, which is where a server that does
+///   not declare keeps its own. Where two names suggest one role, the earlier
+///   in that role's list wins ("Trash" before "Bin"), then the earlier listed.
 pub fn roles_of_the_listing(listing: &[Listed<'_>]) -> Vec<FolderType> {
+    let declared: Vec<FolderType> = listing
+        .iter()
+        .filter_map(|mailbox| from_attributes(mailbox.attributes))
+        .collect();
+    let suggested: Vec<Option<Suggested>> = listing
+        .iter()
+        .enumerate()
+        .map(|(listed_at, mailbox)| suggested_by_name(mailbox, listed_at, &declared))
+        .collect();
     listing
         .iter()
-        .map(|mailbox| classify(mailbox.attributes, mailbox.path, mailbox.delimiter))
+        .zip(&suggested)
+        .map(|(mailbox, suggestion)| {
+            if is_the_inbox(mailbox.path) {
+                return FolderType::Inbox;
+            }
+            if let Some(role) = from_attributes(mailbox.attributes) {
+                return role;
+            }
+            match suggestion {
+                Some(candidate) if wins_its_role(candidate, &suggested) => candidate.role,
+                _ => FolderType::Custom,
+            }
+        })
         .collect()
 }
 
-/// What the server says this mailbox is for, or what its name suggests.
+/// What the server says this mailbox is for, or what its name suggests, for a
+/// listing of one.
 pub fn classify(attributes: &[String], path: &str, delimiter: Option<&str>) -> FolderType {
-    if let Some(from_attributes) = from_attributes(attributes) {
-        return from_attributes;
+    roles_of_the_listing(&[Listed {
+        attributes,
+        path,
+        delimiter,
+    }])
+    .into_iter()
+    .next()
+    .unwrap_or(FolderType::Custom)
+}
+
+/// A role a mailbox's name suggests, and how strongly.
+#[derive(Debug, Clone, Copy)]
+struct Suggested {
+    role: FolderType,
+    /// The name's place in that role's list: lower is the likelier name.
+    rank: usize,
+    /// The mailbox's place in the listing, which breaks a tie in rank.
+    listed_at: usize,
+}
+
+/// The role a mailbox's name suggests, where a name is allowed to say.
+fn suggested_by_name(
+    mailbox: &Listed<'_>,
+    listed_at: usize,
+    declared: &[FolderType],
+) -> Option<Suggested> {
+    let (parent, leaf) = parent_and_leaf(mailbox);
+    if !parent.is_none_or(is_the_inbox) {
+        return None;
     }
-    from_name(leaf(path, delimiter))
+    let (role, rank) = from_name(leaf)?;
+    (!declared.contains(&role)).then_some(Suggested {
+        role,
+        rank,
+        listed_at,
+    })
+}
+
+/// Whether no other name suggesting the same role is a likelier one.
+fn wins_its_role(candidate: &Suggested, suggested: &[Option<Suggested>]) -> bool {
+    suggested
+        .iter()
+        .flatten()
+        .filter(|other| other.role == candidate.role)
+        .min_by_key(|other| (other.rank, other.listed_at))
+        .is_some_and(|strongest| strongest.listed_at == candidate.listed_at)
+}
+
+/// Whether a path is the name RFC 3501 reserves for the primary mailbox.
+fn is_the_inbox(path: &str) -> bool {
+    path.eq_ignore_ascii_case("INBOX")
+}
+
+/// The mailbox a path sits inside, if any, and its own last segment.
+///
+/// `INBOX.Sent` is `Sent` under `INBOX`. With no separator the server has no
+/// hierarchy, so the whole path is the name.
+fn parent_and_leaf<'a>(mailbox: &Listed<'a>) -> (Option<&'a str>, &'a str) {
+    match mailbox
+        .delimiter
+        .filter(|d| !d.is_empty())
+        .and_then(|separator| mailbox.path.rsplit_once(separator))
+    {
+        Some((parent, leaf)) => (Some(parent), leaf),
+        None => (None, mailbox.path),
+    }
 }
 
 /// Whether the mailbox can hold messages.
@@ -83,31 +189,45 @@ fn from_attributes(attributes: &[String]) -> Option<FolderType> {
     })
 }
 
-/// The role a folder's own name suggests, for servers that do not say.
+/// The names mail systems actually ship for each role, likeliest first.
 ///
-/// The lists are the names mail systems actually ship: Exchange writes "Sent
-/// Items" and "Deleted Items", Gmail writes "Sent Mail" and "Bin" in some
-/// locales, Apple writes "Sent Messages".
-fn from_name(leaf: &str) -> FolderType {
-    let name = leaf.trim().to_ascii_lowercase();
-    match name.as_str() {
-        "inbox" => FolderType::Inbox,
-        "sent" | "sent items" | "sent mail" | "sent messages" => FolderType::Sent,
-        "drafts" | "draft" => FolderType::Drafts,
-        "trash" | "bin" | "deleted" | "deleted items" | "deleted messages" => FolderType::Trash,
-        "junk" | "spam" | "junk e-mail" | "junk email" | "bulk mail" => FolderType::Spam,
-        "archive" | "archives" | "all mail" => FolderType::Archive,
-        _ => FolderType::Custom,
-    }
-}
+/// Exchange writes "Sent Items" and "Deleted Items", Gmail writes "Sent Mail"
+/// and "Bin" in some locales, Apple writes "Sent Messages". The order decides
+/// between two folders whose names suggest one role. The inbox is not here: it
+/// is known by the one name RFC 3501 reserves, in [`is_the_inbox`].
+const NAMES_IN_COMMON_USE: [(FolderType, &[&str]); 5] = [
+    (
+        FolderType::Sent,
+        &["sent", "sent items", "sent mail", "sent messages"],
+    ),
+    (FolderType::Drafts, &["drafts", "draft"]),
+    (
+        FolderType::Trash,
+        &[
+            "trash",
+            "bin",
+            "deleted",
+            "deleted items",
+            "deleted messages",
+        ],
+    ),
+    (
+        FolderType::Spam,
+        &["junk", "spam", "junk e-mail", "junk email", "bulk mail"],
+    ),
+    (FolderType::Archive, &["archive", "archives", "all mail"]),
+];
 
-/// The last segment of a hierarchical path.
-///
-/// `INBOX.Sent` and `[Gmail]/Sent Mail` are both the sent folder, and neither
-/// matches on the whole path.
-fn leaf<'a>(path: &'a str, delimiter: Option<&str>) -> &'a str {
-    let delimiter = delimiter.filter(|d| !d.is_empty()).unwrap_or("/");
-    path.rsplit(delimiter).next().unwrap_or(path)
+/// The role a folder's own name suggests and the name's place in that role's
+/// list, matched whole and whatever the case.
+fn from_name(leaf: &str) -> Option<(FolderType, usize)> {
+    let name = leaf.trim().to_ascii_lowercase();
+    NAMES_IN_COMMON_USE.iter().find_map(|(role, names)| {
+        names
+            .iter()
+            .position(|known| *known == name)
+            .map(|rank| (*role, rank))
+    })
 }
 
 /// Compare a LIST attribute against a bare name, ignoring case and any
