@@ -19651,11 +19651,29 @@ fn open_compose(
                     // After the message is safely queued, never before: a
                     // draft removed first and a queue that then refused would
                     // lose the message outright.
+                    //
+                    // Its filed copy goes too, from the server's Drafts folder
+                    // on IMAP and the one on this computer on POP. Until
+                    // 2026-10-14 only the row went, so every save's copy stayed
+                    // in Drafts on every device as a draft nobody had sent,
+                    // which somebody could send a second time (finding #35).
+                    // After the queue for the same reason as the row, and read
+                    // before the row goes, since the row says whose it is.
                     if let Some(id) = draft_id.borrow().as_deref()
                         && let Some(cache) = cache
-                        && let Err(why) = cache.delete_draft(id)
                     {
-                        tracing::warn!("The sent draft {id} could not be removed: {why}");
+                        let sent_draft = cache.load_draft(id);
+                        if let Err(why) = cache.delete_draft(id) {
+                            tracing::warn!("The sent draft {id} could not be removed: {why}");
+                        }
+                        match sent_draft {
+                            Ok(Some(draft)) => take_the_filed_copy_away(app, cache, &draft),
+                            Ok(None) => {}
+                            Err(why) => tracing::warn!(
+                                "The sent draft {id} could not be read, so its copy in \
+                                 Drafts was left: {why}"
+                            ),
+                        }
                     }
                     *draft_id.borrow_mut() = None;
                     // The line whose absence was the whole defect. Offline mode
@@ -19736,12 +19754,34 @@ fn save_as_draft(
     data: &wx_compose::ComposeData,
     existing: Option<String>,
 ) -> std::result::Result<(String, String), String> {
-    let AppHandles { state, .. } = app;
     let Some(cache) = cache.as_ref() else {
         return Err(
             "The mail on this computer is not open, so the draft cannot be saved.".to_string(),
         );
     };
+    let (draft, subject) = save_draft_row(app, cache, data, existing)?;
+
+    // And into the folder drafts belong in, so it is somewhere a person would
+    // look rather than only in a table reachable by one menu command. On IMAP
+    // that is the server's Drafts folder, so it is on every device; on POP
+    // there is no server folder and it goes to the local one.
+    file_draft_copy(app, cache, &draft);
+    Ok((draft.id, subject))
+}
+
+/// Keep a draft in the drafts table on this computer, and file no copy.
+///
+/// The half of [`save_as_draft`] Undo Send needs on its own: it must not file a
+/// copy in Drafts until it knows it caught the message, because a copy of a
+/// message that went is a draft somebody's phone offers to send again. Hands
+/// back the draft as saved and the subject it was saved under.
+fn save_draft_row(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    data: &wx_compose::ComposeData,
+    existing: Option<String>,
+) -> std::result::Result<(crate::data::message_cache::CachedDraft, String), String> {
+    let AppHandles { state, .. } = app;
     // The entry the From list was on, as for Send; the account open in the
     // main window only when nothing was chosen.
     let goes_as = {
@@ -19767,7 +19807,7 @@ fn save_as_draft(
     // on that would be one new draft a minute for as long as somebody writes.
     let id = existing.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let draft = crate::data::message_cache::CachedDraft {
-        id: id.clone(),
+        id,
         account_id: goes_as.account_id,
         to_addr: data.to.trim().to_string(),
         cc: Some(data.cc.trim().to_string()).filter(|cc| !cc.is_empty()),
@@ -19798,13 +19838,7 @@ fn save_as_draft(
     cache
         .save_draft(&draft)
         .map_err(|e| format!("Draft could not be saved: {}", e))?;
-
-    // And into the folder drafts belong in, so it is somewhere a person would
-    // look rather than only in a table reachable by one menu command. On IMAP
-    // that is the server's Drafts folder, so it is on every device; on POP
-    // there is no server folder and it goes to the local one.
-    file_draft_copy(app, cache, &draft);
-    Ok((id, subject))
+    Ok((draft, subject))
 }
 
 /// Put a draft in the folder this account keeps drafts in.
@@ -19865,6 +19899,68 @@ fn file_draft_copy(
         return;
     };
     spawn_draft_append(tx, rt, account, folder, draft.id.clone(), raw);
+}
+
+/// Take a sent draft's copy out of the folder this account keeps drafts in.
+///
+/// The other half of [`file_draft_copy`], finding the folder the same way, so
+/// the copy that went in is the one that comes out: the Drafts folder on this
+/// computer for POP, the server's for IMAP. Quiet unless a copy may be left.
+fn take_the_filed_copy_away(
+    app: AppHandles<'_>,
+    cache: &MessageCache,
+    draft: &crate::data::message_cache::CachedDraft,
+) {
+    let AppHandles { state, tx, rt } = app;
+    use crate::application::{draft_message, local_folders};
+
+    let account = {
+        let s = lock_state(state);
+        s.accounts
+            .iter()
+            .find(|a| a.id == draft.account_id)
+            .cloned()
+    };
+    let Some(account) = account else { return };
+    let message_id = draft_message::message_id_for(&draft.id);
+
+    if let Some(folder) = local_folders::used_by(account.protocol())
+        .into_iter()
+        .find(|folder| folder.kind == crate::common::types::FolderType::Drafts)
+    {
+        let path = folder.path();
+        let owner = local_folders::stored_under(&path, &account.id);
+        let taken = cache.get_folder(owner, &path).and_then(|row| match row {
+            Some(row) => cache.forget_the_filed_draft(row.id, &message_id),
+            None => Ok(false),
+        });
+        if let Err(e) = taken {
+            send_status(
+                tx,
+                rt,
+                &format!(
+                    "The message you sent may still be in Drafts on this computer, because \
+                     its draft could not be taken out: {e}."
+                ),
+            );
+        }
+        return;
+    }
+
+    let Some(folder) = cache
+        .get_folders_for_account(&account.id)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|folder| {
+            crate::common::types::FolderType::from_stored(&folder.folder_type)
+                == crate::common::types::FolderType::Drafts
+        })
+        .map(|folder| folder.path)
+    else {
+        // No Drafts folder, so nothing could have been filed in one.
+        return;
+    };
+    spawn_draft_removal(tx, rt, account, folder, message_id);
 }
 
 /// Replace this draft's row in a folder on this computer.
@@ -19963,6 +20059,10 @@ fn spawn_draft_append(
     rt.spawn_blocking(move || {
         use crate::application::draft_copy;
 
+        // Held from before the session opens until it closes, so a sent
+        // draft's removal waits for this copy to land rather than searching
+        // while it is on its way.
+        let _turn = handle.block_on(draft_copy::one_filing_at_a_time().lock());
         let message_id = crate::application::draft_message::message_id_for(&draft_id);
         let filed = match handle.block_on(crate::application::mail_session::a_session_at(&account))
         {
@@ -19988,6 +20088,47 @@ fn spawn_draft_append(
                     .send(UIUpdate::StatusUpdated(filed.what_happened()))
                     .await;
             });
+        }
+    });
+}
+
+/// Take a sent draft's copies out of the server's Drafts folder.
+///
+/// In its turn with every filing, taken before the session opens, so an
+/// automatic save still on its way to the server lands before this asks what
+/// is there. What is removed and what is said are decided in
+/// [`crate::application::draft_copy::take_away_the_filed_copy`]; only a copy
+/// that may have been left behind is said.
+fn spawn_draft_removal(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    account: crate::data::account::Account,
+    folder: String,
+    message_id: String,
+) {
+    let tx = tx.clone();
+    let handle = rt.handle().clone();
+
+    rt.spawn_blocking(move || {
+        use crate::application::draft_copy;
+
+        let _turn = handle.block_on(draft_copy::one_filing_at_a_time().lock());
+        let taken = match handle.block_on(crate::application::mail_session::a_session_at(&account))
+        {
+            Ok(session) => {
+                let taken = handle.block_on(draft_copy::take_away_the_filed_copy(
+                    &draft_copy::DraftAtTheServer { session: &session },
+                    &folder,
+                    &message_id,
+                ));
+                let _ = handle.block_on(session.disconnect_imap());
+                taken
+            }
+            Err(reason) => draft_copy::TakenAway::ACopyMayStillBeThere(reason.to_string()),
+        };
+        if taken.needs_saying() {
+            let said = UIUpdate::StatusUpdated(taken.what_happened());
+            let _ = handle.block_on(tx.send(said));
         }
     });
 }
@@ -24696,10 +24837,15 @@ fn undo_send(
     //
     // This way every ending is safe. The draft fails to save and nothing has
     // been touched. The draft saves and the row comes out, which is the
-    // ordinary case. Or the draft saves and the row will not come out, because
-    // a pass of the send loop claimed it between deciding and acting, and the
-    // spare draft is taken away again below rather than left as a copy of a
+    // ordinary case, and only then is its copy filed in Drafts. Or the draft
+    // saves and the row will not come out, because a pass of the send loop
+    // claimed it between deciding and acting, and the spare draft is taken
+    // away again below; no copy was filed, so none is left in Drafts as a
     // message that is on its way.
+    //
+    // Until 2026-10-14 the copy was filed with the draft, before the queue
+    // was asked, and that last ending took the draft away and left the copy
+    // in Drafts on every device (finding #35's second half).
     //
     // Until 2026-10-14 this said the row "has already gone" in that case, and
     // the delete answering false was the only sign. The send loop took a row
@@ -24712,8 +24858,8 @@ fn undo_send(
         .find(|account| account.id == message.account_id)
         .cloned();
     let taken_back = a_message_taken_back(message, its_account.as_ref());
-    let draft = match save_as_draft(app, &Some(cache.clone()), &taken_back, None) {
-        Ok((draft_id, _)) => draft_id,
+    let draft = match save_draft_row(app, cache, &taken_back, None) {
+        Ok((draft, _)) => draft,
         Err(why) => {
             refuse(&format!("It could not be taken back: {why}"));
             return;
@@ -24721,12 +24867,14 @@ fn undo_send(
     };
 
     match cache.delete_outbox_message(id) {
-        Ok(true) => {}
+        // Caught. The draft is now the only place the message is, so it goes
+        // in Drafts where somebody would look for it, on every device.
+        Ok(true) => file_draft_copy(app, cache, &draft),
         Ok(false) | Err(_) => {
             // Nothing came out of the queue, so the draft is a copy of a
-            // message a pass has claimed or already sent. Left in Drafts it would
-            // be sent a second time by whoever found it.
-            if let Err(why) = cache.delete_draft(&draft) {
+            // message a pass has claimed or already sent. Left in the list it
+            // would be sent a second time by whoever found it.
+            if let Err(why) = cache.delete_draft(&draft.id) {
                 tracing::error!("a draft made by Undo Send could not be removed: {why}");
             }
             refuse(
@@ -24756,7 +24904,7 @@ fn undo_send(
         frame,
         &Some(cache.clone()),
         a11y,
-        ComposeMode::Draft(the_draft_it_became(&taken_back, draft, message)),
+        ComposeMode::Draft(the_draft_it_became(&taken_back, draft.id, message)),
     );
 
     // The Outbox row is gone, so a list showing it is showing a message that is

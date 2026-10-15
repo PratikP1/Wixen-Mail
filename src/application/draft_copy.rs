@@ -199,10 +199,6 @@ impl TakenAway {
 /// remove exactly those, the same rule the replacement above keeps: the
 /// removal names what the server said it holds and can reach nothing else.
 /// Run under [`one_filing_at_a_time`], so no filing is in flight while it asks.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the Send arm calls it from 13.2-05's next commit")
-)]
 pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     server: &K,
     folder: &str,
@@ -235,13 +231,6 @@ static THE_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 /// it ends, and a removal searches only once every filing that began before it
 /// has finished. Nothing files a draft after Send for that draft, because the
 /// composer has closed.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the filing and the removal take it from 13.2-05's next commit"
-    )
-)]
 pub(crate) fn one_filing_at_a_time() -> &'static tokio::sync::Mutex<()> {
     &THE_TURN
 }

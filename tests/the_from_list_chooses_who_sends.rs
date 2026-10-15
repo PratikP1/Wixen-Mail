@@ -629,17 +629,20 @@ fn test_the_send_goes_out_as_the_entry_chosen() {
 #[test]
 fn test_a_draft_is_saved_as_the_entry_chosen() {
     let app = shipped(THE_MAIN_WINDOW);
-    the_entry_decides(body_of(&app, "fn save_as_draft(")).unwrap();
+    // The draft's row is built in `save_draft_row` since 13.2-05, which
+    // `save_as_draft` calls and Undo Send calls on its own.
+    the_entry_decides(body_of(&app, "fn save_draft_row(")).unwrap();
     it_says(
-        body_of(&app, "fn save_as_draft("),
+        body_of(&app, "fn save_draft_row("),
         "from_address: goes_as.from_address,",
     )
     .unwrap();
     it_says(
-        body_of(&app, "fn save_as_draft("),
+        body_of(&app, "fn save_draft_row("),
         "from_name: goes_as.from_name,",
     )
     .unwrap();
+    it_says(body_of(&app, "fn save_as_draft("), "save_draft_row(").unwrap();
 }
 
 #[test]

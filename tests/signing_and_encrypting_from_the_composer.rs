@@ -876,8 +876,10 @@ fn test_the_queued_row_and_the_saved_draft_carry_the_choice() {
         "protection: data.protection",
     )
     .unwrap();
+    // The draft's row is built in `save_draft_row` since 13.2-05, which
+    // `save_as_draft` calls and Undo Send calls on its own.
     it_says(
-        body_of(&app, "fn save_as_draft("),
+        body_of(&app, "fn save_draft_row("),
         "protection: data.protection",
     )
     .unwrap();

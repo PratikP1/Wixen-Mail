@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 709 records have arrived since and have not been through it.
+# 710 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -39702,4 +39702,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 15 },
+]
+
+# The Send arm reading the sent draft and taking nothing away: the row goes
+# and the filed copy stays in Drafts on every device, which is finding #35
+# (13.2-05). The library cannot see it; the reading of the Send arm does.
+#
+# Measured by hand on 2026-10-14: the whole library at 9,050 passed and 0
+# failed, and the target at 76 passed and 1 failed, this one.
+[[guard]]
+name = "sending a draft takes its filed copy out of Drafts"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''                            Ok(Some(draft)) => take_the_filed_copy_away(app, cache, &draft),'''
+after = '''                            Ok(Some(_draft)) => {}'''
+red = [
+    "test_sending_a_draft_stops_it_being_a_draft",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 77 },
 ]
