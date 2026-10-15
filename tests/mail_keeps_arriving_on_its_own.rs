@@ -830,3 +830,163 @@ fn test_the_reading_would_see_a_check_of_one_account() {
         "the reading complained about a check that walks: {wrong:?}"
     );
 }
+
+// ── An account removed or switched off stops being watched (finding #33) ─────
+
+/// The function that answers the Account Manager closing.
+const THE_ACCOUNT_MANAGER: &str = "fn handle_account_mgr(";
+
+/// What is wrong with the Account Manager's handler about the watches of the
+/// accounts it removed or switched off; nothing when it asks which stop, takes
+/// each out of the list and stops it before anything is said to a server.
+fn what_is_wrong_with_the_watches_it_leaves(manager: Option<&str>) -> Vec<String> {
+    let Some(manager) = manager else {
+        return vec!["the Account Manager has no handler".into()];
+    };
+    let mut wrong = Vec::new();
+    if !manager.contains("which_watches_stop(") {
+        wrong.push(
+            "the Account Manager does not ask which watches stop, so an account it removed or \
+             switched off goes on being watched and checked until the program closes"
+                .into(),
+        );
+    }
+    if !manager.contains("mail_watches.remove(") {
+        wrong.push(
+            "the Account Manager leaves the watch in the list, so the timer can start it again"
+                .into(),
+        );
+    }
+    match (manager.find(".stop().await"), manager.find("signing_off(")) {
+        (None, _) => wrong.push("the Account Manager stops no watch".into()),
+        (Some(stops), Some(signs_off)) if stops > signs_off => wrong
+            .push("the watches are stopped after the sign-off, which is a round trip each".into()),
+        _ => {}
+    }
+    wrong
+}
+
+#[test]
+fn test_the_account_manager_stops_the_watch_of_an_account_it_removed_or_switched_off() {
+    let window = the_window_itself();
+    let wrong = what_is_wrong_with_the_watches_it_leaves(
+        the_item_starting_with(&window, THE_ACCOUNT_MANAGER).as_deref(),
+    );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_the_account_manager_leave_a_watch_running() {
+    let today = "fn handle_account_mgr(frame: &Frame) {\n    \
+                 s.accounts = new;\n    drop(s);\n    \
+                 for id in removed {\n        signing_off(rt, no_longer_signed_in_to(&id));\n    }\n}\n";
+    let stopping = "fn handle_account_mgr(frame: &Frame) {\n    \
+                    let stopping = which_watches_stop(&accounts, &new);\n    \
+                    let handles = stopping.iter().filter_map(|id| s.mail_watches.remove(id));\n    \
+                    drop(s);\n    \
+                    for handle in handles {\n        rt.spawn(async move { let _ = handle.stop().await; });\n    }\n    \
+                    for id in removed {\n        signing_off(rt, no_longer_signed_in_to(&id));\n    }\n}\n";
+
+    assert_eq!(
+        what_is_wrong_with_the_watches_it_leaves(Some(today)).len(),
+        3
+    );
+    assert!(what_is_wrong_with_the_watches_it_leaves(Some(stopping)).is_empty());
+}
+
+/// What is wrong with whom a watch starts for: nothing when the watch finds
+/// its account by id and by whether it is switched on.
+fn what_is_wrong_with_whom_a_watch_is_for(watch: Option<&str>) -> Vec<String> {
+    let Some(watch) = watch else {
+        return vec!["the window no longer watches an inbox at all".into()];
+    };
+    match watch
+        .lines()
+        .find(|line| line.contains("s.accounts") && line.contains(".find("))
+    {
+        None => vec!["the watch no longer finds its account in the window's list".into()],
+        Some(line) if !line.contains(".enabled") => vec![
+            "the watch finds its account by id alone, so the end of a check already running, or \
+             a wait running out, watches an account that is switched off again"
+                .into(),
+        ],
+        Some(_) => Vec::new(),
+    }
+}
+
+#[test]
+fn test_a_watch_is_started_only_for_an_account_that_is_switched_on() {
+    let window = the_window_itself();
+    let wrong = what_is_wrong_with_whom_a_watch_is_for(
+        the_item_starting_with(&window, THE_WATCH).as_deref(),
+    );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_watch_for_an_account_switched_off() {
+    let today = "fn spawn_mail_watch(app: AppHandles<'_>, account_id: &str) {\n    \
+                 let account = s.accounts.iter().find(|a| a.id == account_id).cloned();\n}\n";
+    let switched_on = "fn spawn_mail_watch(app: AppHandles<'_>, account_id: &str) {\n    \
+                       let account = s.accounts.iter().find(|a| a.id == account_id && a.enabled).cloned();\n}\n";
+
+    assert_eq!(what_is_wrong_with_whom_a_watch_is_for(Some(today)).len(), 1);
+    assert!(what_is_wrong_with_whom_a_watch_is_for(Some(switched_on)).is_empty());
+}
+
+/// The arm that answers a watch waking, up to the arm after it.
+fn the_wake(source: &str) -> Option<&str> {
+    between(
+        source,
+        "UIUpdate::MailboxChanged(folder) => {",
+        "UIUpdate::FolderMessagesArrived(",
+    )
+}
+
+/// What is wrong with the arm that answers a watch waking: nothing when it
+/// keeps only a switched-on account with that id, and checks nothing when none
+/// is left.
+fn what_is_wrong_with_a_wake(wake: Option<&str>) -> Vec<String> {
+    let Some(wake) = wake else {
+        return vec!["nothing answers a watch waking".into()];
+    };
+    let mut wrong = Vec::new();
+    if !wake.contains(".enabled") {
+        wrong.push(
+            "a watch waking checks its account whether or not it is switched on, so its rules run \
+             and its waiting changes are sent"
+                .into(),
+        );
+    }
+    match (wake.find(".is_empty()"), wake.find("spawn_mail_sync(")) {
+        (_, None) => wrong.push("a watch waking no longer checks anything".into()),
+        (Some(empty), Some(check)) if empty < check => {}
+        _ => wrong.push(
+            "a watch waking for an account that is gone hands the check nothing, and the check \
+             says to add an account"
+                .into(),
+        ),
+    }
+    wrong
+}
+
+#[test]
+fn test_a_watch_waking_for_an_account_that_is_gone_checks_nothing() {
+    let window = the_window_itself();
+    let wrong = what_is_wrong_with_a_wake(the_wake(&window));
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_wake_that_checks_a_gone_account() {
+    let today = "UIUpdate::MailboxChanged(folder) => {\n    \
+                 let woken = accounts.filter(|account| account.id == folder.account_id);\n    \
+                 spawn_mail_sync(app, woken);\n}\nUIUpdate::FolderMessagesArrived(id) => {}\n";
+    let switched_on = "UIUpdate::MailboxChanged(folder) => {\n    \
+                       let woken = accounts.filter(|account| account.id == folder.account_id && account.enabled);\n    \
+                       if !woken.is_empty() {\n        spawn_mail_sync(app, woken);\n    }\n}\n\
+                       UIUpdate::FolderMessagesArrived(id) => {}\n";
+
+    assert_eq!(what_is_wrong_with_a_wake(the_wake(today)).len(), 2);
+    assert!(what_is_wrong_with_a_wake(the_wake(switched_on)).is_empty());
+}
