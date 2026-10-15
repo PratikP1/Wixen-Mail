@@ -24,7 +24,7 @@ use crate::application::directory_sign_in::{
     A_PASSWORD_IS_SAVED, NOT_TRIED_YET, PasswordChange, TheBox, what_the_window_keeps,
 };
 use crate::application::identities::{NOT_SAVED_YET, NOWHERE_TO_KEEP_THEM};
-use crate::application::one_address_one_account::AddressTaken;
+use crate::application::one_address_one_account::{AddressTaken, Mailbox, who_already_uses};
 use crate::application::status_sentences::{Thing, nothing_chosen};
 use crate::application::who_holds_the_calendars::{self, WhatTheSeparateSignInDoes};
 use crate::application::who_runs_the_mail::{WhatIsKnown, WhoRunsTheMail};
@@ -526,7 +526,12 @@ fn run_account_manager_loop(
     loop {
         match dlg.show_modal() {
             r if r == ID_ADD => {
-                if let Some(mut a) = show_edit(dlg, None, a11y, palette, signatures) {
+                let working = state.borrow().working.clone();
+                if let Some(mut a) =
+                    show_edit(dlg, None, a11y, palette, signatures, status, &|typed| {
+                        refusal_for(&working, typed)
+                    })
+                {
                     if state.borrow().working.is_empty() {
                         state.borrow_mut().active_id = Some(a.id.clone());
                     }
@@ -588,9 +593,17 @@ fn run_account_manager_loop(
             }
             r if r == ID_EDIT => {
                 if let Some(idx) = get_selected(list) {
-                    let existing = state.borrow().working[idx].clone();
-                    if let Some(mut u) = show_edit(dlg, Some(&existing), a11y, palette, signatures)
-                    {
+                    let working = state.borrow().working.clone();
+                    let existing = working[idx].clone();
+                    if let Some(mut u) = show_edit(
+                        dlg,
+                        Some(&existing),
+                        a11y,
+                        palette,
+                        signatures,
+                        status,
+                        &|typed| refusal_for(&working, typed),
+                    ) {
                         // Run OAuth if needed and no tokens yet
                         if u.use_oauth && u.oauth_access_token.is_empty() {
                             match run_oauth_flow(&mut u) {
@@ -1783,24 +1796,35 @@ fn remember_where_to_look_people_up(
 /// Why `typed` cannot be kept beside the accounts already in the list: another
 /// of them uses its address (finding #3). The store asks the same rule again
 /// before it writes.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the Add and Edit arms ask it from 13.2-06's green commit"
-    )
-)]
 fn refusal_for(working: &[Account], typed: &Account) -> Option<AddressTaken> {
-    let _ = (working, typed);
-    None
+    who_already_uses(Mailbox::from(typed), working.iter().map(Mailbox::from))
 }
 
+/// Put the editor back on its first page with focus in the address box, for
+/// showing it again after an address was refused. Everything typed stays,
+/// because it is the same window.
+fn back_to_the_address(w: &AccountEditWidgets) {
+    return_to_identity_page(w);
+    w.email_f.set_focus();
+}
+
+/// Show the Add or Edit Account window until the person cancels or gives an
+/// address `refuse` lets through, then keep what this account may change,
+/// when its Trash is emptied and its signature, and hand the account back.
+///
+/// A refused address is said at High on `status` before the window comes
+/// back, because the window takes focus. The window is shown again rather
+/// than built anew, so every box, choice and check box still holds what was
+/// typed (WCAG 3.3.7), and asking before anything is kept means a refused
+/// account leaves nothing behind under an id nothing stores.
 fn show_edit(
     parent: &Dialog,
     existing: Option<&Account>,
     a11y: &Arc<Accessibility>,
     palette: Option<theme::Palette>,
     signatures: Option<&crate::data::MessageCache>,
+    status: &StaticText,
+    refuse: &dyn Fn(&Account) -> Option<AddressTaken>,
 ) -> Option<Account> {
     // What the signature choice offers, read once. Written back only when it
     // could be read: a choice built on nothing would write "the default" over
@@ -1824,125 +1848,132 @@ fn show_edit(
             whether_the_trash_is_recognised(cache, &account.id),
         );
     }
-    if w.dialog.show_modal() == ID_OK {
-        // The spin control's range starts at one, so nothing is lost.
-        let interval = w.interval_f.value().unsigned_abs();
-        let email_val = w.email_f.get_value();
-        let is_oauth = w.use_oauth_cb.get_value();
-
-        let provider =
-            email_val
-                .split('@')
-                .nth(1)
-                .and_then(|domain| match domain.to_lowercase().as_str() {
-                    "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
-                    "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
-                        Some("Outlook".to_string())
-                    }
-                    "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
-                    "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
-                    "aol.com" => Some("AOL".to_string()),
-                    "zoho.com" => Some("Zoho".to_string()),
-                    "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
-                    _ => None,
-                });
-
-        let id = existing
-            .map(|a| a.id.clone())
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        // Said here rather than handed back, because what the window says
-        // next is about the account and this is about one page of it. High,
-        // so it is heard beside the ordinary confirmation that follows.
-        //
-        // The three boxes, read into the one writer. A box that was
-        // unavailable reads as unticked, and `set_allowed_for` keeps that as
-        // "not narrowed here" rather than as a refusal, since nobody was asked.
-        if let Some(why) = remember_what_this_account_may_change(
-            &id,
-            Allowed {
-                mail: w.allow_mail_here.get_value(),
-                personal_information: w.allow_personal_information_here.get_value(),
-                reading: w.allow_reading_here.get_value(),
-            },
-        ) {
-            let _ = a11y.announce(
-                &format!(
-                    "What this account may change could not be saved, so it is what it was \
+    let id = existing
+        .map(|a| a.id.clone())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let typed = loop {
+        if w.dialog.show_modal() != ID_OK {
+            return None;
+        }
+        let typed = the_account_typed(&w, existing, &id);
+        let Some(taken) = refuse(&typed) else {
+            break typed;
+        };
+        said_and_shown(status, a11y, &taken.to_string(), Priority::High);
+        back_to_the_address(&w);
+    };
+    // Said here rather than handed back, because what the window says
+    // next is about the account and this is about one page of it. High,
+    // so it is heard beside the ordinary confirmation that follows.
+    //
+    // The three boxes, read into the one writer. A box that was
+    // unavailable reads as unticked, and `set_allowed_for` keeps that as
+    // "not narrowed here" rather than as a refusal, since nobody was asked.
+    if let Some(why) = remember_what_this_account_may_change(
+        &id,
+        Allowed {
+            mail: w.allow_mail_here.get_value(),
+            personal_information: w.allow_personal_information_here.get_value(),
+            reading: w.allow_reading_here.get_value(),
+        },
+    ) {
+        let _ = a11y.announce(
+            &format!(
+                "What this account may change could not be saved, so it is what it was \
                      before you opened this page. Everything else on this page was kept. \
                      ({why})"
-                ),
-                Priority::High,
-            );
-        }
-        // The choice, read into its one writer the same way. Read whether or
-        // not it is showing: a POP account's choice is hidden and opened on
-        // what was stored, so writing it back keeps what was there.
-        let chosen = w
-            .empty_the_trash
-            .get_selection()
-            .and_then(|at| WhenTheTrashIsEmptied::ALL.get(at as usize).copied())
-            .unwrap_or_default();
-        if let Some(why) = remember_when_this_accounts_trash_is_emptied(&id, chosen) {
-            let _ = a11y.announce(
-                &format!(
-                    "When this account's Trash is emptied could not be saved, so it is what it \
+            ),
+            Priority::High,
+        );
+    }
+    // The choice, read into its one writer the same way. Read whether or
+    // not it is showing: a POP account's choice is hidden and opened on
+    // what was stored, so writing it back keeps what was there.
+    let chosen = w
+        .empty_the_trash
+        .get_selection()
+        .and_then(|at| WhenTheTrashIsEmptied::ALL.get(at as usize).copied())
+        .unwrap_or_default();
+    if let Some(why) = remember_when_this_accounts_trash_is_emptied(&id, chosen) {
+        let _ = a11y.announce(
+            &format!(
+                "When this account's Trash is emptied could not be saved, so it is what it \
                      was before you opened this page. Everything else on this page was kept. \
                      ({why})"
-                ),
-                Priority::High,
-            );
-        }
-        if let Some((cache, choices)) = &choices
-            && let Err(why) = keep_the_signature_choice(cache, &id, &w, choices)
-        {
-            let _ = a11y.announce(
-                &format!(
-                    "This account's signature could not be saved, so it signs as it did \
+            ),
+            Priority::High,
+        );
+    }
+    if let Some((cache, choices)) = &choices
+        && let Err(why) = keep_the_signature_choice(cache, &id, &w, choices)
+    {
+        let _ = a11y.announce(
+            &format!(
+                "This account's signature could not be saved, so it signs as it did \
                      before you opened this page. Everything else on this page was kept. \
                      ({why})"
-                ),
-                Priority::High,
-            );
-        }
+            ),
+            Priority::High,
+        );
+    }
+    Some(typed)
+}
 
-        Some(Account {
-            id,
-            name: w.name_f.get_value(),
-            sender_name: w.sender_name_f.get_value().trim().to_string(),
-            email: email_val,
-            provider,
-            imap_server: w.imap_f.get_value(),
-            imap_port: w.imap_port_f.get_value(),
-            imap_use_tls: w.imap_tls.get_value(),
-            smtp_server: w.smtp_f.get_value(),
-            smtp_port: w.smtp_port_f.get_value(),
-            smtp_use_tls: w.smtp_tls.get_value(),
-            username: w.user_f.get_value(),
-            password: w.pass_f.get_value(),
-            use_oauth: is_oauth,
-            oauth_access_token: existing
-                .map(|a| a.oauth_access_token.clone())
-                .unwrap_or_default(),
-            oauth_refresh_token: existing
-                .map(|a| a.oauth_refresh_token.clone())
-                .unwrap_or_default(),
-            oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
-            enabled: w.enabled.get_value(),
-            check_interval_minutes: interval,
-            protocol: selected_protocol(&w.protocol_choice).as_str().to_string(),
-            pop_server: w.pop_f.get_value(),
-            pop_port: w.pop_port_f.get_value(),
-            pop_use_tls: w.pop_tls.get_value(),
-            pop_leave_on_server: w.pop_leave.get_value(),
-            pop_remove_after_days: w.pop_days.value().max(0) as u32,
-            allow_deleting_here: w.allow_deleting.get_value(),
-            color: existing
-                .map(|a| a.color.clone())
-                .unwrap_or_else(|| "#4A90E2".into()),
-            last_sync: existing.and_then(|a| a.last_sync),
-        })
-    } else {
-        None
+/// The account the editor holds, as typed, under `id`.
+fn the_account_typed(w: &AccountEditWidgets, existing: Option<&Account>, id: &str) -> Account {
+    let email = w.email_f.get_value();
+    let provider =
+        email
+            .split('@')
+            .nth(1)
+            .and_then(|domain| match domain.to_lowercase().as_str() {
+                "gmail.com" | "googlemail.com" => Some("Gmail".to_string()),
+                "outlook.com" | "hotmail.com" | "live.com" | "msn.com" => {
+                    Some("Outlook".to_string())
+                }
+                "yahoo.com" | "ymail.com" => Some("Yahoo".to_string()),
+                "icloud.com" | "mac.com" | "me.com" => Some("iCloud".to_string()),
+                "aol.com" => Some("AOL".to_string()),
+                "zoho.com" => Some("Zoho".to_string()),
+                "protonmail.com" | "pm.me" | "proton.me" => Some("ProtonMail".to_string()),
+                _ => None,
+            });
+    Account {
+        id: id.to_string(),
+        name: w.name_f.get_value(),
+        sender_name: w.sender_name_f.get_value().trim().to_string(),
+        email,
+        provider,
+        imap_server: w.imap_f.get_value(),
+        imap_port: w.imap_port_f.get_value(),
+        imap_use_tls: w.imap_tls.get_value(),
+        smtp_server: w.smtp_f.get_value(),
+        smtp_port: w.smtp_port_f.get_value(),
+        smtp_use_tls: w.smtp_tls.get_value(),
+        username: w.user_f.get_value(),
+        password: w.pass_f.get_value(),
+        use_oauth: w.use_oauth_cb.get_value(),
+        oauth_access_token: existing
+            .map(|a| a.oauth_access_token.clone())
+            .unwrap_or_default(),
+        oauth_refresh_token: existing
+            .map(|a| a.oauth_refresh_token.clone())
+            .unwrap_or_default(),
+        oauth_token_expires_at: existing.and_then(|a| a.oauth_token_expires_at.clone()),
+        enabled: w.enabled.get_value(),
+        // The spin control's range starts at one, so nothing is lost.
+        check_interval_minutes: w.interval_f.value().unsigned_abs(),
+        protocol: selected_protocol(&w.protocol_choice).as_str().to_string(),
+        pop_server: w.pop_f.get_value(),
+        pop_port: w.pop_port_f.get_value(),
+        pop_use_tls: w.pop_tls.get_value(),
+        pop_leave_on_server: w.pop_leave.get_value(),
+        pop_remove_after_days: w.pop_days.value().max(0) as u32,
+        allow_deleting_here: w.allow_deleting.get_value(),
+        color: existing
+            .map(|a| a.color.clone())
+            .unwrap_or_else(|| "#4A90E2".into()),
+        last_sync: existing.and_then(|a| a.last_sync),
     }
 }
 
