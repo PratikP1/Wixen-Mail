@@ -693,7 +693,7 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
 
 /// Where a replay left the row's message, as far as this computer knows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WhereTheReplayLeftIt {
+pub(crate) enum WhereTheReplayLeftIt {
     /// The destination holds it under this number, and the row is that
     /// message there now.
     HeldAs(u32),
@@ -936,13 +936,41 @@ async fn settle_the_row<S: ReplaysAMove>(
     let Some(destination) = waiting.what.destination() else {
         return Ok(WhereTheReplayLeftIt::NowhereToHoldIt);
     };
+    settle_a_moved_row(
+        server,
+        cache,
+        waiting.message_row_id,
+        &waiting.account_id,
+        destination,
+    )
+    .await
+}
+
+/// Leave a row moved here into `destination` where the server holds the
+/// message: under the one number the destination holds its identifier under,
+/// unmarked, or gone so the next read of the destination brings it once.
+///
+/// The one settling behind a replayed move and a rule's move (#10,
+/// 2026-10-15). A row moved here carries a reserved number and the mark of a
+/// row this program filed, which no read of the destination ever matches, so
+/// a row left that way sits beside the real message for good. A question the
+/// server cannot answer is handed back: a replay keeps its waiting row and
+/// asks again at the next check, and a rule's move, with nothing waiting,
+/// lets the row go.
+pub(crate) async fn settle_a_moved_row<S: ReplaysAMove>(
+    server: &S,
+    cache: &MessageCache,
+    message_row: i64,
+    account_id: &str,
+    destination: &str,
+) -> Result<WhereTheReplayLeftIt> {
     // A row already gone here holds nothing, and the next read of the
     // destination brings the message as it would any other.
-    let Some(message) = cache.get_message(waiting.message_row_id)? else {
+    let Some(message) = cache.get_message(message_row)? else {
         return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
-    let Some(folder) = cache.get_folder(&waiting.account_id, destination)? else {
-        cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+    let Some(folder) = cache.get_folder(account_id, destination)? else {
+        cache.let_the_next_read_bring_it(message_row)?;
         return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
     };
     match server
@@ -951,11 +979,11 @@ async fn settle_the_row<S: ReplaysAMove>(
         .as_slice()
     {
         [uid] => {
-            cache.the_server_holds_it_at(waiting.message_row_id, folder.id, *uid)?;
+            cache.the_server_holds_it_at(message_row, folder.id, *uid)?;
             Ok(WhereTheReplayLeftIt::HeldAs(*uid))
         }
         _ => {
-            cache.let_the_next_read_bring_it(waiting.message_row_id)?;
+            cache.let_the_next_read_bring_it(message_row)?;
             Ok(WhereTheReplayLeftIt::TheNextReadBringsIt)
         }
     }

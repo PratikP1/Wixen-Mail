@@ -12,7 +12,7 @@
 
 use crate::application::finding_what_was_deleted;
 use crate::application::mail_controller::MailController;
-use crate::application::moves_waiting::ReplaysAMove;
+use crate::application::moves_waiting::{ReplaysAMove, settle_a_moved_row};
 use crate::application::summing_up::SummingUp;
 use crate::common::{Error, Result, types::FolderType};
 use crate::data::message_cache::{
@@ -1310,7 +1310,7 @@ pub(crate) enum Carried {
 /// A folder the account does not have is passed over with a word in the log
 /// rather than failing the whole sync: a rule naming a folder somebody has
 /// since renamed should not stop their mail arriving.
-async fn carry_out_the_moves<M: Mailbox>(
+async fn carry_out_the_moves<M: Mailbox + ReplaysAMove>(
     controller: &M,
     cache: &MessageCache,
     from: &ImapFolder,
@@ -1388,6 +1388,32 @@ async fn carry_out_the_moves<M: Mailbox>(
                     into.name
                 ));
                 continue;
+            }
+        }
+        // Then where the server numbered it, the way a replayed move settles,
+        // or the row filed here sits beside the real message once the
+        // destination is read (#10). A question the server would not answer
+        // lets the row go, since nothing waits to ask again. Counted either
+        // way: the server has the message where the rule wanted it.
+        if let Err(why) = settle_a_moved_row(
+            controller,
+            cache,
+            moving.message_row,
+            &account_id,
+            &into.path,
+        )
+        .await
+        {
+            tracing::warn!(
+                "Where {} holds a message filed from {} could not be asked: {why}",
+                into.name,
+                from.name
+            );
+            if let Err(why) = cache.let_the_next_read_bring_it(moving.message_row) {
+                tracing::warn!(
+                    "A message filed into {} may show there twice until it is read again: {why}",
+                    into.name
+                );
             }
         }
         done += 1;
@@ -4315,12 +4341,15 @@ pub(crate) mod tests {
             allowed: crate::application::allowed::Allowed::EVERYTHING,
         };
 
+        // A server that can say where it put the message, since 2026-10-15:
+        // one that cannot leaves no row here, for the next read to bring (#10).
         let server = Scripted {
             on_server: vec![7],
             headers: vec![ImapMessage {
                 subject: "Invoice #4021".to_string(),
                 ..message(7)
             }],
+            finds_it_at: Ok(vec![3]),
             ..Default::default()
         };
         let folder = folder("INBOX", FolderType::Inbox, true);
