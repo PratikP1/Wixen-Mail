@@ -45,6 +45,8 @@
 //! when it has had enough: ledger 11 and 72. Nothing here has met one. The
 //! chunk sizes are decisions of 2026-09-17 and each says so on its constant.
 
+use std::collections::HashSet;
+
 use crate::common::types::FolderType;
 use crate::data::message_cache::bodies::MessageToFetch;
 
@@ -217,6 +219,44 @@ pub struct TextStillMissing<'a> {
     /// How many bytes of message text this computer already keeps for the
     /// account.
     pub kept_bytes: u64,
+}
+
+/// The messages whose text one account's run has already asked for.
+///
+/// Nothing on this computer records a message whose text failed to arrive,
+/// so without this the list of what has no text here hands the same message
+/// back after every chunk, and one that always fails is asked for again with
+/// no wait until a check forgets it, which can be six hours or never (finding
+/// #11, 2026-10-14). Held by the runner for one account's run and dropped at
+/// its end, so a message is asked for at most once a run, and the run carries
+/// on past one that will not come. Forgotten at the end on purpose: a failure
+/// that was passing, a connection closed while a folder opened, is asked
+/// again by the next run, which the next check starts.
+#[derive(Debug, Default)]
+pub struct TextAskedThisRun(HashSet<i64>);
+
+impl TextAskedThisRun {
+    /// Remember that this chunk's text was asked for.
+    pub fn remember(&mut self, chunk: &[MessageToFetch]) {
+        self.0
+            .extend(chunk.iter().map(|message| message.message_id));
+    }
+
+    /// What is missing that this run has not asked for yet, in the order it
+    /// came.
+    pub fn not_yet_asked(&self, missing: &[MessageToFetch]) -> Vec<MessageToFetch> {
+        missing.to_vec()
+    }
+}
+
+/// Whether a chunk of text counts as work done for the account.
+///
+/// A run says what an account came to only when it did something, and a
+/// chunk that fetched nothing did nothing: with each message asked once a
+/// run, a run whose only text work asked again for messages that fail would
+/// otherwise say the download is done at every check.
+pub fn a_chunk_of_text_did_work(_fetched: usize) -> bool {
+    true
 }
 
 /// Why a download of everything has nothing more to do.
@@ -787,6 +827,65 @@ mod tests {
                 why: Why::ReadingIsOff
             }
         );
+    }
+
+    #[test]
+    fn test_a_message_asked_for_in_this_run_is_not_asked_for_again() {
+        let missing = [a_message(9, 100), a_message(8, 100), a_message(7, 100)];
+        let mut asked = TextAskedThisRun::default();
+
+        assert_eq!(
+            asked.not_yet_asked(&missing),
+            missing.to_vec(),
+            "a run that has asked for nothing left something out"
+        );
+
+        asked.remember(&[a_message(9, 100), a_message(7, 100)]);
+
+        assert_eq!(
+            asked.not_yet_asked(&missing),
+            vec![a_message(8, 100)],
+            "a message this run already asked for was handed back to be asked again"
+        );
+    }
+
+    #[test]
+    fn test_a_run_with_only_failed_text_left_finds_everything_here() {
+        // Two messages whose text never comes: asked once, still missing,
+        // and the run is over rather than asking again with no wait.
+        let folders = [a_folder(1, "Inbox", FolderType::Inbox, 2, 2)];
+        let missing = [a_message(9, 100), a_message(7, 100)];
+        let mut asked = TextAskedThisRun::default();
+        asked.remember(&missing);
+        let left = asked.not_yet_asked(&missing);
+
+        let next = what_to_do_next(
+            &folders,
+            TextStillMissing {
+                messages: &left,
+                kept_bytes: 0,
+            },
+            TextBudget::All,
+            None,
+            true,
+        );
+
+        assert_eq!(
+            next,
+            WhatToDoNext::EverythingIsHere {
+                why: Why::ItIsAllHere
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_chunk_that_fetched_nothing_is_not_work() {
+        assert!(
+            !a_chunk_of_text_did_work(0),
+            "a chunk that fetched nothing counted as work, so the run would say the download is \
+             done at every check"
+        );
+        assert!(a_chunk_of_text_did_work(1));
     }
 
     #[test]

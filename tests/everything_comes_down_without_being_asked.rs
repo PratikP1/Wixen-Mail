@@ -346,6 +346,219 @@ fn test_the_reading_would_see_a_failed_chunk_tried_again_at_once() {
     );
 }
 
+// ── Each message's text is asked for at most once a run ──────────────────────
+
+/// The runner's arm for a chunk of text, up to the arm after it.
+///
+/// Bounded at `WhatToDoNext::EverythingIsHere`, the arm that follows it, for
+/// the reason `the_arm_for` gives: an arm read to the end holds every arm
+/// below it and passes on their words.
+fn the_text_arm(runner: &str) -> &str {
+    let Some(at) = runner.find("WhatToDoNext::TheNextChunkOfText {") else {
+        return "";
+    };
+    let rest = &runner[at..];
+    &rest[..rest
+        .find("WhatToDoNext::EverythingIsHere")
+        .unwrap_or(rest.len())]
+}
+
+/// What is wrong with the list the model is handed, as sentences; nothing
+/// when what this run already asked for is left out of it first.
+fn what_is_wrong_with_the_missing_list(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let leaves_out = runner.find("asked.not_yet_asked(&missing)");
+    let asks = runner.find("what_to_do_next(");
+    match (leaves_out, asks) {
+        (Some(leaves_out), Some(asks)) if leaves_out < asks => {}
+        _ => wrong.push(
+            "the download does not leave out what this run already asked for before it asks \
+             the model, so a message whose text always fails is asked for again with no wait"
+                .into(),
+        ),
+    }
+    if !runner.contains("messages: &not_yet_asked,") {
+        wrong.push(
+            "the model is handed the whole missing list rather than what this run has not \
+             asked for yet"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// What is wrong with the arm for a chunk of text, as sentences; nothing when
+/// it remembers the chunk and counts it as work only when it fetched
+/// something.
+fn what_is_wrong_with_the_text_arm(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let arm = the_text_arm(runner);
+    if arm.is_empty() {
+        wrong.push("the runner has no arm for a chunk of text, so this reads nothing".into());
+        return wrong;
+    }
+    if !arm.contains("asked.remember(&messages)") {
+        wrong.push(
+            "a chunk of text is not remembered, so the next ask hands the same messages back"
+                .into(),
+        );
+    }
+    if arm.contains("did_anything = true;")
+        || !arm.contains("a_chunk_of_text_did_work(done.fetched)")
+    {
+        wrong.push(
+            "a chunk of text counts as work whatever it fetched, so a run that only asked again \
+             for text that fails says the download is done at every check"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// What is wrong with how a refused chunk of text ends, as sentences;
+/// nothing when it ends this account's run, still marked as a server that
+/// stopped so the run waits and is tried again.
+fn what_is_wrong_with_a_text_refusal(runner: &str) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let arm = the_text_arm(runner);
+    let Some(at) = arm.find("Ending::TheServerStoppedAnswering") else {
+        wrong.push("the arm for a chunk of text has no refusal, so this reads nothing".into());
+        return wrong;
+    };
+    let refusal = &arm[at..];
+    if refusal.contains("break 'accounts") || !refusal.contains("break;") {
+        wrong.push(
+            "a refused chunk of text ends the run for every account after this one, so one \
+             account's trouble holds up the others"
+                .into(),
+        );
+    }
+    if !refusal.contains("ended = WhyTheRunEnded::AServerStopped;") {
+        wrong.push(
+            "a refused chunk of text is not marked as a server that stopped, so the run is not \
+             tried again after the wait"
+                .into(),
+        );
+    }
+    wrong
+}
+
+/// The runner's text loop as it stood until 2026-10-15, planted, which
+/// every reading in this section is proven against.
+const THE_TEXT_LOOP_BEFORE_THE_FIX: &str = "\
+                let missing = match cache.messages_with_no_text_here(&account.id) {
+                    Ok(missing) => missing,
+                    Err(e) => break,
+                };
+                let next = crate::application::bringing_everything_down::what_to_do_next(
+                    &here,
+                    crate::application::bringing_everything_down::TextStillMissing {
+                        messages: &missing,
+                        kept_bytes,
+                    },
+                );
+                match next {
+                    WhatToDoNext::TheNextChunkOfText { messages, .. } => {
+                        did_anything = true;
+                        let done = handle.block_on(fetch_over_a_mailbox(server, &cache, &messages, &stop, &|_| {}));
+                        match done.ended {
+                            Ending::WentThroughTheWholeList => worked(),
+                            Ending::TheServerStoppedAnswering { after, because } => {
+                                ended = WhyTheRunEnded::AServerStopped;
+                                break 'accounts;
+                            }
+                        }
+                    }
+                    WhatToDoNext::EverythingIsHere { why } => break,
+                }
+";
+
+#[test]
+fn test_the_download_leaves_out_the_text_this_run_already_asked_for() {
+    // Finding #11: nothing records a message whose text failed, so the list
+    // of what has no text here hands it back after every chunk. The run
+    // keeps what it asked for and the model is handed only the rest.
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_the_missing_list(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_text_asked_for_again() {
+    // Proving the reading before believing it.
+    let wrong = what_is_wrong_with_the_missing_list(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert_eq!(
+        wrong.len(),
+        2,
+        "the reading did not see the whole list handed to the model: {wrong:?}"
+    );
+}
+
+#[test]
+fn test_a_chunk_of_text_is_remembered_and_is_work_only_when_it_fetched_something() {
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_the_text_arm(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_chunk_forgotten_or_counted_as_work_for_nothing() {
+    // Proving the reading before believing it: the arm as it was, and one
+    // that remembers the chunk and still counts every chunk as work.
+    let wrong = what_is_wrong_with_the_text_arm(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert!(
+        wrong.iter().any(|w| w.contains("not remembered"))
+            && wrong.iter().any(|w| w.contains("whatever it fetched")),
+        "the reading did not see the arm as it was: {wrong:?}"
+    );
+
+    let remembers_and_still_counts = THE_TEXT_LOOP_BEFORE_THE_FIX.replace(
+        "did_anything = true;",
+        "did_anything = true;\n asked.remember(&messages);",
+    );
+    let wrong = what_is_wrong_with_the_text_arm(&remembers_and_still_counts);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "the reading did not see exactly the chunk counted as work for nothing: {wrong:?}"
+    );
+}
+
+#[test]
+fn test_a_text_refusal_ends_its_own_account_and_not_every_account() {
+    // A server that stops answering one account's text ends that account's
+    // run; the accounts after it still get theirs, and the run still waits
+    // and is tried again because it is marked as a server that stopped.
+    let runner = the_item_starting_with(&the_window_itself(), THE_RUNNER);
+    let wrong = what_is_wrong_with_a_text_refusal(&runner);
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_a_text_refusal_end_every_account() {
+    // Proving the reading before believing it: the arm as it was, and one
+    // that ends the account and forgets to wait.
+    let wrong = what_is_wrong_with_a_text_refusal(THE_TEXT_LOOP_BEFORE_THE_FIX);
+    assert_eq!(
+        wrong.len(),
+        1,
+        "the reading did not see exactly every account ended: {wrong:?}"
+    );
+    assert!(
+        wrong[0].contains("every account after this one"),
+        "{wrong:?}"
+    );
+
+    let ends_without_waiting = THE_TEXT_LOOP_BEFORE_THE_FIX
+        .replace("break 'accounts;", "break;")
+        .replace("ended = WhyTheRunEnded::AServerStopped;", "");
+    let wrong = what_is_wrong_with_a_text_refusal(&ends_without_waiting);
+    assert!(
+        wrong.iter().any(|w| w.contains("not tried again")),
+        "the reading did not see the wait forgotten: {wrong:?}"
+    );
+}
+
 // ── The whole-folder command is gone, because this is what it did ────────────
 
 /// The words of the retired command the window still carries, if any.
