@@ -959,6 +959,10 @@ mod tests {
     }
 
     impl ReplaysAMove for AServerThatHoldsTheTrash {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
         async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             self.log
                 .borrow_mut()
@@ -1002,6 +1006,14 @@ mod tests {
                         .collect()
                 })
                 .unwrap_or_default())
+        }
+
+        async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(self.folders.borrow().get(folder).and_then(|held| {
+                held.iter()
+                    .find(|(held_uid, _)| *held_uid == uid)
+                    .map(|(_, id)| id.clone())
+            }))
         }
 
         async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {

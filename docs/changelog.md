@@ -1427,6 +1427,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A change you made while offline no longer undoes a newer one, or lands on the wrong
+  message (2026-10-15, LIST-21, LIST-22).** If you read a message while changes were off, then
+  turned changes on and marked it unread, the next check sent the old "read" to the server
+  and the message came back as read, here and on your phone. Now a read or star that reaches
+  the server ends any older one still waiting for the same message. And a move, delete, copy
+  or read or star kept while you were offline was sent by the number the message had in its
+  folder, even if the mail server had renumbered the folder since. That number could by then
+  belong to another message, and a waiting permanent delete would have removed it. Now each
+  change remembers how the folder was numbered when you made it. If the numbering has
+  changed, the change goes to the message carrying the same identifier, and only when that
+  message is found once and its identifier matches exactly. Otherwise nothing is sent, the
+  change is put back here, and you are told the folder was renumbered. A folder being
+  renumbered cannot be caused on purpose on a real mail server, so this has been tried only
+  against test servers.
 - **New mail is announced once, and your rules run on it once (2026-10-15, MAIL-04,
   MAIL-05).** Pressing F9 while a check for mail was already running, or the inbox watch
   waking during one, started a second check of the same account beside the first. Both

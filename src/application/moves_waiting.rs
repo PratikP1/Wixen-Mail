@@ -74,6 +74,7 @@ use crate::application::mail_across_accounts::{
     TheMoveAsThisProgramRecordsIt, append_and_ask, fetch_and_keep, remove_at_the_source,
     resume_from_the_held_bytes, resume_the_append, why_it_cannot_be_finished_from_here,
 };
+use crate::application::renumbered::{Kept, THE_FOLDER_WAS_RENUMBERED, the_number_to_send_to};
 use crate::application::server_delete::after_a_move_across_accounts;
 use crate::application::what_rules_tell_the_server::{
     ForTheChange, what_a_waiting_delete_calls_for,
@@ -532,11 +533,24 @@ pub(crate) trait ReplaysAMove {
     async fn copy_it(&self, from: &str, uid: u32, into: &str) -> Result<String>;
     /// The numbers the folder holds a message with this identifier under.
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>>;
+    /// The identifier the message the folder holds under this number really
+    /// carries, or nothing when it holds none there or the message carries
+    /// none: read before a number [`Self::where_it_is`] found is trusted,
+    /// since that search matches a header containing the text asked for.
+    async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>>;
     /// Mark the message read or unread, flagged or not, where the marks say.
     async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()>;
+    /// The folder's numbering now, its UIDVALIDITY, or nothing when the
+    /// server does not say: what a kept number is checked against before it
+    /// is sent ([`crate::application::renumbered`]).
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>>;
 }
 
 impl ReplaysAMove for crate::application::mail_controller::MailController {
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+        Ok(self.select_folder(folder).await?.uid_validity)
+    }
+
     async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
         if let Some(read) = marks.read {
             self.set_flag(
@@ -573,6 +587,10 @@ impl ReplaysAMove for crate::application::mail_controller::MailController {
 
     async fn where_it_is(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
         self.uids_with_message_id(folder, message_id).await
+    }
+
+    async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+        self.message_id_at(folder, uid).await
     }
 }
 
@@ -624,28 +642,54 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
     waiting: &AWaitingMove,
 ) -> Result<(Replayed, Option<WhyThePushFailed>)> {
     let from = waiting.from_folder_path.as_str();
+    // The number the message is under now, asked before anything is sent
+    // (finding #5 of the audit of 2026-10-14): the kept number while the
+    // folder keeps the numbering it was kept under, the one number its
+    // identifier is under after a renumbering, and nothing sent at all when
+    // it cannot be found, since the kept number may name another message.
+    let identifier = cache
+        .get_message(waiting.message_row_id)?
+        .map(|message| message.message_id)
+        .unwrap_or_default();
+    let kept = Kept {
+        uid: waiting.uid,
+        numbering: cache.the_numbering_a_move_was_kept_under(waiting.message_row_id)?,
+        identifier: &identifier,
+    };
+    let sent_to = the_number_to_send_to(
+        &kept,
+        server.numbering_of(from),
+        server.where_it_is(from, &identifier),
+        |found| server.the_identifier_at(from, found),
+    )
+    .await;
     // The marks the move carries go first, on this session, while the
     // folder still holds the message under this number (ledger 688). A
     // mark that could not be sent for any reason but the server saying no
     // is the answer for the move as well, so the two wait, or are put
-    // back, together.
-    let marked = send_the_marks_first(server, cache, waiting).await;
+    // back, together. A folder that could not be asked its numbering is
+    // read the same way.
+    let marked = match sent_to {
+        Ok(Some(uid)) => send_the_marks_first(server, cache, waiting, uid)
+            .await
+            .map(|()| uid),
+        Ok(None) => return Ok(put_back_after_a_renumbering(waiting)),
+        Err(not_asked) => Err(not_asked),
+    };
     let said = match (marked, &waiting.what) {
         (Err(not_sent), _) => Err(not_sent),
-        (Ok(()), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
-            server.move_it(from, waiting.uid, into_folder_path).await
+        (Ok(uid), WhatAWaitingMoveDoes::Move { into_folder_path }) => {
+            server.move_it(from, uid, into_folder_path).await
         }
-        (Ok(()), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
-            server.delete_it(from, waiting.uid, Some(trash_path)).await
+        (Ok(uid), WhatAWaitingMoveDoes::DeleteToTrash { trash_path }) => {
+            server.delete_it(from, uid, Some(trash_path)).await
         }
-        (Ok(()), WhatAWaitingMoveDoes::DeleteOutright) => {
-            server.delete_it(from, waiting.uid, None).await
-        }
-        (Ok(()), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
-            server.copy_it(from, waiting.uid, into_folder_path).await
+        (Ok(uid), WhatAWaitingMoveDoes::DeleteOutright) => server.delete_it(from, uid, None).await,
+        (Ok(uid), WhatAWaitingMoveDoes::Copy { into_folder_path }) => {
+            server.copy_it(from, uid, into_folder_path).await
         }
         (
-            Ok(()),
+            Ok(_),
             WhatAWaitingMoveDoes::MoveAcross { .. } | WhatAWaitingMoveDoes::CopyAcross { .. },
         ) => {
             return Err(Error::Other(
@@ -689,6 +733,17 @@ pub(crate) async fn replay_one<S: ReplaysAMove>(
     }
     let failed = answer.as_ref().err().map(why_the_push_failed);
     Ok((what_it_means, failed))
+}
+
+/// A change within one account whose folder was renumbered at the server and
+/// whose message could not be found there: nothing is sent, and it is
+/// refused so the caller puts it back and says why.
+fn put_back_after_a_renumbering(waiting: &AWaitingMove) -> (Replayed, Option<WhyThePushFailed>) {
+    let refused = Replayed::Refused(THE_FOLDER_WAS_RENUMBERED.to_string());
+    if let Some(line) = the_line_about_a_replay(waiting, &refused, None, None) {
+        tracing::info!("{line}");
+    }
+    (refused, None)
 }
 
 /// Where a replay left the row's message, as far as this computer knows.
@@ -867,15 +922,13 @@ async fn send_the_marks_first<S: ReplaysAMove>(
     server: &S,
     cache: &MessageCache,
     waiting: &AWaitingMove,
+    uid: u32,
 ) -> Result<()> {
     let marks = cache.the_marks_before_the_move(waiting.message_row_id)?;
     if marks.is_nothing() {
         return Ok(());
     }
-    match server
-        .mark_it(&waiting.from_folder_path, waiting.uid, marks)
-        .await
-    {
+    match server.mark_it(&waiting.from_folder_path, uid, marks).await {
         Err(why) if why_the_push_failed(&why) == WhyThePushFailed::TheServerSaidNo => {
             tracing::warn!(
                 "The server would not mark message {} before moving it: {why}",
@@ -1076,8 +1129,7 @@ pub(crate) async fn replay_the_crossings_waiting_for<O: OpensASession>(
             cache.stop_waiting_for_a_move(waiting.message_row_id)?;
             continue;
         };
-        let (answer, was_there_before) =
-            one_crossing(accounts, cache, &waiting, &message.subject).await;
+        let (answer, was_there_before) = one_crossing(accounts, cache, &waiting, &message).await;
         let left = match &answer {
             Replayed::Done | Replayed::DoneWithSomethingToSay(_) | Replayed::AlreadyDone => {
                 let left =
@@ -1109,7 +1161,7 @@ async fn one_crossing<O: OpensASession>(
     accounts: &O,
     cache: &MessageCache,
     waiting: &AWaitingMove,
-    subject: &str,
+    message: &crate::data::message_cache::CachedMessage,
 ) -> (Replayed, Option<Vec<u32>>) {
     let Some(other) = waiting.what.crosses_to() else {
         return (
@@ -1146,14 +1198,51 @@ async fn one_crossing<O: OpensASession>(
         into,
         to_account: &other.name,
         still_in: &waiting.from_folder_path,
-        subject,
+        subject: &message.subject,
     };
     let copying = waiting.what.is_a_copy();
-    let held = match cache.the_move_left_unfinished_for(waiting.message_row_id) {
-        Ok(held) => held,
-        Err(why) => return (Replayed::Refused(why.to_string()), None),
+    let (held, numbering) = match (
+        cache.the_move_left_unfinished_for(waiting.message_row_id),
+        cache.the_numbering_a_move_was_kept_under(waiting.message_row_id),
+    ) {
+        (Ok(held), Ok(numbering)) => (held, numbering),
+        (Err(why), _) | (_, Err(why)) => return (Replayed::Refused(why.to_string()), None),
+    };
+    // The number the source holds the message under now, asked before
+    // anything is fetched or removed (finding #5 of the audit of
+    // 2026-10-14): fetched by a number the source has renumbered, another
+    // message would reach the other account, and removed by it, that
+    // message would leave the source. Nothing when it cannot be found.
+    let kept_as = Kept {
+        uid: waiting.uid,
+        numbering,
+        identifier: &message.message_id,
+    };
+    let at_the_source = match the_number_to_send_to(
+        &kept_as,
+        source.numbering_of(&waiting.from_folder_path),
+        source.which_messages_carry(&waiting.from_folder_path, &message.message_id),
+        |found| the_identifier_held_at(source.as_ref(), &waiting.from_folder_path, found),
+    )
+    .await
+    {
+        Ok(at_the_source) => at_the_source,
+        Err(why) => {
+            return (
+                what_a_replay_answered(&Err(why), WhereItIsNow::NotThere),
+                None,
+            );
+        }
     };
     let Some(kept) = held else {
+        // Nothing has gone anywhere yet, so a message the source cannot
+        // place is put back here and said, and nothing is sent to either.
+        let Some(uid) = at_the_source else {
+            return (
+                Replayed::Refused(THE_FOLDER_WAS_RENUMBERED.to_string()),
+                None,
+            );
+        };
         // No restart came between the fetch and an ending, so the crossing
         // runs from its first step. The source saying nothing usable, or
         // never being reached, or this computer's gate refusing, is read
@@ -1162,7 +1251,7 @@ async fn one_crossing<O: OpensASession>(
             source.as_ref(),
             destination.as_ref(),
             &waiting.from_folder_path,
-            waiting.uid,
+            uid,
             into,
             TheMoveAsThisProgramRecordsIt {
                 cache: Some(cache),
@@ -1194,18 +1283,45 @@ async fn one_crossing<O: OpensASession>(
     if let Some(why) = why_it_cannot_be_finished_from_here(&kept, &other.name) {
         return (Replayed::Refused(why), kept.was_there_before);
     }
-    let ending = if copying {
-        match resume_the_append(destination.as_ref(), &kept).await {
+    let ending = match (copying, at_the_source) {
+        (true, _) => match resume_the_append(destination.as_ref(), &kept).await {
             Appended::ItLanded => MovedAcross::ItArrivedAndTheSourceLetItGo,
             Appended::ItDidNot(ending) => ending,
+        },
+        (false, Some(uid)) => {
+            let kept = crate::data::message_cache::moves_in_flight::AMoveLeftUnfinished {
+                uid,
+                ..kept.clone()
+            };
+            resume_from_the_held_bytes(&kept, destination.as_ref(), source.as_ref()).await
         }
-    } else {
-        resume_from_the_held_bytes(&kept, destination.as_ref(), source.as_ref()).await
+        // The held bytes still go to the other account; the source copy,
+        // which cannot be told apart, is left where it is and said.
+        (false, None) => match resume_the_append(destination.as_ref(), &kept).await {
+            Appended::ItLanded => MovedAcross::ItArrivedAndTheSourceWouldNotLetGo(
+                THE_FOLDER_WAS_RENUMBERED.to_string(),
+            ),
+            Appended::ItDidNot(ending) => ending,
+        },
     };
     (
         what_a_crossing_answered(&ending, &said_as),
         kept.was_there_before,
     )
+}
+
+/// The identifier the message the source holds under this number carries,
+/// read from its headers, for [`the_number_to_send_to`] to compare with the
+/// one kept.
+async fn the_identifier_held_at<S: TheAccountItIsIn>(
+    source: &S,
+    folder: &str,
+    uid: u32,
+) -> Result<Option<String>> {
+    Ok(crate::application::renumbered::the_identifier_among(
+        source.the_headers_of(folder, &[uid]).await?,
+        uid,
+    ))
 }
 
 /// Leave the row where the other account holds the message now that the
@@ -1434,6 +1550,25 @@ mod tests {
             let mut session = self.0.lock().await;
             session.select_folder(folder).await?;
             session.uids_with_message_id(message_id).await
+        }
+
+        async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+            let mut session = self.0.lock().await;
+            session.select_folder(folder).await?;
+            Ok(crate::application::renumbered::the_identifier_among(
+                session.fetch_headers(&[uid]).await?,
+                uid,
+            ))
+        }
+
+        async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+            Ok(self
+                .0
+                .lock()
+                .await
+                .select_folder(folder)
+                .await?
+                .uid_validity)
         }
 
         async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {
@@ -1871,6 +2006,13 @@ mod tests {
         ) -> Result<crate::service::protocols::imap::LetGo> {
             match self {
                 Self::AServer(at) => at.take_it_off_the_server(folder, uid).await,
+                Self::Scripted(_) => Err(not_a_source()),
+            }
+        }
+
+        async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+            match self {
+                Self::AServer(at) => at.numbering_of(folder).await,
                 Self::Scripted(_) => Err(not_a_source()),
             }
         }
@@ -2313,6 +2455,309 @@ mod tests {
                 .expect("read")
                 .is_none()
         );
+    }
+
+    // ── A folder renumbered at the server since the change was kept ────────
+
+    /// A server whose folders were renumbered since the changes waiting here
+    /// were kept: every folder says numbering 2, a search for an identifier
+    /// answers the numbers in `found`, the message under any number carries
+    /// the `Message-ID` `holding`, and every other command is carried out.
+    async fn a_renumbered_server(found: &'static str, holding: &'static str) -> Conversation {
+        conversing("* OK loopback ready\r\n", move |line| {
+            let tag = line.split_whitespace().next().unwrap_or("*").to_string();
+            let said = line.to_uppercase();
+            if said.contains("SEARCH") {
+                return Turn::Say(format!("* SEARCH{found}\r\n{tag} OK done\r\n"));
+            }
+            if said.contains("UID FETCH") {
+                let uid = said.split_whitespace().nth(3).unwrap_or("0");
+                let headers = format!("Message-ID: {holding}\r\nSubject: Lunch\r\n\r\n");
+                return Turn::Say(format!(
+                    "* 1 FETCH (UID {uid} FLAGS () RFC822.SIZE 120 \
+                     BODY[HEADER.FIELDS (SUBJECT MESSAGE-ID)] {{{}}}\r\n{headers})\r\n\
+                     {tag} OK done\r\n",
+                    headers.len()
+                ));
+            }
+            match said.split_whitespace().nth(1).unwrap_or_default() {
+                "CAPABILITY" => Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 MOVE UIDPLUS\r\n{tag} OK done\r\n"
+                )),
+                "LOGIN" | "AUTHENTICATE" => Turn::Say(format!("{tag} OK signed in\r\n")),
+                "SELECT" | "EXAMINE" => Turn::Say(format!(
+                    "* 2 EXISTS\r\n* OK [UIDVALIDITY 2] valid\r\n{tag} OK [READ-WRITE] open\r\n"
+                )),
+                _ => Turn::Say(format!("{tag} OK done\r\n")),
+            }
+        })
+        .await
+    }
+
+    /// Whether any line the server was told names one of these, ignoring case.
+    async fn the_server_was_told_any_of(server: &Conversation, said: &[&str]) -> bool {
+        server.transcript().await.iter().any(|line| {
+            let line = line.to_uppercase();
+            said.iter().any(|said| line.contains(said))
+        })
+    }
+
+    /// The row's move kept while the Inbox was numbered 1.
+    fn kept_under_numbering_one(home: &MessageCache, row: i64, what: WhatAWaitingMoveDoes) {
+        home.set_folder_uid_validity(the_folder(home, "INBOX"), 1)
+            .expect("the numbering");
+        home.keep_a_move_waiting(&a_move_of(row, 42, what))
+            .expect("a move kept");
+    }
+
+    #[tokio::test]
+    async fn test_a_waiting_delete_after_a_renumbering_spares_the_message_now_at_its_number() {
+        // Finding #5 of the audit of 2026-10-14. Kept as 42 while the Inbox
+        // was numbered 1; it is numbered 2 now, 42 may name another message,
+        // and the message's identifier is found nowhere. A delete outright
+        // sent to 42 would take off the server a message nobody touched.
+        let server = a_renumbered_server("", "<lunch.42@example.com>").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        kept_under_numbering_one(&home, row, WhatAWaitingMoveDoes::DeleteOutright);
+
+        let replayed = replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            answers(&replayed),
+            vec![Replayed::Refused(
+                crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string()
+            )]
+        );
+        assert!(
+            !the_server_was_told_any_of(&server, &["UID STORE", "EXPUNGE", "UID MOVE"]).await,
+            "something was sent to a number that may name another message: {:?}",
+            server.transcript().await
+        );
+        assert_eq!(
+            put_back_because_the_server_refused(
+                &WhatAWaitingMoveDoes::DeleteOutright,
+                "Lunch",
+                crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED
+            ),
+            "Could not delete Lunch: the mail server has renumbered the folder since the \
+             change was made, and the message could not be found in it. It is back where it was."
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own() {
+        // The search for lunch.42@example.com answers 9, and the message
+        // there carries lunch.42@example.com.forwarded: a header that
+        // contains the text asked for is all the search needs (RFC 3501,
+        // section 6.4.4). A delete outright sent to 9 would take it off the
+        // server.
+        let server = a_renumbered_server(" 9", "<lunch.42@example.com.forwarded>").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        kept_under_numbering_one(&home, row, WhatAWaitingMoveDoes::DeleteOutright);
+
+        let replayed = replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            answers(&replayed),
+            vec![Replayed::Refused(
+                crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string()
+            )]
+        );
+        assert!(
+            !the_server_was_told_any_of(&server, &["UID STORE", "EXPUNGE", "UID MOVE"]).await,
+            "something was sent to a message whose identifier only holds the kept one: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_waiting_move_after_a_renumbering_finds_its_message_by_its_identifier() {
+        // The same message, found once under 9: its marks and its move go
+        // to 9, and nothing is sent to 42.
+        let server = a_renumbered_server(" 9", "<lunch.42@example.com>").await;
+        let session = ASessionOfItsOwn::at(&server).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        kept_under_numbering_one(&home, row, into_the_archive());
+        home.send_these_marks_before_the_move(
+            row,
+            &MarksFirst {
+                read: Some(true),
+                ..MarksFirst::default()
+            },
+        )
+        .expect("the marks kept");
+
+        let replayed = replay_the_moves_waiting_for(&session, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(
+            the_server_was_told_any_of(&server, &["UID MOVE 9"]).await
+                && the_server_was_told_any_of(&server, &["UID STORE 9"]).await,
+            "the move and its mark did not go to the number the message is under now: {:?}",
+            server.transcript().await
+        );
+        assert!(
+            !the_server_was_told_any_of(&server, &["UID MOVE 42", "UID STORE 42"]).await,
+            "something was sent to the number kept under the old numbering"
+        );
+    }
+
+    /// The crossing of the row kept while the Inbox was numbered 1.
+    fn a_crossing_kept_under_numbering_one(home: &MessageCache, row: i64) {
+        home.set_folder_uid_validity(the_folder(home, "INBOX"), 1)
+            .expect("the numbering");
+        a_crossing_made_here(home, row);
+    }
+
+    #[tokio::test]
+    async fn test_a_waiting_crossing_after_a_renumbering_takes_its_message_from_the_number_found() {
+        let source = a_source_server(ASourceServer {
+            uid: 9,
+            uid_validity: 2,
+            found_under: &[9],
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_kept_under_numbering_one(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(answers(&replayed), vec![Replayed::Done]);
+        assert!(
+            source.was_told("UID EXPUNGE 9").await,
+            "the source copy found by its identifier was not removed"
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+    }
+
+    #[tokio::test]
+    async fn test_a_waiting_crossing_after_a_renumbering_whose_message_is_not_found_is_put_back() {
+        // The source holds another message at the kept number now. Nothing
+        // is fetched, nothing reaches the other account, nothing is removed.
+        let source = a_source_server(ASourceServer {
+            uid_validity: 2,
+            message_id: "<someone.else@example.com>",
+            found_under: &[],
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_kept_under_numbering_one(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            answers(&replayed),
+            vec![Replayed::Refused(
+                crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string()
+            )]
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+        assert!(
+            !the_server_was_told_any_of(&destination, &["APPEND"]).await,
+            "another message reached the other account"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own() {
+        // The search answers 9, and the message there carries an identifier
+        // that merely contains this one. Fetched by 9 it would reach the
+        // other account, and removed by 9 it would leave the source.
+        let source = a_source_server(ASourceServer {
+            uid: 9,
+            uid_validity: 2,
+            message_id: "<lunch.4@example.com.forwarded>",
+            found_under: &[9],
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_kept_under_numbering_one(&home, row);
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        assert_eq!(
+            answers(&replayed),
+            vec![Replayed::Refused(
+                crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string()
+            )]
+        );
+        assert!(!the_source_was_told_to_let_go(&source).await);
+        assert!(
+            !the_server_was_told_any_of(&destination, &["APPEND"]).await,
+            "another message reached the other account"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_resumed_crossing_after_a_renumbering_leaves_the_source_copy_and_says_so() {
+        // A restart came between the fetch and the ending, and the source was
+        // renumbered meanwhile. The held bytes still reach the other account;
+        // the source copy cannot be found, so it is left and that is said.
+        let source = a_source_server(ASourceServer {
+            uid_validity: 2,
+            message_id: "<someone.else@example.com>",
+            found_under: &[],
+            ..ASourceServer::default()
+        })
+        .await;
+        let destination = a_destination_that_takes_it().await;
+        let accounts = two_accounts_at(&source, &destination).await;
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, THE_UID);
+        a_crossing_kept_under_numbering_one(&home, row);
+        home.keep_the_message_while_it_moves(
+            &crate::data::message_cache::moves_in_flight::AMoveStarting {
+                message_row_id: row,
+                to_account_id: "another account",
+                to_folder: "Work",
+                flags: Some("(\\Seen)"),
+                arrived: None,
+                was_there_before: Some(&[]),
+                raw: THE_MESSAGE.as_bytes(),
+            },
+        )
+        .expect("the bytes held from the earlier run");
+
+        let replayed = replay_the_crossings_waiting_for(&accounts, &home, "an account")
+            .await
+            .expect("the replay");
+
+        let answered = answers(&replayed);
+        let [Replayed::DoneWithSomethingToSay(said)] = answered.as_slice() else {
+            panic!("the crossing did not say the source copy was left: {replayed:?}");
+        };
+        assert!(said.contains("INBOX"), "{said}");
+        assert!(!the_source_was_told_to_let_go(&source).await);
+        assert!(the_server_was_told_any_of(&destination, &["APPEND"]).await);
     }
 
     #[tokio::test]
@@ -3858,6 +4303,10 @@ mod tests {
     /// What a check asks to carry out a rule's Delete. These cases hold no
     /// rule, so nothing here is asked.
     impl ReplaysAMove for AServerThatLists {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
         async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
             Ok(format!("Moved to {into}"))
         }
@@ -3877,6 +4326,10 @@ mod tests {
 
         async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
             Ok(Vec::new())
+        }
+
+        async fn the_identifier_at(&self, _folder: &str, _uid: u32) -> Result<Option<String>> {
+            Ok(None)
         }
 
         async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {

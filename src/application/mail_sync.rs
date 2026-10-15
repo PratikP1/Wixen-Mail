@@ -3306,6 +3306,10 @@ pub(crate) mod tests {
     /// the replay's own steps. These scripts hold no rule that deletes, so
     /// nothing here is asked.
     impl crate::application::moves_waiting::ReplaysAMove for Scripted {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(self.uid_validity)
+        }
+
         async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
             Ok(format!("Moved to {into}"))
         }
@@ -3327,6 +3331,13 @@ pub(crate) mod tests {
             self.finds_it_at
                 .clone()
                 .map_err(crate::common::Error::Protocol)
+        }
+
+        async fn the_identifier_at(&self, _folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(crate::application::renumbered::the_identifier_among(
+                self.headers.clone(),
+                uid,
+            ))
         }
 
         async fn mark_it(

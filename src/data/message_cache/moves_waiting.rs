@@ -218,11 +218,13 @@ impl MessageCache {
         let (kind, into, to_account) = waiting.what.as_stored();
         // Where the server still has it: the earlier row's answer when
         // there is one, this ask's otherwise. The marks the earlier move was
-        // to send first stay too, since the server has heard of neither.
-        let already: Option<(String, i64, MarksFirst)> = self
+        // to send first stay too, since the server has heard of neither, and
+        // so does the numbering its number belongs to.
+        let already: Option<(String, i64, MarksFirst, Option<u32>)> = self
             .conn
             .query_row(
-                "SELECT from_folder_path, uid, read_first, starred_first, keywords_first
+                "SELECT from_folder_path, uid, read_first, starred_first, keywords_first,
+                        uid_validity
                  FROM moves_waiting WHERE message_row_id = ?1",
                 params![waiting.message_row_id],
                 |row| {
@@ -234,17 +236,19 @@ impl MessageCache {
                             starred: row.get(3)?,
                             keywords: keywords_from_the_column(row.get(4)?),
                         },
+                        row.get(5)?,
                     ))
                 },
             )
             .optional()
             .map_err(|e| Error::Other(format!("The waiting moves could not be read: {e}")))?;
-        let (from, uid, marks) = match already {
+        let (from, uid, marks, numbering) = match already {
             Some(already) => already,
             None => (
                 waiting.from_folder_path.clone(),
                 i64::from(waiting.uid),
                 MarksFirst::default(),
+                self.the_numbering_of(&waiting.account_id, &waiting.from_folder_path)?,
             ),
         };
         self.conn
@@ -252,8 +256,8 @@ impl MessageCache {
                 "INSERT OR REPLACE INTO moves_waiting
                  (message_row_id, account_id, from_folder_path, uid, kind,
                   into_folder_path, asked_at, to_account_id, to_account_name,
-                  read_first, starred_first, keywords_first)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  read_first, starred_first, keywords_first, uid_validity)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     waiting.message_row_id,
                     waiting.account_id,
@@ -267,6 +271,7 @@ impl MessageCache {
                     marks.read,
                     marks.starred,
                     keywords_for_the_column(&marks.keywords),
+                    numbering,
                 ],
             )
             .map_err(|e| Error::Other(format!("A move could not be kept waiting: {e}")))?;
@@ -438,6 +443,37 @@ impl MessageCache {
                 Error::Other(format!("The marks kept with a move could not be read: {e}"))
             })?;
         Ok(marks.unwrap_or_default())
+    }
+
+    /// The numbering the source folder had when the row's move was first
+    /// kept, or nothing when it was not known then or the row was kept by an
+    /// older build.
+    pub fn the_numbering_a_move_was_kept_under(&self, message_row_id: i64) -> Result<Option<u32>> {
+        let numbering = self
+            .conn
+            .query_row(
+                "SELECT uid_validity FROM moves_waiting WHERE message_row_id = ?1",
+                params![message_row_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("The waiting move could not be read: {e}")))?;
+        Ok(numbering.flatten())
+    }
+
+    /// The numbering a folder of this computer's has now, as the last read of
+    /// it at the server said, or nothing when no read has said.
+    pub(super) fn the_numbering_of(&self, account_id: &str, path: &str) -> Result<Option<u32>> {
+        let numbering = self
+            .conn
+            .query_row(
+                "SELECT uid_validity FROM folders WHERE account_id = ?1 AND path = ?2",
+                params![account_id, path],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| Error::Other(format!("The folder could not be read: {e}")))?;
+        Ok(numbering.flatten())
     }
 
     /// Let one waiting move go, because it went or because it was put back.
@@ -710,6 +746,61 @@ mod tests {
             home.the_marks_before_the_move(row)
                 .expect("the marks")
                 .is_nothing()
+        );
+    }
+
+    #[test]
+    fn test_a_kept_move_records_the_numbering_its_folder_had() {
+        // Finding #5 of the audit of 2026-10-14: a number names one message
+        // only within one numbering, so the move keeps the numbering too.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 7)
+            .expect("the numbering");
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn test_a_second_ask_keeps_the_numbering_of_the_first() {
+        // The row keeps where the server still has the message, and the
+        // numbering that number belongs to goes with it.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 7)
+            .expect("the numbering");
+        home.set_folder_uid_validity(the_folder(&home, "Archive"), 30)
+            .expect("the numbering");
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        home.set_folder_uid_validity(the_folder(&home, "INBOX"), 8)
+            .expect("renumbered");
+        home.keep_a_move_waiting(&a_move_of(row, 5, "Archive", "Trash"))
+            .expect("a second move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn test_a_move_kept_with_no_numbering_known_reads_back_nothing() {
+        // A folder never opened, or a row an older build kept: sent as it
+        // always was.
+        let home = a_cache();
+        let row = a_message_in_the_inbox(&home, 42);
+        home.keep_a_move_waiting(&a_move_of(row, 42, "INBOX", "Archive"))
+            .expect("a move kept");
+        assert_eq!(
+            home.the_numbering_a_move_was_kept_under(row)
+                .expect("the numbering kept"),
+            None
         );
     }
 

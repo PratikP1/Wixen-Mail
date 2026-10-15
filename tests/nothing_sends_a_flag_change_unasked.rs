@@ -349,6 +349,215 @@ fn test_the_reading_refuses_a_rules_deletes_sent_after_the_flag_read() {
     );
 }
 
+/// The function whose first line starts with `first_line`, to its closing
+/// brace at the margin.
+fn the_function<'a>(source: &'a str, first_line: &str) -> Result<&'a str, String> {
+    let start = source
+        .find(first_line)
+        .ok_or_else(|| format!("{first_line} is gone"))?;
+    let length = source[start..]
+        .find("\n}\n")
+        .ok_or_else(|| format!("{first_line} has no end"))?;
+    Ok(&source[start..start + length])
+}
+
+/// The push of one read, star or label to the server, from its first line.
+const THE_PUSH: &str = "\nfn spawn_server_change(";
+
+/// What a push lets go of when its change reaches the server.
+const LETTING_GO_OF_WHAT_CAME_BEFORE: &str = "stop_waiting_for_what_came_before(";
+
+/// Whether the push takes the time it was asked before its worker starts,
+/// and lets go of what was kept before that time when its change reaches the
+/// server.
+fn the_push_lets_go_of_what_came_before(source: &str) -> Result<(), String> {
+    let push = the_function(source, THE_PUSH)?;
+    let asked = push
+        .find("let asked_at = chrono::Utc::now();")
+        .ok_or("the push does not take the time it was asked")?;
+    let worker = push
+        .find("spawn_blocking(")
+        .ok_or("the push has no worker")?;
+    if worker < asked {
+        return Err("the push takes its time inside the worker, after it was asked".into());
+    }
+    let reached = worker
+        + push[worker..]
+            .find("Ok(()) =>")
+            .ok_or("the push has no arm for a change that reached the server")?;
+    let arm = &push[reached + "Ok(()) =>".len()..];
+    let arm = &arm[..arm.find("=>").unwrap_or(arm.len())];
+    if !arm.contains(LETTING_GO_OF_WHAT_CAME_BEFORE) || !arm.contains("asked_at") {
+        return Err(format!(
+            "a change that reached the server leaves the older one waiting:\n{arm}"
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_push_of_a_change_ends_the_older_one_waiting() {
+    // Finding #2 of the audit of 2026-10-14. A read kept waiting with changes
+    // off, then an unread that reaches the server: the next check sent the
+    // kept read and undid the unread, here and at the server. The time is
+    // taken before the worker, so a change kept while this one travelled is
+    // newer and stays.
+    assert_eq!(the_push_lets_go_of_what_came_before(&the_window()), Ok(()));
+}
+
+#[test]
+fn test_the_reading_refuses_a_push_that_leaves_the_older_change_waiting() {
+    // Today's push, before the fix: the time is taken by the kept change
+    // alone, and the arm for a change that reached the server only says so.
+    let planted = "\nfn spawn_server_change(\n\
+                   \x20   rt.spawn_blocking(move || {\n\
+                   \x20       changed_at: chrono::Utc::now().to_rfc3339(),\n\
+                   \x20       match outcome {\n\
+                   \x20           Ok(()) => say(UIUpdate::StatusUpdated(flag.done(&subject))),\n\
+                   \x20           Err(e) => answer_a_failed_push(e),\n\
+                   \x20       }\n\
+                   \x20   });\n\
+                   }\n";
+    assert!(the_push_lets_go_of_what_came_before(planted).is_err());
+    let late = "\nfn spawn_server_change(\n\
+                \x20   rt.spawn_blocking(move || {\n\
+                \x20       let asked_at = chrono::Utc::now();\n\
+                \x20       match outcome {\n\
+                \x20           Ok(()) => { cache.stop_waiting_for_what_came_before(row, flag, asked_at); }\n\
+                \x20           Err(e) => answer_a_failed_push(e),\n\
+                \x20       }\n\
+                \x20   });\n\
+                }\n";
+    assert!(
+        the_push_lets_go_of_what_came_before(late).is_err(),
+        "a time taken inside the worker was read as the time the change was asked"
+    );
+}
+
+/// The replay of the flag changes that were waiting, from its first line.
+const THE_REPLAY: &str = "\nfn send_the_flag_changes_that_were_waiting(";
+
+/// Whether the replay lets go of exactly the change it sent, on both of its
+/// answers, and never of whatever is kept for that message and flag now.
+fn the_replay_lets_go_only_of_what_it_sent(source: &str) -> Result<(), String> {
+    let replay = the_function(source, THE_REPLAY)?;
+    let exact = replay
+        .matches("stop_waiting_for_this_change(change)")
+        .count();
+    let by_message = replay
+        .matches("stop_waiting_to_send_a_flag_change(")
+        .count();
+    match (exact, by_message) {
+        (2, 0) => Ok(()),
+        _ => Err(format!(
+            "the replay lets go of the change it sent {exact} times and of whatever is \
+             kept for the message {by_message} times; a change kept while the replay \
+             waited on the server is lost by the second"
+        )),
+    }
+}
+
+#[test]
+fn test_the_flag_replay_lets_go_only_of_what_it_sent() {
+    assert_eq!(
+        the_replay_lets_go_only_of_what_it_sent(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_replay_that_lets_go_by_message_and_flag() {
+    let planted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                   \x20   WhatToDoWithAWaitingChange::ItWent => {\n\
+                   \x20       let _ = cache\n\
+                   \x20           .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);\n\
+                   \x20   }\n\
+                   \x20   WhatToDoWithAWaitingChange::PutItBackAndStopWaiting => {\n\
+                   \x20       let _ = cache\n\
+                   \x20           .stop_waiting_to_send_a_flag_change(change.message_row_id, change.which_flag);\n\
+                   \x20   }\n\
+                   }\n";
+    assert!(the_replay_lets_go_only_of_what_it_sent(planted).is_err());
+}
+
+/// Whether the replay asks the folder's numbering and which number each
+/// change goes to before it sends, and sends to that number rather than the
+/// one kept.
+fn the_replay_asks_the_number_before_it_sends(source: &str) -> Result<(), String> {
+    let replay = the_function(source, THE_REPLAY)?;
+    let sent = ["set_flag(", "set_starred("]
+        .iter()
+        .filter_map(|call| replay.find(call))
+        .min()
+        .ok_or("the replay sends nothing")?;
+    let asked_before_sending = |call: &str| replay.find(call).is_some_and(|at| at < sent);
+    if !asked_before_sending("the_numbering_now(")
+        || !asked_before_sending("the_number_to_send_to(")
+    {
+        return Err(
+            "the replay sends a kept number without asking whether its folder was renumbered"
+                .into(),
+        );
+    }
+    // The search for an identifier matches a header containing it, so the
+    // number it finds is read at the server before it is trusted.
+    if !asked_before_sending("message_id_at(") {
+        return Err(
+            "the replay trusts a number the search found without reading the message there".into(),
+        );
+    }
+    let decided = replay.find("the_number_to_send_to(").unwrap_or_default();
+    if replay[decided..].contains("change.uid") {
+        return Err("the replay sends to the number kept, whatever the decision said".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_flag_replay_asks_which_number_a_change_goes_to_before_it_sends() {
+    // Finding #5 of the audit of 2026-10-14, for a read or star kept from
+    // offline: after the server renumbers the folder, the kept number may name
+    // another message.
+    assert_eq!(
+        the_replay_asks_the_number_before_it_sends(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_flag_replay_that_sends_the_kept_number() {
+    // Today's replay, before the fix.
+    let planted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                   \x20   for change in &waiting {\n\
+                   \x20       let offered = match change.which_flag {\n\
+                   \x20           WhichFlag::Read => handle.block_on(controller.set_flag(\n\
+                   \x20               &change.folder_path,\n\
+                   \x20               change.uid,\n\
+                   \x20           )),\n\
+                   \x20       };\n\
+                   \x20   }\n\
+                   }\n";
+    assert!(the_replay_asks_the_number_before_it_sends(planted).is_err());
+    let asked_and_ignored = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                             \x20   let now = the_numbering_now(controller, handle, folder);\n\
+                             \x20   let sent_to = the_number_to_send_to(&kept, now, found);\n\
+                             \x20   handle.block_on(controller.set_flag(&change.folder_path, change.uid));\n\
+                             }\n";
+    assert!(
+        the_replay_asks_the_number_before_it_sends(asked_and_ignored).is_err(),
+        "a replay that asks and then sends the kept number was read as asking"
+    );
+    let found_and_trusted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                             \x20   let now = the_numbering_now(controller, handle, folder);\n\
+                             \x20   let sent_to = the_number_to_send_to(&kept, now, found, |_| async { Ok(Some(identifier.clone())) });\n\
+                             \x20   handle.block_on(controller.set_flag(&change.folder_path, uid));\n\
+                             }\n";
+    assert!(
+        the_replay_asks_the_number_before_it_sends(found_and_trusted).is_err(),
+        "a replay that trusts the search's one answer unread was read as asking"
+    );
+}
+
 #[test]
 fn test_the_module_that_decides_cannot_express_sending() {
     // Held by the shape of the type rather than by a comment. The decision

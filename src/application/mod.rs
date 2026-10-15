@@ -118,6 +118,8 @@ pub mod reading_a_message;
 pub mod reading_habits;
 pub mod reading_style;
 pub mod receipts;
+/// Which number a change kept here is sent to, once the server may have renumbered its folder.
+pub mod renumbered;
 pub mod reordering;
 pub mod repeating;
 pub mod reply;

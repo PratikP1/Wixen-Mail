@@ -170,6 +170,11 @@ pub(crate) trait TheAccountItIsLeaving {
     /// Take the message off this account's server, and say what really
     /// happened to it.
     async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo>;
+    /// The folder's numbering now, its UIDVALIDITY, or nothing when the
+    /// server does not say: what a waiting crossing's kept number is checked
+    /// against before it is fetched or removed
+    /// ([`crate::application::renumbered`]).
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>>;
 }
 
 /// Whether the destination folder holds the message after all.
@@ -930,6 +935,10 @@ impl TheAccountItIsLeaving for crate::application::mail_controller::MailControll
     async fn take_it_off_the_server(&self, folder: &str, uid: u32) -> Result<LetGo> {
         self.take_this_one_off(folder, uid).await
     }
+
+    async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+        Ok(self.select_folder(folder).await?.uid_validity)
+    }
 }
 
 /// The two loopback ends of a crossing, for this module's tests and the
@@ -994,6 +1003,11 @@ pub(crate) mod for_tests {
         /// such a message with an empty identifier, and an empty identifier is
         /// not something a destination can be asked about.
         pub message_id: &'static str,
+        /// The folder's numbering, its UIDVALIDITY. A number other than the
+        /// one a waiting crossing was kept under is a folder renumbered since.
+        pub uid_validity: u32,
+        /// The numbers a search for an identifier answers.
+        pub found_under: &'static [u32],
     }
 
     impl Default for ASourceServer {
@@ -1005,6 +1019,8 @@ pub(crate) mod for_tests {
                 capabilities: "UIDPLUS",
                 refusing: "",
                 message_id: THE_IDENTIFIER,
+                uid_validity: 1,
+                found_under: &[THE_UID],
             }
         }
     }
@@ -1067,6 +1083,16 @@ pub(crate) mod for_tests {
             }
             session.take_this_one_off(uid).await
         }
+
+        async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+            Ok(self
+                .0
+                .lock()
+                .await
+                .select_folder(folder)
+                .await?
+                .uid_validity)
+        }
     }
 
     /// A source account signed in to that server, allowed to read.
@@ -1107,7 +1133,10 @@ pub(crate) mod for_tests {
             capabilities,
             refusing,
             message_id,
+            uid_validity,
+            found_under,
         } = how;
+        let found: String = found_under.iter().map(|uid| format!(" {uid}")).collect();
         conversing("* OK loopback ready\r\n", move |line| {
             let tag = line.split_whitespace().next().unwrap_or("*").to_string();
             let said = line.to_uppercase();
@@ -1124,9 +1153,12 @@ pub(crate) mod for_tests {
             }
             if said.contains("SELECT") || said.contains("EXAMINE") {
                 return Turn::Say(format!(
-                    "* 1 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY 1] valid\r\n\
+                    "* 1 EXISTS\r\n* 0 RECENT\r\n* OK [UIDVALIDITY {uid_validity}] valid\r\n\
                      {tag} OK [READ-WRITE] open\r\n"
                 ));
+            }
+            if said.contains("SEARCH") {
+                return Turn::Say(format!("* SEARCH{found}\r\n{tag} OK done\r\n"));
             }
             // Before the header fetch below, because both are `UID FETCH` and
             // only the order tells them apart.

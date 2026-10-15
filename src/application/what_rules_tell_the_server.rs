@@ -640,6 +640,10 @@ mod tests {
 
     /// What the menu's replay asks, which a rule's Delete is sent through.
     impl ReplaysAMove for AServerThatKeepsFlags {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
         async fn move_it(&self, from: &str, uid: u32, into: &str) -> Result<String> {
             Ok(Mailbox::move_message(self, from, uid, into)
                 .await?
@@ -672,6 +676,14 @@ mod tests {
                 .filter(|held| held.message_id == message_id)
                 .map(|held| held.uid)
                 .collect())
+        }
+
+        async fn the_identifier_at(&self, folder: &str, uid: u32) -> Result<Option<String>> {
+            Ok(self
+                .in_folder(folder)
+                .into_iter()
+                .find(|held| held.uid == uid)
+                .map(|held| held.message_id))
         }
 
         async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {

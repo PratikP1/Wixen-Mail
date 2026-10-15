@@ -196,6 +196,23 @@ pub fn what_became_of_it(offered: &Result<(), Error>) -> WhatToDoWithAWaitingCha
     }
 }
 
+/// The number a waiting change is offered at, from the number
+/// [`crate::application::renumbered`] decided it goes to, or why it is not
+/// offered.
+///
+/// A change whose folder was renumbered at the server and whose message
+/// cannot be found there is answered as a refusal naming the renumbering,
+/// so [`what_became_of_it`] puts it back, stops it waiting, and counts it
+/// with the other refusals, and nothing is sent to a number that may name
+/// another message (finding #5 of the audit of 2026-10-14). A folder that
+/// could not be asked its numbering is answered as that failure, and read
+/// as any other offer that failed that way.
+pub fn the_number_to_offer_it_at(sent_to: Result<Option<u32>, Error>) -> Result<u32, Error> {
+    sent_to?.ok_or_else(|| {
+        Error::InPlainWords(crate::application::renumbered::THE_FOLDER_WAS_RENUMBERED.to_string())
+    })
+}
+
 /// The flags to write here from what the server said, with each change still
 /// waiting to go written over it, for its flag only.
 ///
@@ -582,6 +599,35 @@ mod tests {
     fn test_with_nothing_waiting_the_servers_flags_are_kept_as_they_came() {
         let said = flags(&[SEEN, "Money"]);
         assert_eq!(the_flags_to_keep(&said, &[]), said);
+    }
+
+    #[test]
+    fn test_a_renumbered_change_whose_message_cannot_be_found_is_put_back_and_counted() {
+        let unplaced = the_number_to_offer_it_at(Ok(None)).map(|_| ());
+        assert_eq!(
+            what_became_of_it(&unplaced),
+            WhatToDoWithAWaitingChange::PutItBackAndStopWaiting
+        );
+        assert_eq!(
+            put_back_because_the_server_refused(
+                1,
+                &unplaced.expect_err("nothing to offer it at").to_string()
+            ),
+            "The mail server refused your change, so it has been put back: the mail server \
+             has renumbered the folder since the change was made, and the message could not \
+             be found in it"
+        );
+    }
+
+    #[test]
+    fn test_a_change_with_a_number_is_offered_there_and_an_unasked_folder_goes_on_waiting() {
+        assert_eq!(the_number_to_offer_it_at(Ok(Some(9))).ok(), Some(9));
+        let unasked =
+            the_number_to_offer_it_at(Err(Error::Network("the connection went".to_string())));
+        assert_eq!(
+            what_became_of_it(&unasked.map(|_| ())),
+            WhatToDoWithAWaitingChange::GoOnWaiting
+        );
     }
 
     #[test]
