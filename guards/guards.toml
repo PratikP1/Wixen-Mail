@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 741 records have arrived since and have not been through it.
+# 743 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5346,7 +5346,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -13749,7 +13749,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 19 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
@@ -16148,7 +16148,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
@@ -16656,7 +16656,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 21 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -19223,7 +19223,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -27588,7 +27588,7 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -27755,7 +27755,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -27776,7 +27776,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -27802,7 +27802,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -27878,7 +27878,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 19 },
 ]
 
@@ -35943,7 +35943,7 @@ red = [
     "application::moves_waiting::tests::test_a_waiting_move_after_a_renumbering_finds_its_message_by_its_identifier",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -36479,7 +36479,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -36513,7 +36513,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # Labelling's do-half sending a run's label on its own worker rather than
@@ -39242,7 +39242,7 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # A crossing that lands writes where the other account holds the message,
@@ -39259,7 +39259,7 @@ red = [
     "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # The IMAP sign-in line says whether a password or a browser sign-in was
@@ -40332,10 +40332,17 @@ red = [
     "application::renumbered::tests::test_a_renumbered_change_goes_to_the_number_its_identifier_is_under",
     "application::renumbered::tests::test_a_renumbered_change_with_no_identifier_to_ask_about_is_put_back",
     "application::renumbered::tests::test_a_renumbered_folder_is_asked_for_the_message_by_its_identifier",
+    # Added 2026-10-15 by 13.2-11's exact-match pair: the cases where the
+    # one number found holds another message reach the reading only once a
+    # renumbering is noticed.
+    "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
+    "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
+    "application::renumbered::tests::test_a_match_that_cannot_be_read_is_an_error_not_a_number",
+    "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
-    { file = "src/application/renumbered.rs", tests = 12 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/renumbered.rs", tests = 17 },
 ]
 
 [[guard]]
@@ -40346,9 +40353,11 @@ after = '''        numbering: None,'''
 red = [
     "application::moves_waiting::tests::test_a_waiting_delete_after_a_renumbering_spares_the_message_now_at_its_number",
     "application::moves_waiting::tests::test_a_waiting_move_after_a_renumbering_finds_its_message_by_its_identifier",
+    # Added 2026-10-15 by 13.2-11's exact-match pair.
+    "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -40360,9 +40369,11 @@ red = [
     "application::moves_waiting::tests::test_a_resumed_crossing_after_a_renumbering_leaves_the_source_copy_and_says_so",
     "application::moves_waiting::tests::test_a_waiting_crossing_after_a_renumbering_takes_its_message_from_the_number_found",
     "application::moves_waiting::tests::test_a_waiting_crossing_after_a_renumbering_whose_message_is_not_found_is_put_back",
+    # Added 2026-10-15 by 13.2-11's exact-match pair.
+    "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 69 },
+    { file = "src/application/moves_waiting.rs", tests = 71 },
 ]
 
 # A read or star kept from offline is sent by number only into the
@@ -40383,4 +40394,44 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
+]
+
+# The one number a search for a kept identifier answers is sent to only
+# when the message there carries that identifier exactly, since IMAP's
+# HEADER search matches a header containing the text asked for (RFC 3501,
+# section 6.4.4). Added 2026-10-15 by 13.2-11 after a review of 46c6c7f2,
+# each taken by hand against the whole library: the comparison that accepts
+# an identifier merely containing the kept one left it at 9,139 passed and 4
+# failed, and the decision that never reads the message at the number found
+# at 9,139 and 4, each the ones named.
+[[guard]]
+name = "a number the search found is sent to only when its message carries the kept identifier"
+file = "src/application/renumbered.rs"
+before = '''    (!kept.is_empty() && held.map(bare) == Some(kept)).then_some(candidate)'''
+after = '''    (!kept.is_empty() && held.is_some_and(|held| held.contains(kept))).then_some(candidate)'''
+red = [
+    "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
+    "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
+    "application::renumbered::tests::test_a_message_whose_identifier_only_holds_the_kept_one_is_put_back",
+    "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/renumbered.rs", tests = 17 },
+]
+
+[[guard]]
+name = "the message at the number the search found is read before it is trusted"
+file = "src/application/renumbered.rs"
+before = '''            let held = the_identifier_at(candidate).await?;'''
+after = '''            let held = Some(kept.identifier.to_string()).filter(|_| { let _ = the_identifier_at; true });'''
+red = [
+    "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
+    "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
+    "application::renumbered::tests::test_a_match_that_cannot_be_read_is_an_error_not_a_number",
+    "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/renumbered.rs", tests = 17 },
 ]

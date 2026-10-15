@@ -102,8 +102,18 @@ pub fn the_identifier_among(read: Vec<ImapMessage>, uid: u32) -> Option<String> 
 /// `candidate` when it carries the kept identifier exactly, and nothing when
 /// it carries another, or none, or the kept identifier is blank.
 pub fn the_number_confirmed(kept: &str, candidate: u32, held: Option<&str>) -> Option<u32> {
-    let _ = (kept, held);
-    Some(candidate)
+    let kept = bare(kept);
+    (!kept.is_empty() && held.map(bare) == Some(kept)).then_some(candidate)
+}
+
+/// An identifier with its surrounding space and its one pair of angle
+/// brackets set aside, so `<left@right>`, as a header writes it and a draft's
+/// own is kept, and `left@right`, as the parser hands it over, compare as the
+/// same identifier and nothing else does.
+fn bare(identifier: &str) -> &str {
+    let trimmed = identifier.trim();
+    let opened = trimmed.strip_prefix('<').unwrap_or(trimmed);
+    opened.strip_suffix('>').unwrap_or(opened).trim()
 }
 
 /// The number a kept change is sent to, or nothing when it is put back.
