@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 719
+open_count: 722
 waived_count: 0
 fixed_count: 126
-total_count: 845
-last_updated: 2026-10-15T01:30:00.000Z
+total_count: 848
+last_updated: 2026-10-15T05:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -860,6 +860,9 @@ last_updated: 2026-10-15T01:30:00.000Z
 | 843 | 13.2 | todo | src/data/message_cache/outbox.rs |  | 13.2-04: the Outbox's own Delete, cancel_queued, still takes out a message a pass of the send loop has claimed and says it was cancelled, while the pass goes on and sends it. The audit's verdict on finding #6 said to leave it as it is and gave no reason. Recommended: refuse a claimed row there too, with a sentence saying the message is being sent, the way Undo Send now does. Closed when Pratik answers and the answer is carried out with a case, or he decides it stays | open |  | 2026-10-14T23:45:00.000Z |  |
 | 844 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-05, finding #35 of the audit of 2026-10-14, on the tester's account in a phase 14 sitting, on a build holding 13.2-05's merge: a message written for more than two minutes, so an automatic save filed a copy, then sent; Drafts read on his phone or in Gmail's web view, and in this program after the next check, holding no copy of it; a POP account's Drafts folder on this computer the same; and Undo Send pressed too late to stop a message leaving no copy of it in Drafts. The removal is held by cases in src/application/draft_copy.rs against a scripted server and in src/data/message_cache/drafts.rs over a real database, and the Send arm and Undo Send's order by readings in tests/wired.rs; none has met a real server. Closed when he has seen all three on his own accounts | open |  | 2026-10-15T01:30:00.000Z |  |
 | 845 | 13.2 | todo | src/presentation/wx_app.rs |  | 13.2-05: a sent draft's copy that could not be taken out of Drafts, because the server could not be reached or refused, is said once on the status line and never tried again, so a message sent while offline leaves its copy in Drafts on every device. Recommended: keep the Message-ID of a removal that did not finish and try it again on the next check for mail of that account, saying nothing unless it fails again. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence is enough | open |  | 2026-10-15T01:30:00.000Z |  |
+| 846 | 13.2 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13.2-06, findings #3 and #33 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-06's merge: in the Account Manager, Add Account given an address another account already uses and OK pressed, heard saying the account's name, already uses, the address, and Edit that account rather than adding the address again, then the Add Account window heard coming back on its first page with focus in the address box and what was typed still in it; the order set with Alt+Shift+Up and Alt+Shift+Down heard the same in the Account Manager's list after a change there and after a restart; and an account switched off in the Account Manager no longer checked or announced when mail arrives in it. Held by cases in src/application/one_address_one_account.rs, src/data/message_cache/accounts.rs, src/application/account_order.rs and src/application/checking_on_a_schedule.rs, and readings in src/presentation/wx_account_manager.rs and tests/mail_keeps_arriving_on_its_own.rs; none has met a real server. Closed when he has heard all three on his own accounts | open |  | 2026-10-15T05:00:00.000Z |  |
+| 847 | 13.2 | todo | src/data/message_cache/accounts.rs |  | 13.2-06: an installation where the old save already replaced an account, because a second account was added on the same address, keeps the first account's password and sign-in tokens in the credential store under its id with no row to name them, so neither removing an account nor the uninstall erases them. Not repaired here: nothing on this computer records which ids were lost, and the code has no way today to list the credential store's entries. The changelog says where to look. Who can act: Pratik, by deciding whether an upgrade looks for wixen-mail entries no account row names and offers to erase them, or whether the changelog's sentence is enough. Closed when he answers and the answer is carried out with a case, or he decides the sentence is enough | open |  | 2026-10-15T05:00:00.000Z |  |
+| 848 | 13.2 | todo | src/presentation/wx_account_manager.rs |  | 13.2-06: the refusal of a taken address is said at High and shown on the Account Manager's status line, and the Add or Edit Account window comes back over that line, so somebody reading the screen rather than listening may not see why OK did nothing. Recommended: show the same sentence inside the Add or Edit Account window as well, on a line beside the address box, cleared when the address changes. Closed when Pratik answers and the answer is carried out with a case, or he decides the status line is enough | open |  | 2026-10-15T05:00:00.000Z |  |
 
 ````json
 [
@@ -11001,6 +11004,42 @@ last_updated: 2026-10-15T01:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-15T01:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 846,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "13.2-06, findings #3 and #33 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-06's merge: in the Account Manager, Add Account given an address another account already uses and OK pressed, heard saying the account's name, already uses, the address, and Edit that account rather than adding the address again, then the Add Account window heard coming back on its first page with focus in the address box and what was typed still in it; the order set with Alt+Shift+Up and Alt+Shift+Down heard the same in the Account Manager's list after a change there and after a restart; and an account switched off in the Account Manager no longer checked or announced when mail arrives in it. Held by cases in src/application/one_address_one_account.rs, src/data/message_cache/accounts.rs, src/application/account_order.rs and src/application/checking_on_a_schedule.rs, and readings in src/presentation/wx_account_manager.rs and tests/mail_keeps_arriving_on_its_own.rs; none has met a real server. Closed when he has heard all three on his own accounts",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T05:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 847,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/message_cache/accounts.rs",
+    "line": null,
+    "description": "13.2-06: an installation where the old save already replaced an account, because a second account was added on the same address, keeps the first account's password and sign-in tokens in the credential store under its id with no row to name them, so neither removing an account nor the uninstall erases them. Not repaired here: nothing on this computer records which ids were lost, and the code has no way today to list the credential store's entries. The changelog says where to look. Who can act: Pratik, by deciding whether an upgrade looks for wixen-mail entries no account row names and offers to erase them, or whether the changelog's sentence is enough. Closed when he answers and the answer is carried out with a case, or he decides the sentence is enough",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T05:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 848,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_account_manager.rs",
+    "line": null,
+    "description": "13.2-06: the refusal of a taken address is said at High and shown on the Account Manager's status line, and the Add or Edit Account window comes back over that line, so somebody reading the screen rather than listening may not see why OK did nothing. Recommended: show the same sentence inside the Add or Edit Account window as well, on a line beside the address box, cleared when the address changes. Closed when Pratik answers and the answer is carried out with a case, or he decides the status line is enough",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-15T05:00:00.000Z",
     "resolved_at": null
   }
 ]

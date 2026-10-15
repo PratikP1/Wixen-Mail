@@ -3997,6 +3997,17 @@ provider does.
     keeps one unreadable POP message from ending that account's mail (#13). Saving accounts
     (#3) and the calendar feed (#20) sit under no requirement, and their plans' lines say so.
     They add no `[D]` clause and the box stays ticked.
+  - 13.2-06 on 2026-10-15: an account removed or switched off in the Account Manager stops
+    being watched at once (finding #33). `handle_account_mgr` asks
+    `checking_on_a_schedule::which_watches_stop` and stops each of those watches before any
+    sign-off; `spawn_mail_watch` finds only a switched-on account, so neither the end of a
+    check already running nor a wait running out watches it again; and the arm answering a
+    watch waking checks only a switched-on account and nothing when none is left. Held by
+    three cases in `checking_on_a_schedule` and three readings with planted companions in
+    `tests/mail_keeps_arriving_on_its_own.rs`, and three new records. Saving the accounts
+    (finding #3: a second account on one address refused, rows, order and day kept) sits
+    under no requirement. Hearing it is ledger 846. No `[D]` clause is added and the box
+    stays ticked.
 
 - [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
@@ -7663,7 +7674,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause |
 | MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848) |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |

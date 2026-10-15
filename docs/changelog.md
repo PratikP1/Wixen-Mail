@@ -1427,6 +1427,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Adding a mailbox you already have is refused, the account order you chose stays, and an
+  account you switch off or remove stops being checked (2026-10-15, MAIL-04).** Adding a
+  second account on an address another account already uses used to be accepted, and the next
+  time the accounts were saved the first account was quietly removed, its password and sign-in
+  left on this computer with nothing able to remove them. Now Add Account and Edit Account
+  refuse it with a sentence naming the account that already uses the address, for example
+  "Work already uses pratik@example.com. Edit that account rather than adding the address
+  again.", before anything is saved or a browser sign-in starts. The window comes back on its
+  first page with everything you typed still in it and the cursor in the address box. Capital
+  letters and spaces around the address do not make it a different mailbox. Every change in
+  the Account Manager also used to undo the order you chose with `Alt+Shift+Up` and
+  `Alt+Shift+Down`; the order now stays, and the Account Manager lists the accounts in it.
+  Switching an account off or removing it used to leave it being watched for new mail until
+  the program closed, so it went on being checked, its rules run and its waiting changes sent;
+  it now stops at once, and a removed account no longer makes the program say to add an
+  account. An account lost to the old save before this version is not brought back, and its
+  password or sign-in may still be in Windows Credential Manager, under a name beginning
+  `wixen-mail`. Nothing here has been tried against a real mail server yet. The version
+  does not move.
 - **A message sent from a draft leaves the Drafts folder, and Undo Send leaves no draft of a
   message it could not stop (2026-10-14, FOUND-04).** Every save of a draft, and the automatic
   save every two minutes, puts a copy in the account's Drafts folder: on the mail server for an
