@@ -42,7 +42,36 @@ impl MessageCache {
         account_id: &str,
         keywords: &[String],
     ) -> Result<usize> {
-        let ours = self.get_tags_for_account(account_id)?;
+        let labels = self.labels_with_a_keyword(account_id)?;
+        self.match_these_labels_to_keywords(message_id, &labels, keywords)
+    }
+
+    /// An account's labels that carry a keyword, the only ones the server's
+    /// keywords can say anything about.
+    ///
+    /// Read once for a check's whole flag pass rather than once a message
+    /// (finding #14), and empty when no label carries one, which is how the
+    /// pass knows to leave labels alone altogether.
+    pub fn labels_with_a_keyword(&self, account_id: &str) -> Result<Vec<Tag>> {
+        Ok(self
+            .get_tags_for_account(account_id)?
+            .into_iter()
+            .filter(|tag| tag.keyword.is_some())
+            .collect())
+    }
+
+    /// Make a message's labels match the keywords the server reports, over
+    /// labels already read.
+    ///
+    /// What [`Self::match_labels_to_keywords`] does for one message, for a
+    /// pass that reads the account's labels once and asks this of every
+    /// message it holds. A label with no keyword among `labels` is left alone.
+    pub fn match_these_labels_to_keywords(
+        &self,
+        message_id: i64,
+        labels: &[Tag],
+        keywords: &[String],
+    ) -> Result<usize> {
         let on_it: Vec<String> = self
             .get_tags_for_message(message_id)?
             .into_iter()
@@ -50,7 +79,7 @@ impl MessageCache {
             .collect();
 
         let mut changed = 0;
-        for tag in ours.iter() {
+        for tag in labels {
             let Some(keyword) = tag.keyword.as_deref() else {
                 continue;
             };
@@ -67,33 +96,6 @@ impl MessageCache {
             changed += 1;
         }
         Ok(changed)
-    }
-
-    /// An account's labels that carry a keyword, the only ones the server's
-    /// keywords can say anything about.
-    ///
-    /// Read once for a check's whole flag pass rather than once a message
-    /// (finding #14), and empty when no label carries one, which is how the
-    /// pass knows to leave labels alone altogether.
-    pub fn labels_with_a_keyword(&self, account_id: &str) -> Result<Vec<Tag>> {
-        let _ = account_id;
-        Ok(Vec::new())
-    }
-
-    /// Make a message's labels match the keywords the server reports, over
-    /// labels already read.
-    ///
-    /// What [`Self::match_labels_to_keywords`] does for one message, for a
-    /// pass that reads the account's labels once and asks this of every
-    /// message it holds. A label with no keyword among `labels` is left alone.
-    pub fn match_these_labels_to_keywords(
-        &self,
-        message_id: i64,
-        labels: &[Tag],
-        keywords: &[String],
-    ) -> Result<usize> {
-        let _ = (message_id, labels, keywords);
-        Ok(0)
     }
 
     /// An account's labels, in the order the person keeps them.

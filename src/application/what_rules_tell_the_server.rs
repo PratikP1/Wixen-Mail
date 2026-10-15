@@ -1242,6 +1242,44 @@ mod tests {
         );
     }
 
+    /// The server putting a keyword on message 7 or taking it off, as a phone
+    /// does when somebody labels the message there.
+    fn elsewhere(server: &AServerThatKeepsFlags, keyword: &str, on: bool) {
+        tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(Mailbox::set_flag(server, "INBOX", 7, keyword, on))
+            .expect("the keyword set at the server");
+    }
+
+    #[test]
+    fn test_a_label_put_on_or_taken_off_elsewhere_reaches_the_row_at_the_next_check() {
+        // A check's flag pass is the only way a label set on another device
+        // reaches this computer. Since 2026-10-15 the pass reads the account's
+        // labels once rather than once a message (finding #14), and this is
+        // what holds it to still reading them.
+        let (_dir, cache, inbox) = an_account();
+        let server = AServerThatKeepsFlags::holding("INBOX", &[(7, "Lunch", &[])]);
+        let engine = rules(&[]);
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+        let row = the_row(&cache, inbox, 7).id;
+
+        elsewhere(&server, "Money", true);
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+        assert_eq!(
+            the_labels_on(&cache, row),
+            ["Money"],
+            "a label put on elsewhere did not arrive"
+        );
+
+        elsewhere(&server, "Money", false);
+        a_check(&server, &cache, inbox, &engine, not_allowed());
+        assert!(
+            the_labels_on(&cache, row).is_empty(),
+            "a label taken off elsewhere stayed here"
+        );
+    }
+
     #[test]
     fn test_a_message_whose_change_was_put_back_is_not_counted_as_sorted() {
         let (_dir, cache, inbox) = an_account();
