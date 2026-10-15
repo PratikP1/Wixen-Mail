@@ -104,6 +104,24 @@ impl MessageCache {
         Ok(waiting)
     }
 
+    /// Let go of a waiting change to this flag that was kept at or before
+    /// `asked_at`, because a change asked for at `asked_at` has reached the
+    /// server and is newer.
+    pub fn stop_waiting_for_what_came_before(
+        &self,
+        _message_row_id: i64,
+        _which_flag: WhichFlag,
+        _asked_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    /// Let go of exactly the change that was sent, and of nothing kept in its
+    /// place since.
+    pub fn stop_waiting_for_this_change(&self, _sent: &AWaitingFlagChange) -> Result<()> {
+        Ok(())
+    }
+
     /// Let one waiting change go, because it went or because it was put back.
     pub fn stop_waiting_to_send_a_flag_change(
         &self,
@@ -200,6 +218,128 @@ mod tests {
                 .expect("the waiting changes")
                 .len(),
             2
+        );
+    }
+
+    fn kept_at(row: i64, flag: WhichFlag, to: bool, at: &str) -> AWaitingFlagChange {
+        AWaitingFlagChange {
+            changed_at: at.to_string(),
+            ..a_waiting_change(row, flag, to)
+        }
+    }
+
+    fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(time)
+            .expect("a time")
+            .with_timezone(&chrono::Utc)
+    }
+
+    fn still_waiting(cache: &MessageCache) -> Vec<AWaitingFlagChange> {
+        cache
+            .flag_changes_waiting_for("an account")
+            .expect("the waiting changes")
+    }
+
+    #[test]
+    fn test_a_change_that_reached_the_server_ends_the_older_one_waiting() {
+        // Read with changes off keeps "read" waiting; marked unread once
+        // changes are on, the unread reaches the server. The kept "read" is
+        // older, and sending it at the next check would undo what the person
+        // did last.
+        let cache = a_cache();
+        cache
+            .keep_a_flag_change_waiting(&kept_at(1, WhichFlag::Read, true, "2026-09-05T10:00:00Z"))
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_what_came_before(1, WhichFlag::Read, at("2026-09-05T10:30:00Z"))
+            .expect("letting go");
+        assert_eq!(still_waiting(&cache), vec![]);
+    }
+
+    #[test]
+    fn test_a_change_kept_after_the_push_was_asked_stays() {
+        let cache = a_cache();
+        let newer = kept_at(1, WhichFlag::Starred, false, "2026-09-05T11:00:00Z");
+        cache
+            .keep_a_flag_change_waiting(&newer)
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_what_came_before(1, WhichFlag::Starred, at("2026-09-05T10:30:00Z"))
+            .expect("letting go");
+        assert_eq!(
+            still_waiting(&cache),
+            vec![newer],
+            "a change kept after the push was asked is newer than what reached the server"
+        );
+    }
+
+    #[test]
+    fn test_a_change_reaching_the_server_lets_go_only_of_its_own_flag() {
+        let cache = a_cache();
+        let starred = kept_at(1, WhichFlag::Starred, true, "2026-09-05T10:00:00Z");
+        cache
+            .keep_a_flag_change_waiting(&kept_at(1, WhichFlag::Read, true, "2026-09-05T10:00:00Z"))
+            .expect("a change kept");
+        cache
+            .keep_a_flag_change_waiting(&starred)
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_what_came_before(1, WhichFlag::Read, at("2026-09-05T10:30:00Z"))
+            .expect("letting go");
+        assert_eq!(still_waiting(&cache), vec![starred]);
+    }
+
+    #[test]
+    fn test_stored_times_are_ordered_as_times_not_as_text() {
+        // As text, "12:00+02:00" sorts after "10:30Z" though it is half an hour
+        // before it, and "00.95Z" sorts before "00.9Z" though it is after it.
+        let cache = a_cache();
+        cache
+            .keep_a_flag_change_waiting(&kept_at(
+                1,
+                WhichFlag::Read,
+                true,
+                "2026-09-05T12:00:00+02:00",
+            ))
+            .expect("a change kept");
+        let later_by_a_twentieth = kept_at(2, WhichFlag::Read, true, "2026-09-05T10:30:00.95Z");
+        cache
+            .keep_a_flag_change_waiting(&later_by_a_twentieth)
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_what_came_before(1, WhichFlag::Read, at("2026-09-05T10:30:00Z"))
+            .expect("letting go");
+        cache
+            .stop_waiting_for_what_came_before(2, WhichFlag::Read, at("2026-09-05T10:30:00.9Z"))
+            .expect("letting go");
+        assert_eq!(still_waiting(&cache), vec![later_by_a_twentieth]);
+    }
+
+    #[test]
+    fn test_the_replay_lets_go_only_of_the_change_it_sent() {
+        // The replay sends "starred" and waits on the server; meanwhile the
+        // person un-stars it with no server, and that is kept in its place.
+        // The replay's answer lets go of what it sent and not of the newer one.
+        let cache = a_cache();
+        let sent = kept_at(1, WhichFlag::Starred, true, "2026-09-05T10:00:00Z");
+        let kept_meanwhile = kept_at(1, WhichFlag::Starred, false, "2026-09-05T10:00:05Z");
+        cache
+            .keep_a_flag_change_waiting(&sent)
+            .expect("a change kept");
+        cache
+            .keep_a_flag_change_waiting(&kept_meanwhile)
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_this_change(&sent)
+            .expect("letting go");
+        assert_eq!(still_waiting(&cache), vec![kept_meanwhile.clone()]);
+        cache
+            .stop_waiting_for_this_change(&kept_meanwhile)
+            .expect("letting go");
+        assert_eq!(
+            still_waiting(&cache),
+            vec![],
+            "the change that was there is the one let go"
         );
     }
 
