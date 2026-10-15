@@ -66,6 +66,24 @@ pub enum Claim {
     Unknown(String),
 }
 
+/// What the running marker said about this start, kept after the marker
+/// itself has been put away for the life of the process.
+///
+/// What the window is told, rather than a bare flag, because the one thing
+/// it decides is whether claims on the Outbox a crash left behind may be let
+/// go, and only [`ThisCopy::Alone`] may: in any other case a pass of another
+/// copy may hold one of them right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThisCopy {
+    /// [`Claim::Granted`]: nothing else was running.
+    Alone,
+    /// [`Claim::AnotherIsRunning`]: this start runs beside another copy,
+    /// because handing over to it failed.
+    BesideAnother,
+    /// [`Claim::Unknown`]: Windows would not say.
+    CannotTell,
+}
+
 /// A held mark saying a copy of Wixen Mail is running.
 ///
 /// Hold it for as long as that is true. Dropping it gives up this process's

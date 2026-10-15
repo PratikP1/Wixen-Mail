@@ -1747,14 +1747,17 @@ fn test_a_sent_message_that_will_not_leave_the_queue_is_reported() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
     let flush = body_of(&app, "fn flush_outbox(");
 
+    // Named by the send loop's own delete since 2026-10-14 (13.2-04). Undo
+    // Send's `delete_outbox_message` refuses a row a pass has claimed, which
+    // is every row the loop has just sent.
     assert!(
-        !flush.contains("let _ = cache.delete_outbox_message("),
+        !flush.contains("let _ = cache.a_sent_message_leaves_the_queue("),
         "the outbox drops the answer to whether a sent message left the queue. \
          It has already gone to the server at that point, so a row left behind \
          is sent again on the next flush and somebody receives it twice."
     );
     assert!(
-        flush.contains("delete_outbox_message"),
+        flush.contains("a_sent_message_leaves_the_queue"),
         "nothing takes a sent message out of the queue, so every message would \
          be sent again on the next flush"
     );

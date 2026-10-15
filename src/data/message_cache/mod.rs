@@ -3479,6 +3479,22 @@ impl MessageCache {
         // account's address changed later is the one its older rows use.
         self.ensure_column_exists("outbox_queue", "from_address", "TEXT")?;
         self.ensure_column_exists("outbox_queue", "from_name", "TEXT")?;
+        // When a pass of the send loop claimed the message, or nothing while
+        // nobody holds it. Reading a row is not claiming it: two passes a few
+        // seconds apart both read one message and both sent it, and Undo Send
+        // took a row it found as proof it caught a message a pass was already
+        // sending (findings #31 and #6 of the audit of 2026-10-14). The claim
+        // is one statement every sender goes through, so whichever gets there
+        // first holds the message, whether the other is a second pass, Undo
+        // Send, or another copy of the program sharing this database.
+        //
+        // Nothing on every row an older build queued, which reads as claimed
+        // by nobody: what each of them is. Opening the database never clears a
+        // claim, because every pass opens it afresh, and clearing here would
+        // let the second pass free the first pass's claim. Claims a crash left
+        // behind are let go at start-up, by the one copy holding the running
+        // marker, through `let_go_of_every_claim`.
+        self.ensure_column_exists("outbox_queue", "sending_since", "TEXT")?;
         self.ensure_column_exists("drafts", "from_address", "TEXT")?;
         self.ensure_column_exists("drafts", "from_name", "TEXT")?;
         // What kind of day an event is. Empty for every event stored before
