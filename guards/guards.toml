@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 730 records have arrived since and have not been through it.
+# 733 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -4783,7 +4783,7 @@ red = [
     "application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -15847,7 +15847,7 @@ red = [
     "application::mail_session::tests::test_two_pieces_of_work_for_one_account_sign_in_once",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
 ]
 
 # ── Once means once ─────────────────────────────────────────────────────────
@@ -15898,7 +15898,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/mail_session.rs", tests = 14 },
+    { file = "src/application/mail_session.rs", tests = 17 },
 ]
 
 # ── A folder listing reads no message text ─────────────────────────────────
@@ -26297,7 +26297,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A watch that never started is asked about before the branch returns ─────
@@ -26328,7 +26328,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The network coming back starts the watches at once (#37) ────────────────
@@ -26355,7 +26355,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The timer checks the accounts that are due (#37) ────────────────────────
@@ -26383,7 +26383,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── The schedule reads the interval off the account row (#37) ───────────────
@@ -26419,7 +26419,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A start checks without a keystroke (#37) ────────────────────────────────
@@ -26445,7 +26445,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A check that went through nowhere asks for no download (#37) ────────────
@@ -26477,7 +26477,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # ── A spelling language chosen for a region is shown as chosen, not as the checker's answer ──
@@ -39830,7 +39830,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # The watch finding its account by id alone: the end of a check already
@@ -39850,7 +39850,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # A watch waking checking its account whether or not it is switched on, and
@@ -39870,7 +39870,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 20 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]
 
 # A folder's role taken from its last name at any depth, beside a folder the
@@ -40152,4 +40152,56 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+# One check of an account at a time (finding #15 of the audit of
+# 2026-10-14). F9, a start, the schedule and a watch waking each started a
+# check, and two checks of one account fetched the same mail, ran the rules
+# over it twice and announced it twice. Written 2026-10-15 by 13.2-10, each
+# taken by hand against the whole library and, for the window, the target:
+# the fresh lock left the library at 9,102 passed and 1 failed, the one
+# lock for every account at 9,102 and 1, and the turn taken out of the
+# check left the library green at 9,103 and the target at 21 passed and 1
+# failed, each the one named. The case that a check which panics gives its
+# turn back has no record: what gives the turn back is the guard's drop,
+# and no edit to `one_check_at_a_time` short of leaking the guard reaches it.
+[[guard]]
+name = "a second check of one account waits for the first"
+file = "src/application/mail_session.rs"
+before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
+after = '''        let _ = &mut turns;
+        Arc::new(Mutex::new(()))'''
+red = [
+    "application::mail_session::tests::test_a_second_check_of_one_account_waits_for_the_first",
+]
+tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 17 },
+]
+
+[[guard]]
+name = "two accounts are checked side by side"
+file = "src/application/mail_session.rs"
+before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
+after = '''        turns.entry(String::new()).or_default().clone()'''
+red = [
+    "application::mail_session::tests::test_two_accounts_are_checked_side_by_side",
+]
+tests_last_seen = [
+    { file = "src/application/mail_session.rs", tests = 17 },
+]
+
+[[guard]]
+name = "a check takes its account's turn before its session"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''            let _this_accounts_turn = handle.block_on(
+                crate::application::mail_session::one_check_at_a_time(&account.id),
+            );'''
+after = '''            let _this_accounts_turn = ();'''
+red = [
+    "test_a_check_takes_its_accounts_turn_before_its_session",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
 ]

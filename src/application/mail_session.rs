@@ -152,14 +152,19 @@ pub(crate) async fn the_session_at(
 
 /// An account's turn to be checked, held by the check that has it and given
 /// back when that check lets go of it, however it ends.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the red half: the green takes it in spawn_mail_sync"
-    )
-)]
 pub(crate) type AnAccountsTurn = tokio::sync::OwnedMutexGuard<()>;
+
+/// Every account's turn to be checked, by the account's own id, in the same
+/// shape as [`the_sessions_being_held`] and for the same reason: the checks
+/// that share a turn run on different threads.
+///
+/// An account removed keeps its entry, an unheld lock, until the program
+/// closes. Forgetting it while a check held it would hand the next check a
+/// fresh one beside it, which is the defect this exists to stop.
+fn the_turns_being_held() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static TURNS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    TURNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 /// Wait for this account's turn to be checked, and hold it.
 ///
@@ -178,16 +183,15 @@ pub(crate) type AnAccountsTurn = tokio::sync::OwnedMutexGuard<()>;
 /// until the program closed. The guard is let go on every one of them, and
 /// on a panic, by being dropped. Another account's turn is its own, so two
 /// accounts are still checked side by side.
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the red half: the green takes it in spawn_mail_sync"
-    )
-)]
+///
+/// The map's lock is let go before the turn is waited for, so a check
+/// waiting on one account never stops another account's turn being found.
 pub(crate) async fn one_check_at_a_time(account_id: &str) -> AnAccountsTurn {
-    let _ = account_id;
-    Arc::new(Mutex::new(())).lock_owned().await
+    let turn = {
+        let mut turns = the_turns_being_held().lock().await;
+        turns.entry(account_id.to_string()).or_default().clone()
+    };
+    turn.lock_owned().await
 }
 
 /// The accounts set up on this computer, as a crossing's replay opens their
