@@ -14,7 +14,7 @@
 //! so asking it costs no stack however deep the answer is. Markup deeper than
 //! the limit is read as its words alone, gathered the same way.
 
-use ego_tree::NodeRef;
+use ego_tree::{NodeRef, iter::Edge};
 use scraper::Node;
 
 /// The deepest markup the readers below a parse are handed, counted in
@@ -22,13 +22,81 @@ use scraper::Node;
 /// `body` included.
 ///
 /// Browsers stop nesting at 512, so no layout a sender sees on their own
-/// screen is deeper than this.
+/// screen is deeper than this, and it is measured to fit. The window's
+/// thread has Windows' default 1 MB stack, the smallest this program runs
+/// on, and a debug build's frames are larger than a release build's. On
+/// 2026-10-15 at `2260eb58`, the cases in `vendor::paperback` and
+/// `application::long_text` that walk markup exactly this deep, as `div`,
+/// inside an `h1` and inside an `li`, on a 1 MiB thread in a debug build:
+/// 512 and 768 walked whole, and 1024 overflowed the stack in the converter
+/// and in the reader's `div` case. The row is on
+/// `docs/development/measurements.md`.
 pub const DEEPEST_MARKUP_WALKED: usize = 512;
 
 /// Whether the markup under `root` nests more than `limit` elements deep.
+///
+/// Stops at the first element past the limit, so a tree a hundred thousand
+/// deep costs no more than one just past it.
 pub fn nests_deeper_than(root: NodeRef<'_, Node>, limit: usize) -> bool {
-    let _ = (root, limit);
+    let mut depth = 0usize;
+    for edge in root.traverse() {
+        match edge {
+            Edge::Open(node) if node.value().is_element() => {
+                depth += 1;
+                if depth > limit {
+                    return true;
+                }
+            }
+            Edge::Close(node) if node.value().is_element() => depth -= 1,
+            _ => {}
+        }
+    }
     false
+}
+
+/// The words of markup too deep to walk, one entry per text node in the
+/// order they stand, each with its runs of space made one.
+///
+/// What no reader is shown stays out: a stylesheet, a script, the page's
+/// head and title, and the content a page never draws, the same elements
+/// the readers leave out when they can walk the page.
+pub fn the_words_alone(root: NodeRef<'_, Node>) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut inside_what_is_never_read = 0usize;
+    for edge in root.traverse() {
+        match edge {
+            Edge::Open(node) if is_never_read(node) => inside_what_is_never_read += 1,
+            Edge::Close(node) if is_never_read(node) => inside_what_is_never_read -= 1,
+            Edge::Open(node) if inside_what_is_never_read == 0 => {
+                if let Some(text) = node.value().as_text() {
+                    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if !line.is_empty() {
+                        words.push(line);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    words
+}
+
+/// Whether a node is an element whose content no reader is shown.
+fn is_never_read(node: NodeRef<'_, Node>) -> bool {
+    node.value().as_element().is_some_and(|element| {
+        matches!(
+            element.name(),
+            "head"
+                | "title"
+                | "style"
+                | "script"
+                | "noscript"
+                | "template"
+                | "iframe"
+                | "object"
+                | "embed"
+        )
+    })
 }
 
 /// Markup nested to `depth` elements of `tag`, around `words`, for the cases

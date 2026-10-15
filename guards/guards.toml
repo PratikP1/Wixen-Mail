@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 743 records have arrived since and have not been through it.
+# 744 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8165,6 +8165,9 @@ file = "src/application/long_text.rs"
 # recorded body was three quarters of a function that had grown. The anchor is
 # the whole function again, which is what it was before and what it has to be:
 # the break replaces the whole of it.
+#
+# Rewritten again on 2026-10-15 by 13.2-12, which put the depth check for audit
+# finding #17 after the parse, so the whole function is still the anchor.
 before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
     // What the sender hid is dropped before anything reads it (#90), so a
     // hidden preheader and its padding reach neither a row's snippet nor a
@@ -8189,6 +8192,14 @@ before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
     super::hidden_text::keep_the_layout_claim(&mut cleaner);
     let cleaned = cleaner.clean(&shown).to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
+    // The walk calls itself once per level, so markup nested past the limit
+    // is its words alone, a paragraph per text node (audit finding #17).
+    if nests_deeper_than(fragment.tree.root(), DEEPEST_MARKUP_WALKED) {
+        tracing::warn!(
+            "Markup nested more than {DEEPEST_MARKUP_WALKED} elements deep was read as its words alone"
+        );
+        return the_words_alone(fragment.tree.root()).join("\n\n");
+    }
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
     collapse_blank_lines(&out)
@@ -8231,6 +8242,13 @@ red = [
     "application::long_text::tests::test_an_address_holding_a_bracket_is_written_so_it_can_be_read_back",
     "application::long_text::tests::test_link_text_and_image_alt_text_survive_markup_being_read",
     "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    # Five more from 13.2-12's depth check, measured 2026-10-15: the cases at
+    # the limit and past it read their markup through this function too.
+    "application::long_text::tests::test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_markup_as_deep_as_the_limit_is_still_read_as_its_structure",
+    "application::long_text::tests::test_markup_nested_past_the_limit_gives_its_words_as_paragraphs",
     "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
     "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
@@ -8273,7 +8291,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
@@ -9499,7 +9517,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9560,7 +9578,7 @@ red = [
     "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/data/message_cache/bodies.rs", tests = 50 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
@@ -9581,7 +9599,7 @@ red = [
     "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9596,6 +9614,9 @@ after = '''                        list(child, out, Some(1), "", keeping);'''
 red = [
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
     "application::long_text::markup::tests::test_a_bullet_list_does_not_run_into_the_paragraph_after_it",
+    # 13.2-12's case of a list item as deep as the depth check allows, found by
+    # the re-measure of 2026-10-15.
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
     "application::long_text::tests::test_a_nested_list_in_a_providers_markup_comes_back_nested",
     "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
@@ -9608,7 +9629,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9626,7 +9647,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9641,7 +9662,7 @@ before = '''                        push_item("- ", child, out, keeping);'''
 after = '''                        let _ = &child;'''
 red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9659,7 +9680,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9670,7 +9691,7 @@ before = """                    "br" => out.push('\\n'),
 after = """                    // An image reached without a paragraph around it."""
 red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9684,7 +9705,7 @@ red = [
     "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9712,7 +9733,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9731,7 +9752,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9749,7 +9770,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9778,7 +9799,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9794,7 +9815,7 @@ after = """            if let Node::Element(element) = child.value()
                 saw_a_paragraph = true;"""
 red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9811,7 +9832,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9837,7 +9858,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9866,7 +9887,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9896,7 +9917,7 @@ after = '''                    // A block met inside inline content, a paragraph
                     tag if is_a_block(tag) => {'''
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 # ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
@@ -28834,7 +28855,7 @@ red = [
     "test_a_note_with_an_address_in_code_keeps_it_as_code",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
 ]
 
@@ -29033,7 +29054,7 @@ red = [
     "application::hidden_text::tests::test_opacity_nought_alone_is_not_a_hiding",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
 ]
 
 # max-height:0 hides only together with overflow:hidden: alone, the block
@@ -29052,7 +29073,7 @@ red = [
     "application::hidden_text::tests::test_max_height_nought_hides_only_together_with_overflow_hidden",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
 ]
 
 # The drop is the reading path's and never the sending path's. sanitize_html
@@ -29103,7 +29124,7 @@ red = [
     "test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -29128,7 +29149,7 @@ red = [
     "test_a_label_is_kept_where_it_is_a_name_and_dropped_where_it_named_a_grouping",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -29153,7 +29174,7 @@ red = [
     "test_the_reader_reads_the_newsletter_as_blocks_apart_and_no_layout_table_as_a_table",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -40434,4 +40455,43 @@ red = [
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/renumbered.rs", tests = 17 },
+]
+
+# Markup nested past the limit is never handed to a recursive walker, since
+# a sender's nesting would otherwise overflow the window's stack and end the
+# program (audit finding #17). Added 2026-10-15 by 13.2-12 and taken by hand
+# against the whole library: the question that never answers yes reddens the
+# question's own cases, the three entry points' cases past the limit, and the
+# six cases at the limit, whose first assertion is that their markup is
+# exactly that deep.
+[[guard]]
+name = "markup nested past the limit is found to be, so no walker is handed it"
+file = "src/common/how_deep_markup_nests.rs"
+before = '''                depth += 1;
+                if depth > limit {
+                    return true;
+                }'''
+after = '''                depth += 1;
+                if depth > limit {
+                    return false;
+                }'''
+red = [
+    "application::hidden_text::tests::test_markup_nested_past_the_limit_goes_on_unchanged_and_nothing_is_counted",
+    "application::long_text::tests::test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_markup_nested_past_the_limit_gives_its_words_as_paragraphs",
+    "common::how_deep_markup_nests::tests::test_a_hundred_thousand_levels_are_answered_on_the_windows_stack",
+    "common::how_deep_markup_nests::tests::test_markup_one_level_past_the_limit_is_deeper_than_it",
+    "common::how_deep_markup_nests::tests::test_siblings_side_by_side_are_not_counted_as_depth",
+    "vendor::paperback::tests::test_a_heading_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_a_list_item_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_divs_as_deep_as_the_limit_are_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_markup_nested_past_the_limit_is_read_as_its_words_alone",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 30 },
+    { file = "src/application/long_text.rs", tests = 65 },
+    { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
+    { file = "src/vendor/paperback/mod.rs", tests = 14 },
 ]

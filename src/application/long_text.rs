@@ -17,6 +17,10 @@
 use pulldown_cmark::{Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use std::ops::Deref;
 
+use crate::common::how_deep_markup_nests::{
+    DEEPEST_MARKUP_WALKED, nests_deeper_than, the_words_alone,
+};
+
 /// What is said where a description should have been and was not.
 ///
 /// One phrase rather than several, because a reader who meets it on a picture
@@ -670,6 +674,14 @@ fn read_markup(html: &str, keeping: Keeping) -> String {
     super::hidden_text::keep_the_layout_claim(&mut cleaner);
     let cleaned = cleaner.clean(&shown).to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
+    // The walk calls itself once per level, so markup nested past the limit
+    // is its words alone, a paragraph per text node (audit finding #17).
+    if nests_deeper_than(fragment.tree.root(), DEEPEST_MARKUP_WALKED) {
+        tracing::warn!(
+            "Markup nested more than {DEEPEST_MARKUP_WALKED} elements deep was read as its words alone"
+        );
+        return the_words_alone(fragment.tree.root()).join("\n\n");
+    }
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
     collapse_blank_lines(&out)
@@ -1984,6 +1996,67 @@ Rear Admiral",
             ]
         );
         assert_eq!(written, "First words\n\nSecond words");
+    }
+
+    /// The pieces of markup the reader's parse makes exactly as deep as the
+    /// limit, `outer` elements of the sender's around enough `div` elements to
+    /// reach it, read on a stack the size of the window's own thread.
+    ///
+    /// The limit is the deepest markup every walker gets through on that
+    /// stack in a debug build, so these cases are what chose it, for this
+    /// reader as `vendor::paperback`'s are for the converter.
+    fn pieces_at_the_limit_on_the_windows_stack(
+        open: &str,
+        close: &str,
+        outer: usize,
+    ) -> Vec<Piece> {
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, THE_WINDOWS_STACK, nested, nests_deeper_than, on_a_stack_of,
+        };
+        // `parse_fragment` adds an `html` element above the sender's markup.
+        let divs = DEEPEST_MARKUP_WALKED - 1 - outer;
+        let markup = format!("{open}{}{close}", nested("div", divs, "Deep words"));
+        let parsed = scraper::Html::parse_fragment(&markup);
+        assert!(nests_deeper_than(
+            parsed.tree.root(),
+            DEEPEST_MARKUP_WALKED - 1
+        ));
+        assert!(!nests_deeper_than(
+            parsed.tree.root(),
+            DEEPEST_MARKUP_WALKED
+        ));
+        on_a_stack_of(THE_WINDOWS_STACK, move || pieces_of_markup(&markup))
+    }
+
+    #[test]
+    fn test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack() {
+        assert_eq!(
+            pieces_at_the_limit_on_the_windows_stack("", "", 0),
+            vec![Piece::Paragraph("Deep words".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack() {
+        assert_eq!(
+            pieces_at_the_limit_on_the_windows_stack("<h1>", "</h1>", 1),
+            vec![Piece::Heading {
+                level: 1,
+                text: "Deep words".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack() {
+        assert_eq!(
+            pieces_at_the_limit_on_the_windows_stack("<ul><li>", "</li></ul>", 2),
+            vec![Piece::Item {
+                ordered: false,
+                depth: 1,
+                text: "Deep words".to_string()
+            }]
+        );
     }
 
     #[test]

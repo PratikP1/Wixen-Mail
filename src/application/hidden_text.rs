@@ -39,6 +39,8 @@ use std::borrow::Cow;
 use ego_tree::{NodeId, NodeRef};
 use scraper::{Html, Node, StrTendril};
 
+use crate::common::how_deep_markup_nests::{DEEPEST_MARKUP_WALKED, nests_deeper_than};
+
 /// One of the ways a sender hides a block with a style declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Rule {
@@ -257,6 +259,12 @@ pub fn keep_the_layout_claim(builder: &mut ammonia::Builder<'_>) {
 /// [`WhatItHeld::Words`], for [`what_was_left_out`].
 pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
     let mut document = Html::parse_fragment(html);
+    // The walk below calls itself once per level. Markup nested past the
+    // limit goes on as it came, to a sanitiser and a page that neither
+    // recurse (audit finding #17), and what it hid is the page's to hide.
+    if nests_deeper_than(document.tree.root(), DEEPEST_MARKUP_WALKED) {
+        return (html.to_string(), 0);
+    }
     let mut found = Findings::default();
     found.walk(document.tree.root());
     // Nothing to drop is the ordinary message, and it goes on as the sender
