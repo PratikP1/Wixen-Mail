@@ -668,6 +668,29 @@ mod tests {
     }
 
     #[test]
+    fn test_markup_nested_past_the_limit_goes_on_unchanged_and_nothing_is_counted() {
+        // Audit finding #17: the walk calls itself once per level. Past the
+        // limit nothing is walked, and the markup goes on as it came to the
+        // sanitiser and the page, neither of which recurses. The hidden block
+        // inside is words a walk would count; here it is left for the page
+        // to hide. A big stack, so the walk before the fix finishes and fails
+        // on an assertion here.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
+        };
+        let deep = nested(
+            "div",
+            DEEPEST_MARKUP_WALKED + 1,
+            "<p>Seen first</p><div style=\"display:none\">A paragraph the sender hid from view</div>",
+        );
+        let as_given = deep.clone();
+        let (shown, counted) =
+            on_a_stack_of(ROOM_FOR_ANY_WALK, move || drop_what_the_sender_hid(&deep));
+        assert_eq!(shown, as_given);
+        assert_eq!(counted, 0);
+    }
+
+    #[test]
     fn test_markup_with_nothing_hidden_goes_on_as_the_sender_wrote_it() {
         // Byte for byte, attribute order included: the ordinary message is
         // not re-serialised for nothing.

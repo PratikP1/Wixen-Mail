@@ -185,6 +185,13 @@ impl HtmlToText {
         self.lines.join("\n")
     }
 
+    /// Whether the last conversion read the markup as its words alone,
+    /// because it nested too deep to walk as a page.
+    #[must_use]
+    pub const fn read_the_words_alone(&self) -> bool {
+        false
+    }
+
     #[must_use]
     pub fn get_title(&self) -> &str {
         &self.title

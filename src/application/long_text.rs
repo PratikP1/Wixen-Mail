@@ -1953,4 +1953,57 @@ Rear Admiral",
             "Big news one two Hello from the newsletter"
         );
     }
+
+    #[test]
+    fn test_markup_nested_past_the_limit_gives_its_words_as_paragraphs() {
+        // Audit finding #17: the walk calls itself once per level, so an
+        // HTML-only message nested deep enough ended the program on the sync
+        // worker when its snippet was written. Past the limit the reader
+        // gives the text nodes as paragraphs, with no marker a later reader
+        // would take for a heading or an item. A big stack, so the walk
+        // before the fix finishes and fails on an assertion here.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
+        };
+        let deep = format!(
+            "<ul><li>{}</li></ul>",
+            nested(
+                "div",
+                DEEPEST_MARKUP_WALKED + 1,
+                "First  words<h2>Second words</h2>"
+            )
+        );
+        let (pieces, written) = on_a_stack_of(ROOM_FOR_ANY_WALK, move || {
+            (pieces_of_markup(&deep), from_markup(&deep))
+        });
+        assert_eq!(
+            pieces,
+            vec![
+                Piece::Paragraph("First words".to_string()),
+                Piece::Paragraph("Second words".to_string()),
+            ]
+        );
+        assert_eq!(written, "First words\n\nSecond words");
+    }
+
+    #[test]
+    fn test_markup_as_deep_as_the_limit_is_still_read_as_its_structure() {
+        // The companion: the parser's `html` element and the `h1` make the
+        // limit, and a heading that deep is still a heading.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
+        };
+        let at_the_limit = format!(
+            "<h1>{}</h1>",
+            nested("div", DEEPEST_MARKUP_WALKED - 2, "Heading words")
+        );
+        let pieces = on_a_stack_of(ROOM_FOR_ANY_WALK, move || pieces_of_markup(&at_the_limit));
+        assert_eq!(
+            pieces,
+            vec![Piece::Heading {
+                level: 1,
+                text: "Heading words".to_string()
+            }]
+        );
+    }
 }
