@@ -325,7 +325,11 @@ impl Why {
                 "{NOT_CHANGED} this change came inside encrypted mail, and opening encrypted \
                  mail never changes your calendar on its own."
             ),
-            Why::MarkedAs(_) => String::new(),
+            Why::MarkedAs(level) => format!(
+                "{NOT_CHANGED} this message is marked as {}, so it may not really come from the \
+                 organiser.",
+                level.label().to_lowercase()
+            ),
         }
     }
 }
@@ -372,8 +376,9 @@ const CALLED_OFF: &str = "cancelled";
 /// What the message would change is asked first, so a message that would
 /// change nothing says nothing: a reason not to apply a change nobody asked
 /// for is a sentence to listen past on every message. Then where it was found,
-/// because a change inside encrypted mail is never made on opening. Then who
-/// sent it, before whether changes are allowed, because a stranger's message is
+/// because a change inside encrypted mail is never made on opening. Then what
+/// the message is marked as, because a From on spam or phishing may be forged.
+/// Then who sent it, before whether changes are allowed, because a stranger's message is
 /// the reason that matters and switching changes on would not make it apply.
 pub fn what_opening_it_changes(
     asked: WhatItAsks,
@@ -394,6 +399,13 @@ pub fn what_opening_it_changes(
     // whoever sent it, organiser or not, so no other reason is the one to say.
     if found == WhereItWasFound::InsideEncryptedMail {
         return MeetingChange::SaidNotApplied(Why::InsideEncryptedMail);
+    }
+    // Before who sent it: on a message marked as spam or phishing the From
+    // address is the thing in doubt, so the organiser check cannot settle it.
+    // Not on Suspicious, which is this computer's own guess or one failed
+    // record that every mailing list produces (audit finding #21).
+    if sender.marked >= Safety::Spam {
+        return MeetingChange::SaidNotApplied(Why::MarkedAs(sender.marked));
     }
     if let Some(why) = why_it_is_not_applied(&held, &wanted, sender.from, allowed) {
         return MeetingChange::SaidNotApplied(why);

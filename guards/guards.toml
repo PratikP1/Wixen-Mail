@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 746 records have arrived since and have not been through it.
+# 747 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -2563,9 +2563,9 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/invitations.rs", tests = 70 },
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/application/repeating.rs", tests = 27 },
     { file = "src/application/sending_later.rs", tests = 47 },
     { file = "src/application/when_people_are_free.rs", tests = 60 },
@@ -11097,7 +11097,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 [[guard]]
@@ -12845,7 +12845,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 51 },
     { file = "src/application/pop_sync.rs", tests = 54 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
@@ -17058,7 +17058,7 @@ tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
@@ -17969,7 +17969,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
@@ -25145,17 +25145,23 @@ tests_last_seen = [
 # GnuPG encrypted to Alice is what reddens.
 #
 # Measured 2026-09-16 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, `cargo test --lib`.
+# `scripts/guards.sh --remeasure`, `cargo test --lib`. Corrected 2026-10-16
+# by 13.2-13, whose re-measure found it one short: `pgp_keys`'s case of a
+# locked key opening once its passphrase is typed reads the message through
+# this line too. It was short before that plan; a test in a file the record
+# never named, which the count check cannot see.
 [[guard]]
 name = "a message the key opens is shown as its words and not as its armour"
 file = "src/application/reading_a_message.rs"
 before = """    let body = opening_pgp::the_body_to_show(body, opened.as_ref());"""
 after = """    // the armour stays where it was"""
 red = [
+    "application::pgp_keys::tests::test_a_message_to_a_locked_key_opens_once_its_passphrase_is_typed",
     "application::reading_a_message::tests::test_a_message_encrypted_to_the_imported_key_is_shown_as_its_words",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/pgp_keys.rs", tests = 22 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
 ]
 
 # The order of the fold: a signature verdict puts "More about this signature:"
@@ -25197,7 +25203,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
@@ -32048,7 +32054,7 @@ red = [
     "test_a_download_leaves_the_files_the_reader_kept_where_they_are",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 12 },
 ]
 
@@ -32077,7 +32083,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
@@ -32284,7 +32290,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/calendar.rs", tests = 56 },
 ]
 
@@ -32354,7 +32360,7 @@ red = [
     "application::meeting_changes::tests::test_a_stranger_changing_one_day_is_refused_as_a_stranger",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # The Allow Changes question left out, so an account whose calendar changes
@@ -32373,7 +32379,7 @@ red = [
     "application::meeting_changes::tests::test_nothing_changes_while_calendar_changes_are_switched_off",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # Remove from Calendar deleting the meeting instead of marking it, so a
@@ -32520,7 +32526,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/protecting.rs", tests = 32 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/service/protocols/smtp.rs", tests = 48 },
     { file = "src/service/signed_mail.rs", tests = 127 },
@@ -32587,11 +32593,12 @@ before = """    if found == WhereItWasFound::InsideEncryptedMail {
 after = """    let _ = found;"""
 red = [
     "application::meeting_changes::tests::test_a_change_found_inside_encrypted_mail_is_said_and_not_applied",
+    "application::meeting_changes::tests::test_a_change_inside_encrypted_mail_is_said_as_such_however_it_is_marked",
     "application::reading_a_message::tests::test_a_change_inside_an_opened_envelope_is_said_and_the_calendar_is_left_as_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
 ]
 
 # The envelope listed as the message's one file after it opened, so the files
@@ -32736,7 +32743,7 @@ red = [
     "application::reading_a_message::tests::test_a_pgp_mime_message_that_did_not_open_shows_its_armour_and_the_reason_its_key_gave",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
 ]
 
 # The credential store under test taking a secret of any length again, so a
@@ -32803,7 +32810,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
     { file = "src/service/pgp/keys.rs", tests = 33 },
@@ -33380,7 +33387,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/invitations.rs", tests = 70 },
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/event_times.rs", tests = 23 },
@@ -33443,7 +33450,7 @@ red = [
     "test_a_move_keeps_the_zone_the_update_was_written_in",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "tests/a_meeting_change_reaches_the_calendar.rs", tests = 20 },
 ]
 
@@ -33498,7 +33505,7 @@ red = [
     "application::meeting_changes::tests::test_one_instant_written_in_two_zones_moves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # The calendar's item built without the zone its times were written in: every
@@ -35290,7 +35297,7 @@ red = [
     "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # The calendar's rule for one day not asked, so a day of a Google or Outlook
@@ -35307,7 +35314,7 @@ red = [
     "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # A day named in universal time or another zone handed back as written, so it
@@ -35364,7 +35371,7 @@ red = [
     "test_a_cancellation_of_a_moved_day_offers_that_days_row",
 ]
 tests_last_seen = [
-    { file = "src/application/reading_a_message.rs", tests = 21 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
 ]
 
@@ -35425,7 +35432,7 @@ red = [
     "test_a_cancelled_day_is_offered_one_button_described_as_that_day",
 ]
 tests_last_seen = [
-    { file = "src/application/meeting_changes.rs", tests = 34 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "tests/one_day_of_a_repeating_meeting_is_changed_alone.rs", tests = 11 },
 ]
 
@@ -40562,4 +40569,27 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/editor_document.rs", tests = 91 },
+]
+
+# A meeting update or cancellation in a message marked as spam or phishing
+# is said and not applied (audit finding #21): on such a message the From
+# address the organiser check reads may be forged. The break makes the
+# check never true, and an update forging the organiser's From moves the
+# meeting again and queues the move for the provider. Added 2026-10-16 by
+# 13.2-13 and measured against the whole library.
+[[guard]]
+name = "a meeting change in a message marked as spam or phishing is said and not applied"
+file = "src/application/meeting_changes.rs"
+before = '''    // record that every mailing list produces (audit finding #21).
+    if sender.marked >= Safety::Spam {'''
+after = '''    // record that every mailing list produces (audit finding #21).
+    if sender.marked > Safety::Phishing {'''
+red = [
+    "application::meeting_changes::tests::test_an_organisers_cancellation_marked_as_phishing_offers_no_removal",
+    "application::meeting_changes::tests::test_an_organisers_update_marked_as_spam_or_phishing_is_said_and_not_applied",
+    "application::reading_a_message::tests::test_an_update_marked_as_phishing_leaves_the_calendar_as_it_was_and_queues_nothing",
+]
+tests_last_seen = [
+    { file = "src/application/meeting_changes.rs", tests = 39 },
+    { file = "src/application/reading_a_message.rs", tests = 22 },
 ]
