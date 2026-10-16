@@ -4061,6 +4061,15 @@ provider does.
     `tests/mail_keeps_arriving_on_its_own.rs`, a case in `what_rules_tell_the_server` for
     labels arriving through the pass, and five new records. Hearing and seeing it is ledger
     852. No `[D]` clause is added and the box stays ticked.
+  - 13.2-14 on 2026-10-16: one POP message the parser cannot read no longer ends that
+    account's mail (finding #13). `pop_sync::read_or_keep_as_text` keeps it as plain text
+    under its identifier with a log line naming only that identifier, the mail after it is
+    stored, the check ends with QUIT, and the next check passes it by. What mail-parser 0.11.5
+    refuses, read that day, is a message of no bytes or of nothing but blanks. Held by two
+    cases in `pop_sync` and a new record. Meeting it on a real POP server is ledger 863, and a
+    sentence for it is ledger 864, for Pratik. The calendar feed's limits and the fetch off
+    the window's thread (finding #20) sit under no requirement. No `[D]` clause is added and
+    the box stays ticked.
 
 - [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
@@ -7806,7 +7815,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, the open folder read again at most every ten seconds during the download and a text refusal ending one account, ledger 851 |
 | MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850 |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, each message's text asked for at most once a run, ledger 851 |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852 |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864 |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |

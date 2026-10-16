@@ -1427,6 +1427,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Following a calendar link no longer freezes the window (2026-10-16).** A `webcal:` link
+  on a web page opens the calendar in Wixen Mail, which said "Fetching that calendar." and
+  then stopped answering until the calendar's host replied. A host that never replied froze
+  the window for good, and a screen reader reported Wixen Mail as not responding. Now the
+  window goes on working while the calendar is fetched, and what is said afterwards is
+  unchanged. A calendar's host now has 30 seconds to send it, and a calendar larger than
+  20 MB is refused as it arrives rather than read into memory whole. Each is said in a
+  sentence naming the host, such as "calendar.example.com did not answer in time, so the
+  calendar was not fetched. Nothing on this calendar was changed here." The regular refresh
+  of a calendar you subscribed to is held to the same limits, so a host that never answers
+  can no longer hold up that refresh, or the undo of a deleted calendar, until Wixen Mail
+  is restarted. Known limitation: a calendar is now read as UTF-8 whatever character set
+  its host names, as the calendar standard says it should be.
+- **One unreadable message on a POP server no longer stops all of that account's mail
+  (2026-10-16, MAIL-04).** A message of no bytes, or of nothing but blanks, could not be
+  read, and the check stopped on it before saving anything. The server lists its mail in
+  the same order every time, so every later check stopped on the same message and no mail
+  after it ever arrived. Now such a message is kept in the Inbox with no subject and its
+  text as it arrived, the mail after it downloads, and the next check passes it by. The log
+  names the message by the server's identifier for it and says nothing it contains.
 - **Replying to or forwarding a message no longer fetches the pictures it points at
   (2026-10-16, LIST-09, LIST-10).** Reading a newsletter leaves its tracking pixels out, but
   pressing Reply on it fetched every picture it pointed at, tracking pixels included, and so
