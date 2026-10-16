@@ -1981,6 +1981,77 @@ mod tests {
         assert!(head.contains("<title>Message body</title>"), "{head}");
     }
 
+    /// A newsletter's tracking pixel, quoted the way the cleaner leaves it.
+    const A_QUOTED_TRACKING_PIXEL: &str = r#"<p>This week's news</p><img src="https://tracker.example/open.gif?id=42" width="1" height="1" alt="">"#;
+
+    /// Every kind of body the editor is opened with: a reply or forward of a
+    /// formatted message, of a plain one, and a new message.
+    fn every_kind_of_body() -> [MessageBody; 3] {
+        [
+            MessageBody::Html(A_QUOTED_TRACKING_PIXEL.into()),
+            MessageBody::Plain("Plain words from https://example.com".into()),
+            blank(),
+        ]
+    }
+
+    #[test]
+    fn test_the_editor_page_fetches_only_the_pictures_it_carries() {
+        // Audit finding #19. Reading a newsletter fetches none of its
+        // tracking pixels, because the reader holds them back; replying to
+        // it fetched them all, because this page runs the cleaner alone and
+        // the cleaner keeps a remote picture. Ahead of the style element, so
+        // nothing the page loads is asked for before the rule is known.
+        for body in every_kind_of_body() {
+            let page = editor_document(&body, "en", true);
+
+            let ahead_of_the_style = between(&page, "<head>", "<style>");
+            assert!(
+                ahead_of_the_style.contains(
+                    r#"<meta http-equiv="Content-Security-Policy" content="img-src data:">"#
+                ),
+                "{ahead_of_the_style}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_picture_rule_is_the_page_s_only_rule_so_its_own_script_runs() {
+        // The page's script is written inline. A default-src or a script-src
+        // without 'unsafe-inline' would stop it, and with it every key the
+        // editor binds and the read-back that sends the message.
+        for body in every_kind_of_body() {
+            let page = editor_document(&body, "en", true);
+
+            assert_eq!(page.matches("Content-Security-Policy").count(), 1, "{page}");
+            assert!(!page.contains("default-src"), "{page}");
+            assert!(!page.contains("script-src"), "{page}");
+        }
+    }
+
+    #[test]
+    fn test_a_quoted_remote_picture_stays_in_the_markup_that_goes_out() {
+        // The rule stops the fetch and changes nothing written. A forward
+        // carries the original's pictures as the original pointed at them,
+        // so the region the read-back script reads holds the cleaned markup
+        // exactly, remote address and all.
+        let page = editor_document(
+            &MessageBody::Html(A_QUOTED_TRACKING_PIXEL.into()),
+            "en",
+            true,
+        );
+
+        let region = between(&page, r#"aria-label="Message body">"#, "</div>\n<script>");
+        let region = &region[r#"aria-label="Message body">"#.len()..];
+        assert_eq!(
+            region,
+            HtmlRenderer::new().sanitize_html(A_QUOTED_TRACKING_PIXEL)
+        );
+        assert!(
+            region.contains(r#"src="https://tracker.example/open.gif?id=42""#),
+            "{region}"
+        );
+    }
+
     #[test]
     fn test_the_language_reaches_the_engine() {
         // The engine picks its dictionary from lang. Getting this wrong does
