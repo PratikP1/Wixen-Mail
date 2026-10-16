@@ -6032,23 +6032,42 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_only_a_gone_answer_makes_the_address_book_be_read_again() {
-        let gone = Error::Api {
-            status: SYNC_TOKEN_EXPIRED,
-            provider: "google".to_string(),
-            message: "Sync token is expired".to_string(),
-        };
-        let server_fault = Error::Api {
-            status: 500,
-            provider: "google".to_string(),
-            message: "Backend error".to_string(),
-        };
-        let no_connection = Error::Network("connection refused".to_string());
+    fn an_answer(status: u16, provider: &str, message: &str) -> Error {
+        Error::Api {
+            status,
+            provider: provider.to_string(),
+            message: message.to_string(),
+        }
+    }
 
-        assert!(is_expired_sync_token(&gone));
-        assert!(!is_expired_sync_token(&server_fault));
-        assert!(!is_expired_sync_token(&no_connection));
+    #[test]
+    fn test_only_a_gone_answer_or_googles_expired_marker_makes_the_address_book_be_read_again() {
+        let expired = [
+            an_answer(SYNC_TOKEN_EXPIRED, "google", "Sync token is expired"),
+            an_answer(SYNC_TOKEN_EXPIRED, "microsoft", "Gone"),
+            googles_answer_to_an_expired_marker(),
+            // The provider's message is cut to 500 characters, so the
+            // details naming the reason can be gone and the phrase left.
+            an_answer(
+                400,
+                "google",
+                "sync token is expired. Clear local cache and retry call without the sync token.",
+            ),
+            an_answer(400, "google", "reason: expired_sync_token"),
+        ];
+        let not_expired = [
+            an_answer(400, "google", "Request contains an invalid argument."),
+            googles_answer_to_a_marker_it_has_moved_past(),
+            an_answer(500, "google", "Backend error"),
+            Error::Network("connection refused".to_string()),
+        ];
+
+        for answer in &expired {
+            assert!(is_expired_sync_token(answer), "{answer:?}");
+        }
+        for answer in &not_expired {
+            assert!(!is_expired_sync_token(answer), "{answer:?}");
+        }
     }
 
     #[test]
@@ -6568,6 +6587,25 @@ mod tests {
         }
     }
 
+    /// What Google says to a read carrying a marker more than seven days old.
+    ///
+    /// The People API's page for `people.connections.list`, last updated
+    /// 2024-08-06 and read 2026-10-16, says such a read "will get an error
+    /// with an google.rpc.ErrorInfo with reason \"EXPIRED_SYNC_TOKEN\"", and
+    /// Google's error model carries that as 400 and `FAILED_PRECONDITION`.
+    /// Read from the documentation and not from a live account.
+    fn googles_answer_to_an_expired_marker() -> Error {
+        Error::Api {
+            status: 400,
+            provider: "google".to_string(),
+            message: "{\"error\":{\"code\":400,\"message\":\"Sync token is expired. Clear \
+                      local cache and retry call without the sync token.\",\"status\":\
+                      \"FAILED_PRECONDITION\",\"details\":[{\"@type\":\"type.googleapis.com/\
+                      google.rpc.ErrorInfo\",\"reason\":\"EXPIRED_SYNC_TOKEN\"}]}}"
+                .to_string(),
+        }
+    }
+
     /// What Outlook says to the same thing. Graph weighs the marker in an
     /// `If-Match` header, so its answer is the HTTP one: 412.
     fn outlooks_answer_to_a_marker_it_has_moved_past() -> Error {
@@ -6584,9 +6622,10 @@ mod tests {
         /// Who the address book answers a read with.
         people: Vec<GooglePerson>,
         /// The answer Google gives to a read carrying the last run's marker,
-        /// when this test is one whose marker Google refuses. A read carrying
-        /// no marker is always answered.
-        refuses_the_marker_with: Option<u16>,
+        /// when this test is one whose marker Google refuses: a status and the
+        /// words that come with it. A read carrying no marker is always
+        /// answered.
+        refuses_the_marker_with: Option<(u16, String)>,
         /// Whether a contact sent outward is accepted. Refusing is the
         /// default, so a test that sends something it did not mean to fails on
         /// that rather than passing quietly.
@@ -6640,11 +6679,11 @@ mod tests {
             _token: &str,
             sync_token: Option<&str>,
         ) -> Result<(Vec<GooglePerson>, Option<String>)> {
-            match (sync_token, self.refuses_the_marker_with) {
-                (Some(_), Some(status)) => Err(Error::Api {
-                    status,
+            match (sync_token, &self.refuses_the_marker_with) {
+                (Some(_), Some((status, message))) => Err(Error::Api {
+                    status: *status,
                     provider: "google".to_string(),
-                    message: "the marker was refused".to_string(),
+                    message: message.clone(),
                 }),
                 _ => Ok((
                     self.people.clone(),
@@ -6900,7 +6939,7 @@ mod tests {
                 "Alice Smith",
                 "alice@example.com",
             )],
-            refuses_the_marker_with: Some(410),
+            refuses_the_marker_with: Some((410, "the marker was refused".to_string())),
             ..Default::default()
         };
 
@@ -6914,6 +6953,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_googles_own_answer_to_an_expired_marker_reads_everything_and_keeps_a_fresh_one() {
+        // The answer Google really sends a week after the last full read. Not
+        // recognised, it was passed on before the marker was saved, so every
+        // later sync asked with the same dead marker and nothing changed on a
+        // phone ever arrived again.
+        let cache = a_cache("googles_expired_marker");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        let Error::Api {
+            status, message, ..
+        } = googles_answer_to_an_expired_marker()
+        else {
+            unreachable!("Google's answer is an answer from Google");
+        };
+        let google = ScriptedGoogle {
+            people: vec![a_google_person(
+                "people/c1",
+                "Alice Smith",
+                "alice@example.com",
+            )],
+            refuses_the_marker_with: Some((status, message)),
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync that read the whole address book");
+
+        assert_eq!(result.created_local.count(), 1);
+        assert_eq!(the_names_stored(&cache), vec!["Alice Smith".to_string()]);
+        let kept = cache
+            .get_sync_state(AN_ACCOUNT, CONTACTS_SYNC, GOOGLE_ADDRESS_BOOK)
+            .expect("the sync state")
+            .and_then(|state| state.sync_token);
+        assert_eq!(kept.as_deref(), Some(A_MARKER_FOR_NEXT_TIME));
+    }
+
+    #[tokio::test]
     async fn test_a_read_that_failed_for_another_reason_does_not_read_the_whole_address_book() {
         let cache = a_cache("read_failed");
         a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
@@ -6923,7 +7000,7 @@ mod tests {
                 "Alice Smith",
                 "alice@example.com",
             )],
-            refuses_the_marker_with: Some(503),
+            refuses_the_marker_with: Some((503, "the marker was refused".to_string())),
             ..Default::default()
         };
 
@@ -7169,6 +7246,81 @@ mod tests {
             sent[0].names.first().map(|n| n.unstructured_name.as_str()),
             Some("Grace Hopper")
         );
+    }
+
+    /// A contact somebody typed here, which no address book knows yet.
+    fn a_contact_typed_here(cache: &MessageCache, id: &str, name: &str, email: &str) {
+        let mut typed_here = a_local_contact(name, email);
+        typed_here.id = id.to_string();
+        typed_here.pending = true;
+        cache
+            .save_contact(&typed_here)
+            .expect("a contact to be stored");
+    }
+
+    /// A contact one address book gave this account, written as though
+    /// somebody had since changed it here, so that only what the contact is
+    /// known to stands between it and being sent somewhere as new.
+    fn a_contact_from(cache: &MessageCache, name: &str, provider_contact_id: &str, provider: &str) {
+        a_stored_contact(
+            cache,
+            name,
+            &format!("{provider_contact_id}@example.com"),
+            provider_contact_id,
+            provider,
+        );
+        let id = format!("local-{provider_contact_id}");
+        let mut stored = cache
+            .get_contacts_for_account(AN_ACCOUNT)
+            .expect("the stored contacts")
+            .into_iter()
+            .find(|contact| contact.id == id)
+            .expect("the contact just stored");
+        stored.pending = true;
+        cache.save_contact(&stored).expect("a contact to be stored");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_typed_here_after_the_first_sync_is_sent_to_google() {
+        // Sent only on a full read before, which for Google came once and
+        // then only when a marker expired, so a contact added here after the
+        // first sync never reached the phone and nothing said so.
+        let cache = a_cache("google_push_after_the_first_sync");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let google = ScriptedGoogle {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert_eq!(result.created_remote.count(), 1);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(google.sent.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_google_knows_or_outlook_gave_is_not_sent_to_google_as_new() {
+        let cache = a_cache("google_no_second_copy");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_contact_from(&cache, "Alice Smith", "people/c1", GOOGLE_ADDRESS_BOOK);
+        a_contact_from(&cache, "Bob Jones", "AAMk1", MICROSOFT_ADDRESS_BOOK);
+        let google = ScriptedGoogle::default();
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a sync");
+
+        assert!(
+            google.sent.borrow().is_empty(),
+            "a contact an address book already holds was sent to Google as new"
+        );
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     #[tokio::test]
@@ -7441,6 +7593,94 @@ mod tests {
         let sent = microsoft.sent.borrow();
         assert_eq!(sent.len(), 1);
         assert_eq!(sent[0].display_name, "Grace Hopper");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_typed_here_after_the_first_sync_is_sent_to_microsoft() {
+        // Sent only on the first sync before, for the reason written on the
+        // Google side of this.
+        let cache = a_cache("microsoft_push_after_the_first_sync");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert_eq!(result.created_remote.count(), 1);
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(microsoft.sent.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_outlook_refused_on_the_first_sync_is_sent_again_on_the_next() {
+        let cache = a_cache("microsoft_push_again");
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let refusing = ScriptedMicrosoft::default();
+        let first = sync_microsoft_contacts(
+            &cache,
+            &refusing,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a first sync");
+        assert_eq!(first.created_remote.count(), 0);
+        assert_eq!(first.errors.len(), 1, "{:?}", first.errors);
+
+        let accepting = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+        let next = sync_microsoft_contacts(
+            &cache,
+            &accepting,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the next sync");
+
+        assert_eq!(next.created_remote.count(), 1);
+        assert!(next.errors.is_empty(), "{:?}", next.errors);
+        assert_eq!(accepting.sent.borrow().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_outlook_knows_or_google_gave_is_not_sent_to_microsoft_as_new() {
+        let cache = a_cache("microsoft_no_second_copy");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_contact_from(&cache, "Alice Smith", "AAMk1", MICROSOFT_ADDRESS_BOOK);
+        a_contact_from(&cache, "Bob Jones", "people/c1", GOOGLE_ADDRESS_BOOK);
+        let microsoft = ScriptedMicrosoft::default();
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        assert!(
+            microsoft.sent.borrow().is_empty(),
+            "a contact an address book already holds was sent to Microsoft as new"
+        );
+        assert_eq!(result.created_remote.count(), 0);
     }
 
     #[tokio::test]
