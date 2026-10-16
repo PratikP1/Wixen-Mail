@@ -501,6 +501,14 @@ struct GoogleCalendarListResponse {
     next_page_token: Option<String>,
 }
 
+/// Response from `calendars.get` for the primary calendar, whose id is the
+/// address of the account that owns it.
+#[derive(Debug, Clone, Deserialize)]
+struct GooglePrimaryCalendar {
+    #[serde(default)]
+    id: String,
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
@@ -796,10 +804,23 @@ impl GoogleApiClient {
 
     // ── Calendar ────────────────────────────────────────────────────────
 
-    /// The address of the Google account a token belongs to.
+    /// The address of the Google account a token belongs to: the id of the
+    /// primary calendar the token opens.
+    ///
+    /// Asked once, as a browser sign-in finishes and before its token is kept,
+    /// so a sign-in made as another person keeps nothing (audit #23). The
+    /// calendar permission both Google sign-ins ask for allows it. A refusal,
+    /// or an answer with no id, is an error and never an address.
     pub async fn the_address_signed_in(&self, token: &str) -> Result<String> {
-        let _ = token;
-        Err(Error::Other("not asked".to_string()))
+        let url = format!("{}/calendars/{THE_MAIN_CALENDAR}", self.calendar_base);
+        let calendar: GooglePrimaryCalendar = with_retry(3, || self.api_get(&url, token)).await?;
+        let address = calendar.id.trim();
+        match address.is_empty() {
+            true => Err(Error::Authentication(
+                "Google did not say which account signed in.".to_string(),
+            )),
+            false => Ok(address.to_string()),
+        }
     }
 
     /// Every calendar on the account's list, hidden ones included.

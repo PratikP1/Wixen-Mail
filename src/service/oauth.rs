@@ -215,7 +215,6 @@ impl OAuthService {
         redirect_uri: &str,
         signing_in_as: &str,
     ) -> Result<(String, CsrfToken, oauth2::PkceCodeVerifier)> {
-        let _ = signing_in_as;
         let p = Self::provider_by_name(provider).ok_or_else(|| {
             Error::Authentication(format!("Unsupported OAuth provider: {}", provider))
         })?;
@@ -236,6 +235,14 @@ impl OAuthService {
         if p.auth_url == GOOGLES_SIGN_IN_PAGE {
             auth_request = auth_request.add_extra_param("access_type", "offline");
             auth_request = auth_request.add_extra_param("prompt", "consent");
+        }
+
+        // Which account to sign in as, so the browser offers this one rather
+        // than whichever it used last (audit #23). Google and Microsoft both
+        // read it; an account with no address yet names nobody.
+        let signing_in_as = signing_in_as.trim();
+        if !signing_in_as.is_empty() {
+            auth_request = auth_request.add_extra_param("login_hint", signing_in_as);
         }
 
         let (auth_url, csrf_token) = auth_request.url();
@@ -824,7 +831,15 @@ impl AuthManager {
         )
         .await?;
 
-        // Step 5: Keep them, and refuse the sign-in if they cannot be kept.
+        // Step 5: Ask who signed in, and keep nothing for anybody else.
+        self.refuse_anybody_but(
+            signing_in_as,
+            &tokens,
+            &crate::service::google_api::GoogleApiClient::new(),
+        )
+        .await?;
+
+        // Step 6: Keep them, and refuse the sign-in if they cannot be kept.
         // Nothing reads the token set this returns to decide whether an
         // account works; every use goes back to the store for it.
         self.store_tokens(&tokens)?;
@@ -834,14 +849,49 @@ impl AuthManager {
 
     /// Refuse a Google sign-in made as anybody but the account it was asked
     /// for, before anything is kept (audit #23).
-    pub async fn refuse_anybody_but(
+    ///
+    /// The browser's account chooser decides whose token comes back, and the
+    /// calendar, contacts and tasks syncs act on whoever owns it. So Google is
+    /// asked whose primary calendar the token opens, and a different person's
+    /// consent is refused with nothing kept. A sign-in Google will not say
+    /// anything about is refused too: keeping it would be guessing.
+    ///
+    /// Microsoft's sign-in is told the address by the login hint alone. Its
+    /// matching check is on the ledger: it needs a second token for Graph, and
+    /// Graph may answer a mailbox's primary address where the account typed an
+    /// alias, which only a real account can settle.
+    async fn refuse_anybody_but(
         &self,
         signing_in_as: &str,
         tokens: &OAuthTokenSet,
         google: &crate::service::google_api::GoogleApiClient,
     ) -> Result<()> {
-        let _ = (signing_in_as, tokens, google);
-        Ok(())
+        if !self.signs_in_with_google() {
+            return Ok(());
+        }
+        let signed_in_as = google
+            .the_address_signed_in(&tokens.access_token)
+            .await
+            .map_err(|e| {
+                Error::Authentication(format!(
+                    "Google did not say which account signed in, so the sign-in was not kept. \
+                     Try again, and see Setting up a provider in Help if it keeps happening. ({e})"
+                ))
+            })?;
+        match the_same_google_account(signing_in_as, &signed_in_as) {
+            true => Ok(()),
+            false => Err(Error::Authentication(signed_in_as_somebody_else(
+                signing_in_as,
+                &signed_in_as,
+            ))),
+        }
+    }
+
+    /// Whether this sign-in is one of Google's, the mail one or the separate
+    /// one for calendars, contacts and tasks.
+    fn signs_in_with_google(&self) -> bool {
+        OAuthService::provider_by_name(&self.provider)
+            .is_some_and(|provider| provider.auth_url == GOOGLES_SIGN_IN_PAGE)
     }
 
     /// Get a valid access token, refreshing if expired.
@@ -1170,9 +1220,24 @@ fn not_kept(cause: &str) -> Error {
 }
 
 /// Whether the address a Google sign-in was made as is the account's own.
+///
+/// Compared the way Gmail tells one mailbox from another, or a correct
+/// sign-in typed differently would be refused: case is ignored everywhere,
+/// and for a Gmail address dots and anything after a plus are ignored too,
+/// with googlemail.com the same as gmail.com. An organisation's own domain is
+/// compared ignoring case alone, since its dots may name different people.
 pub fn the_same_google_account(asked_for: &str, signed_in_as: &str) -> bool {
-    let _ = (asked_for, signed_in_as);
-    true
+    !asked_for.trim().is_empty() && one_gmail_mailbox(asked_for) == one_gmail_mailbox(signed_in_as)
+}
+
+/// An address the way Gmail reads it, for [`the_same_google_account`].
+fn one_gmail_mailbox(address: &str) -> String {
+    let address = address.trim().to_lowercase();
+    if let Some((local, "gmail.com" | "googlemail.com")) = address.rsplit_once('@') {
+        let mailbox = local.split('+').next().unwrap_or(local).replace('.', "");
+        return format!("{mailbox}@gmail.com");
+    }
+    address
 }
 
 /// What a Google sign-in made as another address says. Nothing was kept.

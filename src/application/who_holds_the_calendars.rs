@@ -439,16 +439,30 @@ impl<Key> WhatTheSeparateSignInDoes<Key> {
                  Google sign-in key, so signing in through the browser cannot run. See Setting \
                  up a provider in Help."
                 .to_string(),
-            WhatTheSeparateSignInDoes::SignsIn { .. } => "Signing in to Google for the account's \
-                 calendars, contacts and tasks. Finish in the browser."
-                .to_string(),
+            WhatTheSeparateSignInDoes::SignsIn { address, .. } => format!(
+                "Signing in to Google for this account's calendars, contacts and tasks. {}",
+                choose_in_the_browser(address)
+            ),
         }
     }
 }
 
 /// What Sign In Again says as the browser sign-in begins.
+///
+/// It names the address to choose, which the provider is also told, so a
+/// person with several accounts in the browser knows which one this is for
+/// (audit #23).
 pub fn what_sign_in_again_says_as_it_begins(account: &Account) -> String {
-    format!("Signing in to {}. Finish in the browser.", account.name)
+    format!(
+        "Signing in to {}. {}",
+        account.name,
+        choose_in_the_browser(&account.email)
+    )
+}
+
+/// The half of a sign-in's opening sentence that names the address to choose.
+fn choose_in_the_browser(address: &str) -> String {
+    format!("In the browser, choose {address}, and finish there.")
 }
 
 /// What the button says when signing in worked.
