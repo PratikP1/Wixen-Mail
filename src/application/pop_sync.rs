@@ -264,7 +264,7 @@ pub(crate) async fn sync<M: PopMailbox>(
     let mut written: Vec<i64> = Vec::new();
     for (id, uidl) in &wanted {
         let raw = server.retrieve(*id).await?;
-        let parsed = crate::service::mime::parse(&raw)?;
+        let parsed = read_or_keep_as_text(&raw, uidl);
         let uid = cache.next_local_uid(folder_id)?;
         let arrival = Arrival {
             raw: &raw,
@@ -372,6 +372,27 @@ pub(crate) async fn sync<M: PopMailbox>(
         waiting_on_the_setting: waiting,
         on_server: on_server.len(),
         written,
+    })
+}
+
+/// A downloaded message, read, or kept as its own text when nothing can read it.
+///
+/// A message the parser refuses, one of no bytes or of nothing but blanks,
+/// used to end the check before anything was stored, and the server lists in
+/// the same order every time, so every later check ended on it too and no
+/// mail after it ever arrived (audit finding #13). Kept under its identifier
+/// instead, it is mail this computer has, the next check passes it by, and
+/// the removal policy treats it as any other copy held here.
+///
+/// Logged by the server's identifier alone, as the IMAP header path treats
+/// the same failure, and never with anything the message says.
+fn read_or_keep_as_text(raw: &[u8], uidl: &str) -> crate::service::mime::ParsedMessage {
+    crate::service::mime::parse(raw).unwrap_or_else(|why| {
+        tracing::warn!("POP message {uidl} could not be read, so it was kept as plain text: {why}");
+        crate::service::mime::ParsedMessage {
+            body_plain: Some(String::from_utf8_lossy(raw).into_owned()),
+            ..Default::default()
+        }
     })
 }
 
@@ -1696,6 +1717,105 @@ X-Spam-Flag: YES\r\n\r\nbody";
         .expect("the second check runs");
 
         assert!(second.written.is_empty(), "{:?}", second.written);
+    }
+
+    #[test]
+    fn test_a_message_nobody_can_read_is_kept_and_the_mail_after_it_still_arrives() {
+        // Audit finding #13. A zero-length message on the server, which RETR
+        // answers with no lines, is one the parser cannot read. The check
+        // stopped on it before anything was stored, and the server lists in
+        // the same order every time, so every later check stopped on it first
+        // and nothing after it ever arrived.
+        let after = raw_message("Subject: After it\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        let held = [(1, "empty", b"".as_slice()), (2, "after", after.as_slice())];
+        let server = Scripted::holding(&held);
+
+        let done = run(
+            &server,
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("one message nobody can read is not a failed check");
+
+        assert_eq!(
+            done.fetched, 2,
+            "the unreadable message or the one after it was lost"
+        );
+        let journal = server.journal();
+        assert_eq!(
+            journal.last(),
+            Some(&Asked::Finished),
+            "the session was not ended politely: {journal:?}"
+        );
+        let mut subjects: Vec<String> = cache
+            .get_message_list(folder_id, "acct")
+            .expect("the list")
+            .into_iter()
+            .map(|message| message.subject)
+            .collect();
+        subjects.sort();
+        assert_eq!(subjects, vec![String::new(), "After it".to_string()]);
+
+        let again = Scripted::holding(&held);
+        let second = run(
+            &again,
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the second check runs");
+        assert_eq!(second.fetched, 0);
+        assert_eq!(
+            again.journal(),
+            vec![Asked::Listed, Asked::Finished],
+            "a message kept on the last check was fetched again"
+        );
+    }
+
+    #[test]
+    fn test_a_message_nobody_can_read_keeps_its_text_and_the_log_names_only_its_identifier() {
+        // The other trigger: a message of nothing but spaces and tabs, the
+        // only text mail-parser 0.11.5 refuses besides none at all, read on
+        // 2026-10-16 (text with no colon and no blank line, which the audit's
+        // verdict named, is read as a message). What arrived is kept as its
+        // plain text, so nothing is lost. The warning names the server's
+        // identifier for it, so somebody can find it there, and nothing of
+        // the message: a log is sent with bug reports.
+        let blank = b"  \t  ".as_slice();
+        let (cache, folder_id) = a_cache();
+        let server = Scripted::holding(&[(1, "headless", blank)]);
+        let captured =
+            crate::presentation::accessibility::screen_reader::tests::CapturedLogs::default();
+
+        let done = {
+            let _held = captured.as_the_default();
+            run(
+                &server,
+                &cache,
+                folder_id,
+                Housekeeping::CAUTIOUS,
+                Utc::now(),
+            )
+        }
+        .expect("one message nobody can read is not a failed check");
+
+        let row = *done.written.first().expect("the message was not kept");
+        let body = cache
+            .get_message_body(row)
+            .expect("the body")
+            .expect("a stored body");
+        assert_eq!(body.body_plain.as_deref(), Some("  \t  "));
+        let logged = captured.events();
+        assert!(
+            logged
+                .iter()
+                .any(|(level, line)| *level == tracing::Level::WARN && line.contains("headless")),
+            "nothing in the log says which message was kept unread: {logged:?}"
+        );
     }
 
     /// Housekeeping that clears the server after a fortnight.

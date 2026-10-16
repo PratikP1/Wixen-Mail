@@ -429,6 +429,16 @@ pub enum UIUpdate {
     /// about what a link may ask for are applied once, by the copy that is
     /// going to act on it. See [`crate::application::handover`].
     HandedOver(String),
+    /// A calendar a followed link asked for, fetched on the runtime and
+    /// handed back to be read on the window's thread, which is the only
+    /// thread the store may be read on (audit finding #20).
+    ///
+    /// A failure travels as its sentence, because the error itself cannot be
+    /// copied, and it is said exactly as it would have been.
+    CalendarFetched {
+        address: String,
+        fetched: std::result::Result<String, String>,
+    },
     /// The whole shape of the folder tree, worked out by
     /// [`crate::presentation::folder_tree::rows`].
     ///

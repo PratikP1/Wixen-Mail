@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 747 records have arrived since and have not been through it.
+# 751 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -737,7 +737,7 @@ tests_last_seen = [
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
-    { file = "src/service/ical_subscription.rs", tests = 19 },
+    { file = "src/service/ical_subscription.rs", tests = 23 },
 ]
 
 # ── One contact, however many address books hold a copy ─────────────────────
@@ -5416,7 +5416,7 @@ red = [
     "application::pop_sync::tests::test_a_removal_held_by_allow_changes_is_counted_as_waiting_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
 ]
 
 # ── A subscription change nothing had ever sent ─────────────────────────────
@@ -12844,7 +12844,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
     { file = "src/data/message_cache/signed_original.rs", tests = 15 },
@@ -16974,7 +16974,7 @@ red = [
     "application::pop_sync::tests::test_what_a_list_said_about_leaving_it_reaches_a_row_downloaded_over_pop",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
 ]
 
 # ── What a message says about its own form, and who is told ──────────────────
@@ -33989,7 +33989,7 @@ red = [
     "application::pop_sync::tests::test_a_check_says_a_rule_named_a_label_the_account_does_not_have",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
 ]
 
 # A do-half that says something: Star's sentence said from inside the
@@ -36546,7 +36546,7 @@ red = [
     "application::pop_sync::tests::test_a_pop_rule_that_deletes_still_marks_the_message_deleted_here",
 ]
 tests_last_seen = [
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
 ]
 
 # A run's move that carries no keyword for the labels the run puts on, so
@@ -37204,7 +37204,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
@@ -37237,7 +37237,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
@@ -37593,7 +37593,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
@@ -37617,7 +37617,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/pop_sync.rs", tests = 54 },
+    { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/data/message_cache/what_forgetting_costs.rs", tests = 9 },
 ]
 
@@ -40592,4 +40592,84 @@ red = [
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
+]
+
+# A calendar feed's host is given a time limit to answer and finish (audit
+# finding #20). The break builds the client with no limit, and a host that
+# accepts the connection and never answers holds a followed webcal link, or
+# a subscribed feed's refresh and the guard that refuses undoing a calendar
+# deletion, for ever. Added 2026-10-16 by 13.2-14 and measured against the
+# whole library.
+[[guard]]
+name = "a calendar feed's host has thirty seconds to answer, not for ever"
+file = "src/service/ical_subscription.rs"
+before = '''        let http = reqwest::Client::builder()
+            .timeout(limit)
+            .build()'''
+after = '''        let http = reqwest::Client::builder()
+            .build()'''
+red = [
+    "service::ical_subscription::tests::test_a_feed_host_that_never_answers_is_given_up_on_within_the_limit",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 23 },
+]
+
+# A calendar feed is read as it arrives and refused once it passes the cap
+# (audit finding #20). The break never refuses, and an endless reply is read
+# into memory until the host stops sending, which a hostile one never does.
+# Added 2026-10-16 by 13.2-14 and measured against the whole library.
+[[guard]]
+name = "a calendar feed larger than the cap is refused as it arrives, not read whole"
+file = "src/service/ical_subscription.rs"
+before = '''            if arrived.len() + chunk.len() > self.cap {'''
+after = '''            if false && arrived.len() + chunk.len() > self.cap {'''
+red = [
+    "service::ical_subscription::tests::test_a_feed_larger_than_the_cap_is_refused_as_it_arrives",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 23 },
+]
+
+# A followed calendar link is fetched on the runtime and its answer handed
+# back to the window's thread (audit finding #20). The break waits on the
+# runtime from the window's thread again, and a host that never answers
+# freezes the window until the feed client's limit runs out. The reading
+# goes red on its own target. Added 2026-10-16 by 13.2-14 and measured
+# through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a followed calendar link is fetched off the window's thread, not waited on there"
+file = "src/presentation/wx_app.rs"
+suite = "a_followed_calendar_link_is_fetched_off_the_window"
+before = '''            let hands_back = tx.clone();
+            rt.spawn(async move {
+                let fetched = crate::service::ICalSubscriptionClient::new()'''
+after = '''            let hands_back = tx.clone();
+            rt.block_on(async move {
+                let fetched = crate::service::ICalSubscriptionClient::new()'''
+red = [
+    "test_the_calendar_arm_hands_the_fetch_to_the_runtime_and_waits_on_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_followed_calendar_link_is_fetched_off_the_window.rs", tests = 3 },
+]
+
+# A POP message the parser cannot read, one of no bytes or of nothing but
+# blanks, is kept as plain text under its identifier (audit finding #13).
+# The break puts the early return back: the check ends on that message
+# before anything after it is stored and before QUIT, and every later check
+# ends on it first, so nothing after it ever arrives. Added 2026-10-16 by
+# 13.2-14 and measured against the whole library.
+[[guard]]
+name = "a POP message nobody can read is kept and the mail after it still arrives"
+file = "src/application/pop_sync.rs"
+before = '''        let parsed = read_or_keep_as_text(&raw, uidl);'''
+after = '''        let parsed = crate::service::mime::parse(&raw)?;'''
+red = [
+    "application::pop_sync::tests::test_a_message_nobody_can_read_is_kept_and_the_mail_after_it_still_arrives",
+    "application::pop_sync::tests::test_a_message_nobody_can_read_keeps_its_text_and_the_log_names_only_its_identifier",
+]
+tests_last_seen = [
+    { file = "src/application/pop_sync.rs", tests = 56 },
 ]

@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 735
+open_count: 738
 waived_count: 0
 fixed_count: 126
-total_count: 861
+total_count: 864
 last_updated: 2026-10-16T12:00:00.000Z
 ---
 
@@ -876,6 +876,9 @@ last_updated: 2026-10-16T12:00:00.000Z
 | 859 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are | open |  | 2026-10-16T01:15:00.000Z |  |
 | 860 | 13.2 | unrun-verify | src/presentation/editor_document.rs |  | 13.2-13, finding #19 of the audit of 2026-10-14, on a build holding 13.2-13's merge: Reply to a real newsletter that carries a tracking pixel, with a loopback proxy or a network log watching, and nothing the newsletter points at is fetched while the editor is open; Forward the same and the sent message still points at the original's pictures. Held by the editor page's cases and a record whose break takes the img-src data: rule out; nothing here has driven a live editor's WebView2 against it. Closed when the reply has been watched on the wire | open |  | 2026-10-16T12:00:00.000Z |  |
 | 861 | 13.2 | unrun-verify | src/application/meeting_changes.rs |  | 13.2-13, finding #21 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-13's merge: a meeting update from the organiser's address in a message the list shows as Phishing or Spam, opened in a reader window, says Your calendar was not changed, because this message is marked as phishing, so it may not really come from the organiser, and the meeting stays where it was. Held by the decision's cases, the reader's case against a real store, and a record; no NVDA case opens such a message. Closed when he has heard it | open |  | 2026-10-16T12:00:00.000Z |  |
+| 862 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-14, finding #20 of the audit of 2026-10-14, on a build holding 13.2-14's merge with NVDA running: a webcal link to a real published feed followed from a web page says Fetching that calendar., the window answers keys while the feed is fetched, and what follows is heard as before. Held by the client's cases against loopback hosts that never answer or never stop, a reading that the handover's calendar arm waits on nothing, and three records; no real feed has been fetched and no NVDA case follows a calendar link. Closed when he has heard it | open |  | 2026-10-16T12:00:00.000Z |  |
+| 863 | 13.2 | unrun-verify | src/application/pop_sync.rs |  | 13.2-14, finding #13 of the audit of 2026-10-14: a POP account whose server holds a zero-length or blank message checked on a build holding 13.2-14's merge, and the message is kept in the Inbox with no subject, the mail after it arrives, and the next check fetches neither again. Held by two cases against a scripted server and a record; nothing here has met a real POP server holding such a message. Phase 14's | open |  | 2026-10-16T12:00:00.000Z |  |
+| 864 | 13.2 | todo | src/application/pop_sync.rs |  | 13.2-14: a POP message nobody can read is kept as plain text and said only by the row it makes and a log line naming its identifier, as the IMAP header path treats the same failure, and the check's sentence does not mention it. The phase README lists a sentence for it as something Pratik may ask for. Recommended: leave it, since such a message has no text to lose and its empty row is visible in the Inbox. Closed when Pratik answers and the answer is carried out with a case, or he decides the row is enough | open |  | 2026-10-16T12:00:00.000Z |  |
 
 ````json
 [
@@ -11206,6 +11209,42 @@ last_updated: 2026-10-16T12:00:00.000Z
     "file": "src/application/meeting_changes.rs",
     "line": null,
     "description": "13.2-13, finding #21 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-13's merge: a meeting update from the organiser's address in a message the list shows as Phishing or Spam, opened in a reader window, says Your calendar was not changed, because this message is marked as phishing, so it may not really come from the organiser, and the meeting stays where it was. Held by the decision's cases, the reader's case against a real store, and a record; no NVDA case opens such a message. Closed when he has heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 862,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.2-14, finding #20 of the audit of 2026-10-14, on a build holding 13.2-14's merge with NVDA running: a webcal link to a real published feed followed from a web page says Fetching that calendar., the window answers keys while the feed is fetched, and what follows is heard as before. Held by the client's cases against loopback hosts that never answer or never stop, a reading that the handover's calendar arm waits on nothing, and three records; no real feed has been fetched and no NVDA case follows a calendar link. Closed when he has heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 863,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/pop_sync.rs",
+    "line": null,
+    "description": "13.2-14, finding #13 of the audit of 2026-10-14: a POP account whose server holds a zero-length or blank message checked on a build holding 13.2-14's merge, and the message is kept in the Inbox with no subject, the mail after it arrives, and the next check fetches neither again. Held by two cases against a scripted server and a record; nothing here has met a real POP server holding such a message. Phase 14's",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 864,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/pop_sync.rs",
+    "line": null,
+    "description": "13.2-14: a POP message nobody can read is kept as plain text and said only by the row it makes and a log line naming its identifier, as the IMAP header path treats the same failure, and the check's sentence does not mention it. The phase README lists a sentence for it as something Pratik may ask for. Recommended: leave it, since such a message has no text to lose and its empty row is visible in the Inbox. Closed when Pratik answers and the answer is carried out with a case, or he decides the row is enough",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T12:00:00.000Z",
