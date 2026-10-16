@@ -49,6 +49,7 @@ use crate::application::one_day_of_a_series;
 use crate::application::receipts::address_of;
 use crate::data::message_cache::CalendarEventEntry;
 use crate::presentation::date_display::DateSettings;
+use crate::service::safety::Safety;
 
 /// What opening a message about a meeting on the calendar changes there.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -132,6 +133,24 @@ pub enum Why {
     /// It came inside an envelope opened here, and opening encrypted mail
     /// never changes anything on its own (decision 14 of phase 13).
     InsideEncryptedMail,
+    /// The message is marked as spam or as phishing, so the From address the
+    /// organiser check reads may be forged.
+    MarkedAs(Safety),
+}
+
+/// Who a message says it is from, and what was made of that before it
+/// arrived here.
+///
+/// One value because the second is a verdict on the first: the receiving
+/// server's filter, the junk folder it was put in, and the sender's own domain
+/// records, as stored on the message. A From address on its own is something
+/// anybody can write.
+#[derive(Debug, Clone, Copy)]
+pub struct TheSender<'a> {
+    /// The message's From as its header carried it.
+    pub from: &'a str,
+    /// The verdict stored on the message.
+    pub marked: Safety,
 }
 
 /// What stops one day of a repeating meeting being changed on its own.
@@ -306,6 +325,7 @@ impl Why {
                 "{NOT_CHANGED} this change came inside encrypted mail, and opening encrypted \
                  mail never changes your calendar on its own."
             ),
+            Why::MarkedAs(_) => String::new(),
         }
     }
 }
@@ -345,8 +365,8 @@ const CALLED_OFF: &str = "cancelled";
 ///
 /// `asked` is what the message's calendar document asks, `invitation` the
 /// meeting it describes, `held` the calendar's copy of that meeting when there
-/// is one, `sender` the message's From as its header carried it, `found` where
-/// the meeting was found, `allowed` what the account it arrived on may change,
+/// is one, `sender` the message's From and the verdict stored on it, `found`
+/// where the meeting was found, `allowed` what the account it arrived on may change,
 /// and `dates` how this reader words a date.
 ///
 /// What the message would change is asked first, so a message that would
@@ -359,7 +379,7 @@ pub fn what_opening_it_changes(
     asked: WhatItAsks,
     invitation: &Invitation,
     held: Option<TheCalendarsCopy<'_>>,
-    sender: &str,
+    sender: TheSender<'_>,
     found: WhereItWasFound,
     allowed: Allowed,
     dates: DateSettings,
@@ -375,7 +395,7 @@ pub fn what_opening_it_changes(
     if found == WhereItWasFound::InsideEncryptedMail {
         return MeetingChange::SaidNotApplied(Why::InsideEncryptedMail);
     }
-    if let Some(why) = why_it_is_not_applied(&held, &wanted, sender, allowed) {
+    if let Some(why) = why_it_is_not_applied(&held, &wanted, sender.from, allowed) {
         return MeetingChange::SaidNotApplied(why);
     }
     let series_id = held.copy.id.clone();
@@ -748,17 +768,25 @@ mod tests {
         opening_found(
             WhereItWasFound::InTheMessage,
             document,
-            sender,
+            unmarked(sender),
             copy,
             organiser,
             answered_version,
         )
     }
 
+    /// `from` on a message nothing marked as spam, phishing or suspicious.
+    fn unmarked(from: &str) -> TheSender<'_> {
+        TheSender {
+            from,
+            marked: Safety::Ordinary,
+        }
+    }
+
     fn opening_found(
         found: WhereItWasFound,
         document: &str,
-        sender: &str,
+        sender: TheSender<'_>,
         copy: &CalendarEventEntry,
         organiser: Option<&str>,
         answered_version: Option<u32>,
@@ -794,7 +822,7 @@ mod tests {
             let change = opening_found(
                 WhereItWasFound::InsideEncryptedMail,
                 &document,
-                ADA,
+                unmarked(ADA),
                 &the_copy(),
                 Some("ada@example.com"),
                 Some(2),
@@ -817,13 +845,127 @@ mod tests {
             opening_found(
                 WhereItWasFound::InsideEncryptedMail,
                 THE_UPDATE,
-                ADA,
+                unmarked(ADA),
                 &already,
                 Some("ada@example.com"),
                 Some(3),
             ),
             MeetingChange::Nothing
         );
+    }
+
+    /// `from` on a message stored as `level`.
+    fn marked(from: &str, level: Safety) -> TheSender<'_> {
+        TheSender {
+            from,
+            marked: level,
+        }
+    }
+
+    /// What opening `document`, in the clear, from Ada marked `level`
+    /// changes, against `copy` with Ada as its organiser and version 2
+    /// answered here.
+    fn opening_marked(document: &str, level: Safety, copy: &CalendarEventEntry) -> MeetingChange {
+        opening_found(
+            WhereItWasFound::InTheMessage,
+            document,
+            marked(ADA, level),
+            copy,
+            Some("ada@example.com"),
+            Some(2),
+        )
+    }
+
+    #[test]
+    fn test_an_organisers_update_marked_as_spam_or_phishing_is_said_and_not_applied() {
+        // Audit finding #21. The organiser check reads the From address, and
+        // anybody can write one. When the server that received the message
+        // found it failing the sender's own domain records, or its filter or
+        // the junk folder put it with spam, that address is the thing in
+        // doubt, so the update moves nothing and says why.
+        for (level, word) in [(Safety::Phishing, "phishing"), (Safety::Spam, "spam")] {
+            let change = opening_marked(THE_UPDATE, level, &the_copy());
+
+            assert_eq!(change, not_applied_because(Why::MarkedAs(level)));
+            assert_eq!(
+                change.said(),
+                Some(format!(
+                    "Your calendar was not changed, because this message is marked as {word}, \
+                     so it may not really come from the organiser."
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_organisers_cancellation_marked_as_phishing_offers_no_removal() {
+        let change = opening_marked(&the_cancellation(), Safety::Phishing, &the_copy());
+
+        assert_eq!(change, not_applied_because(Why::MarkedAs(Safety::Phishing)));
+        assert_eq!(change.offered_removal(), None);
+    }
+
+    #[test]
+    fn test_an_organisers_update_marked_suspicious_or_not_at_all_still_moves_the_meeting() {
+        // Suspicious is this computer's own guess or a single failed record,
+        // which every mailing list produces; refusing on it would stop real
+        // organisers' updates.
+        for level in [Safety::Ordinary, Safety::Suspicious] {
+            let change = opening_marked(THE_UPDATE, level, &the_copy());
+
+            assert!(
+                matches!(change, MeetingChange::Move { .. }),
+                "{level:?}: {change:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_message_marked_as_phishing_that_would_change_nothing_says_nothing() {
+        // Asked after what the message would change, so opening junk that
+        // carries no calendar change is not met with a sentence about one.
+        let already = the_copy_at_the_updates_time();
+        assert_eq!(
+            opening_found(
+                WhereItWasFound::InTheMessage,
+                THE_UPDATE,
+                marked(ADA, Safety::Phishing),
+                &already,
+                Some("ada@example.com"),
+                Some(3),
+            ),
+            MeetingChange::Nothing
+        );
+        let nothing_held = what_opening_it_changes(
+            invitations::what_it_asks(THE_UPDATE),
+            &read(THE_UPDATE),
+            None,
+            marked(ADA, Safety::Phishing),
+            WhereItWasFound::InTheMessage,
+            Allowed::EVERYTHING,
+            written_out_in_full(),
+        );
+        assert_eq!(nothing_held, MeetingChange::Nothing);
+    }
+
+    #[test]
+    fn test_a_change_inside_encrypted_mail_is_said_as_such_however_it_is_marked() {
+        for level in [Safety::Spam, Safety::Phishing] {
+            let change = opening_found(
+                WhereItWasFound::InsideEncryptedMail,
+                THE_UPDATE,
+                marked(ADA, level),
+                &the_copy(),
+                Some("ada@example.com"),
+                Some(2),
+            );
+
+            assert_eq!(
+                change,
+                not_applied_because(Why::InsideEncryptedMail),
+                "{level:?}"
+            );
+        }
     }
 
     /// The calendar's copy already at the update's time.
@@ -938,7 +1080,7 @@ mod tests {
                     answered_version: Some(2),
                     allows: &KEPT_HERE,
                 }),
-                ADA,
+                unmarked(ADA),
                 WhereItWasFound::InTheMessage,
                 Allowed::NOTHING,
                 written_out_in_full(),
@@ -1128,7 +1270,7 @@ mod tests {
             WhatItAsks::Cancellation,
             &read(&the_cancellation()),
             None,
-            ADA,
+            unmarked(ADA),
             WhereItWasFound::InTheMessage,
             Allowed::EVERYTHING,
             written_out_in_full(),
@@ -1197,7 +1339,7 @@ mod tests {
                 answered_version: None,
                 allows,
             }),
-            sender,
+            unmarked(sender),
             WhereItWasFound::InTheMessage,
             Allowed::EVERYTHING,
             written_out_in_full(),
@@ -1543,7 +1685,7 @@ mod tests {
                     answered_version: Some(2),
                     allows: &KEPT_HERE,
                 }),
-                ADA,
+                unmarked(ADA),
                 WhereItWasFound::InTheMessage,
                 Allowed::EVERYTHING,
                 written_out_in_full(),
