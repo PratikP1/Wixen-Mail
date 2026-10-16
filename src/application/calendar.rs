@@ -1300,6 +1300,18 @@ pub async fn delete_google_event(
 
 // ── Microsoft Calendar Sync ─────────────────────────────────────────────────
 
+/// When the stored round began, while it is still young enough to follow.
+///
+/// Not yet decided: every round is taken as still running, as every stored
+/// link was followed before 13.2-18. Its cases are red until the green.
+fn the_round_still_running(
+    last_full_sync: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let _ = last_full_sync;
+    Some(now)
+}
+
 /// Sync calendar events with Microsoft Graph API.
 pub async fn sync_microsoft_calendar(
     cache: &MessageCache,
@@ -1313,7 +1325,13 @@ pub async fn sync_microsoft_calendar(
     let deleted_here = events_deleted_here(cache, account_id, &mut result);
 
     let state = cache.get_sync_state(account_id, "calendar", MICROSOFT)?;
-    let delta_link = state.as_ref().and_then(|s| s.delta_link.as_deref());
+    let running = state
+        .as_ref()
+        .and_then(|s| the_round_still_running(s.last_full_sync.as_deref(), chrono::Utc::now()));
+    let delta_link = state
+        .as_ref()
+        .and_then(|s| s.delta_link.as_deref())
+        .filter(|_| running.is_some());
     let filed_under =
         cache.ensure_provider_calendar(account_id, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
 
@@ -6552,19 +6570,15 @@ mod tests {
     }
 
     /// Store the marker that sends the next Microsoft sync to a given address.
+    ///
+    /// In a round that began now, because a link is followed only while its
+    /// round is still running.
     fn point_the_sync_at(cache: &MessageCache, address: &std::net::SocketAddr) {
-        cache
-            .save_sync_state(&SyncState {
-                id: "sync-1".to_string(),
-                account_id: "acct".to_string(),
-                sync_type: "calendar".to_string(),
-                provider: "outlook".to_string(),
-                sync_token: None,
-                delta_link: Some(format!("http://{address}/delta")),
-                last_full_sync: None,
-                last_incremental_sync: None,
-            })
-            .expect("the sync marker to be stored");
+        a_stored_round(
+            cache,
+            format!("http://{address}/delta"),
+            Some(&chrono::Utc::now().to_rfc3339()),
+        );
     }
 
     fn graph_event(id: &str, subject: &str) -> serde_json::Value {
@@ -6690,10 +6704,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_an_event_microsoft_says_is_gone_is_removed_and_counted_once() {
+        // Dated inside the round's window: a removal notice outside it is
+        // Graph saying the event left the view, not the calendar.
         let cache = temp_cache("ms_removed");
-        cache
-            .save_calendar_event(&already_held("local-1", "ms-1"))
-            .expect("the event the cache already holds");
+        an_outlook_row(&cache, "local-1", "ms-1", 10);
         let address = replying(delta_reply(&[graph_removal("ms-1")])).await;
         point_the_sync_at(&cache, &address);
 
@@ -9943,6 +9957,411 @@ mod tests {
                 ..state
             })
             .expect("the sync state to be writable");
+    }
+
+    // ── The Outlook read's rounds ─────────────────────────────────────────
+    //
+    // Graph keeps the window of the read that started a round inside every
+    // link it hands back, so a round kept for ever reads the same stretch of
+    // time for ever. These cases store a round's start beside its link and
+    // read what the sync then asked for.
+
+    /// A moment this many days from now, written the way the sync state is.
+    fn days_from_now(days: i64) -> String {
+        (chrono::Utc::now() + chrono::Duration::days(days)).to_rfc3339()
+    }
+
+    /// A stored round: the link the next read would follow, and when the
+    /// round it belongs to began.
+    fn a_stored_round(cache: &MessageCache, link: String, began: Option<&str>) {
+        cache
+            .save_sync_state(&SyncState {
+                id: "sync-1".to_string(),
+                account_id: "acct".to_string(),
+                sync_type: "calendar".to_string(),
+                provider: "outlook".to_string(),
+                sync_token: None,
+                delta_link: Some(link),
+                last_full_sync: began.map(str::to_string),
+                last_incremental_sync: None,
+            })
+            .expect("the sync marker to be stored");
+    }
+
+    fn the_stored_round(cache: &MessageCache) -> SyncState {
+        cache
+            .get_sync_state("acct", "calendar", MICROSOFT)
+            .expect("the sync state to be readable")
+            .expect("a sync state after a sync")
+    }
+
+    fn when_it_began(state: &SyncState) -> chrono::DateTime<chrono::Utc> {
+        let began = state
+            .last_full_sync
+            .as_deref()
+            .expect("a round to say when it began");
+        chrono::DateTime::parse_from_rfc3339(began)
+            .expect("a round's start to read as a time")
+            .with_timezone(&chrono::Utc)
+    }
+
+    /// Whether a request asked for a stretch of time rather than following a
+    /// link.
+    fn asks_for_a_window(request: &str) -> bool {
+        let line = asked_for(request);
+        line.contains("/calendarView/delta?")
+            && line.contains("startDateTime=")
+            && line.contains("endDateTime=")
+    }
+
+    /// An Outlook row filed under Outlook's own calendar, this many days from
+    /// now, an hour long.
+    fn an_outlook_row(
+        cache: &MessageCache,
+        id: &str,
+        at_outlook: &str,
+        days: i64,
+    ) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", MICROSOFT, MICROSOFT_CALENDAR_NAME)
+            .expect("the Outlook calendar");
+        let starts = chrono::Utc::now() + chrono::Duration::days(days);
+        let mut row = already_held(id, at_outlook);
+        row.calendar_id = Some(container.id);
+        row.source_provider = Some(MICROSOFT.to_string());
+        row.start_datetime = starts.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        row.end_datetime = (starts + chrono::Duration::hours(1))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        cache
+            .save_calendar_event(&row)
+            .expect("the row to be stored");
+        row
+    }
+
+    fn still_here(cache: &MessageCache, at_outlook: &str) -> bool {
+        cache
+            .get_event_by_provider_id("acct", at_outlook)
+            .expect("the calendar to be readable")
+            .is_some()
+    }
+
+    #[test]
+    fn test_a_round_of_reading_goes_on_for_thirty_days_and_no_longer() {
+        use chrono::TimeZone;
+        let now = chrono::Utc
+            .with_ymd_and_hms(2026, 10, 16, 12, 0, 0)
+            .single()
+            .expect("a moment");
+        let began = |days_ago: i64| now - chrono::Duration::days(days_ago);
+        let written = |days_ago: i64| began(days_ago).to_rfc3339();
+
+        assert_eq!(
+            the_round_still_running(Some(&written(5)), now),
+            Some(began(5))
+        );
+        assert_eq!(
+            the_round_still_running(Some(&written(29)), now),
+            Some(began(29))
+        );
+        assert_eq!(the_round_still_running(Some(&written(0)), now), Some(now));
+        assert_eq!(the_round_still_running(Some(&written(30)), now), None);
+        assert_eq!(the_round_still_running(Some(&written(40)), now), None);
+        // A round that says it began tomorrow is a clock that moved, and the
+        // window it read cannot be placed.
+        assert_eq!(the_round_still_running(Some(&written(-1)), now), None);
+        assert_eq!(the_round_still_running(None, now), None);
+        assert_eq!(the_round_still_running(Some("not a time"), now), None);
+        assert_eq!(the_round_still_running(Some(""), now), None);
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_round_forty_days_old_reads_a_fresh_window_and_starts_again() {
+        // Graph's link carries the window of the read that started the round,
+        // so a link kept for ever never sees a meeting booked past the first
+        // sync's horizon (audit #27).
+        let cache = temp_cache("outlook_a_round_run_out");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec![delta_reply(&[])]).await;
+        a_stored_round(
+            &cache,
+            format!("http://{address}/delta"),
+            Some(&days_from_now(-40)),
+        );
+        let before = chrono::Utc::now();
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::new().pointed_at(&format!("http://{address}")),
+            "token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let asked = heard(listening, "one read").await.expect("one request");
+        assert!(
+            asks_for_a_window(&asked[0]),
+            "a round forty days old was followed rather than started again: {}",
+            asked_for(&asked[0])
+        );
+        let after = the_stored_round(&cache);
+        assert_eq!(
+            after.delta_link.as_deref(),
+            Some("https://example.invalid/delta/next")
+        );
+        assert!(
+            when_it_began(&after) >= before - chrono::Duration::seconds(1),
+            "the new round does not say it began now: {after:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_round_five_days_old_goes_on_from_its_link() {
+        let cache = temp_cache("outlook_a_round_still_running");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec![delta_reply(&[])]).await;
+        let began = days_from_now(-5);
+        a_stored_round(&cache, format!("http://{address}/delta"), Some(&began));
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::new().pointed_at(&format!("http://{address}")),
+            "token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+
+        let asked = heard(listening, "one read").await.expect("one request");
+        assert!(
+            asked_for(&asked[0]).starts_with("GET /delta"),
+            "a round five days old was not followed: {}",
+            asked_for(&asked[0])
+        );
+        assert_eq!(
+            the_stored_round(&cache).last_full_sync.as_deref(),
+            Some(began.as_str()),
+            "following a round moved when it began"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_link_whose_round_cannot_be_placed_is_read_afresh() {
+        for (case, began) in [
+            ("no start", None),
+            ("an unreadable start", Some("not a time")),
+        ] {
+            let cache = temp_cache("outlook_a_round_with_no_start");
+            let (address, listening) =
+                answering_several("200 OK", "application/json", vec![delta_reply(&[])]).await;
+            a_stored_round(&cache, format!("http://{address}/delta"), began);
+
+            sync_microsoft_calendar(
+                &cache,
+                &MsGraphClient::new().pointed_at(&format!("http://{address}")),
+                "token",
+                "acct",
+            )
+            .await
+            .expect("the sync to finish");
+
+            let asked = heard(listening, "one read").await.expect("one request");
+            assert!(
+                asks_for_a_window(&asked[0]),
+                "a link with {case} was followed: {}",
+                asked_for(&asked[0])
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_an_expired_outlook_link_is_read_again_with_the_window() {
+        // Graph refuses a calendar view with no window, so a retry that asked
+        // for none stopped the Outlook calendar for good on its first 410.
+        let cache = temp_cache("outlook_an_expired_link");
+        let (gone, _asked_the_old_link) = answering(
+            "410 Gone",
+            "application/json",
+            r#"{"error":{"code":"syncStateNotFound"}}"#.to_string(),
+        )
+        .await;
+        a_stored_round(
+            &cache,
+            format!("http://{gone}/delta"),
+            Some(&days_from_now(-5)),
+        );
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![delta_reply(&[graph_event("ms-1", "Budget review")])],
+        )
+        .await;
+        let before = chrono::Utc::now();
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::new().pointed_at(&format!("http://{address}")),
+            "token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish after the expired link");
+
+        let asked = heard(listening, "the read after the 410")
+            .await
+            .expect("one request");
+        assert!(
+            asks_for_a_window(&asked[0]),
+            "the read after an expired link asked for no window: {}",
+            asked_for(&asked[0])
+        );
+        assert!(still_here(&cache, "ms-1"), "the fresh read stored nothing");
+        let after = the_stored_round(&cache);
+        assert_eq!(
+            after.delta_link.as_deref(),
+            Some("https://example.invalid/delta/next")
+        );
+        assert!(
+            when_it_began(&after) >= before - chrono::Duration::seconds(1),
+            "the read after the 410 started a round and does not say so: {after:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_removal_notice_outside_the_rounds_window_keeps_the_meeting() {
+        // Graph names an event that has left the round's window under
+        // @removed, though the calendar still holds it. A meeting made here
+        // two years ahead was deleted here at the next sync.
+        let cache = temp_cache("outlook_a_removal_outside_the_window");
+        an_outlook_row(&cache, "far-here", "far-1", 730);
+        an_outlook_row(&cache, "near-here", "near-1", 10);
+        let address = replying(delta_reply(&[
+            graph_removal("far-1"),
+            graph_removal("near-1"),
+        ]))
+        .await;
+        a_stored_round(
+            &cache,
+            format!("http://{address}/delta"),
+            Some(&days_from_now(-5)),
+        );
+
+        let result = sync_microsoft_calendar(&cache, &MsGraphClient::new(), "token", "acct")
+            .await
+            .expect("the sync to finish");
+
+        assert!(
+            still_here(&cache, "far-1"),
+            "a meeting two years ahead was deleted for leaving the round's window"
+        );
+        assert!(
+            !still_here(&cache, "near-1"),
+            "a meeting inside the round's window that Outlook removed is still here"
+        );
+        assert_eq!(result.deleted, 1, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_round_that_read_a_window_takes_off_what_outlook_no_longer_holds() {
+        // A full read names every event in its window, so a row inside it
+        // that the answer did not name was deleted at Outlook while the old
+        // round was being followed (the Outlook quarter of audit #29).
+        let cache = temp_cache("outlook_a_window_read_takes_off");
+        an_outlook_row(&cache, "gone-here", "gone-1", 10);
+        an_outlook_row(&cache, "far-here", "far-1", 730);
+        an_outlook_row(&cache, "kept-here", "kept-1", 10);
+        let mut waiting = an_outlook_row(&cache, "waiting-here", "waiting-1", 10);
+        waiting.pending = true;
+        cache.save_calendar_event(&waiting).expect("the change");
+        let mut series = an_outlook_row(&cache, "series-here", "series-1", 3);
+        series.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        cache.save_calendar_event(&series).expect("the series");
+        let mut day = an_outlook_row(&cache, "day-here", "day-1", 10);
+        day.cut_from_event_id = Some(series.id.clone());
+        cache.save_calendar_event(&day).expect("the changed day");
+        let noted = an_outlook_row(&cache, "noted-here", "noted-1", 10);
+        cache
+            .delete_calendar_event(&noted.id)
+            .expect("the event to be deleted here");
+        cache.save_calendar_event(&noted).expect("the row back");
+
+        let mut a_day_of_the_series = graph_event("series-1-day", "Weekly");
+        a_day_of_the_series["seriesMasterId"] = serde_json::json!("series-1");
+        a_day_of_the_series["type"] = serde_json::json!("occurrence");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![delta_reply(&[
+                graph_event("kept-1", "Still there"),
+                a_day_of_the_series,
+            ])],
+        )
+        .await;
+
+        let result = sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::new().pointed_at(&format!("http://{address}")),
+            "token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "one read").await.expect("one request");
+
+        assert!(
+            !still_here(&cache, "gone-1"),
+            "a meeting inside the window Outlook no longer holds is still here"
+        );
+        for (at_outlook, why) in [
+            ("far-1", "outside the window the read asked about"),
+            ("kept-1", "named by the answer"),
+            ("waiting-1", "carrying a change waiting here"),
+            ("series-1", "a series one of whose days the answer named"),
+            ("day-1", "a day kept out of a series the answer named"),
+            ("noted-1", "deleted here"),
+        ] {
+            assert!(
+                still_here(&cache, at_outlook),
+                "a row {why} was taken off: {at_outlook}"
+            );
+        }
+        assert_eq!(result.deleted, 1, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_meeting_this_sync_sent_to_outlook_is_not_taken_off_by_its_read() {
+        // What the push has just put there counts as named, the calendar
+        // server's rule: an answer read a moment after the create may not
+        // carry it yet, and the row would go in the same pass that sent it.
+        let cache = temp_cache("outlook_what_was_just_sent");
+        let mut made_here = an_outlook_row(&cache, "made-here", "unused", 10);
+        made_here.provider_event_id = None;
+        made_here.pending = true;
+        cache.save_calendar_event(&made_here).expect("the change");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"id\":\"from-graph\"}".to_string(), delta_reply(&[])],
+        )
+        .await;
+
+        sync_microsoft_calendar(
+            &cache,
+            &MsGraphClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "a create and a read")
+            .await
+            .expect("two requests");
+
+        assert!(
+            still_here(&cache, "from-graph"),
+            "a meeting sent to Outlook in this sync was taken off by its own read"
+        );
     }
 
     #[tokio::test]
