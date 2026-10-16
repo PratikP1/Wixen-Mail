@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 745 records have arrived since and have not been through it.
+# 746 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -17603,7 +17603,7 @@ red = [
     "presentation::editor_page_harness::tests::test_a_file_dropped_on_the_message_is_turned_away_when_the_page_runs",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 88 },
+    { file = "src/presentation/editor_document.rs", tests = 91 },
     { file = "src/presentation/editor_page_harness.rs", tests = 36 },
 ]
 
@@ -29728,7 +29728,7 @@ red = [
     "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 88 },
+    { file = "src/presentation/editor_document.rs", tests = 91 },
     { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
@@ -29755,7 +29755,7 @@ red = [
     "test_a_marker_typed_at_the_start_of_any_line_makes_its_structure",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 88 },
+    { file = "src/presentation/editor_document.rs", tests = 91 },
     { file = "tests/a_marker_counts_at_the_start_of_any_line.rs", tests = 6 },
 ]
 
@@ -33288,7 +33288,7 @@ red = [
     "test_alt_y_inside_the_message_ticks_encrypt",
 ]
 tests_last_seen = [
-    { file = "src/presentation/editor_document.rs", tests = 88 },
+    { file = "src/presentation/editor_document.rs", tests = 91 },
     { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
 ]
 
@@ -40542,4 +40542,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 155 },
+]
+
+# The reply and forward editor's page fetches no picture a message points
+# at (audit finding #19): its head allows pictures from data: addresses
+# alone, because the page runs the cleaner and not the reader's hold-back
+# step, and a reply quotes a stranger. The break takes the rule out, and
+# Ctrl+R on a newsletter fetches its tracking pixels again. Added
+# 2026-10-16 by 13.2-13 and taken by hand against the whole library: the
+# two cases the rule is about, of 9,170.
+[[guard]]
+name = "the reply editor's page allows pictures from data: addresses alone"
+file = "src/presentation/editor_document.rs"
+before = '''<head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="img-src data:"><title>'''
+after = '''<head><meta charset="utf-8"><title>'''
+red = [
+    "presentation::editor_document::tests::test_the_editor_page_fetches_only_the_pictures_it_carries",
+    "presentation::editor_document::tests::test_the_picture_rule_is_the_page_s_only_rule_so_its_own_script_runs",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
 ]

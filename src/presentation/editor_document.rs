@@ -144,9 +144,19 @@ pub fn editor_document(body: &MessageBody, language: &str, mark_spelling: bool) 
     // root after. Without one it uses the page's address, and this page is
     // its own address, so the name was the whole document, base64 and all.
     // The same words as the editable region's label, so the two agree.
+    //
+    // Pictures come from data: addresses alone (audit finding #19). The
+    // reader holds back every picture a message points at, tracking pixels
+    // first; this page runs the cleaner and not that step, and a reply quotes
+    // a stranger, so without the rule Reply fetched what reading had held
+    // back and told the sender the message was opened. A picture carried in
+    // the body or inserted here is a data: address and still shows. The rule
+    // names pictures only: a default-src would stop this page's own inline
+    // script, and the markup read back and sent is untouched, so a forward
+    // still carries the original's pictures as it pointed at them.
     format!(
         r#"<!DOCTYPE html>
-<html lang="{language}"><head><meta charset="utf-8"><title>Message body</title><style>
+<html lang="{language}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="img-src data:"><title>Message body</title><style>
 html, body {{ height: 100%; margin: 0; }}
 body {{
     font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
