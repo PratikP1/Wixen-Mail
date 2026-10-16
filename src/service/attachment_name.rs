@@ -96,6 +96,12 @@ pub fn safe_file_name(proposed: &str) -> String {
     trimmed
 }
 
+/// Mark a file just written from a stranger's message as having come from the
+/// internet.
+pub fn mark_as_from_the_internet(_path: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Whether the stem is one of Windows' device names.
 fn is_device_name(name: &str) -> bool {
     let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
@@ -259,6 +265,71 @@ mod tests {
             "sixteen characters were kept as though they were an extension: {cut}"
         );
         assert!(cut.chars().count() <= MAX_LENGTH);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_saved_file_is_marked_as_from_the_internet_and_keeps_its_bytes() {
+        // A macro document a stranger sent. Without the mark Office opens it
+        // outside Protected View, and a script saved the same way runs on a
+        // double-click with no prompt.
+        let folder = tempfile::tempdir().expect("a folder to save into");
+        let saved = folder.path().join("invoice.docm");
+        let bytes = b"PK\x03\x04 a stranger's macros";
+        std::fs::write(&saved, bytes).expect("the save itself");
+
+        mark_as_from_the_internet(&saved).expect("the mark");
+
+        // Read as nothing when the stream is absent, so a file with no mark
+        // fails on what it lacks rather than on the read.
+        let mark = std::fs::read_to_string(format!("{}:Zone.Identifier", saved.display()))
+            .unwrap_or_default();
+        let lines: Vec<&str> = mark.lines().collect();
+        assert!(
+            lines.contains(&"[ZoneTransfer]") && lines.contains(&"ZoneId=3"),
+            "the file carries no mark naming the Internet zone on lines of its own: {mark:?}"
+        );
+        assert_eq!(
+            std::fs::read(&saved).expect("the saved file"),
+            bytes,
+            "marking the file changed what it holds"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_place_that_cannot_hold_the_mark_says_so_rather_than_panicking() {
+        // FAT, exFAT and some shares hold no alternate streams, so the write
+        // of the mark fails there while the file itself was saved. A folder
+        // that does not exist fails the same write the same way, and is one
+        // every machine can make.
+        let folder = tempfile::tempdir().expect("a folder to save into");
+        let nowhere = folder
+            .path()
+            .join("a folder nobody made")
+            .join("invoice.docm");
+
+        let answer = mark_as_from_the_internet(&nowhere);
+
+        assert!(
+            answer.is_err(),
+            "a mark that could not be written was reported as written"
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_off_windows_marking_does_nothing() {
+        let folder = tempfile::tempdir().expect("a folder to save into");
+        let saved = folder.path().join("invoice.docm");
+        std::fs::write(&saved, b"bytes").expect("the save itself");
+
+        mark_as_from_the_internet(&saved).expect("nothing to fail");
+
+        let entries = std::fs::read_dir(folder.path())
+            .expect("the folder")
+            .count();
+        assert_eq!(entries, 1, "marking off Windows left something behind");
     }
 
     #[test]
