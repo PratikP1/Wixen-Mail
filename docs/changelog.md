@@ -1427,6 +1427,37 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **An event made here on the first day of a week or a month shows in that view
+  (2026-10-16).** A meeting made in the event window on a Monday was missing from that week's
+  Week view, and one made on the first of a month was missing from that month's Month view,
+  though it showed on every other day. The event window stores a time as "2026-10-12 09:00",
+  or the date alone for a day with no times, and the views asked for everything ending at or
+  after "2026-10-12T00:00:00Z". Compared as text, both of the event window's shapes sort
+  before that, so a view's first day lost them. Now a view's first day is compared by its
+  date alone, which every shape of that day meets.
+- **The Outlook calendar keeps seeing a year ahead and no longer stops on an expired marker
+  (2026-10-16).** Outlook's marker for where the last calendar sync finished carries the dates
+  the first sync asked about, six months back to a year ahead of that day, and the sync kept
+  that marker for ever. So from setup on, a meeting booked at Outlook more than a year past
+  that day never arrived here. A meeting made here that far ahead was deleted here at the
+  next sync, because Outlook reports an event outside those dates as removed. And when
+  Outlook said the marker had expired, the sync asked again with no dates at all, which
+  Outlook refuses, so the Outlook calendar stopped syncing for good. Now:
+  - the sync starts a fresh read of six months back to a year ahead at least every 30 days,
+    so the year ahead it sees is never more than a month out of date;
+  - after an expired marker it reads again with those dates and carries on;
+  - Outlook reporting an event outside the dates it was asked about as removed no longer
+    deletes it here, since the event left the view and not the calendar;
+  - and a fresh read takes off a meeting it no longer finds inside its dates, so a meeting
+    deleted at Outlook while the sync was reading changes alone does not stay here for ever.
+    A meeting waiting to send a change made here, one deleted here, a meeting this sync has
+    just sent, and the days of a series the read still names are all kept.
+
+  Known limitation: a meeting more than a year ahead that is deleted at Outlook stays here
+  until a fresh read's dates reach it, because Outlook reports that deletion in the same words
+  as a meeting that only lies outside the dates asked about. Read from Microsoft's
+  documentation of how Outlook reports changes, and not yet tried against a real Outlook
+  account.
 - **Google contacts keep syncing after the first week (2026-10-16).** Google's marker for
   where the last contacts sync finished runs out seven days after a full read, and Google says
   so with an answer the sync did not recognise. So from about a week after setup, every
