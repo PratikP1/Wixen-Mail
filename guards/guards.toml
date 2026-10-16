@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 759 records have arrived since and have not been through it.
+# 760 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1592,7 +1592,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 [[guard]]
@@ -1610,7 +1610,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -32125,7 +32125,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -32332,7 +32332,7 @@ tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -32450,7 +32450,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -35157,7 +35157,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # A meeting made here that nobody answered taken for an answer's row, so a
@@ -35173,7 +35173,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The merge filing the provider's copy under its own identity, which is ledger
@@ -35441,7 +35441,25 @@ red = [
     "data::message_cache::calendar::tests::test_another_days_row_and_another_accounts_are_not_found",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+]
+
+# A window's lower bound compared whole, so an event made here, stored as
+# "YYYY-MM-DD HH:MM" or as the bare date, ending on the window's first day
+# sorts before "T00:00:00Z" and is left out of that week's or month's view
+# (audit #4, T-13.2-15-04). Written 2026-10-16 by 13.2-18, taken by hand
+# against the whole library, 9,209 tests, with nothing else red.
+[[guard]]
+name = "a window starts at the date of its first day, whatever shape an event is stored in"
+file = "src/data/message_cache/calendar.rs"
+before = '''                params![account_id, the_day_a_window_starts(from), to],'''
+after = '''                params![account_id, from, to],'''
+red = [
+    "data::message_cache::calendar::tests::test_an_event_made_here_on_the_windows_first_day_is_in_the_window",
+    "data::message_cache::calendar::tests::test_a_day_made_here_with_no_times_on_the_months_first_day_is_in_the_month",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # Remove from Calendar on one cancelled day marking the whole series

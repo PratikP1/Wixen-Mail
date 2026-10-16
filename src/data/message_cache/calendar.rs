@@ -101,6 +101,20 @@ pub(super) fn events_that_overlap_query() -> String {
     )
 }
 
+/// The lower bound of a window, cut to its date.
+///
+/// Every view asks from "YYYY-MM-DDT00:00:00Z", which is the shape a sync
+/// stores, but the editor stores "YYYY-MM-DD HH:MM", or the bare date for a
+/// day with no times. Compared as text, a space sorts before the T and a bare
+/// date is a prefix of the bound, so an event made here ending on the window's
+/// first day sorted before it and was left out. Every stored shape on that day
+/// sorts at or after the date alone. The upper bound needs nothing: every
+/// shape of a day sorts before that day's "T23:59:59Z", so it already admits
+/// them all. A bound shorter than a date is used as it is.
+fn the_day_a_window_starts(from: &str) -> &str {
+    from.get(..10).unwrap_or(from)
+}
+
 /// Every event of an account that repeats: `?1` account.
 ///
 /// A series is stored once with the start of its first occurrence and expanded
@@ -349,7 +363,10 @@ impl MessageCache {
             .prepare_cached(&events_that_overlap_query())
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
         let mut events: Vec<CalendarEventEntry> = overlapping
-            .query_map(params![account_id, from, to], map_event_row)
+            .query_map(
+                params![account_id, the_day_a_window_starts(from), to],
+                map_event_row,
+            )
             .map_err(|e| Error::Other(format!("Failed to query events: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect events: {}", e)))?;
