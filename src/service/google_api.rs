@@ -796,6 +796,12 @@ impl GoogleApiClient {
 
     // ── Calendar ────────────────────────────────────────────────────────
 
+    /// The address of the Google account a token belongs to.
+    pub async fn the_address_signed_in(&self, token: &str) -> Result<String> {
+        let _ = token;
+        Err(Error::Other("not asked".to_string()))
+    }
+
     /// Every calendar on the account's list, hidden ones included.
     ///
     /// The whole list or an error, never part of it: a calendar missing from
@@ -1275,6 +1281,55 @@ mod tests {
             GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
             listening,
         )
+    }
+
+    #[tokio::test]
+    async fn test_the_address_a_token_belongs_to_is_its_primary_calendars_id() {
+        // Google's reference for calendars.get, last updated 2026-05-12, says
+        // the calendar scope both sign-ins ask for allows it and "primary"
+        // names the signed-in user's own calendar; its concepts page, last
+        // updated 2026-09-03, says that calendar's ID "usually matches the
+        // user's primary email address".
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"kind":"calendar#calendar","id":"ada.lovelace@gmail.com","summary":"Ada"}"#
+                .to_string(),
+        )
+        .await;
+        let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let signed_in = google.the_address_signed_in("a-token").await;
+
+        assert_eq!(signed_in.ok().as_deref(), Some("ada.lovelace@gmail.com"));
+        let request = heard(listening, "the primary calendar")
+            .await
+            .expect("asked");
+        assert_eq!(asked_for(&request), "GET /calendars/primary");
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer a-token"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refusal_or_an_empty_answer_about_the_primary_calendar_is_never_an_address() {
+        for (status, reply) in [
+            (
+                "403 Forbidden",
+                r#"{"error":{"code":403,"message":"Calendar API has not been used"}}"#,
+            ),
+            ("200 OK", r#"{"kind":"calendar#calendar","id":"  "}"#),
+            ("200 OK", r#"{"kind":"calendar#calendar"}"#),
+        ] {
+            let (address, _listening) =
+                answering(status, "application/json", reply.to_string()).await;
+            let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+            let signed_in = google.the_address_signed_in("a-token").await;
+            assert!(signed_in.is_err(), "{status} {reply}: {signed_in:?}");
+        }
     }
 
     #[tokio::test]

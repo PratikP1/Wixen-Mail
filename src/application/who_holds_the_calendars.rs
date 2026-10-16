@@ -380,8 +380,11 @@ pub enum WhatTheSeparateSignInDoes<Key> {
     /// carries all four permissions (D-14).
     TheMailSignInCoversIt,
     NoGoogleSignInKey,
-    /// Sign in, with the key this copy holds.
-    SignsIn(Key),
+    /// Sign in as the account's address, with the key this copy holds.
+    SignsIn {
+        key: Key,
+        address: String,
+    },
 }
 
 /// What the button does for this account, with the key this copy holds.
@@ -400,7 +403,10 @@ pub fn what_the_separate_sign_in_does<Key>(
     }
     match key {
         None => WhatTheSeparateSignInDoes::NoGoogleSignInKey,
-        Some(key) => WhatTheSeparateSignInDoes::SignsIn(key),
+        Some(key) => WhatTheSeparateSignInDoes::SignsIn {
+            key,
+            address: account.email.clone(),
+        },
     }
 }
 
@@ -433,11 +439,16 @@ impl<Key> WhatTheSeparateSignInDoes<Key> {
                  Google sign-in key, so signing in through the browser cannot run. See Setting \
                  up a provider in Help."
                 .to_string(),
-            WhatTheSeparateSignInDoes::SignsIn(_) => "Signing in to Google for the account's \
+            WhatTheSeparateSignInDoes::SignsIn { .. } => "Signing in to Google for the account's \
                  calendars, contacts and tasks. Finish in the browser."
                 .to_string(),
         }
     }
+}
+
+/// What Sign In Again says as the browser sign-in begins.
+pub fn what_sign_in_again_says_as_it_begins(account: &Account) -> String {
+    format!("Signing in to {}. Finish in the browser.", account.name)
 }
 
 /// What the button says when signing in worked.
@@ -1694,7 +1705,10 @@ mod tests {
         );
         assert_eq!(
             what_the_separate_sign_in_does(Some(&a_gmail_account(false)), A_KEY),
-            SignsIn("a key")
+            SignsIn {
+                key: "a key",
+                address: "me@gmail.com".into()
+            }
         );
     }
 
@@ -1704,10 +1718,17 @@ mod tests {
             NoGoogleSignInKey, NotAtGoogle, NothingChosen, SignsIn, TheMailSignInCoversIt,
         };
         assert_eq!(NothingChosen::<&str>.sentence(), "Choose an account first.");
+        let signing_in = || SignsIn {
+            key: "a key",
+            address: "ada.lovelace@gmail.com".into(),
+        };
+        // The address to choose in the browser, which Google is also told
+        // (audit #23), so a person with several Google accounts in the browser
+        // knows which one this is for.
         assert_eq!(
-            SignsIn("a key").sentence(),
-            "Signing in to Google for the account's calendars, contacts and tasks. Finish in \
-             the browser."
+            signing_in().sentence(),
+            "Signing in to Google for this account's calendars, contacts and tasks. In the \
+             browser, choose ada.lovelace@gmail.com, and finish there."
         );
         let covered = TheMailSignInCoversIt::<&str>.sentence();
         assert!(covered.contains("Sign In Again"), "{covered}");
@@ -1721,7 +1742,7 @@ mod tests {
             NotAtGoogle,
             TheMailSignInCoversIt,
             NoGoogleSignInKey,
-            SignsIn("a key"),
+            signing_in(),
         ];
         for said in every_answer.iter().map(WhatTheSeparateSignInDoes::sentence) {
             assert_eq!(
@@ -1755,6 +1776,20 @@ mod tests {
              closed."
         );
         assert_eq!(reads_as_a_persons_sentence(&failed, Voice::Answer), Ok(()));
+    }
+
+    #[test]
+    fn test_sign_in_again_names_the_address_to_choose_in_the_browser() {
+        let mut work = a_gmail_account(true);
+        work.name = "Work".into();
+        work.email = "ada.lovelace@gmail.com".into();
+        let said = what_sign_in_again_says_as_it_begins(&work);
+        assert_eq!(
+            said,
+            "Signing in to Work. In the browser, choose ada.lovelace@gmail.com, and finish \
+             there."
+        );
+        assert_eq!(reads_as_a_persons_sentence(&said, Voice::Answer), Ok(()));
     }
 
     #[test]
@@ -1803,7 +1838,7 @@ mod tests {
     ) -> Reading<()> {
         let sign_in = the_function(manager, "fn sign_in_for_calendars(")?;
         if !sign_in.contains("GOOGLE_CALENDARS_CONTACTS_AND_TASKS")
-            || !sign_in.contains(".authorize()")
+            || !sign_in.contains(".authorize(")
         {
             return Err("the button does not sign in under the separate sign-in's name".into());
         }

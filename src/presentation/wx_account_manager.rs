@@ -697,7 +697,7 @@ pub fn reauthorize_selected(
             said_and_shown(
                 status,
                 a11y,
-                &format!("Signing in to {name}. Finish in the browser."),
+                &who_holds_the_calendars::what_sign_in_again_says_as_it_begins(&state.working[idx]),
                 Priority::Normal,
             );
             let mut account = state.working[idx].clone();
@@ -785,12 +785,12 @@ fn sign_in_for_calendars_selected(
 ) -> Option<String> {
     let answer = who_holds_the_calendars::what_the_separate_sign_in_does_here(chosen);
     let begun = answer.sentence();
-    let (WhatTheSeparateSignInDoes::SignsIn(key), Some(account)) = (answer, chosen) else {
+    let (WhatTheSeparateSignInDoes::SignsIn { key, .. }, Some(account)) = (answer, chosen) else {
         said_and_shown(status, a11y, &begun, Priority::High);
         return None;
     };
     said_and_shown(status, a11y, &begun, Priority::Normal);
-    match sign_in_for_calendars(&account.id, &key) {
+    match sign_in_for_calendars(account, &key) {
         Ok(()) => {
             // The account's id and the outcome, never its address.
             tracing::info!(
@@ -825,11 +825,11 @@ fn sign_in_for_calendars_selected(
 /// name in the credential store and nowhere else: never on the account and
 /// never in the database.
 fn sign_in_for_calendars(
-    account_id: &str,
+    account: &Account,
     key: &oauth_credentials::ClientCredentials,
 ) -> crate::common::Result<()> {
     let sign_in = AuthManager::new(
-        account_id,
+        &account.id,
         crate::service::oauth::GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
         &key.client_id,
         key.client_secret.as_deref(),
@@ -840,7 +840,9 @@ fn sign_in_for_calendars(
              something goes wrong in Help if it keeps happening."
         ))
     })?;
-    runtime.block_on(sign_in.authorize()).map(|_| ())
+    runtime
+        .block_on(sign_in.authorize(&account.email))
+        .map(|_| ())
 }
 
 /// Delete the selected account, revoking its stored OAuth tokens first.
@@ -3198,7 +3200,7 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
                 );
             }
         };
-        rt.block_on(auth_mgr.authorize())
+        rt.block_on(auth_mgr.authorize(&account.email))
     };
 
     match result {
@@ -3206,7 +3208,8 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
             account.oauth_access_token = tokens.access_token;
             account.oauth_refresh_token = tokens.refresh_token.unwrap_or_default();
             account.oauth_token_expires_at = tokens.expires_at;
-            tracing::info!("OAuth authorized for {} ({})", account.email, provider);
+            // The account's id, never its address (13.2-15).
+            tracing::info!("OAuth authorized for account {} ({})", account.id, provider);
             OAuthFlowResult::Authorized
         }
         Err(e) => how_the_sign_in_failed(&e),
