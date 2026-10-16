@@ -906,10 +906,11 @@ asks. Answering no leaves the version you are running exactly as it was and dele
 Answering yes closes Wixen Mail and opens the installer, and you are told that is about to
 happen before it happens.
 
-**Anything this project did not sign is refused, not warned about.** Wixen Mail checks two
-things before it will offer to run an installer: that the signature on it is valid, and that
-the name on that signature is this project's own. A file failing either is deleted and you are
-told why. You are never asked whether to run it anyway.
+**Anything this project did not sign is refused, not warned about.** Wixen Mail checks three
+things before it will offer to run an installer: that the signature on it is valid, that the
+name on that signature is this project's own, and, since 2026-10-16, that it was made with this
+project's own signing certificate, because a name can be shared. A file failing any of them is
+deleted and you are told why. You are never asked whether to run it anyway.
 
 On a computer with no way to check a signature at all, nothing is downloaded either. The
 question is asked before any bytes are fetched, so your connection is not spent on a file

@@ -1751,6 +1751,15 @@ write path added by this milestone passes through that gate.
     check trust the project's signing profile rather than any installer signed in the name
     "Pratik Patel" (finding #24); the profile's identifier waits on Pratik (ledger 329). It
     adds no `[D]` clause and the box stays open.
+  - 13.2-16 on 2026-10-16: an installer the update check downloaded is accepted only when the
+    signer's certificate carries the name Pratik Patel and also this project's Artifact
+    Signing certificate profile identifier among its usages, read with
+    `CertGetEnhancedKeyUsage` and compared as a whole value (finding #24). The identifier,
+    `THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH`, ships empty and refuses everything, which is what
+    happens today anyway because nothing is signed; its value and the cost of recreating the
+    profile are ledger 870, beside 329. Held by the rule's rows and the Windows case on a
+    System32 file's usages in `service::update_download`, and two guard records. No `[D]`
+    clause; the box stays open.
 
 - [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
@@ -2905,6 +2914,13 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-16 marks a file Save
     As writes and an attachment the reader saves as coming from the internet, the Mark of the
     Web (finding #22). It adds no `[D]` clause and the box stays ticked.
+  - 13.2-16 on 2026-10-16: an attachment saved from either window and a message saved with
+    File, Save As carry a `Zone.Identifier` stream naming the Internet zone, written by
+    `attachment_name::mark_as_from_the_internet` after the file; a drive with no room for it
+    keeps the file and the log says it is unmarked (finding #22). Held by the case on a real
+    file in `service::attachment_name` and `tests/a_saved_file_carries_the_mark_of_the_web.rs`
+    with its record; nobody has opened a saved file since (ledger 871). No `[D]` clause; the
+    box stays ticked.
 
 - [x] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
   - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-09, merged 2026-09-17 at
@@ -7806,7 +7822,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FEEDBACK-02 | Phase 6 | Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause |
 | FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
-| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause |
+| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870 |
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
@@ -7828,7 +7844,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
 | FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
-| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause |
+| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871 |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
