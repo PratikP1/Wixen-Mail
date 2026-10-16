@@ -1698,6 +1698,105 @@ X-Spam-Flag: YES\r\n\r\nbody";
         assert!(second.written.is_empty(), "{:?}", second.written);
     }
 
+    #[test]
+    fn test_a_message_nobody_can_read_is_kept_and_the_mail_after_it_still_arrives() {
+        // Audit finding #13. A zero-length message on the server, which RETR
+        // answers with no lines, is one the parser cannot read. The check
+        // stopped on it before anything was stored, and the server lists in
+        // the same order every time, so every later check stopped on it first
+        // and nothing after it ever arrived.
+        let after = raw_message("Subject: After it\r\nFrom: ada@example.com", "Text.");
+        let (cache, folder_id) = a_cache();
+        let held = [(1, "empty", b"".as_slice()), (2, "after", after.as_slice())];
+        let server = Scripted::holding(&held);
+
+        let done = run(
+            &server,
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("one message nobody can read is not a failed check");
+
+        assert_eq!(
+            done.fetched, 2,
+            "the unreadable message or the one after it was lost"
+        );
+        let journal = server.journal();
+        assert_eq!(
+            journal.last(),
+            Some(&Asked::Finished),
+            "the session was not ended politely: {journal:?}"
+        );
+        let mut subjects: Vec<String> = cache
+            .get_message_list(folder_id, "acct")
+            .expect("the list")
+            .into_iter()
+            .map(|message| message.subject)
+            .collect();
+        subjects.sort();
+        assert_eq!(subjects, vec![String::new(), "After it".to_string()]);
+
+        let again = Scripted::holding(&held);
+        let second = run(
+            &again,
+            &cache,
+            folder_id,
+            Housekeeping::CAUTIOUS,
+            Utc::now(),
+        )
+        .expect("the second check runs");
+        assert_eq!(second.fetched, 0);
+        assert_eq!(
+            again.journal(),
+            vec![Asked::Listed, Asked::Finished],
+            "a message kept on the last check was fetched again"
+        );
+    }
+
+    #[test]
+    fn test_a_message_nobody_can_read_keeps_its_text_and_the_log_names_only_its_identifier() {
+        // The other trigger: a message of nothing but spaces and tabs, the
+        // only text mail-parser 0.11.5 refuses besides none at all, read on
+        // 2026-10-16 (text with no colon and no blank line, which the audit's
+        // verdict named, is read as a message). What arrived is kept as its
+        // plain text, so nothing is lost. The warning names the server's
+        // identifier for it, so somebody can find it there, and nothing of
+        // the message: a log is sent with bug reports.
+        let blank = b"  \t  ".as_slice();
+        let (cache, folder_id) = a_cache();
+        let server = Scripted::holding(&[(1, "headless", blank)]);
+        let captured =
+            crate::presentation::accessibility::screen_reader::tests::CapturedLogs::default();
+
+        let done = {
+            let _held = captured.as_the_default();
+            run(
+                &server,
+                &cache,
+                folder_id,
+                Housekeeping::CAUTIOUS,
+                Utc::now(),
+            )
+        }
+        .expect("one message nobody can read is not a failed check");
+
+        let row = *done.written.first().expect("the message was not kept");
+        let body = cache
+            .get_message_body(row)
+            .expect("the body")
+            .expect("a stored body");
+        assert_eq!(body.body_plain.as_deref(), Some("  \t  "));
+        let logged = captured.events();
+        assert!(
+            logged
+                .iter()
+                .any(|(level, line)| *level == tracing::Level::WARN && line.contains("headless")),
+            "nothing in the log says which message was kept unread: {logged:?}"
+        );
+    }
+
     /// Housekeeping that clears the server after a fortnight.
     const AFTER_A_FORTNIGHT: Housekeeping = Housekeeping {
         leave_on_server: false,
