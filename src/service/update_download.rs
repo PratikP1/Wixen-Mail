@@ -307,6 +307,9 @@ pub enum Refused {
         /// The name on the certificate, so the message can say who.
         who: String,
     },
+    /// It carries this project's name and was not signed with this project's
+    /// own certificate.
+    NotSignedWithOurCertificate,
     /// This computer has no way of checking a signature.
     NoWayToCheckHere,
     /// The file could not be read to be checked.
@@ -341,6 +344,7 @@ impl Refused {
                  The file has been deleted. Nothing on this computer has changed. You can \
                  download a version yourself from {page}."
             ),
+            Self::NotSignedWithOurCertificate => String::new(),
             // The one refusal that does not mention a deleted file, because on
             // this path there is no file: a computer with no way to look at a
             // signature is told so before anything is fetched.
@@ -546,6 +550,9 @@ pub fn whether_this_much_may_still_arrive(so_far: u64) -> std::result::Result<()
 pub struct WhoSignedIt {
     /// The name on the signer's certificate.
     pub name: String,
+    /// The enhanced key usages on the signer's certificate, as dotted
+    /// identifiers.
+    pub usages: Vec<String>,
 }
 
 /// Whether that signer is this project.
@@ -553,7 +560,10 @@ pub struct WhoSignedIt {
 /// Exactly equal, allowing for surrounding space and for letter case. Not
 /// "contains": a rule written that way accepts a certificate issued to
 /// "Not Pratik Patel Holdings", which is a name anybody can buy.
-pub fn whether_that_signer_is_ours(who: &WhoSignedIt) -> std::result::Result<(), Refused> {
+pub fn whether_that_signer_is_ours(
+    who: &WhoSignedIt,
+    _profile: &str,
+) -> std::result::Result<(), Refused> {
     let name = who.name.trim();
     if name.is_empty() {
         return Err(Refused::NothingSignedIt);
@@ -849,6 +859,7 @@ fn the_name_in(
     let letters = (written as usize).saturating_sub(1);
     Ok(WhoSignedIt {
         name: String::from_utf16_lossy(&name[..letters.min(ROOM_FOR_A_NAME)]),
+        usages: Vec::new(),
     })
 }
 
@@ -857,7 +868,7 @@ fn the_name_in(
 /// The only thing in this crate that builds a [`Verified`].
 pub fn verify(downloaded: Downloaded) -> std::result::Result<Verified, Refused> {
     let checked = who_signed(downloaded.at()).and_then(|who| {
-        whether_that_signer_is_ours(&who)?;
+        whether_that_signer_is_ours(&who, "")?;
         Ok(())
     });
     match checked {
@@ -1572,15 +1583,33 @@ mod tests {
         );
     }
 
+    /// A certificate profile's identifier, the Public Trust example on
+    /// Microsoft's page on Artifact Signing certificate management, read
+    /// 2026-10-16. Not this project's: that identifier does not exist yet.
+    const A_PROFILE: &str = "1.3.6.1.4.1.311.97.990309390.766961637.194916062.941502583";
+
+    /// The usage every code-signing certificate carries.
+    const CODE_SIGNING: &str = "1.3.6.1.5.5.7.3.3";
+
+    /// The usage Microsoft's page says every Artifact Signing Public Trust
+    /// certificate carries, whoever's profile issued it.
+    const ANY_ARTIFACT_SIGNING_CERTIFICATE: &str = "1.3.6.1.4.1.311.97.1.0";
+
+    /// A signer by this name, whose certificate carries these usages.
+    fn signed(name: &str, usages: &[&str]) -> WhoSignedIt {
+        WhoSignedIt {
+            name: name.to_string(),
+            usages: usages.iter().map(ToString::to_string).collect(),
+        }
+    }
+
     #[test]
     fn test_a_signature_from_anybody_else_is_refused_however_valid_it_is() {
         // The check a naive version passes. WinVerifyTrust says yes to millions
         // of files and says nothing at all about who signed them.
-        let somebody_else = WhoSignedIt {
-            name: "Microsoft Windows".to_string(),
-        };
+        let somebody_else = signed("Microsoft Windows", &[CODE_SIGNING]);
         assert_eq!(
-            whether_that_signer_is_ours(&somebody_else),
+            whether_that_signer_is_ours(&somebody_else, A_PROFILE),
             Err(Refused::SomebodyElseSignedIt {
                 who: "Microsoft Windows".to_string()
             })
@@ -1597,10 +1626,8 @@ mod tests {
             "PratikPatel",
         ] {
             assert!(
-                whether_that_signer_is_ours(&WhoSignedIt {
-                    name: nearly.to_string()
-                })
-                .is_err(),
+                whether_that_signer_is_ours(&signed(nearly, &[CODE_SIGNING, A_PROFILE]), A_PROFILE)
+                    .is_err(),
                 "{nearly} was accepted as this project's own name"
             );
         }
@@ -1610,13 +1637,113 @@ mod tests {
     fn test_our_own_name_is_accepted_whatever_space_or_case_surrounds_it() {
         for ours in [WHO_SIGNS_THIS, "  Pratik Patel  ", "PRATIK PATEL"] {
             assert_eq!(
-                whether_that_signer_is_ours(&WhoSignedIt {
-                    name: ours.to_string()
-                }),
+                whether_that_signer_is_ours(
+                    &signed(
+                        ours,
+                        &[CODE_SIGNING, ANY_ARTIFACT_SIGNING_CERTIFICATE, A_PROFILE]
+                    ),
+                    A_PROFILE
+                ),
                 Ok(()),
-                "{ours} was refused and it is this project's own name"
+                "{ours} was refused and it is this project's own name and profile"
             );
         }
+    }
+
+    #[test]
+    fn test_our_name_on_a_certificate_from_another_profile_is_refused() {
+        // A public certificate authority issues a certificate in the name
+        // "Pratik Patel" to anybody of that name, Artifact Signing included,
+        // so the name is half of the rule and the profile is the other half.
+        let another_pratik_patel = signed(
+            WHO_SIGNS_THIS,
+            &[
+                CODE_SIGNING,
+                ANY_ARTIFACT_SIGNING_CERTIFICATE,
+                "1.3.6.1.4.1.311.97.111111111.222222222.333333333.444444444",
+            ],
+        );
+
+        assert_eq!(
+            whether_that_signer_is_ours(&another_pratik_patel, A_PROFILE),
+            Err(Refused::NotSignedWithOurCertificate)
+        );
+    }
+
+    #[test]
+    fn test_while_the_profile_is_unknown_even_our_name_is_refused() {
+        // The identifier ships empty until the certificate profile exists, and
+        // an empty one must refuse everything rather than match everything:
+        // every list "begins with" and "contains" the empty string.
+        let ours_in_every_other_way = signed(
+            WHO_SIGNS_THIS,
+            &[CODE_SIGNING, ANY_ARTIFACT_SIGNING_CERTIFICATE, A_PROFILE],
+        );
+
+        assert_eq!(
+            whether_that_signer_is_ours(&ours_in_every_other_way, ""),
+            Err(Refused::NotSignedWithOurCertificate)
+        );
+    }
+
+    #[test]
+    fn test_a_usage_that_merely_begins_with_our_profile_is_refused() {
+        // Compared as a whole value. A profile's identifier is a prefix of
+        // longer ones nobody issued to this project.
+        for longer in [format!("{A_PROFILE}.1"), format!("{A_PROFILE}1")] {
+            let nearly = signed(WHO_SIGNS_THIS, &[CODE_SIGNING, &longer]);
+
+            assert_eq!(
+                whether_that_signer_is_ours(&nearly, A_PROFILE),
+                Err(Refused::NotSignedWithOurCertificate),
+                "{longer} was accepted as this project's profile"
+            );
+        }
+    }
+
+    #[test]
+    fn test_somebody_else_carrying_our_profile_is_still_somebody_else() {
+        // The profile is not enough on its own either: the name on the
+        // certificate is what the person is told, so it has to be ours too.
+        let somebody_else = signed("Somebody Else", &[CODE_SIGNING, A_PROFILE]);
+
+        assert_eq!(
+            whether_that_signer_is_ours(&somebody_else, A_PROFILE),
+            Err(Refused::SomebodyElseSignedIt {
+                who: "Somebody Else".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_a_signer_with_no_name_is_refused_as_unsigned() {
+        assert_eq!(
+            whether_that_signer_is_ours(&signed("  ", &[CODE_SIGNING, A_PROFILE]), A_PROFILE),
+            Err(Refused::NothingSignedIt)
+        );
+    }
+
+    #[test]
+    fn test_our_name_on_another_certificate_is_said_as_its_own_reason() {
+        let sentence = Refused::NotSignedWithOurCertificate.said();
+
+        for said in [
+            WHO_SIGNS_THIS,
+            "certificate",
+            "will not run it",
+            "The file has been deleted.",
+            "Nothing on this computer has changed.",
+        ] {
+            assert!(
+                sentence.contains(said),
+                "the refusal for this project's name on another certificate does not say \
+                 {said:?}: {sentence:?}"
+            );
+        }
+        assert!(
+            sentence.contains(&the_releases_page()),
+            "the refusal does not say where to download a version: {sentence:?}"
+        );
     }
 
     #[test]
@@ -1643,6 +1770,7 @@ mod tests {
             Refused::SomebodyElseSignedIt {
                 who: "Microsoft Windows".to_string(),
             },
+            Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("access denied".to_string()),
         ];
@@ -1668,6 +1796,7 @@ mod tests {
             Refused::SomebodyElseSignedIt {
                 who: "somebody".to_string(),
             },
+            Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("no".to_string()),
         ];
@@ -1835,7 +1964,7 @@ mod tests {
                 Ok(who) => {
                     assert!(
                         matches!(
-                            whether_that_signer_is_ours(&who),
+                            whether_that_signer_is_ours(&who, A_PROFILE),
                             Err(Refused::SomebodyElseSignedIt { .. })
                         ),
                         "{candidate} is signed by {} and was accepted as this project's own",
@@ -1857,6 +1986,54 @@ mod tests {
         panic!(
             "no file with a signature inside it could be found, so the refusal that matters \
              is untested on this machine:\n  {}",
+            tried.join("\n  ")
+        );
+    }
+
+    /// The usages Windows itself reads off the same files' signer certificates,
+    /// with `Get-AuthenticodeSignature`'s `SignerCertificate.EnhancedKeyUsageList`
+    /// on 2026-10-16: every one carries code signing, `1.3.6.1.5.5.7.3.3`, beside
+    /// Microsoft's own, such as `1.3.6.1.4.1.311.61.6.1` on `showdesktop.exe`
+    /// and `1.3.6.1.4.1.311.10.3.21` and `.10.3.6` on `MRT.exe`.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn test_the_usages_read_off_a_signed_file_include_code_signing() {
+        let mut tried = Vec::new();
+        for candidate in SIGNED_BY_SOMEBODY_ELSE {
+            let at = Path::new(candidate);
+            if !at.exists() {
+                tried.push(format!("{candidate}: not on this machine"));
+                continue;
+            }
+            match who_signed(at) {
+                Ok(who) => {
+                    assert!(
+                        who.usages.iter().any(|usage| usage == CODE_SIGNING),
+                        "{candidate}'s signer certificate was read with usages {:?}, and \
+                         Windows reads code signing on it",
+                        who.usages
+                    );
+                    assert!(
+                        who.usages.len() > 1,
+                        "{candidate}'s signer certificate was read with only {:?}, and \
+                         Windows reads Microsoft's own usage beside code signing",
+                        who.usages
+                    );
+                    assert!(
+                        matches!(
+                            whether_that_signer_is_ours(&who, A_PROFILE),
+                            Err(Refused::SomebodyElseSignedIt { .. })
+                        ),
+                        "{candidate} was not refused as somebody else's"
+                    );
+                    return;
+                }
+                Err(why) => tried.push(format!("{candidate}: {why:?}")),
+            }
+        }
+        panic!(
+            "no file with a signature inside it could be found, so the usages are unread on \
+             this machine:\n  {}",
             tried.join("\n  ")
         );
     }
