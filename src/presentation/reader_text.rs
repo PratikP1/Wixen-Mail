@@ -171,10 +171,6 @@ fn nothing_to_read() -> String {
 /// Said first, so somebody who hears a run of lines with no headings, links
 /// or lists knows the message was not written that way, in the register of
 /// the sentence about blocks the sender did not show.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "said by body_text from the green that follows")
-)]
 const NESTED_TOO_DEEPLY: &str =
     "This message's layout is nested too deeply to show as a page, so only its words follow.";
 
@@ -269,6 +265,13 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
         .collect();
 
     let mut text = converter.get_text();
+    if converter.read_the_words_alone() {
+        // Before the signature's landmark is placed, which counts from here.
+        tracing::warn!(
+            "A message's markup nested too deep to read as a page; its words are read alone"
+        );
+        text = format!("{NESTED_TOO_DEEPLY}\n\n{text}");
+    }
     landmarks.extend(signature_landmark(&text));
 
     // Link targets are gathered at the end rather than left inline. A URL read
@@ -2412,6 +2415,40 @@ mod tests {
              follow.\n\nDeep words"
         );
         assert!(text.starts_with(NESTED_TOO_DEEPLY), "{text}");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the case after it, because an overflow ends the test program"]
+    fn test_the_audits_message_is_previewed_on_the_windows_stack() {
+        // The path the audit traced: selecting the message builds the
+        // preview on the window's thread, through the text reader's
+        // conversation and the page's sanitiser. As `div` elements alone and
+        // inside a heading, whose words a walk of their own gathered.
+        use crate::common::how_deep_markup_nests::{
+            THE_WINDOWS_STACK, on_a_stack_of, the_audits_message,
+        };
+        for markup in [
+            the_audits_message(),
+            format!("<h1>{}</h1>", the_audits_message()),
+        ] {
+            let page = on_a_stack_of(THE_WINDOWS_STACK, move || {
+                let part = ConversationPart {
+                    message: message(),
+                    body: MessageBody::Html(markup),
+                    said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                    depth: 0,
+                };
+                preview_html("Deep", &[part])
+            });
+            assert!(page.contains("Deep words"), "{page}");
+        }
+    }
+
+    #[test]
+    fn test_the_audits_message_is_previewed_without_ending_the_program() {
+        crate::common::how_deep_markup_nests::passes_in_a_process_of_its_own(
+            "presentation::reader_text::tests::test_the_audits_message_is_previewed_on_the_windows_stack",
+        );
     }
 
     #[test]

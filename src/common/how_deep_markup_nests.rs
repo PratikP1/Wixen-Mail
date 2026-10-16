@@ -130,6 +130,54 @@ pub fn on_a_stack_of<T: Send + 'static>(
         .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
 }
 
+/// Run one case of this test program in a process of its own, and fail
+/// unless it ran and passed.
+///
+/// For a case whose failure is a stack overflow. Run in the program with
+/// every other case, an overflow ends the program, every case after it never
+/// runs, and nothing names the one that failed; run apart, it is this case's
+/// exit status, said in this case's failure. The count of passed cases is
+/// read as well, because a name that matches nothing also exits cleanly.
+///
+/// The child's own `test <name> ... FAILED` line is left out of the failure,
+/// because the guard runner and the red gate read such lines from the whole
+/// run, and would take it for a second failing case.
+#[cfg(test)]
+pub fn passes_in_a_process_of_its_own(case: &str) {
+    let ended =
+        std::process::Command::new(std::env::current_exe().expect("this test program's path"))
+            .args(["--exact", case, "--ignored", "--test-threads=1"])
+            .output()
+            .expect("this test program, started again");
+    let said = String::from_utf8_lossy(&ended.stdout);
+    let complained = String::from_utf8_lossy(&ended.stderr);
+    let without_result_lines: Vec<&str> = said
+        .lines()
+        .filter(|line| !line.starts_with("test "))
+        .collect();
+    assert!(
+        ended.status.success() && said.contains("1 passed"),
+        "{case} ended with {}:\n{}\n{complained}",
+        ended.status,
+        without_result_lines.join("\n")
+    );
+}
+
+/// The audit's message: `div` elements nested this deep around a few words.
+///
+/// Twice the shallowest round depth that ended the program on a 1 MiB stack
+/// before the depth check, so a case that reads it would have crashed with
+/// room to spare. Measured on 2026-10-15 by 13.2-12 in a debug build, with
+/// the check made never to answer yes: the preview overflowed at 1,000
+/// levels, and the HTML-only save passed at 1,000 and overflowed at 2,000.
+/// At 4,000 both overflowed. The audit's own 20,000 was not used, because
+/// html5ever's parse of nested `div` elements is quadratic in their depth
+/// and the case runs several parses.
+#[cfg(test)]
+pub fn the_audits_message() -> String {
+    nested("div", 4_000, "Deep words")
+}
+
 /// A stack big enough for any walk the unfixed readers make over the cases'
 /// markup.
 #[cfg(test)]
