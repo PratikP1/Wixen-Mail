@@ -1,4 +1,5 @@
-//! Turning the name a stranger chose into one that is safe to write.
+//! Turning the name a stranger chose into one that is safe to write, and
+//! marking what is written as having come from a stranger.
 //!
 //! An attachment's filename comes from whoever sent the message. It is not a
 //! name, it is untrusted input that happens to look like one, and every part of
@@ -18,6 +19,12 @@
 //! The last one matters more here than in most applications. A sighted reader
 //! has a chance of noticing a filename that looks odd; a synthesiser reading
 //! the reordered name aloud gives no hint at all.
+//!
+//! A safe name is not a safe file. Once written, a stranger's `.docm` or `.js`
+//! is a file Windows would open or run like one made on this computer, unless
+//! it carries the Mark of the Web that Outlook, Thunderbird and every browser
+//! write. [`mark_as_from_the_internet`] writes it, so Office opens the file in
+//! Protected View and Windows asks before a script or program runs.
 
 /// Characters Windows will not accept in a filename.
 const FORBIDDEN: [char; 9] = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
@@ -96,8 +103,28 @@ pub fn safe_file_name(proposed: &str) -> String {
     trimmed
 }
 
+/// What Windows reads in a file's `Zone.Identifier` stream to know it came from
+/// the internet: zone 3, the Internet zone, as browsers write it.
+#[cfg(windows)]
+const FROM_THE_INTERNET: &str = "[ZoneTransfer]\r\nZoneId=3\r\n";
+
 /// Mark a file just written from a stranger's message as having come from the
-/// internet.
+/// internet, so Windows treats it as it treats a download.
+///
+/// The mark is the `Zone.Identifier` alternate stream. Rust hands
+/// `path:Zone.Identifier` to `CreateFileW` unchanged, which names the stream
+/// rather than a file. A volume that holds no alternate streams, FAT, exFAT
+/// and some network shares, refuses the write, and that error comes back for
+/// the caller to report while the file it saved stands.
+#[cfg(windows)]
+pub fn mark_as_from_the_internet(path: &std::path::Path) -> std::io::Result<()> {
+    let mut stream = path.as_os_str().to_owned();
+    stream.push(":Zone.Identifier");
+    std::fs::write(stream, FROM_THE_INTERNET)
+}
+
+/// Off Windows there is no such mark to write, so there is nothing to do.
+#[cfg(not(windows))]
 pub fn mark_as_from_the_internet(_path: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }

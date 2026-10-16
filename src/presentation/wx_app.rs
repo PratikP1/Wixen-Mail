@@ -17580,7 +17580,13 @@ fn one_message_saved_to(
             "{} could not be written: {why}.",
             destination.display()
         ))
-    })
+    })?;
+    // A stranger's message, with a stranger's files inside it, so Windows is
+    // told it came from the internet; an unmarked save still stands.
+    if let Err(why) = crate::service::attachment_name::mark_as_from_the_internet(destination) {
+        tracing::warn!("A saved message could not be marked as from the internet: {why}");
+    }
+    Ok(())
 }
 
 /// The account and the folder an export writes out, or nothing when what is
@@ -30395,6 +30401,14 @@ fn fetch_and_write_attachment(
     let bytes = fetch_attachment_bytes(handle, account, attachment)?;
     std::fs::write(destination, bytes)
         .map_err(|e| crate::common::Error::Other(format!("The file could not be written: {e}")))?;
+    // A stranger's file, so Windows is told it came from the internet. A
+    // volume with no room for the mark keeps the saved file, and the log says
+    // why it is unmarked without naming it.
+    if let Err(why) = crate::service::attachment_name::mark_as_from_the_internet(
+        std::path::Path::new(destination),
+    ) {
+        tracing::warn!("A saved attachment could not be marked as from the internet: {why}");
+    }
     Ok(())
 }
 

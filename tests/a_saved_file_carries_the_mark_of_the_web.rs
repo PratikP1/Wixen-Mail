@@ -130,3 +130,81 @@ fn test_both_saves_of_a_strangers_file_mark_it_after_writing_it() {
          computer: {wrong:?}"
     );
 }
+
+#[test]
+fn test_the_reading_names_the_save_whose_mark_was_taken_out() {
+    // Over a copy of what ships, with the mark taken out of one save at a
+    // time. If the reading passed either copy, it could pass the real file by
+    // finding nothing.
+    let window = the_main_window();
+
+    for signature in THE_SAVES {
+        let body = body_of(&window, signature).unwrap_or_else(|why| panic!("{why}"));
+        let unmarked = body.replace(THE_MARK, "attachment_name::left_as_it_came(");
+        assert_ne!(body, unmarked, "{signature} holds no mark to take out");
+        let copy = window.replacen(&body, &unmarked, 1);
+
+        let wrong = saves_that_do_not_mark_what_they_write(&copy);
+
+        assert_eq!(
+            wrong,
+            vec![format!(
+                "{signature} {:?}",
+                vec!["it does not mark what it writes"]
+            )],
+            "the reading did not name the one save left unmarked"
+        );
+    }
+}
+
+#[test]
+fn test_the_reading_sees_a_mark_that_is_thrown_away_or_stops_the_save() {
+    // Shaped as the saves are, each with one thing wrong.
+    let thrown_away = "fn save() {
+    std::fs::write(destination, bytes)?;
+    let _ = crate::service::attachment_name::mark_as_from_the_internet(destination);
+    Ok(())
+}";
+    let stops_the_save = "fn save() {
+    std::fs::write(destination, bytes)?;
+    crate::service::attachment_name::mark_as_from_the_internet(destination)?;
+    Ok(())
+}";
+    let marked_first = "fn save() {
+    if let Err(why) = crate::service::attachment_name::mark_as_from_the_internet(destination) {
+        tracing::warn!(\"{why}\");
+    }
+    std::fs::write(destination, bytes)?;
+    Ok(())
+}";
+    let only_named_in_a_comment = "fn save() {
+    std::fs::write(destination, bytes)?;
+    // attachment_name::mark_as_from_the_internet(destination) belongs here.
+    Ok(())
+}";
+    let right = "fn save() {
+    std::fs::write(destination, bytes)?;
+    if let Err(why) = crate::service::attachment_name::mark_as_from_the_internet(destination) {
+        tracing::warn!(\"{why}\");
+    }
+    Ok(())
+}";
+
+    for (shape, says) in [
+        (thrown_away, "throws away"),
+        (stops_the_save, "would stop the save"),
+        (marked_first, "before it writes"),
+        (only_named_in_a_comment, "does not mark"),
+    ] {
+        let wrong = what_the_save_gets_wrong(shape);
+        assert!(
+            wrong.iter().any(|said| said.contains(says)),
+            "the reading cannot see a save that {says}: {wrong:?}"
+        );
+    }
+    assert_eq!(
+        what_the_save_gets_wrong(right),
+        Vec::<String>::new(),
+        "the reading refuses the shape it asks for"
+    );
+}

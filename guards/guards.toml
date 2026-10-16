@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 754 records have arrived since and have not been through it.
+# 755 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -40755,4 +40755,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/oauth.rs", tests = 65 },
+]
+
+# A saved attachment is marked as from the internet after it is written
+# (audit finding #22). The break leaves the attachment as it came, with no
+# Zone.Identifier stream, so Office opens a saved .docm outside Protected
+# View and Windows runs a saved .js without asking. The reading goes red on
+# its own target, and so does its companion, which finds no mark to take
+# out; the whole library stays green. Added 2026-10-16 by 13.2-16 and taken
+# by hand against the target and the whole library.
+[[guard]]
+name = "a saved attachment carries the Mark of the Web"
+file = "src/presentation/wx_app.rs"
+suite = "a_saved_file_carries_the_mark_of_the_web"
+before = '''    if let Err(why) = crate::service::attachment_name::mark_as_from_the_internet(
+        std::path::Path::new(destination),
+    ) {'''
+after = '''    if let Err(why) = std::io::Result::<()>::Ok(drop(
+        std::path::Path::new(destination),
+    )) {'''
+red = [
+    "test_both_saves_of_a_strangers_file_mark_it_after_writing_it",
+    "test_the_reading_names_the_save_whose_mark_was_taken_out",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_saved_file_carries_the_mark_of_the_web.rs", tests = 3 },
 ]
