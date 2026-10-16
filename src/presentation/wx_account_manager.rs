@@ -3487,6 +3487,32 @@ mod tests {
     }
 
     #[test]
+    fn test_a_sign_in_for_a_typo_of_gmails_server_opens_no_browser_and_names_the_server() {
+        // Asked before the browser opens, so the person is told at the moment
+        // they act rather than at the next mail check. The refusal comes
+        // before the credentials are looked up, which is also what keeps any
+        // browser shut on a machine that has them.
+        let mut typo = Account::new("Work".to_string(), "me@gmail.com".to_string());
+        typo.use_oauth = true;
+        typo.id = "no-such-account-in-the-keychain".into();
+        typo.imap_server = "imap.gmial.com".into();
+        typo.smtp_server = "smtp.gmail.com".into();
+        let expected = crate::application::mail_auth::a_server_its_provider_does_not_run(&typo)
+            .map(|stranger| stranger.sentence());
+        match run_oauth_flow(&mut typo) {
+            OAuthFlowResult::Failed(said) => {
+                assert_eq!(Some(said.clone()), expected, "{said}");
+                assert!(said.contains("imap.gmial.com"), "{said}");
+            }
+            OAuthFlowResult::Authorized => panic!("authorized for a typo of Gmail's server"),
+            OAuthFlowResult::NoCreds(provider) => {
+                panic!("looked up {provider}'s credentials before asking about the servers")
+            }
+            OAuthFlowResult::NotSaved(said) => panic!("got as far as storing: {said}"),
+        }
+    }
+
+    #[test]
     fn test_the_password_box_is_described_with_the_app_password_advice() {
         // The visible hint under the email box was shown and never spoken,
         // deliberately: it is rewritten on every keystroke and speaking it

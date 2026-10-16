@@ -74,6 +74,49 @@ pub fn no_browser_sign_in_for(name: &str) -> String {
     )
 }
 
+/// A server a browser sign-in's token would be sent to that the provider who
+/// issued the token does not run (audit #18).
+///
+/// A Gmail token opens the whole mailbox, to read, delete and send, and the
+/// mail check hands it to whatever server the account names. So a typo of
+/// Gmail's server, or somebody else's relay typed as the outgoing server,
+/// would receive it if it asked.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotTheProvidersServer {
+    /// The account, by the name the person gave it.
+    pub account_name: String,
+    /// Google or Microsoft, as the sentence says it.
+    pub whose: &'static str,
+    /// The account editor's label for the box the server is typed in.
+    pub the_box: &'static str,
+    pub host: String,
+}
+
+impl NotTheProvidersServer {
+    /// What the person is told: which server, whose servers a sign-in goes
+    /// to, and where to change it.
+    pub fn sentence(&self) -> String {
+        let Self {
+            account_name,
+            whose,
+            the_box,
+            host,
+        } = self;
+        format!(
+            "A browser sign-in with {whose} is only ever sent to {whose}'s own servers, and \
+             {host}, in {account_name}'s {the_box} box, is not one of them, so it was not sent. \
+             Open the Account Manager with Ctrl+Shift+A, edit {account_name}, and check that box."
+        )
+    }
+}
+
+/// The first server this account's browser sign-in would be sent to that its
+/// provider does not run, or nothing when every one is the provider's.
+pub fn a_server_its_provider_does_not_run(account: &Account) -> Option<NotTheProvidersServer> {
+    let _ = account;
+    None
+}
+
 /// The credential this account signs in with, fetching a token if it needs one.
 pub async fn for_account(account: &Account) -> Result<MailAuth> {
     if !account.use_oauth {
@@ -272,6 +315,158 @@ mod tests {
             "no way there is named: {error}"
         );
         assert!(!error.contains("OAuth"), "jargon survives: {error}");
+    }
+
+    /// An account set to sign in through the browser, with the servers it
+    /// names, under an id no credential store holds.
+    fn signing_in_through_the_browser(address: &str, incoming: &str, outgoing: &str) -> Account {
+        let mut browser = account();
+        browser.use_oauth = true;
+        browser.id = "no-such-account-in-the-keychain".into();
+        browser.email = address.into();
+        browser.imap_server = incoming.into();
+        browser.smtp_server = outgoing.into();
+        browser
+    }
+
+    /// What `for_account` refused with, as the person reads it.
+    async fn the_refusal_for(account: &Account) -> String {
+        match for_account(account).await {
+            Err(Error::Authentication(said)) => said,
+            Err(other) => panic!("refused, but not as a sign-in: {other}"),
+            Ok(_) => panic!("a credential came back for {}", account.email),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_no_token_is_fetched_for_a_typo_of_the_providers_incoming_server() {
+        let typo =
+            signing_in_through_the_browser("me@gmail.com", "imap.gmial.com", "smtp.gmail.com");
+        let expected = NotTheProvidersServer {
+            account_name: "Work".into(),
+            whose: "Google",
+            the_box: "IMAP Server",
+            host: "imap.gmial.com".into(),
+        };
+        assert_eq!(
+            a_server_its_provider_does_not_run(&typo),
+            Some(expected.clone())
+        );
+        // Refused before credentials are asked for: the credentials sentence
+        // would be what came back if the check ran after them.
+        assert_eq!(the_refusal_for(&typo).await, expected.sentence());
+    }
+
+    #[tokio::test]
+    async fn test_no_token_is_fetched_for_an_outgoing_server_the_provider_does_not_run() {
+        let relay =
+            signing_in_through_the_browser("me@gmail.com", "imap.gmail.com", "smtp.example.net");
+        let expected = NotTheProvidersServer {
+            account_name: "Work".into(),
+            whose: "Google",
+            the_box: "SMTP Server",
+            host: "smtp.example.net".into(),
+        };
+        assert_eq!(
+            a_server_its_provider_does_not_run(&relay),
+            Some(expected.clone())
+        );
+        assert_eq!(the_refusal_for(&relay).await, expected.sentence());
+
+        let microsoft_through_a_relay = signing_in_through_the_browser(
+            "me@contoso.com",
+            "outlook.office365.com",
+            "smtp.gmail.com",
+        );
+        assert_eq!(
+            a_server_its_provider_does_not_run(&microsoft_through_a_relay)
+                .map(|stranger| (stranger.whose, stranger.host)),
+            Some(("Microsoft", "smtp.gmail.com".to_string())),
+            "Google's server is not Microsoft's"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_every_server_google_and_microsoft_name_lets_the_sign_in_go_on() {
+        let mut pop = signing_in_through_the_browser("me@gmail.com", "", "smtp.gmail.com");
+        pop.protocol = crate::common::types::Protocol::Pop3.as_str().to_string();
+        pop.pop_server = "pop.gmail.com".into();
+        for (row, account) in [
+            (
+                "a Workspace address on its own domain",
+                signing_in_through_the_browser(
+                    "ada@company.example",
+                    "imap.gmail.com",
+                    "smtp.gmail.com",
+                ),
+            ),
+            (
+                "Outlook on Microsoft 365's servers",
+                signing_in_through_the_browser(
+                    "me@outlook.com",
+                    "outlook.office365.com",
+                    "smtp.office365.com",
+                ),
+            ),
+            (
+                "Outlook.com's own outgoing server",
+                signing_in_through_the_browser(
+                    "me@outlook.com",
+                    "outlook.office365.com",
+                    "smtp-mail.outlook.com",
+                ),
+            ),
+            ("POP on Gmail's servers", pop),
+            (
+                "no outgoing server, which nothing sends to",
+                signing_in_through_the_browser("me@gmail.com", "imap.gmail.com", ""),
+            ),
+        ] {
+            assert_eq!(a_server_its_provider_does_not_run(&account), None, "{row}");
+            // Today's next step, whichever this machine reaches: no client
+            // credentials, or no token stored under this id.
+            let said = the_refusal_for(&account).await;
+            assert!(
+                said == no_sign_in_credentials(&provider_of(&account).unwrap_or_default())
+                    || said.contains("Sign In Again"),
+                "{row}: {said}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_password_account_is_untouched_by_the_servers_check() {
+        let mut typo = account();
+        typo.imap_server = "imap.gmial.com".into();
+        typo.smtp_server = "smtp.example.net".into();
+        let auth = for_account(&typo).await.expect("a password needs no check");
+        assert!(matches!(auth, MailAuth::Password(p) if p == "hunter2"));
+    }
+
+    #[test]
+    fn test_the_servers_sentence_names_the_server_whose_servers_and_the_way_there() {
+        use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
+        let said = NotTheProvidersServer {
+            account_name: "Work".into(),
+            whose: "Google",
+            the_box: "IMAP Server",
+            host: "imap.gmial.com".into(),
+        }
+        .sentence();
+        assert_eq!(reads_as_a_persons_sentence(&said, Voice::Answer), Ok(()));
+        for needed in [
+            "imap.gmial.com",
+            "only ever sent to Google's own servers",
+            "IMAP Server box",
+            "Ctrl+Shift+A",
+            "edit Work",
+        ] {
+            assert!(said.contains(needed), "{needed} is not said: {said}");
+        }
+        assert!(
+            !said.to_lowercase().contains("oauth") && !said.to_lowercase().contains("token"),
+            "jargon survives: {said}"
+        );
     }
 
     #[test]
