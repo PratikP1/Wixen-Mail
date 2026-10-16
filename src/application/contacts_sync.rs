@@ -850,22 +850,49 @@ fn birthday_from_microsoft(birthday: Option<&str>) -> Option<String> {
 
 // ── When the whole address book has to be read again ────────────────────────
 
-/// Google's answer when the marker from the last sync is too old to use.
+/// Outlook's answer when the delta link from the last sync has aged out: Gone.
 const SYNC_TOKEN_EXPIRED: u16 = 410;
 
-/// Whether an error is Google saying that marker is too old.
+/// The status Google sends a marker it will no longer take, with its reason.
+const A_FAULT_IN_THE_REQUEST: u16 = 400;
+
+/// The words that say a 400 from Google is about an expired marker, compared
+/// ignoring case: the reason Google names, and the phrase of its message.
+/// Both, because the message is cut to 500 characters on the way in and the
+/// details holding the reason may be what was cut.
+const GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER: [&str; 2] =
+    ["expired_sync_token", "sync token is expired"];
+
+/// Whether an error is an address book saying the marker from the last sync is
+/// too old to use, so the whole address book has to be read again.
 ///
-/// Only that one answer means the whole address book has to be read again. A
-/// network blip must not, or a sync that could not connect would turn into a
-/// full download of everything somebody has.
+/// Two answers, because the two address books say it differently. Outlook
+/// answers an aged-out delta link with 410 Gone. Google answers a marker more
+/// than seven days old with 400 and the reason `EXPIRED_SYNC_TOKEN`, which the
+/// page for `people.connections.list` names; neither has been seen from a live
+/// account. 410 stays for both, since it says nothing else.
+///
+/// Nothing else counts. A network blip, a server fault or any other refusal
+/// must not, or a sync that could not connect would turn into a full download
+/// of everything somebody has.
 fn is_expired_sync_token(error: &Error) -> bool {
-    matches!(
-        error,
+    match error {
         Error::Api {
             status: SYNC_TOKEN_EXPIRED,
             ..
+        } => true,
+        Error::Api {
+            status: A_FAULT_IN_THE_REQUEST,
+            message,
+            ..
+        } => {
+            let message = message.to_lowercase();
+            GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER
+                .iter()
+                .any(|words| message.contains(words))
         }
-    )
+        _ => false,
+    }
 }
 
 // ── When a change is built on a copy the address book has moved past ────────
@@ -2489,54 +2516,54 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         }
     }
 
-    // Push contacts no address book knows to Google
-    if read_the_whole_address_book {
-        // Only push on full sync to avoid duplicates
-        let locals = cache.get_contacts_for_account(account_id)?;
-        for local in &locals {
-            // Made here and no address book knows it yet. `pending` is what
-            // says made here: without it, every address auto-import harvested
-            // from a message header goes into somebody's real address book,
-            // and nobody asked for their mail history to be copied there.
-            if local.pending
-                && local.known_to.is_empty()
-                && local.source_provider.as_deref() != Some(GOOGLE_ADDRESS_BOOK)
-            {
-                let person = contact_to_google_person(local);
-                match google.create_contact(token, &person).await {
-                    Ok(created) => {
-                        let marker = version_marker(&created.etag);
-                        let mut updated = local
-                            .also_known_to(
-                                AddressBook::Google,
-                                &created.resource_name,
-                                marker.as_deref(),
-                            )
-                            // Google now has it, and no other address book is
-                            // owed it: a create only happens for a contact no
-                            // address book knew. Left marked as waiting, the
-                            // next read counts Google's own copy as having
-                            // replaced an edit and says somebody lost work
-                            // they still have.
-                            .told(&AddressBook::Google, marker.as_deref());
-                        updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
-                        updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
-                        // Never `?`. Google has already made the contact, so
-                        // giving up here would abandon the contacts behind it
-                        // and skip the marker at the end of this sync as well.
-                        // The window cannot be closed, only narrowed: the
-                        // identifier is Google's to assign and only exists
-                        // after the answer, so a crash in between still makes
-                        // the contact a second time on the next full read.
-                        write_down(cache, &updated, &mut result);
-                        result.created_remote.note(&local.id);
-                    }
-                    Err(e) => {
-                        result.errors.push(format!(
-                            "Failed to push contact '{}' to Google: {}",
-                            local.name, e
-                        ));
-                    }
+    // Push contacts no address book knows to Google, on every sync. A contact
+    // read from an address book is stored with its identity there, so the
+    // filter below keeps every one of them out without waiting for a full
+    // read, which for Google comes once and then only when a marker expires.
+    let locals = cache.get_contacts_for_account(account_id)?;
+    for local in &locals {
+        // Made here and no address book knows it yet. `pending` is what
+        // says made here: without it, every address auto-import harvested
+        // from a message header goes into somebody's real address book,
+        // and nobody asked for their mail history to be copied there.
+        if local.pending
+            && local.known_to.is_empty()
+            && local.source_provider.as_deref() != Some(GOOGLE_ADDRESS_BOOK)
+        {
+            let person = contact_to_google_person(local);
+            match google.create_contact(token, &person).await {
+                Ok(created) => {
+                    let marker = version_marker(&created.etag);
+                    let mut updated = local
+                        .also_known_to(
+                            AddressBook::Google,
+                            &created.resource_name,
+                            marker.as_deref(),
+                        )
+                        // Google now has it, and no other address book is
+                        // owed it: a create only happens for a contact no
+                        // address book knew. Left marked as waiting, the
+                        // next read counts Google's own copy as having
+                        // replaced an edit and says somebody lost work
+                        // they still have.
+                        .told(&AddressBook::Google, marker.as_deref());
+                    updated.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+                    updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
+                    // Never `?`. Google has already made the contact, so
+                    // giving up here would abandon the contacts behind it
+                    // and skip the marker at the end of this sync as well.
+                    // The window cannot be closed, only narrowed: the
+                    // identifier is Google's to assign and only exists
+                    // after the answer, so a crash in between still makes
+                    // the contact a second time on the next sync.
+                    write_down(cache, &updated, &mut result);
+                    result.created_remote.note(&local.id);
+                }
+                Err(e) => {
+                    result.errors.push(format!(
+                        "Failed to push contact '{}' to Google: {}",
+                        local.name, e
+                    ));
                 }
             }
         }
@@ -2703,36 +2730,37 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
         }
     }
 
-    // Push local-only contacts on full sync
-    if delta_link.is_none() {
-        let locals = cache.get_contacts_for_account(account_id)?;
-        for local in &locals {
-            // Made here and no address book knows it yet, for the reason
-            // written on the Google side.
-            if local.pending
-                && local.known_to.is_empty()
-                && local.source_provider.as_deref() != Some(MICROSOFT_ADDRESS_BOOK)
-            {
-                let ms_contact = contact_to_ms_contact(local);
-                match ms_client.create_contact(token, &ms_contact).await {
-                    Ok(created) => {
-                        let marker = created.odata_etag.as_deref().filter(|m| !m.is_empty());
-                        let mut updated = local
-                            .also_known_to(AddressBook::Microsoft, &created.id, marker)
-                            // Told, for the reason written on the Google side.
-                            .told(&AddressBook::Microsoft, marker);
-                        updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
-                        updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
-                        // Never `?`, for the reason written on the Google side.
-                        write_down(cache, &updated, &mut result);
-                        result.created_remote.note(&local.id);
-                    }
-                    Err(e) => {
-                        result.errors.push(format!(
-                            "Failed to push contact '{}' to Microsoft: {}",
-                            local.name, e
-                        ));
-                    }
+    // Push contacts no address book knows to Outlook, on every sync, for the
+    // reason written on the Google side. A full read here is the first sync
+    // alone, so a contact typed here later, or one Outlook refused that
+    // first time, was never sent.
+    let locals = cache.get_contacts_for_account(account_id)?;
+    for local in &locals {
+        // Made here and no address book knows it yet, for the reason
+        // written on the Google side.
+        if local.pending
+            && local.known_to.is_empty()
+            && local.source_provider.as_deref() != Some(MICROSOFT_ADDRESS_BOOK)
+        {
+            let ms_contact = contact_to_ms_contact(local);
+            match ms_client.create_contact(token, &ms_contact).await {
+                Ok(created) => {
+                    let marker = created.odata_etag.as_deref().filter(|m| !m.is_empty());
+                    let mut updated = local
+                        .also_known_to(AddressBook::Microsoft, &created.id, marker)
+                        // Told, for the reason written on the Google side.
+                        .told(&AddressBook::Microsoft, marker);
+                    updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
+                    updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
+                    // Never `?`, for the reason written on the Google side.
+                    write_down(cache, &updated, &mut result);
+                    result.created_remote.note(&local.id);
+                }
+                Err(e) => {
+                    result.errors.push(format!(
+                        "Failed to push contact '{}' to Microsoft: {}",
+                        local.name, e
+                    ));
                 }
             }
         }
