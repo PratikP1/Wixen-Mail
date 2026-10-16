@@ -1427,6 +1427,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A browser sign-in is sent only to Google's or Microsoft's own servers (2026-10-16).** An
+  account set to sign in through the browser handed its sign-in to whatever server the account
+  named. A Gmail sign-in opens the whole mailbox, to read, delete and send, so a typo of
+  Gmail's server, or somebody else's server typed as the outgoing one, would have received it
+  if it asked. Now every server the sign-in would reach, the incoming one and the outgoing one,
+  has to belong to the provider that gave it, or nothing is fetched and nothing is sent. The
+  mail check, the watch for new mail, the Outbox, read receipts and the Account Manager's
+  sign-in all say the same sentence, naming the server and its box, such as "A browser sign-in
+  with Google is only ever sent to Google's own servers, and imap.gmial.com, in Work's IMAP
+  Server box, is not one of them, so it was not sent." An empty outgoing server is not refused
+  for. None of this has been tried against a real account.
+- **A Google sign-in is kept only for the account it was asked for (2026-10-16).** Signing in
+  through the browser kept whatever Google account was chosen there, so one wrong pick in the
+  browser's list of accounts filed another person's sign-in under this account, and the
+  calendar, contacts and tasks syncs then read and changed that person's data. Now both of an
+  account's Google sign-ins, the mail one and Sign In for Calendars, Contacts and Tasks, ask
+  Google which address signed in before keeping anything, and a different address keeps
+  nothing and says so: "Google signed in as someone@gmail.com, which is not this account's
+  address, so nothing was kept and nothing of that account's was brought here. Sign in again,
+  and choose me@gmail.com in the browser." Gmail addresses are compared the way Gmail reads
+  them, ignoring capitals, dots and anything after a plus, with googlemail.com the same as
+  gmail.com. Every browser sign-in, Microsoft's too, now tells the provider which address to
+  sign in as, and what is said as it begins names the address to choose, such as "Signing in
+  to Work. In the browser, choose me@gmail.com, and finish there." Two limits, said plainly.
+  Google answers with an account's main address, so a Google Workspace account entered here
+  under one of its other addresses is refused, with the main address named, until its address
+  here is changed to that one. And Microsoft's sign-in is not yet checked for who signed in. A
+  Google sign-in now needs the Google Calendar API turned on for the sign-in key, which the
+  setup steps in Help already ask for. None of this has been tried against a real account.
 - **Following a calendar link no longer freezes the window (2026-10-16).** A `webcal:` link
   on a web page opens the calendar in Wixen Mail, which said "Fetching that calendar." and
   then stopped answering until the calendar's host replied. A host that never replied froze
