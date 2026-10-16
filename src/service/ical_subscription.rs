@@ -4,8 +4,17 @@
 //! Subscription calendars are read-only: no create/update/delete.
 //! They refresh by re-fetching the full .ics feed on sync.
 
+use std::time::Duration;
+
 use crate::common::{Error, Result};
 use crate::service::caldav::{self, CalDavEvent, parse_ical_vevent};
+
+/// How long a calendar feed has to answer, and to finish arriving, before it
+/// is given up on.
+pub const A_FEED_HAS_THIS_LONG: Duration = Duration::from_secs(30);
+
+/// The most of a calendar feed this program reads, in bytes.
+pub const THE_LARGEST_FEED_READ: usize = 20 * 1024 * 1024;
 
 /// ICS feed subscription client.
 pub struct ICalSubscriptionClient {
@@ -20,6 +29,10 @@ impl Default for ICalSubscriptionClient {
 
 impl ICalSubscriptionClient {
     pub fn new() -> Self {
+        Self::answering_within(A_FEED_HAS_THIS_LONG, THE_LARGEST_FEED_READ)
+    }
+
+    fn answering_within(_limit: Duration, _cap: usize) -> Self {
         Self {
             http: reqwest::Client::new(),
         }
@@ -310,6 +323,153 @@ END:VCALENDAR"#;
             events[0].description, None,
             "the appointment was given its alarm's words as its own note"
         );
+    }
+
+    // ── A host that never answers, and one that never stops ─────────────
+    //
+    // Audit finding #20. A feed is fetched from whatever address a web page
+    // handed over, or on a timer from one somebody subscribed to, and the
+    // host decides when it answers and how much it sends. A client with no
+    // limit froze the window on the first and held a calendar sync's worker
+    // for ever on the second.
+
+    /// Longer than any limit the cases below set, so a client that kept to
+    /// its limit is finished well inside it and one that did not is a
+    /// failure somebody can read rather than a hung run.
+    const LONGER_THAN_ANY_LIMIT_HERE: Duration = Duration::from_secs(10);
+
+    /// A cap small enough that going past it costs a loopback nothing.
+    const A_SMALL_CAP: usize = 64 * 1024;
+
+    /// A loopback host that answers with the start of a calendar four times
+    /// the size of [`A_SMALL_CAP`] and then holds the connection open,
+    /// sending nothing more and never closing it.
+    ///
+    /// Bounded on purpose: a client that reads the whole reply waits here for
+    /// an end that never comes, which is the failure, without the test filling
+    /// memory to show it.
+    async fn more_than_the_cap_and_then_silence() -> std::net::SocketAddr {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: text/calendar\r\n\
+                        Connection: close\r\n\r\nBEGIN:VCALENDAR\r\n";
+            let _ = stream.write_all(head.as_bytes()).await;
+            let filler = "X-FILLER:a calendar that goes on and on\r\n".repeat(1024);
+            let mut sent = 0;
+            while sent < 4 * A_SMALL_CAP {
+                if stream.write_all(filler.as_bytes()).await.is_err() {
+                    return;
+                }
+                sent += filler.len();
+            }
+            std::future::pending::<()>().await;
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_host_that_never_answers_is_given_up_on_within_the_limit() {
+        let limit = Duration::from_millis(500);
+        let address = crate::common::answering::never_answering().await;
+        let client = ICalSubscriptionClient::answering_within(limit, A_SMALL_CAP);
+
+        let started = std::time::Instant::now();
+        let fetched = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_ics(&format!("http://{address}/private/feed.ics?token=s3cret")),
+        )
+        .await
+        .expect("the client waited past its limit for a host that never answers");
+
+        let refused = fetched.expect_err("a host that never answered gave a calendar");
+        assert!(
+            started.elapsed() < limit + Duration::from_secs(5),
+            "given up on after {:?}, against a limit of {limit:?}",
+            started.elapsed()
+        );
+        let said = refused.to_string();
+        assert!(
+            said.contains("127.0.0.1 did not answer"),
+            "it does not say which host did not answer: {said}"
+        );
+        assert!(
+            said.contains("Nothing on this calendar was changed here."),
+            "it does not say nothing was changed: {said}"
+        );
+        assert!(
+            !said.contains("s3cret") && !said.contains("/private/"),
+            "it read out the whole address rather than the host: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_larger_than_the_cap_is_refused_as_it_arrives() {
+        let address = more_than_the_cap_and_then_silence().await;
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
+
+        let fetched = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_ics(&format!("http://{address}/feed.ics")),
+        )
+        .await
+        .expect("the client went on reading past its cap, waiting for the end of the reply");
+
+        let said = fetched
+            .expect_err("a calendar larger than the cap was read")
+            .to_string();
+        assert!(
+            said.contains("larger than Wixen Mail reads"),
+            "it does not say the calendar was too large: {said}"
+        );
+        assert!(
+            said.contains("127.0.0.1"),
+            "it does not say which host sent it: {said}"
+        );
+        assert!(
+            said.contains("Nothing on this calendar was changed here."),
+            "it does not say nothing was changed: {said}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_within_the_cap_reads_as_it_always_did() {
+        let feed = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:within-1\r\n\
+                    SUMMARY:Caf\u{e9} opening\r\nDTSTART:20260305T090000Z\r\nEND:VEVENT\r\n\
+                    END:VCALENDAR\r\n"
+            .to_string();
+        let (address, asked) =
+            crate::common::answering::answering("200 OK", "text/calendar", feed.clone()).await;
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, feed.len());
+
+        let events = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_and_parse(&format!("http://{address}/feed.ics")),
+        )
+        .await
+        .expect("a feed within the cap to arrive")
+        .expect("a feed within the cap to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "within-1");
+        assert_eq!(
+            events[0].summary, "Caf\u{e9} opening",
+            "the text was not read as UTF-8"
+        );
+        let _ = tokio::time::timeout(LONGER_THAN_ANY_LIMIT_HERE, asked).await;
+    }
+
+    #[test]
+    fn test_the_feed_client_gives_a_host_thirty_seconds_and_reads_at_most_twenty_megabytes() {
+        assert_eq!(A_FEED_HAS_THIS_LONG, Duration::from_secs(30));
+        assert_eq!(THE_LARGEST_FEED_READ, 20 * 1024 * 1024);
     }
 
     #[test]
