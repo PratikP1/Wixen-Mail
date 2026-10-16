@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 756 records have arrived since and have not been through it.
+# 759 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -261,7 +261,7 @@ red = [
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -276,7 +276,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_only_google_still_needs_survives_an_outlook_read_that_moved_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A change built on a copy the address book has moved past ────────────────
@@ -297,7 +297,7 @@ red = [
     "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -311,7 +311,7 @@ red = [
     "application::contacts_sync::tests::test_the_two_answers_an_address_book_gives_to_an_old_marker_are_both_read",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A change that never reached the address book at all ─────────────────────
@@ -336,7 +336,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -361,7 +361,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_google_is_kept_not_lost_to_a_concurrent_move",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -383,7 +383,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -401,7 +401,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_the_network_dropped_at_outlook_is_kept_not_lost_to_a_concurrent_move",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -415,7 +415,7 @@ red = [
     "application::contacts_sync::tests::test_an_edit_both_address_books_had_moved_past_reaches_both_of_them",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── One address book cannot speak for the other ─────────────────────────────
@@ -437,7 +437,7 @@ red = [
     "application::contacts_sync::tests::test_work_waiting_for_nobody_in_particular_survives_one_address_book_letting_go",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── The deletion warning, read three wrong ways ─────────────────────────────
@@ -462,7 +462,7 @@ red = [
     "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_a_waiting_change_with_it_and_says_so",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -475,7 +475,7 @@ red = [
     "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -487,7 +487,7 @@ red = [
     "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Clauses of a summary that stop being said ───────────────────────────────
@@ -722,7 +722,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
     { file = "src/application/mail_sync.rs", tests = 155 },
@@ -782,7 +782,7 @@ red = [
     # broken. Eight remain, measured on the runners and again here.
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -797,7 +797,7 @@ red = [
     "application::contacts_sync::tests::test_a_person_one_address_book_deleted_and_the_other_still_holds_is_one_person",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Created, updated and deleted are one person each ────────────────────────
@@ -823,7 +823,7 @@ red = [
     "application::contacts_sync::tests::test_a_person_who_arrived_this_sync_is_not_also_counted_as_changed",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -838,7 +838,7 @@ red = [
     "application::contacts_sync::tests::test_a_person_this_sync_removed_is_not_also_counted_as_changed",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -854,7 +854,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # A record retired on 2026-09-15 by 08-07's sweep: "the other setting is named
@@ -906,7 +906,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
 
@@ -942,7 +942,7 @@ red = [
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Both copies of a contact both sides changed ─────────────────────────────
@@ -999,7 +999,7 @@ red = [
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1042,7 +1042,7 @@ red = [
     "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1073,7 +1073,7 @@ red = [
     "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1091,7 +1091,7 @@ red = [
     "application::contacts_sync::tests::test_a_held_contact_is_not_resolved_by_the_next_sync",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1133,7 +1133,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Sending a change again over a newer copy ────────────────────────────────
@@ -1159,7 +1159,7 @@ red = [
     "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_googles_newer_copy",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1175,7 +1175,7 @@ red = [
     "application::contacts_sync::tests::test_only_work_typed_here_is_sent_again_over_the_address_books_newer_copy",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A change no setting let out ─────────────────────────────────────────────
@@ -1215,7 +1215,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1228,7 +1228,7 @@ red = [
     "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1241,7 +1241,7 @@ red = [
     "application::contacts_sync::tests::test_an_address_books_own_copy_does_not_freeze_the_contact_against_the_other_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1260,7 +1260,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_change_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1275,7 +1275,7 @@ red = [
     "application::contacts_sync::tests::test_a_change_two_settings_hold_back_names_both_of_them",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A contact deleted here ──────────────────────────────────────────────────
@@ -1313,11 +1313,15 @@ red = [
     # Added 2026-09-15 by 08-07's sweep: written 2026-09-10 in a file this
     # record had never named.
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
+    # Added 2026-10-16 by 13.2-17's re-measure: written 2026-09-25 by 13-09 in
+    # a file this record had never named, so no count could flag it.
+    "data::message_cache::taking_back::tests::test_an_owed_contact_is_taken_back_with_what_its_address_books_call_it",
 ]
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
+    { file = "src/data/message_cache/taking_back.rs", tests = 10 },
 ]
 
 [[guard]]
@@ -1336,7 +1340,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # And the same question asked the narrow way, which this has had wrong twice.
@@ -1371,7 +1375,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1389,7 +1393,7 @@ red = [
     "application::contacts_sync::tests::test_a_contact_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A deletion outlives the sync that sent it ──────────────────────────────
@@ -1418,7 +1422,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
@@ -1742,7 +1746,7 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/carddav_sync.rs", tests = 14 },
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/notes_sync.rs", tests = 23 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
@@ -1772,7 +1776,7 @@ red = [
     "application::contacts_sync::tests::test_a_contact_google_deleted_is_not_sent_back_to_google_as_a_deletion",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1794,7 +1798,7 @@ red = [
     "application::contacts_sync::tests::test_turning_allow_changes_on_sends_the_deletion_the_summary_said_was_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1817,7 +1821,7 @@ red = [
     "application::contacts_sync::tests::test_a_deletion_the_address_book_refused_is_kept_and_said",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A 404 is not a deletion that reached anybody ────────────────────────────
@@ -1839,7 +1843,7 @@ red = [
     "application::contacts_sync::tests::test_an_address_book_that_has_never_heard_of_her_is_not_asked_again",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1853,7 +1857,7 @@ red = [
     "application::contacts_sync::tests::test_two_contacts_the_address_book_never_held_are_said_in_the_same_words",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1868,7 +1872,7 @@ red = [
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1882,7 +1886,7 @@ red = [
     "application::contacts_sync::tests::test_two_deletions_that_reached_the_address_book_are_not_read_out_in_the_singular",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -1896,7 +1900,7 @@ red = [
     "application::contacts_sync::tests::test_folding_two_address_books_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Deleting a calendar, a task list, a note folder or a group ──────────────
@@ -2677,7 +2681,7 @@ red = [
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
@@ -2704,7 +2708,7 @@ red = [
     "data::message_cache::contacts::tests::test_two_cards_one_address_each_are_one_person_holding_both_addresses",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
@@ -2723,7 +2727,7 @@ red = [
     "application::contacts_sync::tests::test_a_person_here_at_the_address_the_address_book_keeps_second_is_the_same_person",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -2742,7 +2746,7 @@ red = [
     "application::contacts_sync::tests::test_a_person_the_address_book_writes_to_at_her_second_address_is_the_one_here",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # -- An imported card is a change, and only when it is one ------------------
@@ -2773,7 +2777,7 @@ red = [
     "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
@@ -2791,7 +2795,7 @@ red = [
     "data::message_cache::contacts::tests::test_re_importing_a_backup_does_not_queue_a_contact_stored_by_an_older_version",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
@@ -2898,7 +2902,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
@@ -6607,7 +6611,7 @@ red = [
     "application::contacts_sync::tests::test_the_google_address_book_a_sync_uses_really_sends_a_deletion",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -6621,7 +6625,7 @@ red = [
     "application::contacts_sync::tests::test_the_outlook_address_book_a_sync_uses_really_sends_a_deletion",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Mail waiting to go sat at the bottom of the tree ────────────────────────
@@ -7361,7 +7365,7 @@ red = [
     "application::contacts_sync::tests::test_the_name_google_computes_is_read_and_never_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -7369,12 +7373,15 @@ name = "a contact whose whole name is on one line is not read as nameless"
 file = "src/application/contacts_sync.rs"
 before = """                n.unstructured_name.clone()"""
 after = """                n.display_name.clone()"""
+# `test_roundtrip_google` left this list on 2026-10-16, found by 13.2-17's
+# re-measure: since 12-07 (`36ed6bb9`, 2026-09-24) it hands the reader a
+# display name, standing in for Google, so reading the display name alone
+# passes it. The one-line name is held by the test below.
 red = [
-    "application::contacts_sync::tests::test_roundtrip_google",
     "application::contacts_sync::tests::test_the_name_google_computes_is_read_and_never_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A postal address Google holds is kept here, so a change does not clear it ─
@@ -7410,7 +7417,7 @@ red = [
     "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Every number Outlook holds is kept here, so a change does not drop one ──
@@ -7447,7 +7454,7 @@ red = [
     "application::contacts_sync::tests::test_every_number_outlook_holds_is_kept_here_and_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A postal address held at Google reaches a contact already known here ────
@@ -7487,7 +7494,7 @@ red = [
     "application::contacts_sync::tests::test_an_address_no_longer_held_at_google_is_no_longer_held_here",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A postal address held at Outlook reaches a contact already known here ───
@@ -7521,7 +7528,7 @@ red = [
     "application::contacts_sync::tests::test_a_microsoft_sync_takes_a_postal_address_held_at_outlook_into_a_contact_already_known_here",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A phone list held at Outlook reaches a contact already known here ───────
@@ -7563,7 +7570,7 @@ red = [
     "application::contacts_sync::tests::test_a_phone_number_no_longer_held_at_outlook_is_no_longer_held_here",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── An event filed under two categories at Outlook goes back under two ──────
@@ -7899,7 +7906,7 @@ red = [
     "application::contacts_sync::tests::test_a_postal_address_google_holds_only_as_one_line_is_kept_and_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -7925,7 +7932,7 @@ red = [
     "application::contacts_sync::tests::test_an_address_with_no_label_asks_google_for_no_label_rather_than_an_empty_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -7960,7 +7967,7 @@ red = [
     "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A postal address stored before the lists existed still reaches an address book ─
@@ -7991,7 +7998,7 @@ red = [
     "application::contacts_sync::tests::test_an_empty_address_row_is_not_sent_to_google",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -8006,7 +8013,7 @@ red = [
     "application::contacts_sync::tests::test_an_empty_address_row_is_not_sent_to_microsoft",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── The name Outlook keeps beside one address is read in and sent back ──────
@@ -8031,7 +8038,7 @@ red = [
     "application::contacts_sync::tests::test_the_name_outlook_keeps_beside_an_address_is_kept_here_and_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -8049,7 +8056,7 @@ red = [
     "application::contacts_sync::tests::test_the_name_outlook_keeps_beside_an_address_is_kept_here_and_sent_back",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── A name Outlook gave survives a Google sync and an edit made here ────────
@@ -8080,7 +8087,7 @@ red = [
     "application::contacts_sync::tests::test_a_google_sync_keeps_the_name_outlook_keeps_beside_an_address",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -8124,7 +8131,7 @@ red = [
     "application::contacts_sync::tests::test_the_address_google_calls_the_main_one_is_the_one_this_program_calls_the_main_one",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -8138,7 +8145,7 @@ red = [
     "application::contacts_sync::tests::test_the_email_google_calls_the_main_one_is_the_one_this_program_shows_first",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 # ── Tasks: a provider's markup and a provider's progress word ───────────────
@@ -11178,7 +11185,7 @@ before = """        GoogleApiClient::get_contact(self, token, provider_contact_i
 after = """        Ok(Default::default())"""
 red = ["application::contacts_sync::tests::test_the_google_address_book_a_sync_uses_really_reads_one_contact_back"]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -11188,7 +11195,7 @@ before = """        MsGraphClient::get_contact(self, token, provider_contact_id)
 after = """        Ok(Default::default())"""
 red = ["application::contacts_sync::tests::test_the_outlook_address_book_a_sync_uses_really_reads_one_contact_back"]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -11215,7 +11222,7 @@ after = '''pub(crate) fn forget_the_deletions_remembered_long_enough(
 }'''
 red = ["application::contacts_sync::tests::test_a_contacts_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
 
 [[guard]]
@@ -38626,7 +38633,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -38662,7 +38669,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_contacts_summary_says_the_reason_after_the_counts_when_an_address_book_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/contacts_sync.rs", tests = 281 },
+    { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -40809,4 +40816,65 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_saved_file_carries_the_mark_of_the_web.rs", tests = 3 },
+]
+
+# Google's answer to a contacts marker more than seven days old, 400 with
+# EXPIRED_SYNC_TOKEN or "Sync token is expired", makes the sync read the whole
+# address book again (audit finding #25). The break matches none of Google's
+# words, so only 410 counts, as before: the rows for the 400 go red, and so
+# does the end-to-end case, whose sync fails on the dead marker before saving
+# a fresh one. Added 2026-10-16 by 13.2-17 and taken by hand against the
+# whole library.
+[[guard]]
+name = "Google's own answer to an expired contacts marker reads the address book again"
+file = "src/application/contacts_sync.rs"
+before = '''            GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER
+                .iter()
+                .any(|words| message.contains(words))'''
+after = '''            GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER
+                .iter()
+                .any(|_| false)'''
+red = [
+    "application::contacts_sync::tests::test_googles_own_answer_to_an_expired_marker_reads_everything_and_keeps_a_fresh_one",
+    "application::contacts_sync::tests::test_only_a_gone_answer_or_googles_expired_marker_makes_the_address_book_be_read_again",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 287 },
+]
+
+# A contact typed here, known to no address book, is sent to Google on every
+# sync rather than only on a full read (audit finding #26). The break puts the
+# old guard back, so with a marker stored the contact is never sent. Added
+# 2026-10-16 by 13.2-17 and taken by hand against the whole library.
+[[guard]]
+name = "a contact typed here is sent to Google on every sync, not only a full read"
+file = "src/application/contacts_sync.rs"
+before = '''    for local in &locals {
+        // Made here and no address book knows it yet. `pending` is what'''
+after = '''    for local in locals.iter().filter(|_| read_the_whole_address_book) {
+        // Made here and no address book knows it yet. `pending` is what'''
+red = [
+    "application::contacts_sync::tests::test_a_contact_typed_here_after_the_first_sync_is_sent_to_google",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 287 },
+]
+
+# The same for Outlook, whose full read is the first sync alone, so a contact
+# typed later, or one Outlook refused that first time, was never sent (audit
+# finding #26). The break puts the old guard back on the stored delta link.
+# Added 2026-10-16 by 13.2-17 and taken by hand against the whole library.
+[[guard]]
+name = "a contact typed here is sent to Outlook on every sync, not only the first"
+file = "src/application/contacts_sync.rs"
+before = '''    for local in &locals {
+        // Made here and no address book knows it yet, for the reason'''
+after = '''    for local in locals.iter().filter(|_| delta_link.is_none()) {
+        // Made here and no address book knows it yet, for the reason'''
+red = [
+    "application::contacts_sync::tests::test_a_contact_outlook_refused_on_the_first_sync_is_sent_again_on_the_next",
+    "application::contacts_sync::tests::test_a_contact_typed_here_after_the_first_sync_is_sent_to_microsoft",
+]
+tests_last_seen = [
+    { file = "src/application/contacts_sync.rs", tests = 287 },
 ]
