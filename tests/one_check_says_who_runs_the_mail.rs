@@ -59,6 +59,13 @@ const THE_CALLERS: &[Caller] = &[
         signature: Some("pub fn provider_of("),
         names: "WhoRunsTheMail::of(",
     },
+    // Which servers a browser sign-in's token may be sent to (13.2-15): the
+    // provider the check names, and only the servers it runs.
+    Caller {
+        file: "src/application/mail_auth.rs",
+        signature: Some("pub fn a_server_its_provider_does_not_run("),
+        names: "WhoRunsTheMail::of(",
+    },
     Caller {
         file: "src/presentation/wx_account_manager.rs",
         signature: Some("fn run_oauth_flow("),

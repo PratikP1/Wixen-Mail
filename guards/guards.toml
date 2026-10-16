@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 751 records have arrived since and have not been through it.
+# 752 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -5851,7 +5851,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/status_line.rs", tests = 3 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
@@ -5900,7 +5900,7 @@ red = [
     "presentation::wx_account_manager::tests::test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A sign-in failure is one notification, not a sentence and a cue ─────────
@@ -5951,7 +5951,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── The one call for an outcome that is also an event raises the event ──────
@@ -8659,9 +8659,12 @@ after = """        return Err(Error::Authentication(format!(
 red = [
     "application::mail_auth::tests::test_an_account_needing_a_new_token_is_told_which_control_to_press",
     "application::mail_auth::tests::test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out",
+    # 13.2-15: the rows of accounts the servers' check lets through reach the
+    # credentials sentence and read it, measured 2026-10-16.
+    "application::mail_auth::tests::test_every_server_google_and_microsoft_name_lets_the_sign_in_go_on",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
 ]
 
 # Measured by hand on 2026-08-13. The account manager screen answers the same
@@ -8695,7 +8698,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── One owner for what a manager window says about a changed row ────────────
@@ -8771,7 +8774,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A changed day of a CalDAV series has to be marked seen before it can be
@@ -9198,7 +9201,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -9214,7 +9217,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A server that never answers is waited for off the window's thread, but ──
@@ -30516,7 +30519,7 @@ red = [
     "test_the_four_numbers_are_spin_controls_holding_their_own_ranges",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
@@ -30976,7 +30979,7 @@ red = [
     "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
 ]
 
@@ -34332,7 +34335,7 @@ red = [
     "test_a_typed_password_goes_to_the_credential_store_and_the_settings_have_no_room_for_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -34352,7 +34355,7 @@ red = [
     "test_with_a_password_saved_the_box_and_the_window_both_say_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -34736,7 +34739,7 @@ red = [
     "test_an_account_not_saved_yet_is_refused_with_a_sentence_and_no_manager_opens",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/other_addresses_are_managed_per_account.rs", tests = 16 },
 ]
 
@@ -36288,7 +36291,7 @@ red = [
     "test_a_sign_in_over_an_unencrypted_address_is_refused_at_ok_with_focus_on_the_address",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -36718,7 +36721,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/looking_people_up.rs", tests = 43 },
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
     { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
@@ -36813,7 +36816,7 @@ red = [
     "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
 
@@ -36831,7 +36834,7 @@ red = [
     "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
 
@@ -36870,7 +36873,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # Microsoft given the page for personal accounts' app passwords, which
@@ -36890,7 +36893,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_runs_the_mail.rs", tests = 9 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # The feedback report naming accounts by the saved name alone again, so a
@@ -39023,7 +39026,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # A Gmail account's calendars other than its main one were never read: the
@@ -39885,7 +39888,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_add_and_the_edit_arms_both_ask_before_an_account_is_kept",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # The Account Manager asking nothing about the watches: an account it removed
@@ -40672,4 +40675,25 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 56 },
+]
+
+# A browser sign-in's token is sent only to servers its provider runs
+# (audit finding #18). The break makes the servers' check find nothing, so
+# a typo of Gmail's server or a stranger's outgoing relay gets the token
+# again, through the mail check and through the Account Manager's sign-in.
+# Added 2026-10-16 by 13.2-15 and taken by hand against the whole library:
+# these three and nothing else.
+[[guard]]
+name = "a browser sign-in's token goes only to servers its provider runs"
+file = "src/application/mail_auth.rs"
+before = '''        .find(|(_, host)| !host.is_empty() && !who.runs_the_server(host))'''
+after = '''        .find(|(_, host)| !host.is_empty() && false)'''
+red = [
+    "application::mail_auth::tests::test_no_token_is_fetched_for_a_typo_of_the_providers_incoming_server",
+    "application::mail_auth::tests::test_no_token_is_fetched_for_an_outgoing_server_the_provider_does_not_run",
+    "presentation::wx_account_manager::tests::test_a_sign_in_for_a_typo_of_gmails_server_opens_no_browser_and_names_the_server",
+]
+tests_last_seen = [
+    { file = "src/application/mail_auth.rs", tests = 18 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]

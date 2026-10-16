@@ -11,6 +11,7 @@
 //! "authentication failed" covers all of them and helps with none.
 
 use crate::application::who_runs_the_mail::WhoRunsTheMail;
+use crate::common::types::Protocol;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
 use crate::service::oauth::AuthManager;
@@ -112,9 +113,32 @@ impl NotTheProvidersServer {
 
 /// The first server this account's browser sign-in would be sent to that its
 /// provider does not run, or nothing when every one is the provider's.
+///
+/// The servers are the incoming one the account's protocol reads from and the
+/// outgoing one. A box left empty names no server, so nothing is sent there
+/// and nothing is refused for it. An account no provider runs answers nothing
+/// here, because [`provider_of`] has already refused it in its own words.
 pub fn a_server_its_provider_does_not_run(account: &Account) -> Option<NotTheProvidersServer> {
-    let _ = account;
-    None
+    let who = WhoRunsTheMail::of(account);
+    let whose = match who {
+        WhoRunsTheMail::Gmail => "Google",
+        WhoRunsTheMail::Microsoft => "Microsoft",
+        WhoRunsTheMail::SomebodyElse => return None,
+    };
+    let incoming = match account.protocol() {
+        Protocol::Pop3 => ("POP Server", &account.pop_server),
+        Protocol::Imap => ("IMAP Server", &account.imap_server),
+    };
+    [incoming, ("SMTP Server", &account.smtp_server)]
+        .into_iter()
+        .map(|(the_box, host)| (the_box, host.trim()))
+        .find(|(_, host)| !host.is_empty() && !who.runs_the_server(host))
+        .map(|(the_box, host)| NotTheProvidersServer {
+            account_name: account.name.clone(),
+            whose,
+            the_box,
+            host: host.to_string(),
+        })
 }
 
 /// The credential this account signs in with, fetching a token if it needs one.
@@ -137,6 +161,12 @@ pub async fn for_account(account: &Account) -> Result<MailAuth> {
     let Some(provider) = provider_of(account) else {
         return Err(Error::Authentication(no_browser_sign_in_for(&account.name)));
     };
+    // Before any credential is read or token refreshed, so a refused account
+    // costs the provider nothing and every caller is covered at once: the mail
+    // check, the watch, the Outbox and read receipts.
+    if let Some(stranger) = a_server_its_provider_does_not_run(account) {
+        return Err(Error::Authentication(stranger.sentence()));
+    }
     let Some(credentials) = oauth_credentials::credentials_for(&provider) else {
         return Err(Error::Authentication(no_sign_in_credentials(&provider)));
     };

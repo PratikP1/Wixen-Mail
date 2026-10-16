@@ -15,7 +15,10 @@ use crate::application::emptying_the_trash::{
     NO_TRASH_TO_EMPTY, WhenTheTrashIsEmptied, the_provider_empties_it, who_empties_the_trash,
 };
 use crate::application::local_folders::DELETING_HERE_NEVER_REACHES_THE_SERVER;
-use crate::application::mail_auth::{NO_BROWSER_SIGN_IN_HERE, no_sign_in_credentials, provider_of};
+use crate::application::mail_auth::{
+    NO_BROWSER_SIGN_IN_HERE, a_server_its_provider_does_not_run, no_sign_in_credentials,
+    provider_of,
+};
 use crate::application::pop_sync::SERVER_REMOVAL_IS_PERMANENT;
 // The one wording for a refusal when nothing was chosen (#75). This window
 // said it five ways, one per button, and the button is not what somebody
@@ -3164,6 +3167,11 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
     let Some(provider) = provider_of(account) else {
         return OAuthFlowResult::Failed(NO_BROWSER_SIGN_IN_HERE.into());
     };
+    // The mail check would refuse every use of a token for these servers, so
+    // the person is told now, before the browser opens.
+    if let Some(stranger) = a_server_its_provider_does_not_run(account) {
+        return OAuthFlowResult::Failed(stranger.sentence());
+    }
 
     // Load app-level credentials (env vars / config file / compile-time defaults)
     let creds = match oauth_credentials::credentials_for(&provider) {
