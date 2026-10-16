@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 755 records have arrived since and have not been through it.
+# 756 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -21963,22 +21963,50 @@ tests_last_seen = [
 # `whether_windows_trusts_it`, and never reaches the comparison this breaks.
 # The test that catches this break against a real signature is the first one
 # listed, which asks Windows about a file Microsoft really signed.
+#
+# Rewritten 2026-10-16 by 13.2-16, when the rule gained its second half, the
+# certificate profile (audit finding #24). The comparison is now a refusal
+# rather than an acceptance, so the break makes every name ours and leaves
+# the profile as the only thing standing; every case whose fixture is
+# somebody else's name now meets the profile's refusal instead of its own,
+# including the new one where somebody else carries our profile, and so does
+# the Windows case on the usages, which reads the same Microsoft file.
 [[guard]]
 name = "an installer is refused unless this project signed it"
 file = "src/service/update_download.rs"
-before = """    if name.eq_ignore_ascii_case(WHO_SIGNS_THIS) {
-        return Ok(());
-    }"""
-after = """    if name.eq_ignore_ascii_case(name) {
-        return Ok(());
-    }"""
+before = """    if !name.eq_ignore_ascii_case(WHO_SIGNS_THIS) {
+        return Err(Refused::SomebodyElseSignedIt {"""
+after = """    if !name.eq_ignore_ascii_case(name) {
+        return Err(Refused::SomebodyElseSignedIt {"""
 red = [
     "service::update_download::tests::test_a_file_somebody_else_signed_is_refused_for_that_reason",
     "service::update_download::tests::test_a_name_that_merely_contains_ours_is_refused",
     "service::update_download::tests::test_a_signature_from_anybody_else_is_refused_however_valid_it_is",
+    "service::update_download::tests::test_somebody_else_carrying_our_profile_is_still_somebody_else",
+    "service::update_download::tests::test_the_usages_read_off_a_signed_file_include_code_signing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 40 },
+    { file = "src/service/update_download.rs", tests = 47 },
+]
+
+# An installer carrying this project's name is refused unless its certificate
+# also carries this project's certificate profile, compared as a whole value,
+# and an empty identifier refuses everything (audit finding #24). The break
+# drops the profile requirement, so a certificate any other Pratik Patel can
+# get is enough again. Added 2026-10-16 by 13.2-16 and measured against the
+# whole library through `scripts/guards.sh --remeasure`.
+[[guard]]
+name = "an installer in this project's name must carry this project's certificate profile"
+file = "src/service/update_download.rs"
+before = """    if profile.is_empty() || !who.usages.iter().any(|usage| usage == profile) {"""
+after = """    if false {"""
+red = [
+    "service::update_download::tests::test_a_usage_that_merely_begins_with_our_profile_is_refused",
+    "service::update_download::tests::test_our_name_on_a_certificate_from_another_profile_is_refused",
+    "service::update_download::tests::test_while_the_profile_is_unknown_even_our_name_is_refused",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 47 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -22019,7 +22047,7 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 40 },
+    { file = "src/service/update_download.rs", tests = 47 },
 ]
 
 # The person chose whether the day comes before the month and whether the month
