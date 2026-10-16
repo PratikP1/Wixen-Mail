@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 749 records have arrived since and have not been through it.
+# 750 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -40629,4 +40629,28 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/ical_subscription.rs", tests = 23 },
+]
+
+# A followed calendar link is fetched on the runtime and its answer handed
+# back to the window's thread (audit finding #20). The break waits on the
+# runtime from the window's thread again, and a host that never answers
+# freezes the window until the feed client's limit runs out. The reading
+# goes red on its own target. Added 2026-10-16 by 13.2-14 and measured
+# through `scripts/guards.sh --remeasure`, the target named.
+[[guard]]
+name = "a followed calendar link is fetched off the window's thread, not waited on there"
+file = "src/presentation/wx_app.rs"
+suite = "a_followed_calendar_link_is_fetched_off_the_window"
+before = '''            let hands_back = tx.clone();
+            rt.spawn(async move {
+                let fetched = crate::service::ICalSubscriptionClient::new()'''
+after = '''            let hands_back = tx.clone();
+            rt.block_on(async move {
+                let fetched = crate::service::ICalSubscriptionClient::new()'''
+red = [
+    "test_the_calendar_arm_hands_the_fetch_to_the_runtime_and_waits_on_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_followed_calendar_link_is_fetched_off_the_window.rs", tests = 3 },
 ]

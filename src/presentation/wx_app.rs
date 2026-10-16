@@ -6549,10 +6549,10 @@ impl WxMailApp {
                     // span an open that could reach back here.
                     let open_a_handover = {
                         let slot = std::rc::Rc::clone(&opens_a_handover);
-                        move |argument: &str| {
+                        move |handed: Handover| {
                             let opens = slot.borrow().clone();
                             if let Some(opens) = opens {
-                                opens(argument.to_string());
+                                opens(handed);
                             }
                         }
                     };
@@ -6878,7 +6878,26 @@ impl WxMailApp {
                 let message_cache = message_cache.clone();
                 let a11y = a11y.clone();
                 let switch = switch_for_what_was_opened.clone();
-                move |argument: String| {
+                move |handed: Handover| {
+                    let argument = match handed {
+                        Handover::Given(argument) => argument,
+                        Handover::CalendarFetched { address, fetched } => {
+                            read_the_fetched_calendar(
+                                &address,
+                                fetched,
+                                AppHandles {
+                                    state: &state,
+                                    tx: &scan_tx,
+                                    rt: &scan_rt,
+                                },
+                                &frame,
+                                &message_cache,
+                                &a11y,
+                                &switch,
+                            );
+                            return;
+                        }
+                    };
                     // Nothing to open is a real handover: somebody started the
                     // program again and the window has already been raised.
                     if argument.trim().is_empty() {
@@ -19311,26 +19330,14 @@ fn open_what_windows_handed_over(
     use crate::application::opening::Opening;
 
     let AppHandles { state: _, tx, rt } = app;
-
-    let told = |words: &str| {
-        send_status(tx, rt, words);
-        let _ = a11y.announce(
-            words,
-            crate::presentation::accessibility::announcements::Priority::Normal,
-        );
+    let says = SaysWhatAHandoverDid {
+        tx,
+        rt,
+        a11y,
+        frame,
     };
-    let went_wrong = |why: &str| {
-        tracing::warn!("{why}");
-        send_status(tx, rt, why);
-        let _ = a11y.announce(
-            why,
-            crate::presentation::accessibility::announcements::Priority::High,
-        );
-        MessageDialog::builder(frame, why, "Wixen Mail could not open that")
-            .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
-            .build()
-            .show_modal();
-    };
+    let told = |words: &str| says.told(words);
+    let went_wrong = |why: &str| says.went_wrong(why);
 
     match opening {
         Opening::Compose(asked) => {
@@ -19366,20 +19373,13 @@ fn open_what_windows_handed_over(
                     "Wixen Mail could not open {name}, because the place it keeps \
                      calendars and contacts is not available."
                 )),
-                Some(cache) => {
-                    let read = crate::application::opening::text_of(&path).and_then(|text| {
-                        crate::application::opening::read_calendar_file(cache, &text)
-                    });
-                    match read {
-                        Ok(read) => {
-                            told(&crate::application::opening::what_reading_the_calendar_did(
-                                read, &name,
-                            ));
-                            switch_to(PimModule::Calendar);
-                        }
-                        Err(why) => went_wrong(&format!("{why}")),
-                    }
-                }
+                Some(cache) => read_into_the_calendar(
+                    cache,
+                    crate::application::opening::text_of(&path),
+                    &name,
+                    &says,
+                    switch_to,
+                ),
             }
         }
         Opening::ContactFile(path) => {
@@ -19411,35 +19411,136 @@ fn open_what_windows_handed_over(
             }
         }
         Opening::CalendarSubscription(address) => {
-            let Some(cache) = cache.clone() else {
-                went_wrong(
-                    "Wixen Mail could not follow that calendar, because the place it \
-                     keeps calendars is not available.",
-                );
+            if cache.is_none() {
+                went_wrong(NOWHERE_TO_KEEP_A_FOLLOWED_CALENDAR);
                 return;
-            };
+            }
             told("Fetching that calendar.");
-            // On the runtime rather than on the thread drawing the window. A
-            // calendar can be on the other side of the world and this is a
-            // fetch over the network; run here it would stop the window until
-            // it answered, which is how a screen reader hangs on a user.
-            let fetched = rt.block_on(async {
-                crate::service::ICalSubscriptionClient::new()
+            // The fetch goes to the runtime and this thread goes back to
+            // drawing the window. A calendar can be on the other side of the
+            // world, and waiting here for it stopped the window until the host
+            // answered, which is how a screen reader comes to say a program is
+            // not responding (audit finding #20). The answer comes back as an
+            // update and is read on this thread, because the store it is read
+            // into cannot leave it; see `read_the_fetched_calendar`.
+            let hands_back = tx.clone();
+            rt.spawn(async move {
+                let fetched = crate::service::ICalSubscriptionClient::new()
                     .fetch_ics(&address)
                     .await
+                    .map_err(|why| why.to_string());
+                let _ = hands_back
+                    .send(UIUpdate::CalendarFetched { address, fetched })
+                    .await;
             });
-            match fetched
-                .and_then(|text| crate::application::opening::read_calendar_file(&cache, &text))
-            {
-                Ok(read) => {
-                    told(&crate::application::opening::what_reading_the_calendar_did(
-                        read, &address,
-                    ));
-                    switch_to(PimModule::Calendar);
-                }
-                Err(why) => went_wrong(&format!("{why}")),
-            }
         }
+    }
+}
+
+/// What a followed calendar link says when there is nowhere to keep it.
+const NOWHERE_TO_KEEP_A_FOLLOWED_CALENDAR: &str = "Wixen Mail could not follow that calendar, because the place it keeps calendars is not \
+     available.";
+
+/// What reaches the window from a handover.
+///
+/// One door rather than two, because both need the module switcher and the
+/// window's store, and only the handover's slot holds them.
+enum Handover {
+    /// What another copy of Wixen Mail was started with.
+    Given(String),
+    /// A calendar a followed link asked for, fetched off this thread.
+    CalendarFetched {
+        address: String,
+        fetched: std::result::Result<String, String>,
+    },
+}
+
+/// Read a calendar a followed link asked for, now that it has been fetched off
+/// this thread, and say what came of it as the link would have before.
+fn read_the_fetched_calendar(
+    address: &str,
+    fetched: std::result::Result<String, String>,
+    app: AppHandles<'_>,
+    frame: &Frame,
+    cache: &Option<Arc<MessageCache>>,
+    a11y: &Arc<Accessibility>,
+    switch_to: &impl Fn(PimModule),
+) {
+    let AppHandles { state: _, tx, rt } = app;
+    let says = SaysWhatAHandoverDid {
+        tx,
+        rt,
+        a11y,
+        frame,
+    };
+    match cache {
+        None => says.went_wrong(NOWHERE_TO_KEEP_A_FOLLOWED_CALENDAR),
+        Some(cache) => read_into_the_calendar(
+            cache,
+            fetched.map_err(crate::common::Error::InPlainWords),
+            address,
+            &says,
+            switch_to,
+        ),
+    }
+}
+
+/// Read a calendar's text into the store, and say what that did or why it
+/// could not, under `name`.
+///
+/// One reader for an opened calendar file and a followed calendar link, so
+/// the two say the same things.
+fn read_into_the_calendar(
+    cache: &MessageCache,
+    text: crate::common::Result<String>,
+    name: &str,
+    says: &SaysWhatAHandoverDid<'_>,
+    switch_to: &impl Fn(PimModule),
+) {
+    match text.and_then(|text| crate::application::opening::read_calendar_file(cache, &text)) {
+        Ok(read) => {
+            says.told(&crate::application::opening::what_reading_the_calendar_did(
+                read, name,
+            ));
+            switch_to(PimModule::Calendar);
+        }
+        Err(why) => says.went_wrong(&format!("{why}")),
+    }
+}
+
+/// How a handover says what came of it.
+///
+/// Three ways, because the three land differently: the status line for
+/// somebody watching, an announcement for somebody listening, and, when it
+/// went wrong, a dialog, because a failure that only appears in a status line
+/// is one a person misses and then wonders why their invitation did nothing.
+struct SaysWhatAHandoverDid<'a> {
+    tx: &'a Sender<UIUpdate>,
+    rt: &'a Arc<Runtime>,
+    a11y: &'a Arc<Accessibility>,
+    frame: &'a Frame,
+}
+
+impl SaysWhatAHandoverDid<'_> {
+    fn told(&self, words: &str) {
+        send_status(self.tx, self.rt, words);
+        let _ = self.a11y.announce(
+            words,
+            crate::presentation::accessibility::announcements::Priority::Normal,
+        );
+    }
+
+    fn went_wrong(&self, why: &str) {
+        tracing::warn!("{why}");
+        send_status(self.tx, self.rt, why);
+        let _ = self.a11y.announce(
+            why,
+            crate::presentation::accessibility::announcements::Priority::High,
+        );
+        MessageDialog::builder(self.frame, why, "Wixen Mail could not open that")
+            .with_style(MessageDialogStyle::OK | MessageDialogStyle::IconInformation)
+            .build()
+            .show_modal();
     }
 }
 
@@ -21284,7 +21385,7 @@ type RunsACommand = AnswersTheTray;
 ///
 /// A slot for the same reason as [`AnswersTheTray`]: the timer that receives a
 /// handover is built before the module switcher that opening one needs.
-type OpensAHandover = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(String)>>>>;
+type OpensAHandover = std::rc::Rc<RefCell<Option<std::rc::Rc<dyn Fn(Handover)>>>>;
 
 /// The typeface and size the item lists are drawn in, or `None` to leave them.
 ///
@@ -23184,8 +23285,9 @@ struct UpdateTargets<'a> {
     ///
     /// A closure rather than the pieces, because opening one needs the module
     /// switcher, and threading that through every update that has no interest
-    /// in it would be paying for this everywhere.
-    opens_a_handover: &'a dyn Fn(&str),
+    /// in it would be paying for this everywhere. A calendar a followed link
+    /// asked for comes back through it too, once fetched off this thread.
+    opens_a_handover: &'a dyn Fn(Handover),
 }
 
 /// The database id of whichever folder is open right now, if any.
@@ -23495,7 +23597,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                 crate::application::handover::what_to_say_when_handed(argument),
                 Priority::Normal,
             );
-            opens_a_handover(argument);
+            opens_a_handover(Handover::Given(argument.clone()));
+        }
+        // A calendar a followed link asked for, fetched on the runtime and
+        // read here, where the store is (audit finding #20).
+        UIUpdate::CalendarFetched { address, fetched } => {
+            opens_a_handover(Handover::CalendarFetched {
+                address: address.clone(),
+                fetched: fetched.clone(),
+            });
         }
         UIUpdate::FoldersLoaded(rows) => {
             let was_on = {

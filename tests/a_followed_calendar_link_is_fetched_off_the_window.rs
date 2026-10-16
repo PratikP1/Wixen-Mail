@@ -88,6 +88,10 @@ const THE_FETCHED_READ: &str = "fn read_the_fetched_calendar(";
 /// say the same things.
 const THE_SHARED_READ: &str = "fn read_into_the_calendar(";
 const THE_FILE_ARM: &str = "Opening::CalendarFile(path) =>";
+/// The sentence for a followed calendar with nowhere to keep it, said by the
+/// arm before the fetch and by the reader after it.
+const NOWHERE_TO_KEEP_IT: &str = "NOWHERE_TO_KEEP_A_FOLLOWED_CALENDAR";
+const NOWHERE_TO_KEEP_IT_SAYS: &str = "Wixen Mail could not follow that calendar, because";
 
 /// Every way the window's thread can stop and wait on the runtime.
 const WAITS_ON_THE_RUNTIME: [&str; 2] = ["block_on(", "block_in_place("];
@@ -142,7 +146,7 @@ fn test_the_fetched_calendar_is_read_on_the_window_and_said_as_before() {
         "a fetched calendar is not read by the reader an opened file uses:\n{fetched}"
     );
     assert!(
-        fetched.contains("could not follow that calendar"),
+        fetched.contains(NOWHERE_TO_KEEP_IT) && window.contains(NOWHERE_TO_KEEP_IT_SAYS),
         "a fetched calendar with nowhere to keep it is not said as before:\n{fetched}"
     );
 
