@@ -264,7 +264,7 @@ pub(crate) async fn sync<M: PopMailbox>(
     let mut written: Vec<i64> = Vec::new();
     for (id, uidl) in &wanted {
         let raw = server.retrieve(*id).await?;
-        let parsed = crate::service::mime::parse(&raw)?;
+        let parsed = read_or_keep_as_text(&raw, uidl);
         let uid = cache.next_local_uid(folder_id)?;
         let arrival = Arrival {
             raw: &raw,
@@ -372,6 +372,27 @@ pub(crate) async fn sync<M: PopMailbox>(
         waiting_on_the_setting: waiting,
         on_server: on_server.len(),
         written,
+    })
+}
+
+/// A downloaded message, read, or kept as its own text when nothing can read it.
+///
+/// A message the parser refuses, one of no bytes or of nothing but blanks,
+/// used to end the check before anything was stored, and the server lists in
+/// the same order every time, so every later check ended on it too and no
+/// mail after it ever arrived (audit finding #13). Kept under its identifier
+/// instead, it is mail this computer has, the next check passes it by, and
+/// the removal policy treats it as any other copy held here.
+///
+/// Logged by the server's identifier alone, as the IMAP header path treats
+/// the same failure, and never with anything the message says.
+fn read_or_keep_as_text(raw: &[u8], uidl: &str) -> crate::service::mime::ParsedMessage {
+    crate::service::mime::parse(raw).unwrap_or_else(|why| {
+        tracing::warn!("POP message {uidl} could not be read, so it was kept as plain text: {why}");
+        crate::service::mime::ParsedMessage {
+            body_plain: Some(String::from_utf8_lossy(raw).into_owned()),
+            ..Default::default()
+        }
     })
 }
 
