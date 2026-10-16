@@ -101,6 +101,20 @@ pub(super) fn events_that_overlap_query() -> String {
     )
 }
 
+/// The lower bound of a window, cut to its date.
+///
+/// Every view asks from "YYYY-MM-DDT00:00:00Z", which is the shape a sync
+/// stores, but the editor stores "YYYY-MM-DD HH:MM", or the bare date for a
+/// day with no times. Compared as text, a space sorts before the T and a bare
+/// date is a prefix of the bound, so an event made here ending on the window's
+/// first day sorted before it and was left out. Every stored shape on that day
+/// sorts at or after the date alone. The upper bound needs nothing: every
+/// shape of a day sorts before that day's "T23:59:59Z", so it already admits
+/// them all. A bound shorter than a date is used as it is.
+fn the_day_a_window_starts(from: &str) -> &str {
+    from.get(..10).unwrap_or(from)
+}
+
 /// Every event of an account that repeats: `?1` account.
 ///
 /// A series is stored once with the start of its first occurrence and expanded
@@ -349,7 +363,10 @@ impl MessageCache {
             .prepare_cached(&events_that_overlap_query())
             .map_err(|e| Error::Other(format!("Failed to prepare events query: {}", e)))?;
         let mut events: Vec<CalendarEventEntry> = overlapping
-            .query_map(params![account_id, from, to], map_event_row)
+            .query_map(
+                params![account_id, the_day_a_window_starts(from), to],
+                map_event_row,
+            )
             .map_err(|e| Error::Other(format!("Failed to query events: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect events: {}", e)))?;
@@ -1396,6 +1413,65 @@ mod tests {
         assert_eq!(
             standups, 1,
             "the series came back {standups} times: {shown:#?}"
+        );
+    }
+
+    #[test]
+    fn test_an_event_made_here_on_the_windows_first_day_is_in_the_window() {
+        // The editor stores "2026-10-12 09:00", or the bare date for a day
+        // with no times, where every sync stores "2026-10-12T09:00:00Z", and
+        // every view asks from "...T00:00:00Z". Compared as text, a space and
+        // a bare date both sort before that bound, so a meeting made here on
+        // a Monday was missing from that week's view and nowhere else.
+        let cache = temp_cache("window_first_day_made_here");
+
+        let mut monday = make_event("monday", "acct", "p1", "Made here on the Monday");
+        monday.start_datetime = "2026-10-12 09:00".to_string();
+        monday.end_datetime = "2026-10-12 10:00".to_string();
+        cache.save_calendar_event(&monday).unwrap();
+
+        let mut sunday = make_event("sunday", "acct", "p2", "Over on the Sunday night");
+        sunday.start_datetime = "2026-10-11 22:00".to_string();
+        sunday.end_datetime = "2026-10-11 23:00".to_string();
+        cache.save_calendar_event(&sunday).unwrap();
+
+        let week = cache
+            .events_that_could_fall_between("acct", "2026-10-12T00:00:00Z", "2026-10-18T23:59:59Z")
+            .unwrap();
+        let names: Vec<&str> = week.iter().map(|e| e.summary.as_str()).collect();
+
+        assert!(
+            names.contains(&"Made here on the Monday"),
+            "an event made here on the week's first day was left out: {names:?}"
+        );
+        assert!(
+            !names.contains(&"Over on the Sunday night"),
+            "an event that ended the day before the week was carried in: {names:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_day_made_here_with_no_times_on_the_months_first_day_is_in_the_month() {
+        // The all-day shape the editor stores is the bare date, a prefix of
+        // the bound, and a prefix sorts first.
+        let cache = temp_cache("window_first_day_all_day");
+
+        let mut first = make_event("first", "acct", "p1", "All of the first");
+        first.start_datetime = "2026-11-01".to_string();
+        first.end_datetime = "2026-11-01".to_string();
+        first.start_date = Some("2026-11-01".to_string());
+        first.end_date = Some("2026-11-01".to_string());
+        first.is_all_day = true;
+        cache.save_calendar_event(&first).unwrap();
+
+        let month = cache
+            .events_that_could_fall_between("acct", "2026-11-01T00:00:00Z", "2026-11-30T23:59:59Z")
+            .unwrap();
+        let names: Vec<&str> = month.iter().map(|e| e.summary.as_str()).collect();
+
+        assert!(
+            names.contains(&"All of the first"),
+            "a day with no times on the month's first day was left out: {names:?}"
         );
     }
 

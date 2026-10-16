@@ -1038,6 +1038,14 @@ write path added by this milestone passes through that gate.
     show events made here on their first day (finding #4). The Outlook calendar's window
     (#27) sits under no requirement, and the plan's line says so. It adds no `[D]` clause and
     the box stays open.
+  - 13.2-18 on 2026-10-16: the store's window compares its first day by its date alone, so an
+    event made here, stored as "YYYY-MM-DD HH:MM" or as the bare date, ending on a Week, Month
+    or Agenda view's first day is drawn in that view (finding #4); the upper bound and the query
+    string are unchanged. Held by two cases in `data::message_cache::calendar` and a new guard
+    record; the listening half is ledger 875. The Outlook calendar's moving window, its read
+    after a 410 and its removals (finding #27 and #29's Outlook quarter) went in with it and sit
+    under no requirement, since none names the Outlook calendar sync; ledger 874 is the
+    tester's half. No `[D]` clause is added and the box stays open.
 
 - [ ] **PIM-03**: Show recurring events across the calendar's date ranges. Depends on PIM-06.
   - Evidence: rewritten 2026-09-04. The previous evidence was true and understated what ships
@@ -7823,7 +7831,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | READ-03 | Phase 4 | Complete |
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
-| PIM-06 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause |
+| PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
 | PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause |
 | PIM-04 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause |
 | PIM-07 | Phase 5 | Pending |

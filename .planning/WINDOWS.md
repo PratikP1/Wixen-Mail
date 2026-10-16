@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 747
+open_count: 749
 waived_count: 0
 fixed_count: 126
-total_count: 873
-last_updated: 2026-10-16T12:00:00.000Z
+total_count: 875
+last_updated: 2026-10-16T22:45:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -888,6 +888,8 @@ last_updated: 2026-10-16T12:00:00.000Z
 | 871 | 13.2 | unrun-verify | src/service/attachment_name.rs |  | 13.2-16, finding #22 of the audit of 2026-10-14, on a build holding 13.2-16's merge: a .docm saved with Save Attachment opens in Word's Protected View, a .js saved the same way asks before it runs, the reader window's Save Attachment and File, Save As do the same, and the file's Properties show the Unblock box. Held by the case on a real file, the reading of both saves and its record; nobody has opened a saved file since | open |  | 2026-10-16T12:00:00.000Z |  |
 | 872 | 13.2 | todo | src/presentation/html_renderer.rs |  | Found by 13.2-16's pull request 185, Accessibility run 38908878280 on 2026-10-16: the scan's page target, the formatted message window whose document html_renderer.rs builds, scanned with 6 UI Automation errors where 13.2-15's run 38897887887 the same day found 4 on the same code. The two new ones are WebView2's own panes, Chrome_WidgetWin_1 and BrowserRootView, whose Name is the whole data:text/html;charset=utf-8;base64 address of the page, past Axe's 512-character limit; the first had keyboard focus. A screen reader landing there could read that address aloud. It comes and goes between runs on unchanged code, so it depends on when the pane is read, most likely before the page's own title is applied. Not caused by 13.2-16, which changed no window. Recommended: give the page document a title before it is handed to WebView2, or load it so the address is never its name, and hold it with a case that reads the pane's name; for a later plan or 13.2-32's closing read | open |  | 2026-10-16T12:00:00.000Z |  |
 | 873 | 13.2 | unrun-verify | src/application/contacts_sync.rs |  | 13.2-17, findings #25 and #26 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-17's merge: a Gmail account and an Outlook account each given a contact in the Contacts window after their first contacts sync, and the contact found in Google Contacts and in Outlook's people on the phone after the next sync, once and not twice; and a Gmail account whose last full contacts read is more than seven days old, its contacts still arriving, with the log line saying the marker was too old and the whole address book read again. Held by the scripted stand-ins, which answer with Google's documented 400 naming EXPIRED_SYNC_TOKEN (the page for people.connections.list, last updated 2024-08-06, read 2026-10-16); nobody has seen Google send it from a live account | open |  | 2026-10-16T12:00:00.000Z |  |
+| 874 | 13.2 | unrun-verify | src/application/calendar.rs |  | 13.2-18, finding #27 and #29's Outlook calendar quarter of the audit of 2026-10-14, for phase 14 on a build holding 13.2-18's merge: an Outlook account whose calendar has synced for more than 30 days, a meeting booked at Outlook more than a year after the first sync arriving here at the next sync; a meeting made here more than a year ahead still here after two syncs; a meeting deleted at Outlook inside the year ahead taken off here; and, if Outlook answers 410 for an old marker, the log line saying the whole window was read again and the calendar syncing on. Held by the cases against a loopback Graph, which answer as Microsoft's event delta page says (dated 2024-06-21, read 2026-10-16: an event outside a round's date range that was added, deleted or updated comes back under @removed with the reason deleted, the same reason as a real deletion inside it); nobody has seen Graph do any of it from a live account | open |  | 2026-10-16T22:45:00.000Z |  |
+| 875 | 13.2 | unrun-verify | src/data/message_cache/calendar.rs |  | 13.2-18, finding #4 of the audit of 2026-10-14, on a build holding 13.2-18's merge: an event made in the event window on a Monday, and one with no times on the first of a month, each heard under NVDA in that week's Week view and that month's Month view, once and on its own day. Held by the two cases on the store's window and their guard record; nobody has listened to either view since | open |  | 2026-10-16T22:45:00.000Z |  |
 
 ````json
 [
@@ -11365,6 +11367,30 @@ last_updated: 2026-10-16T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 874,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/calendar.rs",
+    "line": null,
+    "description": "13.2-18, finding #27 and #29's Outlook calendar quarter of the audit of 2026-10-14, for phase 14 on a build holding 13.2-18's merge: an Outlook account whose calendar has synced for more than 30 days, a meeting booked at Outlook more than a year after the first sync arriving here at the next sync; a meeting made here more than a year ahead still here after two syncs; a meeting deleted at Outlook inside the year ahead taken off here; and, if Outlook answers 410 for an old marker, the log line saying the whole window was read again and the calendar syncing on. Held by the cases against a loopback Graph, which answer as Microsoft's event delta page says (dated 2024-06-21, read 2026-10-16: an event outside a round's date range that was added, deleted or updated comes back under @removed with the reason deleted, the same reason as a real deletion inside it); nobody has seen Graph do any of it from a live account",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T22:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 875,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/data/message_cache/calendar.rs",
+    "line": null,
+    "description": "13.2-18, finding #4 of the audit of 2026-10-14, on a build holding 13.2-18's merge: an event made in the event window on a Monday, and one with no times on the first of a month, each heard under NVDA in that week's Week view and that month's Month view, once and on its own day. Held by the two cases on the store's window and their guard record; nobody has listened to either view since",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T22:45:00.000Z",
     "resolved_at": null
   }
 ]

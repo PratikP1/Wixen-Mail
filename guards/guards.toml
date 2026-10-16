@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 759 records have arrived since and have not been through it.
+# 766 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -579,9 +579,16 @@ red = [
     "application::calendar::tests::test_an_event_microsoft_says_is_gone_is_removed_and_counted_once",
     "application::calendar::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::calendar::tests::test_one_change_waiting_and_one_thing_wrong_are_not_read_out_in_the_plural",
+    # Added 2026-10-16 by 13.2-18's re-measure: three cases in modules this
+    # record never named, which read the same summary line.
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_asked_google_says_no_reason",
+    "application::who_holds_the_calendars::tests::test_the_calendar_summary_says_the_reason_after_the_counts_when_a_server_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # ── A clause never decides how it joins to its neighbours ───────────────────
@@ -719,7 +726,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
     { file = "src/application/bringing_everything_down.rs", tests = 29 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
@@ -905,7 +912,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 28 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/tasks_sync.rs", tests = 119 },
 ]
@@ -1447,7 +1454,7 @@ red = [
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -1466,7 +1473,7 @@ red = [
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_outlook",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -1492,7 +1499,7 @@ red = [
     "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_sync",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -1591,8 +1598,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 [[guard]]
@@ -1609,8 +1616,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -1706,6 +1713,9 @@ red = [
     "application::calendar::tests::test_a_deletion_in_the_other_providers_calendar_is_left_for_that_provider_to_carry_out",
     "application::calendar::tests::test_a_deletion_nobody_has_taken_is_never_let_go_of_by_the_clock",
     "application::calendar::tests::test_a_deletion_of_an_event_in_no_calendar_holds_across_three_syncs",
+    # Added 2026-10-16 by 13.2-18: its read of a window keeps a row deleted
+    # here only while the note stands, and the break sweeps the owed note.
+    "application::calendar::tests::test_a_round_that_read_a_window_takes_off_what_outlook_no_longer_holds",
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_outlook_and_stops_being_owed",
     "application::calendar::tests::test_an_event_deleted_here_is_deleted_at_the_provider_and_stops_being_owed",
     "application::calendar::tests::test_an_event_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
@@ -1744,7 +1754,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/notes_sync.rs", tests = 23 },
@@ -1764,7 +1774,7 @@ red = [
     "application::calendar::tests::test_a_sync_lets_go_of_a_deletion_it_has_remembered_long_enough",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -1990,9 +2000,13 @@ after = """    if false {
 red = [
     "application::calendar::tests::test_a_change_in_a_calendar_the_account_can_only_read_is_said_rather_than_dropped",
     "application::calendar::tests::test_one_sentence_for_the_calendar_rather_than_one_for_every_change",
+    # Added 2026-10-16 by 13.2-18's re-measure: a case in a module this record
+    # never named, filing a calendar Google lists as read-only.
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
 [[guard]]
@@ -2006,9 +2020,13 @@ red = [
     # record names, eleven days after the record, and stamped over on
     # 2026-09-02 by --recount-everything, which measured nothing.
     "application::calendar::tests::test_two_calendars_that_share_a_reason_are_still_said_separately",
+    # Added 2026-10-16 by 13.2-18's re-measure: a case in a module this record
+    # never named, about an answer merged onto the provider's copy.
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -2024,7 +2042,7 @@ red = [
     "application::calendar::tests::test_a_calendar_with_a_pass_of_its_own_is_left_to_say_it_itself",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -2148,6 +2166,10 @@ file = "src/application/calendar.rs"
 before = """        exception_dates: Some(all),"""
 after = """        exception_dates: series.exception_dates.clone(),"""
 red = [
+    # Added 2026-10-16 by 13.2-18's re-measure: two cases in modules this
+    # record never named, each joining a day called off to a series' days.
+    "application::answered_meetings::tests::test_answering_a_series_a_calendar_server_holds_keeps_its_repeat_and_the_days_it_calls_off",
+    "application::meeting_changes::tests::test_an_update_to_every_day_moves_the_series_and_carries_how_it_repeats",
     "application::caldav_sync::tests::test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows",
     "application::caldav_sync::tests::test_a_day_cancelled_at_a_calendar_server_is_taken_off_the_series_here",
     "application::caldav_sync::tests::test_a_day_moved_at_a_calendar_server_and_then_cancelled_leaves_nothing_behind",
@@ -2173,8 +2195,10 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
 ]
 tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -2193,7 +2217,7 @@ red = [
     "service::caldav::tests::test_a_day_called_off_lands_on_the_line_its_own_form_belongs_on",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -2397,7 +2421,7 @@ red = [
     "application::calendar::tests::test_the_two_providers_are_given_the_same_hour_in_the_shape_each_one_reads",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # -- The shapes a stored moment can take ------------------------------------
@@ -2564,7 +2588,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/invitations.rs", tests = 70 },
     { file = "src/application/meeting_changes.rs", tests = 39 },
@@ -2637,13 +2661,17 @@ red = [
     "common::moment::tests::test_a_zone_name_of_nothing_but_space_names_no_zone",
     "common::moment::tests::test_a_zone_name_with_space_round_it_is_still_the_zone_it_names",
     "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
+    # Added 2026-10-16 by 13.2-18's re-measure: a case in a module this record
+    # never named, reading the same answer for the time elsewhere.
+    "presentation::time_elsewhere::tests::test_a_zone_named_by_nothing_but_space_says_nothing",
     "service::caldav::tests::test_a_zone_name_that_names_nothing_is_left_off_the_document",
     "service::caldav::tests::test_a_zone_name_written_with_spaces_round_it_still_names_its_zone",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/managers.rs", tests = 137 },
+    { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -3410,7 +3438,7 @@ red = [
     "application::calendar::tests::test_a_day_a_row_written_the_old_way_already_calls_off_is_not_named_twice",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -3426,7 +3454,7 @@ red = [
     "application::calendar::tests::test_calling_a_day_off_a_row_written_the_old_way_leaves_one_reading_of_it",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -3453,7 +3481,7 @@ red = [
     "service::caldav::tests::test_a_changed_day_of_a_series_is_kept_when_the_server_sends_it_with_the_series",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -3471,7 +3499,7 @@ red = [
     "service::caldav::tests::test_a_cancelled_day_the_clocks_skipped_keeps_the_zone_it_was_written_in",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -3490,7 +3518,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -3604,7 +3632,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
@@ -3635,7 +3663,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/vtimezone.rs", tests = 10 },
 ]
@@ -5532,7 +5560,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -5545,7 +5573,7 @@ red = [
     "application::calendar::tests::test_nothing_the_calendar_window_writes_down_is_said_as_though_it_had_happened",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -5665,7 +5693,7 @@ red = [
     "application::calendar::tests::test_what_the_calendar_window_did_is_said_in_words_a_person_can_tell_apart",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── The Calendar window's closing sentence ──────────────────────────────────
@@ -6237,9 +6265,13 @@ red = [
     "application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed",
     "application::calendar::tests::test_the_question_and_the_refusal_are_one_answer",
     "application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words",
+    # Added 2026-10-16 by 13.2-18's re-measure: a case in a module this record
+    # never named, which reads the same refusal for a meeting change.
+    "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # ── A day cut fresh out of a series is not the edit still refused ───────────
@@ -6268,9 +6300,13 @@ red = [
     "application::calendar::tests::test_taking_one_day_off_is_not_refused_over_a_zone_the_replacement_would_have_needed",
     "application::calendar::tests::test_the_question_and_the_refusal_are_one_answer",
     "application::calendar::tests::test_the_window_and_the_write_refuse_an_edit_in_the_same_words",
+    # Added 2026-10-16 by 13.2-18's re-measure: the same case in a module this
+    # record never named.
+    "application::meeting_changes::tests::test_a_day_a_calendar_server_could_not_keep_apart_is_said_and_its_cancellation_applies",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
 # ── A refusal decided before anything is written says so ────────────────────
@@ -6300,7 +6336,7 @@ red = [
     "application::calendar::tests::test_the_refusal_check_can_tell_a_good_sentence_from_a_bad_one",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── The day a refusal is asked about names only the event's own zone ────────
@@ -6472,7 +6508,7 @@ red = [
     "application::calendar::tests::test_a_delete_is_not_described_as_an_edit_that_keeps_a_second_appointment",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -6828,7 +6864,7 @@ red = [
     "application::calendar::tests::test_every_field_the_event_form_can_set_is_answered_for_at_both_providers",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -6840,7 +6876,7 @@ red = [
     "application::calendar::tests::test_a_series_created_here_carries_the_days_it_has_already_called_off",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -6853,7 +6889,7 @@ red = [
     "service::google_api::tests::test_the_calendar_is_asked_for_the_series_rather_than_for_its_days",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -6867,7 +6903,7 @@ red = [
     "service::caldav::tests::test_a_rule_that_arrived_with_its_property_name_is_not_sent_with_two",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/caldav.rs", tests = 170 },
 ]
 
@@ -6893,7 +6929,7 @@ red = [
     "application::repeating::tests::test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/repeating.rs", tests = 27 },
 ]
 
@@ -6921,7 +6957,7 @@ red = [
     "application::repeating::tests::test_every_repeat_this_program_offers_survives_the_trip_to_outlook_and_back",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/repeating.rs", tests = 27 },
 ]
 
@@ -6941,7 +6977,7 @@ red = [
     "application::repeating::tests::test_a_repeat_outlook_cannot_say_is_refused_rather_than_rounded",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/repeating.rs", tests = 27 },
 ]
 
@@ -6960,7 +6996,7 @@ red = [
     "application::calendar::tests::test_a_repeat_outlook_sends_is_stored_as_a_rule_and_not_as_a_page_of_its_own_shape",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # Re-measured by hand on 2026-08-14: the code this guard was about moved.
@@ -6993,7 +7029,7 @@ red = [
     "application::calendar::tests::test_an_unmodified_day_of_an_outlook_series_already_held_is_still_drawn_once",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7013,7 +7049,7 @@ red = [
     "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7025,7 +7061,7 @@ red = [
     "application::calendar::tests::test_a_repeat_outlook_could_not_be_told_is_said_rather_than_left_to_be_found",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7594,7 +7630,7 @@ red = [
     "application::calendar::tests::test_an_event_filed_under_several_categories_in_outlook_keeps_all_of_them",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── One day of a Google series that is no longer like the rest ──────────────
@@ -7645,9 +7681,26 @@ red = [
     # Added 2026-09-26 by 13-12: its Google read carries two whole meetings,
     # which the break sends down the path for days of a series.
     "application::calendar::tests::test_a_google_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
+    # Added 2026-10-16 by 13.2-18's re-measure: twelve cases in two modules
+    # this record never named, whose Google reads carry whole meetings that
+    # the break sends down the path for days of a series.
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
+    "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
+    "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
+    "application::every_google_calendar::tests::test_a_change_to_an_event_in_a_second_calendar_is_sent_to_that_calendar",
+    "application::every_google_calendar::tests::test_a_second_google_calendar_arrives_under_a_row_of_its_own",
+    "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
+    "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/answered_meetings.rs", tests = 37 },
+    { file = "src/application/calendar.rs", tests = 204 },
+    { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
 [[guard]]
@@ -7667,7 +7720,7 @@ red = [
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7679,7 +7732,7 @@ red = [
     "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7701,7 +7754,7 @@ red = [
     "application::calendar::tests::test_a_day_moved_at_google_and_then_cancelled_leaves_nothing_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7733,7 +7786,7 @@ red = [
     "application::calendar::tests::test_a_series_with_a_change_waiting_here_keeps_waiting_when_google_calls_a_day_off",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7761,7 +7814,7 @@ red = [
     "application::calendar::tests::test_a_day_of_a_series_this_calendar_does_not_hold_is_kept_as_the_meeting_it_is",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7782,7 +7835,7 @@ red = [
     "service::google_api::tests::test_the_meetings_uid_and_organiser_are_never_sent_back_to_google",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -7796,7 +7849,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -7863,7 +7916,7 @@ red = [
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -7879,7 +7932,7 @@ red = [
     "application::calendar::tests::test_the_changed_days_of_a_google_series_are_counted_once_and_not_again",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── A structured address pushed to Google never carries an empty formattedValue ─
@@ -8298,7 +8351,7 @@ red = [
     "service::onenote_notes::tests::test_what_onenote_could_not_keep_is_read_back_off_the_page_rather_than_worked_out",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
@@ -8504,7 +8557,7 @@ red = [
     "application::calendar::tests::test_a_google_read_keeps_the_category_typed_here_and_takes_googles_status",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # Measured by hand on 2026-08-13. The Outlook mirror of the guard above.
@@ -8550,7 +8603,7 @@ red = [
     "application::calendar::tests::test_an_outlook_read_takes_outlooks_category_and_keeps_the_status_set_here",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # Measured by hand on 2026-08-14. The Outlook mirror of "the days a Google
@@ -8578,7 +8631,7 @@ red = [
     "application::calendar::tests::test_a_day_cancelled_at_outlook_stays_off_if_a_later_read_answers_with_the_series_itself",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # Measured by hand on 2026-08-14. `carry_over_local_only` is called a third
@@ -8610,7 +8663,7 @@ red = [
     "application::calendar::tests::test_a_google_read_of_one_changed_day_keeps_the_category_typed_here_and_takes_googles_status",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # Measured by hand on 2026-08-14. The Outlook mirror of the guard above, at
@@ -8642,7 +8695,7 @@ red = [
     "application::calendar::tests::test_an_outlook_read_of_one_changed_day_takes_outlooks_category_and_keeps_the_status_set_here",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── One sentence for "this build has no sign-in credentials" ────────────────
@@ -9033,7 +9086,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -9166,7 +9219,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # ── The POP delete checkboxes keep their spoken consequence ────────────────
@@ -9639,7 +9692,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
@@ -11055,7 +11108,7 @@ before = """            .find(|(already, was, _)| *already == name && *was == wh
 after = """            .find(|(already, was, _)| *already == name || *was == why)"""
 red = ["application::calendar::tests::test_two_calendars_that_share_a_reason_are_still_said_separately"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11069,7 +11122,7 @@ after = """    pub fn spoken(self) -> String {
     }"""
 red = ["application::calendar::tests::test_what_each_answer_is_called_when_it_is_read_out"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11083,7 +11136,7 @@ after = """    pub fn spoken(self) -> String {
     }"""
 red = ["application::calendar::tests::test_what_each_answer_is_called_when_it_is_read_out"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11106,7 +11159,7 @@ red = [
     "application::meeting_changes::tests::test_one_day_on_a_calendar_that_cannot_carry_it_is_said_with_the_calendar_named",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/meeting_changes.rs", tests = 39 },
 ]
 
@@ -11128,7 +11181,7 @@ after = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
 }"""
 red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11149,7 +11202,7 @@ after = """const fn further_off_for(goes: WhereAChangeGoes) -> &'static str {
 }"""
 red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11165,7 +11218,7 @@ after = """        WhereAChangeGoes::OnlyReadable => "",
         _ => "","""
 red = ["application::calendar::tests::test_the_extra_sentence_is_said_only_for_a_calendar_this_program_can_only_read"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -11175,7 +11228,7 @@ before = """        (_, _) if goes == WhereAChangeGoes::KeptHere => {"""
 after = """        (_, _) if false => {"""
 red = ["application::calendar::tests::test_a_one_day_answer_for_a_calendar_kept_here_never_promises_a_sync"]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 [[guard]]
@@ -19382,7 +19435,7 @@ red = [
     "test_a_day_moved_out_of_a_series_is_on_the_calendar_once",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "tests/a_moved_day_is_shown_once.rs", tests = 2 },
 ]
 
@@ -19500,7 +19553,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 68 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -22962,7 +23015,7 @@ red = [
     "application::calendar::tests::test_an_alert_is_kept_only_when_microsoft_says_it_is_on_and_gives_a_lead_time",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/event_alerts.rs", tests = 4 },
 ]
 
@@ -22979,7 +23032,7 @@ red = [
     "application::calendar::tests::test_google_event_to_local",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/event_alerts.rs", tests = 4 },
 ]
 
@@ -32125,7 +32178,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -32330,9 +32383,9 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -32377,7 +32430,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -32394,7 +32447,7 @@ red = [
     "application::calendar::tests::test_a_google_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # The organiser comparison asked of the organiser against itself, so it always
@@ -32450,7 +32503,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -35157,7 +35210,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # A meeting made here that nobody answered taken for an answer's row, so a
@@ -35173,7 +35226,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # The merge filing the provider's copy under its own identity, which is ledger
@@ -35274,7 +35327,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # The Outlook read filing a meeting it meets for the first time beside the row
@@ -35298,7 +35351,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
 
 # The calendar-server read filing a meeting this calendar does not hold beside
@@ -35441,7 +35494,25 @@ red = [
     "data::message_cache::calendar::tests::test_another_days_row_and_another_accounts_are_not_found",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 56 },
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+]
+
+# A window's lower bound compared whole, so an event made here, stored as
+# "YYYY-MM-DD HH:MM" or as the bare date, ending on the window's first day
+# sorts before "T00:00:00Z" and is left out of that week's or month's view
+# (audit #4, T-13.2-15-04). Written 2026-10-16 by 13.2-18, taken by hand
+# against the whole library, 9,209 tests, with nothing else red.
+[[guard]]
+name = "a window starts at the date of its first day, whatever shape an event is stored in"
+file = "src/data/message_cache/calendar.rs"
+before = '''                params![account_id, the_day_a_window_starts(from), to],'''
+after = '''                params![account_id, from, to],'''
+red = [
+    "data::message_cache::calendar::tests::test_an_event_made_here_on_the_windows_first_day_is_in_the_window",
+    "data::message_cache::calendar::tests::test_a_day_made_here_with_no_times_on_the_months_first_day_is_in_the_month",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 58 },
 ]
 
 # Remove from Calendar on one cancelled day marking the whole series
@@ -38550,7 +38621,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_calendar_summary_says_the_reason_after_the_counts_when_a_server_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -38609,7 +38680,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -39209,7 +39280,7 @@ red = [
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
@@ -39224,7 +39295,7 @@ red = [
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
@@ -39279,7 +39350,7 @@ red = [
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
@@ -39294,7 +39365,7 @@ red = [
     "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
@@ -39309,7 +39380,7 @@ red = [
     "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
 ]
 
@@ -39325,7 +39396,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_folding_two_calendar_passes_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/calendar.rs", tests = 196 },
+    { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
@@ -40877,4 +40948,116 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 287 },
+]
+
+# The read after an expired Outlook link asks for the round's window, since
+# Graph refuses a calendar view that names none, and asking with none stopped
+# the Outlook calendar for good on its first 410 (audit #27, T-13.2-15-03).
+# The break asks with no window again. Added 2026-10-16 by 13.2-18 and taken
+# by hand against the whole library, 9,217 tests, with nothing else red.
+[[guard]]
+name = "the read after an expired Outlook link asks for the round's window"
+file = "src/application/calendar.rs"
+before = '''            let (events, link) = ms_client
+                .list_events(token, Some(&start), Some(&end), None, &at_microsoft)'''
+after = '''            let (events, link) = ms_client
+                .list_events(token, None, None, None, &at_microsoft)'''
+red = [
+    "application::calendar::tests::test_an_expired_outlook_link_is_read_again_with_the_window",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
+]
+
+# A round of reading the Outlook calendar runs out after 30 days, so the year
+# ahead it reads is never more than a month old (audit #27). The break keeps
+# every round whose start reads as a time, however old. Added 2026-10-16 by
+# 13.2-18 and taken by hand against the whole library, nothing else red.
+[[guard]]
+name = "a round of reading the Outlook calendar runs out after thirty days"
+file = "src/application/calendar.rs"
+before = '''        && age < chrono::Duration::days(DAYS_A_ROUND_OF_READING_IS_FOLLOWED))
+    .then_some(began)'''
+after = '''        && age < chrono::Duration::days(DAYS_A_ROUND_OF_READING_IS_FOLLOWED))
+    .then_some(began).or(Some(began))'''
+red = [
+    "application::calendar::tests::test_a_round_of_reading_goes_on_for_thirty_days_and_no_longer",
+    "application::calendar::tests::test_an_outlook_round_forty_days_old_reads_a_fresh_window_and_starts_again",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
+]
+
+# An Outlook removal notice deletes a row only inside the round's window:
+# outside it Graph says the event left the view, not the calendar, and a
+# meeting made here two years ahead was deleted at the next sync
+# (T-13.2-15-01). The break deletes whatever the dates. Added 2026-10-16 by
+# 13.2-18 and taken by hand against the whole library, nothing else red.
+[[guard]]
+name = "an Outlook removal notice outside the round's window keeps the meeting"
+file = "src/application/calendar.rs"
+before = '''            if let Some(held) = cache.get_event_by_provider_id(account_id, &event.id)?
+                && the_round_covers.would_have_named(&held)'''
+after = '''            if let Some(held) = cache.get_event_by_provider_id(account_id, &event.id)?
+                && !held.id.is_empty()'''
+red = [
+    "application::calendar::tests::test_an_outlook_removal_notice_outside_the_rounds_window_keeps_the_meeting",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
+]
+
+# A read of a window takes off the Outlook rows inside it the answer did not
+# name (the Outlook quarter of audit #29, T-13.2-15-02). The break skips the
+# pass. Added 2026-10-16 by 13.2-18 and taken by hand against the whole
+# library, nothing else red.
+[[guard]]
+name = "a read of a window takes off what Outlook no longer holds inside it"
+file = "src/application/calendar.rs"
+before = '''    // read since the last one says nothing about what it does not name.
+    if this_run_read_a_window {'''
+after = '''    // read since the last one says nothing about what it does not name.
+    if this_run_read_a_window && false {'''
+red = [
+    "application::calendar::tests::test_a_round_that_read_a_window_takes_off_what_outlook_no_longer_holds",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
+]
+
+# What the push has just put at Outlook counts as named, so a read a moment
+# after the create that does not carry it yet does not take it off in the
+# same pass (T-13.2-15-02). The break drops what was sent. Added 2026-10-16 by
+# 13.2-18 and taken by hand against the whole library, nothing else red.
+[[guard]]
+name = "a meeting this sync sent to Outlook counts as named by its read"
+file = "src/application/calendar.rs"
+before = '''        let mut named = everything_outlook_named(&remote_events);
+        named.extend(just_sent);'''
+after = '''        let mut named = everything_outlook_named(&remote_events);
+        let _ = just_sent;'''
+red = [
+    "application::calendar::tests::test_a_meeting_this_sync_sent_to_outlook_is_not_taken_off_by_its_read",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
+]
+
+# A calendar view sends the days of a series rather than the series, so a day
+# named by an answer speaks for its series, and for the days kept out of it
+# (T-13.2-15-02). The break names the days alone, and the series and its
+# changed day are taken off. Added 2026-10-16 by 13.2-18 and taken by hand
+# against the whole library, nothing else red.
+[[guard]]
+name = "a day of an Outlook series named by a read speaks for its series"
+file = "src/application/calendar.rs"
+before = '''            std::iter::once(event.id.clone())
+                .chain(event.the_series_it_is_one_day_of().map(str::to_string))'''
+after = '''            std::iter::once(event.id.clone())
+                .chain(None::<String>)'''
+red = [
+    "application::calendar::tests::test_a_round_that_read_a_window_takes_off_what_outlook_no_longer_holds",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 204 },
 ]
