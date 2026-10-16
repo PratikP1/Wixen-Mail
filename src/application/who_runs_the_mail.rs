@@ -21,10 +21,13 @@
 //! 2. The address, through the six domains the browser sign-in already knows.
 //! 3. The name the account was saved with, ignoring case and space.
 //!
-//! The outgoing server is never read: mail can be sent through Gmail's or
+//! The outgoing server never decides: mail can be sent through Gmail's or
 //! Microsoft's server for a mailbox kept elsewhere. The browser sign-in is not
 //! a fact here either, because the provider a token is filed under is a copy of
-//! this answer.
+//! this answer. Once the answer is known, the sign-in asks
+//! [`WhoRunsTheMail::runs_the_server`] of every server a token would reach,
+//! the outgoing one among them, and sends it to none the provider does not run
+//! (`mail_auth`, 13.2-15).
 //!
 //! A server is Google's or Microsoft's only when its host is one of their
 //! domains or sits under one at a dot, the domains every server their own pages
@@ -115,6 +118,13 @@ impl WhoRunsTheMail {
             WhoRunsTheMail::Gmail => Some("https://myaccount.google.com/apppasswords"),
             WhoRunsTheMail::Microsoft | WhoRunsTheMail::SomebodyElse => None,
         }
+    }
+
+    /// Whether this provider runs a server, by the same reading of its host
+    /// the incoming server is placed by. Nobody runs a server for
+    /// [`WhoRunsTheMail::SomebodyElse`], since that answer names no one.
+    pub fn runs_the_server(self, host: &str) -> bool {
+        by_the_server(host) == Some(self)
     }
 }
 

@@ -501,6 +501,14 @@ struct GoogleCalendarListResponse {
     next_page_token: Option<String>,
 }
 
+/// Response from `calendars.get` for the primary calendar, whose id is the
+/// address of the account that owns it.
+#[derive(Debug, Clone, Deserialize)]
+struct GooglePrimaryCalendar {
+    #[serde(default)]
+    id: String,
+}
+
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
@@ -795,6 +803,25 @@ impl GoogleApiClient {
     }
 
     // ── Calendar ────────────────────────────────────────────────────────
+
+    /// The address of the Google account a token belongs to: the id of the
+    /// primary calendar the token opens.
+    ///
+    /// Asked once, as a browser sign-in finishes and before its token is kept,
+    /// so a sign-in made as another person keeps nothing (audit #23). The
+    /// calendar permission both Google sign-ins ask for allows it. A refusal,
+    /// or an answer with no id, is an error and never an address.
+    pub async fn the_address_signed_in(&self, token: &str) -> Result<String> {
+        let url = format!("{}/calendars/{THE_MAIN_CALENDAR}", self.calendar_base);
+        let calendar: GooglePrimaryCalendar = with_retry(3, || self.api_get(&url, token)).await?;
+        let address = calendar.id.trim();
+        match address.is_empty() {
+            true => Err(Error::Authentication(
+                "Google did not say which account signed in.".to_string(),
+            )),
+            false => Ok(address.to_string()),
+        }
+    }
 
     /// Every calendar on the account's list, hidden ones included.
     ///
@@ -1275,6 +1302,55 @@ mod tests {
             GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
             listening,
         )
+    }
+
+    #[tokio::test]
+    async fn test_the_address_a_token_belongs_to_is_its_primary_calendars_id() {
+        // Google's reference for calendars.get, last updated 2026-05-12, says
+        // the calendar scope both sign-ins ask for allows it and "primary"
+        // names the signed-in user's own calendar; its concepts page, last
+        // updated 2026-09-03, says that calendar's ID "usually matches the
+        // user's primary email address".
+        let (address, listening) = answering(
+            "200 OK",
+            "application/json",
+            r#"{"kind":"calendar#calendar","id":"ada.lovelace@gmail.com","summary":"Ada"}"#
+                .to_string(),
+        )
+        .await;
+        let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+
+        let signed_in = google.the_address_signed_in("a-token").await;
+
+        assert_eq!(signed_in.ok().as_deref(), Some("ada.lovelace@gmail.com"));
+        let request = heard(listening, "the primary calendar")
+            .await
+            .expect("asked");
+        assert_eq!(asked_for(&request), "GET /calendars/primary");
+        assert!(
+            request
+                .to_lowercase()
+                .contains("authorization: bearer a-token"),
+            "{request}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_refusal_or_an_empty_answer_about_the_primary_calendar_is_never_an_address() {
+        for (status, reply) in [
+            (
+                "403 Forbidden",
+                r#"{"error":{"code":403,"message":"Calendar API has not been used"}}"#,
+            ),
+            ("200 OK", r#"{"kind":"calendar#calendar","id":"  "}"#),
+            ("200 OK", r#"{"kind":"calendar#calendar"}"#),
+        ] {
+            let (address, _listening) =
+                answering(status, "application/json", reply.to_string()).await;
+            let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
+            let signed_in = google.the_address_signed_in("a-token").await;
+            assert!(signed_in.is_err(), "{status} {reply}: {signed_in:?}");
+        }
     }
 
     #[tokio::test]

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 751 records have arrived since and have not been through it.
+# 754 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -733,7 +733,7 @@ tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
@@ -5851,7 +5851,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/status_line.rs", tests = 3 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
 ]
@@ -5900,7 +5900,7 @@ red = [
     "presentation::wx_account_manager::tests::test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A sign-in failure is one notification, not a sentence and a cue ─────────
@@ -5951,7 +5951,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── The one call for an outcome that is also an event raises the event ──────
@@ -6850,7 +6850,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -7332,7 +7332,7 @@ red = [
     "service::google_api::tests::test_serialize_person_for_create",
 ]
 tests_last_seen = [
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -7346,7 +7346,7 @@ red = [
     "service::google_api::tests::test_deserialize_connections_response",
 ]
 tests_last_seen = [
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -7776,7 +7776,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 [[guard]]
@@ -7900,7 +7900,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # ── An address with no recorded label sends no type key to Google ───────────
@@ -7926,7 +7926,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # ── An address Google holds only as a composed line is kept, not read as nothing ─
@@ -8659,9 +8659,12 @@ after = """        return Err(Error::Authentication(format!(
 red = [
     "application::mail_auth::tests::test_an_account_needing_a_new_token_is_told_which_control_to_press",
     "application::mail_auth::tests::test_the_missing_credentials_sentence_is_worded_once_and_names_the_way_out",
+    # 13.2-15: the rows of accounts the servers' check lets through reach the
+    # credentials sentence and read it, measured 2026-10-16.
+    "application::mail_auth::tests::test_every_server_google_and_microsoft_name_lets_the_sign_in_go_on",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
 ]
 
 # Measured by hand on 2026-08-13. The account manager screen answers the same
@@ -8695,7 +8698,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── One owner for what a manager window says about a changed row ────────────
@@ -8771,7 +8774,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A changed day of a CalDAV series has to be marked seen before it can be
@@ -9198,7 +9201,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 [[guard]]
@@ -9214,7 +9217,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # ── A server that never answers is waited for off the window's thread, but ──
@@ -11003,7 +11006,7 @@ before = """    if tidy.chars().count() > MOST_CHARACTERS_FROM_A_REPLY {"""
 after = """    if tidy.chars().count() >= MOST_CHARACTERS_FROM_A_REPLY {"""
 red = ["service::oauth::tests::test_as_one_short_line_leaves_exactly_the_bound_alone_and_cuts_one_more"]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -11016,7 +11019,7 @@ red = [
     "service::oauth::tests::test_a_success_status_is_read_as_the_token_it_carries",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # ── calendar.rs, contacts_sync.rs, tasks_sync.rs, message_cache/tasks.rs, ──
@@ -12913,9 +12916,12 @@ before = """        self.store_tokens(&tokens)?;"""
 after = """        let _ = self.store_tokens(&tokens);"""
 red = [
     "service::oauth::when_the_credential_store_refuses::test_nothing_keeps_going_after_a_token_it_could_not_keep",
+    # 13.2-15: the reading that the question about who signed in comes before
+    # the store finds no store to come before, measured 2026-10-16.
+    "service::oauth::who_consented::test_a_google_sign_in_asks_who_signed_in_before_anything_is_kept",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # The first measurement of this one reddened nothing, which is the whole reason
@@ -30516,7 +30522,7 @@ red = [
     "test_the_four_numbers_are_spin_controls_holding_their_own_ranges",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
@@ -30976,7 +30982,7 @@ red = [
     "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
 ]
 
@@ -32322,10 +32328,22 @@ after = """    #[serde(default, skip_serializing)]"""
 red = [
     "service::google_api::tests::test_google_names_the_meetings_uid_and_who_called_it",
     "application::calendar::tests::test_a_google_read_leaves_each_meeting_findable_by_its_uid_with_its_organiser",
+    # Found short by 13.2-15's re-measure on 2026-10-16: the answered
+    # meetings' Google cases find a meeting by its UID too. Nothing 13.2-15
+    # changed reaches them; when they arrived is not traced here.
+    "application::answered_meetings::tests::test_a_google_read_after_an_answer_puts_googles_copy_on_the_answers_row",
+    "application::answered_meetings::tests::test_a_meeting_no_answer_filed_is_still_filed_as_new",
+    "application::answered_meetings::tests::test_a_strangers_words_do_not_reach_the_meeting_the_provider_holds",
+    "application::answered_meetings::tests::test_a_tentative_answer_merged_onto_a_busy_copy_waits_to_be_sent",
+    "application::answered_meetings::tests::test_an_accept_merged_onto_a_busy_copy_owes_the_provider_nothing",
+    "application::answered_meetings::tests::test_the_check_that_merges_an_answer_no_longer_says_it_is_a_change_nothing_can_send",
+    "application::answered_meetings::tests::test_the_organiser_the_answer_recorded_stays_when_the_provider_names_nobody",
+    "application::answered_meetings::tests::test_the_organiser_the_provider_names_wins_over_the_answers",
 ]
 tests_last_seen = [
+    { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # A Google read that updates a meeting saving it without the UID and the
@@ -34332,7 +34350,7 @@ red = [
     "test_a_typed_password_goes_to_the_credential_store_and_the_settings_have_no_room_for_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -34352,7 +34370,7 @@ red = [
     "test_with_a_password_saved_the_box_and_the_window_both_say_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -34371,7 +34389,7 @@ red = [
     "service::oauth::tests::test_the_shared_graph_token_asks_for_no_permission_an_older_sign_in_never_granted",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # The tasks sync sent back to the shared Graph token, which has never carried
@@ -34736,7 +34754,7 @@ red = [
     "test_an_account_not_saved_yet_is_refused_with_a_sentence_and_no_manager_opens",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/other_addresses_are_managed_per_account.rs", tests = 16 },
 ]
 
@@ -36288,7 +36306,7 @@ red = [
     "test_a_sign_in_over_an_unencrypted_address_is_refused_at_ok_with_focus_on_the_address",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -36718,7 +36736,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/looking_people_up.rs", tests = 43 },
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
     { file = "src/application/who_runs_the_mail.rs", tests = 9 },
 ]
 
@@ -36813,7 +36831,7 @@ red = [
     "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_auth.rs", tests = 13 },
+    { file = "src/application/mail_auth.rs", tests = 18 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
 
@@ -36831,7 +36849,7 @@ red = [
     "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
 
@@ -36870,7 +36888,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # Microsoft given the page for personal accounts' app passwords, which
@@ -36890,7 +36908,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_runs_the_mail.rs", tests = 9 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # The feedback report naming accounts by the saved name alone again, so a
@@ -38476,7 +38494,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -38498,7 +38516,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -38538,7 +38556,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38557,7 +38575,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # The contacts and tasks syncs say the same reason (14-01 task 2): after the
@@ -38581,7 +38599,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -38601,7 +38619,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -38617,7 +38635,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 281 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -38633,7 +38651,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # ── Each request a sync sends, written down (#22, 14-02) ───────────────────
@@ -38709,7 +38727,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/asked_and_answered.rs", tests = 15 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # A change sent to Google writes its line through the same helper the reads
@@ -38727,7 +38745,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/asked_and_answered.rs", tests = 15 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # The retry writes the error's text to the log at warn, and a transport
@@ -38753,7 +38771,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/asked_and_answered.rs", tests = 15 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # Every request the tasks client sends writes its line at info, Google's and
@@ -38792,7 +38810,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # An account at neither provider with nothing of its own hears why there is
@@ -38807,7 +38825,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # A finished calendar sync writes its line at info, the level a stored
@@ -38849,7 +38867,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38865,7 +38883,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # F5 with a module other than Mail showing syncs that module (D-11). The
@@ -38879,7 +38897,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # The window's first F5 arm syncs only when the answer says the module
@@ -38894,7 +38912,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -38920,7 +38938,7 @@ red = [
     "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
 ]
 tests_last_seen = [
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # The separate sign-in's token has an entry of its own, so signing in for
@@ -38939,8 +38957,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 27 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # An account whose mail signs in with an app password asks Google for its
@@ -38956,8 +38974,8 @@ red = [
     "service::oauth::tests::test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # The Account Manager's Sign In for Calendars, Contacts and Tasks signs a
@@ -38974,7 +38992,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_separate_sign_in_button_answers_each_kind_of_account",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # Removing an account, and uninstalling, erase the separate sign-in's token,
@@ -39003,10 +39021,14 @@ red = [
     "application::forget::tests::test_an_account_gives_up_its_separate_sign_in_for_calendars_contacts_and_tasks",
     "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
     "service::oauth::which_entries_belong_to_an_account::test_the_separate_google_sign_in_is_kept_under_an_entry_of_its_own",
+    # 13.2-15: the login hint's rows and the who-consented gate's case both
+    # sign in under the separate sign-in's name, measured 2026-10-16.
+    "service::oauth::tests::test_every_sign_in_tells_the_provider_which_address_to_sign_in_as",
+    "service::oauth::who_consented::test_a_google_sign_in_made_as_somebody_else_keeps_nothing_and_says_who",
 ]
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 27 },
-    { file = "src/service/oauth.rs", tests = 59 },
+    { file = "src/service/oauth.rs", tests = 65 },
 ]
 
 # An account signed in for its calendars, contacts and tasks is carried out
@@ -39022,8 +39044,8 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # A Gmail account's calendars other than its main one were never read: the
@@ -39202,7 +39224,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/every_google_calendar.rs", tests = 12 },
-    { file = "src/service/google_api.rs", tests = 39 },
+    { file = "src/service/google_api.rs", tests = 41 },
 ]
 
 # A change made here to an event in a second Google calendar is sent to that
@@ -39270,7 +39292,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 41 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 # A change replayed within one account writes one line naming the message by
@@ -39885,7 +39907,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_add_and_the_edit_arms_both_ask_before_an_account_is_kept",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 21 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
 ]
 
 # The Account Manager asking nothing about the watches: an account it removed
@@ -40672,4 +40694,65 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/pop_sync.rs", tests = 56 },
+]
+
+# A browser sign-in's token is sent only to servers its provider runs
+# (audit finding #18). The break makes the servers' check find nothing, so
+# a typo of Gmail's server or a stranger's outgoing relay gets the token
+# again, through the mail check and through the Account Manager's sign-in.
+# Added 2026-10-16 by 13.2-15 and taken by hand against the whole library:
+# these three and nothing else.
+[[guard]]
+name = "a browser sign-in's token goes only to servers its provider runs"
+file = "src/application/mail_auth.rs"
+before = '''        .find(|(_, host)| !host.is_empty() && !who.runs_the_server(host))'''
+after = '''        .find(|(_, host)| !host.is_empty() && false)'''
+red = [
+    "application::mail_auth::tests::test_no_token_is_fetched_for_a_typo_of_the_providers_incoming_server",
+    "application::mail_auth::tests::test_no_token_is_fetched_for_an_outgoing_server_the_provider_does_not_run",
+    "presentation::wx_account_manager::tests::test_a_sign_in_for_a_typo_of_gmails_server_opens_no_browser_and_names_the_server",
+]
+tests_last_seen = [
+    { file = "src/application/mail_auth.rs", tests = 18 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+]
+
+# Every browser sign-in tells the provider which address to sign in as, so
+# the browser offers the account asked for (audit finding #23). The break
+# drops the login hint. Added 2026-10-16 by 13.2-15 and taken by hand
+# against the whole library: this one case and nothing else.
+[[guard]]
+name = "every browser sign-in tells the provider which address to sign in as"
+file = "src/service/oauth.rs"
+before = '''        if !signing_in_as.is_empty() {'''
+after = '''        if false && !signing_in_as.is_empty() {'''
+red = [
+    "service::oauth::tests::test_every_sign_in_tells_the_provider_which_address_to_sign_in_as",
+]
+tests_last_seen = [
+    { file = "src/service/oauth.rs", tests = 65 },
+]
+
+# A Google sign-in asks whose primary calendar the new token opens and keeps
+# nothing for anybody but the account asked for (audit finding #23). The
+# break takes the question out of authorize, so whoever consented in the
+# browser is kept again. authorize opens a browser and cannot run here, so
+# the reading of it is what goes red; the gate's own cases call it directly
+# and stay green. Added 2026-10-16 by 13.2-15 and taken by hand against the
+# whole library.
+[[guard]]
+name = "a Google sign-in asks who signed in before anything is kept"
+file = "src/service/oauth.rs"
+before = '''        self.refuse_anybody_but(
+            signing_in_as,
+            &tokens,
+            &crate::service::google_api::GoogleApiClient::new(),
+        )
+        .await?;'''
+after = '''        let _ = signing_in_as;'''
+red = [
+    "service::oauth::who_consented::test_a_google_sign_in_asks_who_signed_in_before_anything_is_kept",
+]
+tests_last_seen = [
+    { file = "src/service/oauth.rs", tests = 65 },
 ]

@@ -213,6 +213,7 @@ impl OAuthService {
         client_id: &str,
         client_secret: Option<&str>,
         redirect_uri: &str,
+        signing_in_as: &str,
     ) -> Result<(String, CsrfToken, oauth2::PkceCodeVerifier)> {
         let p = Self::provider_by_name(provider).ok_or_else(|| {
             Error::Authentication(format!("Unsupported OAuth provider: {}", provider))
@@ -234,6 +235,14 @@ impl OAuthService {
         if p.auth_url == GOOGLES_SIGN_IN_PAGE {
             auth_request = auth_request.add_extra_param("access_type", "offline");
             auth_request = auth_request.add_extra_param("prompt", "consent");
+        }
+
+        // Which account to sign in as, so the browser offers this one rather
+        // than whichever it used last (audit #23). Google and Microsoft both
+        // read it; an account with no address yet names nobody.
+        let signing_in_as = signing_in_as.trim();
+        if !signing_in_as.is_empty() {
+            auth_request = auth_request.add_extra_param("login_hint", signing_in_as);
         }
 
         let (auth_url, csrf_token) = auth_request.url();
@@ -783,7 +792,7 @@ impl AuthManager {
     /// 5. Store tokens in the OS keychain.
     ///
     /// Returns the token set on success.
-    pub async fn authorize(&self) -> Result<OAuthTokenSet> {
+    pub async fn authorize(&self, signing_in_as: &str) -> Result<OAuthTokenSet> {
         let redirect_uri = local_redirect_uri();
 
         // Step 1: Build the auth URL with PKCE
@@ -792,6 +801,7 @@ impl AuthManager {
             &self.client_id,
             self.client_secret.as_deref(),
             &redirect_uri,
+            signing_in_as,
         )?;
 
         // Step 2: Open browser
@@ -821,12 +831,67 @@ impl AuthManager {
         )
         .await?;
 
-        // Step 5: Keep them, and refuse the sign-in if they cannot be kept.
+        // Step 5: Ask who signed in, and keep nothing for anybody else.
+        self.refuse_anybody_but(
+            signing_in_as,
+            &tokens,
+            &crate::service::google_api::GoogleApiClient::new(),
+        )
+        .await?;
+
+        // Step 6: Keep them, and refuse the sign-in if they cannot be kept.
         // Nothing reads the token set this returns to decide whether an
         // account works; every use goes back to the store for it.
         self.store_tokens(&tokens)?;
 
         Ok(tokens)
+    }
+
+    /// Refuse a Google sign-in made as anybody but the account it was asked
+    /// for, before anything is kept (audit #23).
+    ///
+    /// The browser's account chooser decides whose token comes back, and the
+    /// calendar, contacts and tasks syncs act on whoever owns it. So Google is
+    /// asked whose primary calendar the token opens, and a different person's
+    /// consent is refused with nothing kept. A sign-in Google will not say
+    /// anything about is refused too: keeping it would be guessing.
+    ///
+    /// Microsoft's sign-in is told the address by the login hint alone. Its
+    /// matching check is on the ledger: it needs a second token for Graph, and
+    /// Graph may answer a mailbox's primary address where the account typed an
+    /// alias, which only a real account can settle.
+    async fn refuse_anybody_but(
+        &self,
+        signing_in_as: &str,
+        tokens: &OAuthTokenSet,
+        google: &crate::service::google_api::GoogleApiClient,
+    ) -> Result<()> {
+        if !self.signs_in_with_google() {
+            return Ok(());
+        }
+        let signed_in_as = google
+            .the_address_signed_in(&tokens.access_token)
+            .await
+            .map_err(|e| {
+                Error::Authentication(format!(
+                    "Google did not say which account signed in, so the sign-in was not kept. \
+                     Try again, and see Setting up a provider in Help if it keeps happening. ({e})"
+                ))
+            })?;
+        match the_same_google_account(signing_in_as, &signed_in_as) {
+            true => Ok(()),
+            false => Err(Error::Authentication(signed_in_as_somebody_else(
+                signing_in_as,
+                &signed_in_as,
+            ))),
+        }
+    }
+
+    /// Whether this sign-in is one of Google's, the mail one or the separate
+    /// one for calendars, contacts and tasks.
+    fn signs_in_with_google(&self) -> bool {
+        OAuthService::provider_by_name(&self.provider)
+            .is_some_and(|provider| provider.auth_url == GOOGLES_SIGN_IN_PAGE)
     }
 
     /// Get a valid access token, refreshing if expired.
@@ -1154,6 +1219,36 @@ fn not_kept(cause: &str) -> Error {
     Error::Security(sign_in_not_saved(cause))
 }
 
+/// Whether the address a Google sign-in was made as is the account's own.
+///
+/// Compared the way Gmail tells one mailbox from another, or a correct
+/// sign-in typed differently would be refused: case is ignored everywhere,
+/// and for a Gmail address dots and anything after a plus are ignored too,
+/// with googlemail.com the same as gmail.com. An organisation's own domain is
+/// compared ignoring case alone, since its dots may name different people.
+pub fn the_same_google_account(asked_for: &str, signed_in_as: &str) -> bool {
+    !asked_for.trim().is_empty() && one_gmail_mailbox(asked_for) == one_gmail_mailbox(signed_in_as)
+}
+
+/// An address the way Gmail reads it, for [`the_same_google_account`].
+fn one_gmail_mailbox(address: &str) -> String {
+    let address = address.trim().to_lowercase();
+    if let Some((local, "gmail.com" | "googlemail.com")) = address.rsplit_once('@') {
+        let mailbox = local.split('+').next().unwrap_or(local).replace('.', "");
+        return format!("{mailbox}@gmail.com");
+    }
+    address
+}
+
+/// What a Google sign-in made as another address says. Nothing was kept.
+pub fn signed_in_as_somebody_else(asked_for: &str, signed_in_as: &str) -> String {
+    format!(
+        "Google signed in as {signed_in_as}, which is not this account's address, so nothing \
+         was kept and nothing of that account's was brought here. Sign in again, and choose \
+         {asked_for} in the browser."
+    )
+}
+
 // ── Shared Helpers ──────────────────────────────────────────────────────────
 
 /// What a token endpoint's refusal says, in words a status line can hold.
@@ -1391,11 +1486,13 @@ mod tests {
             let client = pick(&mut rng);
             let secret = pick(&mut rng);
             let redirect = pick(&mut rng);
+            let signing_in_as = pick(&mut rng);
             let _ = OAuthService::build_authorization_url_pkce(
                 &provider,
                 &client,
                 Some(&secret),
                 &redirect,
+                &signing_in_as,
             );
         }
     }
@@ -1420,6 +1517,7 @@ mod tests {
             "client-123",
             Some("secret"),
             "http://localhost/callback",
+            "me@gmail.com",
         )
         .expect("gmail is a provider this program knows");
 
@@ -1440,7 +1538,8 @@ mod tests {
                 "yahoo",
                 "id",
                 None,
-                "http://localhost/callback"
+                "http://localhost/callback",
+                "me@yahoo.com",
             )
             .is_err()
         );
@@ -1477,6 +1576,7 @@ mod tests {
             "client-123",
             Some("secret"),
             "http://localhost/callback",
+            "me@gmail.com",
         )
         .expect("an address to sign in at");
         assert!(url.starts_with("https://accounts.google.com/"), "{url}");
@@ -1487,6 +1587,73 @@ mod tests {
             assert!(url.contains(asked), "{asked} is not asked for: {url}");
         }
         assert!(!url.contains("mail.google.com"), "mail is asked for: {url}");
+    }
+
+    #[test]
+    fn test_every_sign_in_tells_the_provider_which_address_to_sign_in_as() {
+        // So the browser offers the account being signed in rather than
+        // whichever one it used last (audit #23). Both providers read it.
+        for (provider, address, hint) in [
+            (
+                "gmail",
+                "ada.lovelace@gmail.com",
+                "login_hint=ada.lovelace%40gmail.com",
+            ),
+            (
+                GOOGLE_CALENDARS_CONTACTS_AND_TASKS,
+                "ada+mail@googlemail.com",
+                "login_hint=ada%2Bmail%40googlemail.com",
+            ),
+            ("outlook", "me@contoso.com", "login_hint=me%40contoso.com"),
+        ] {
+            let (url, _state, _verifier) = OAuthService::build_authorization_url_pkce(
+                provider,
+                "client-123",
+                Some("secret"),
+                "http://localhost/callback",
+                address,
+            )
+            .expect("an address to sign in at");
+            assert!(url.contains(hint), "{provider}: {url}");
+        }
+
+        // An account with no address yet names nobody rather than an empty
+        // account.
+        let (url, _state, _verifier) = OAuthService::build_authorization_url_pkce(
+            "outlook",
+            "client-123",
+            None,
+            "http://localhost/callback",
+            "  ",
+        )
+        .expect("an address to sign in at");
+        assert!(!url.contains("login_hint"), "{url}");
+    }
+
+    #[test]
+    fn test_a_google_address_is_the_same_account_however_gmail_lets_it_be_written() {
+        for (asked_for, signed_in_as, same) in [
+            ("me@gmail.com", "me@gmail.com", true),
+            ("Me@Gmail.com", "me@gmail.com", true),
+            ("first.last@gmail.com", "firstlast@googlemail.com", true),
+            ("FirstLast@googlemail.com", "first.last@gmail.com", true),
+            // Gmail delivers a plus address to the same mailbox.
+            ("me+mail@gmail.com", "me@gmail.com", true),
+            (" me@gmail.com ", "me@gmail.com", true),
+            ("ada@company.example", "Ada@Company.example", true),
+            // An organisation's own domain is compared ignoring case alone.
+            ("ada@company.example", "a.da@company.example", false),
+            ("ada+x@company.example", "ada@company.example", false),
+            ("me@gmail.com", "someone@gmail.com", false),
+            ("me@gmail.com", "me@company.example", false),
+            ("", "me@gmail.com", false),
+        ] {
+            assert_eq!(
+                the_same_google_account(asked_for, signed_in_as),
+                same,
+                "{asked_for} and {signed_in_as}"
+            );
+        }
     }
 
     #[test]
@@ -2173,6 +2340,162 @@ mod tests {
         let parsed: OAuthTokenSet = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.access_token, "abc");
         assert_eq!(parsed.refresh_token, Some("def".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod who_consented {
+    use super::{AuthManager, OAuthTokenSet, signed_in_as_somebody_else};
+    use crate::common::Error;
+    use crate::common::answering::answering;
+    use crate::service::google_api::GoogleApiClient;
+
+    fn a_token_set() -> OAuthTokenSet {
+        OAuthTokenSet {
+            access_token: "ya29.an-access-token".to_string(),
+            refresh_token: Some("a-refresh-token".to_string()),
+            token_type: "Bearer".to_string(),
+            scope: None,
+            expires_at: None,
+        }
+    }
+
+    /// A Google client asking a loopback stand-in that says whose primary
+    /// calendar a token opens.
+    async fn google_saying_the_calendar_is(address: &str) -> GoogleApiClient {
+        let (at, _listening) = answering(
+            "200 OK",
+            "application/json",
+            format!(r#"{{"kind":"calendar#calendar","id":"{address}","summary":"{address}"}}"#),
+        )
+        .await;
+        GoogleApiClient::new().pointed_at(&format!("http://{at}"))
+    }
+
+    /// What `authorize` does once the code is exchanged: ask, then keep.
+    async fn asked_then_kept(
+        manager: &AuthManager,
+        signing_in_as: &str,
+        google: &GoogleApiClient,
+    ) -> crate::common::Result<()> {
+        let tokens = a_token_set();
+        manager
+            .refuse_anybody_but(signing_in_as, &tokens, google)
+            .await?;
+        manager.store_tokens(&tokens)
+    }
+
+    #[tokio::test]
+    async fn test_a_google_sign_in_made_as_somebody_else_keeps_nothing_and_says_who() {
+        for provider in ["gmail", super::GOOGLE_CALENDARS_CONTACTS_AND_TASKS] {
+            let manager = AuthManager::new("acc-somebody-else", provider, "client-id", None);
+            let google = google_saying_the_calendar_is("someone@gmail.com").await;
+
+            match asked_then_kept(&manager, "me@gmail.com", &google).await {
+                Err(Error::Authentication(said)) => assert_eq!(
+                    said,
+                    signed_in_as_somebody_else("me@gmail.com", "someone@gmail.com")
+                ),
+                other => panic!("{provider}: another person's sign-in was not refused: {other:?}"),
+            }
+            assert!(
+                manager.load_tokens().is_err(),
+                "{provider}: a token was kept for somebody else"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_google_sign_in_made_as_the_account_itself_is_kept() {
+        let manager = AuthManager::new("acc-itself", "gmail", "client-id", None);
+        // Google gives the address its own way; the account typed it another.
+        let google = google_saying_the_calendar_is("firstlast@gmail.com").await;
+
+        asked_then_kept(&manager, "First.Last@googlemail.com", &google)
+            .await
+            .expect("the account's own sign-in is kept");
+        assert_eq!(
+            manager.load_tokens().map(|kept| kept.access_token).ok(),
+            Some("ya29.an-access-token".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_microsoft_sign_in_is_not_asked_of_google() {
+        // Microsoft's check of who consented is not built (premise 5, on the
+        // ledger); its sign-in is told which address by the login hint alone,
+        // and Google is never asked about it.
+        let manager = AuthManager::new("acc-microsoft", "outlook", "client-id", None);
+        // Nothing listens on the discard port, so asking would fail.
+        let nobody = GoogleApiClient::new().pointed_at("http://127.0.0.1:9");
+
+        manager
+            .refuse_anybody_but("me@contoso.com", &a_token_set(), &nobody)
+            .await
+            .expect("Google was asked about a Microsoft sign-in");
+    }
+
+    /// The body of `authorize` as a release build compiles it.
+    fn the_shipped_authorize() -> String {
+        let shipped = crate::common::what_ships::what_ships(
+            &std::fs::read_to_string("src/service/oauth.rs")
+                .expect("this file to be readable")
+                .replace("\r\n", "\n"),
+        );
+        let at = shipped
+            .find("pub async fn authorize(")
+            .expect("authorize to be in this file");
+        let rest = &shipped[at..];
+        rest[..rest.find("\n    }\n").expect("authorize to end")].to_string()
+    }
+
+    /// Whether this body asks who signed in, and stops on the answer, before
+    /// it keeps the token.
+    fn the_gate_comes_before_the_store(authorize: &str) -> Result<(), &'static str> {
+        let gate = authorize
+            .find("self.refuse_anybody_but(")
+            .ok_or("authorize never asks who signed in")?;
+        let store = authorize
+            .find("self.store_tokens(&tokens)?;")
+            .ok_or("authorize keeps nothing")?;
+        if store < gate {
+            return Err("authorize keeps the token before asking who signed in");
+        }
+        match authorize[gate..store].contains(".await?;") {
+            true => Ok(()),
+            false => Err("authorize asks who signed in and goes on whatever the answer"),
+        }
+    }
+
+    #[test]
+    fn test_a_google_sign_in_asks_who_signed_in_before_anything_is_kept() {
+        // `authorize` opens a browser and waits for a person, so it cannot be
+        // run here. This reads it instead, and the cases above hold what the
+        // two calls it reads for do.
+        let authorize = the_shipped_authorize();
+        assert!(
+            authorize.contains("self.store_tokens(&tokens)?;"),
+            "the reading lost authorize: {authorize}"
+        );
+        assert_eq!(the_gate_comes_before_the_store(&authorize), Ok(()));
+
+        // And the reading can see each way of getting it wrong.
+        for (planted, wrong) in [
+            (
+                "self.store_tokens(&tokens)?;\nself.refuse_anybody_but(a, &tokens, &g).await?;",
+                "kept first",
+            ),
+            ("self.store_tokens(&tokens)?;", "never asked"),
+            (
+                "let _ = self.refuse_anybody_but(a, &tokens, &g).await;\nself.store_tokens(&tokens)?;",
+                "answer ignored",
+            ),
+        ] {
+            assert!(
+                the_gate_comes_before_the_store(planted).is_err(),
+                "{wrong}: {planted}"
+            );
+        }
     }
 }
 

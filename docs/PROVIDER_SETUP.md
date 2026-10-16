@@ -470,8 +470,11 @@ tasks, so it does not need restarting.
 1. In Wixen Mail, press `Ctrl+Shift+A` to open the Account Manager.
 2. Choose your Gmail account in the list.
 3. Press `Alt+T`, **Sign In for Calendars, Contacts and Tasks**. Wixen Mail
-   says it is signing in and your browser opens at Google.
-4. Sign in with the Google account you added as a test user.
+   says it is signing in, names the address to choose, and your browser opens
+   at Google.
+4. Sign in with that address, the Google account you added as a test user. If
+   the browser offers another account, choose the right one: a sign-in made as
+   any other account is refused and nothing is kept.
 5. Google shows a screen saying it has not verified this app. That is expected
    for a key in Testing: the app it means is your own project. Choose to
    continue.
@@ -526,6 +529,13 @@ None of this has been tried against a real Google account yet.
   under **View**, and check the name.
 - **Google says access is blocked or denied when you sign in.** The address you
   signed in with is not under **Test users**.
+- **Wixen Mail says Google signed in as another address.** The browser signed
+  in to a different Google account. Press `Alt+T` again and choose the address
+  Wixen Mail names. If the address Google names is your own account's main
+  address and the account here uses another of its addresses, edit the account
+  and give it the main one.
+- **Wixen Mail says Google did not say which account signed in.** It asks the
+  Google Calendar API, so check that it is turned on in step 2.
 - **Calendars arrive and contacts or tasks do not.** Check that the People API
   and the Google Tasks API are both turned on in step 2.
 

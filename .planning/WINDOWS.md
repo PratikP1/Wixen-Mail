@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 738
+open_count: 743
 waived_count: 0
 fixed_count: 126
-total_count: 864
+total_count: 869
 last_updated: 2026-10-16T12:00:00.000Z
 ---
 
@@ -879,6 +879,11 @@ last_updated: 2026-10-16T12:00:00.000Z
 | 862 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-14, finding #20 of the audit of 2026-10-14, on a build holding 13.2-14's merge with NVDA running: a webcal link to a real published feed followed from a web page says Fetching that calendar., the window answers keys while the feed is fetched, and what follows is heard as before. Held by the client's cases against loopback hosts that never answer or never stop, a reading that the handover's calendar arm waits on nothing, and three records; no real feed has been fetched and no NVDA case follows a calendar link. Closed when he has heard it | open |  | 2026-10-16T12:00:00.000Z |  |
 | 863 | 13.2 | unrun-verify | src/application/pop_sync.rs |  | 13.2-14, finding #13 of the audit of 2026-10-14: a POP account whose server holds a zero-length or blank message checked on a build holding 13.2-14's merge, and the message is kept in the Inbox with no subject, the mail after it arrives, and the next check fetches neither again. Held by two cases against a scripted server and a record; nothing here has met a real POP server holding such a message. Phase 14's | open |  | 2026-10-16T12:00:00.000Z |  |
 | 864 | 13.2 | todo | src/application/pop_sync.rs |  | 13.2-14: a POP message nobody can read is kept as plain text and said only by the row it makes and a log line naming its identifier, as the IMAP header path treats the same failure, and the check's sentence does not mention it. The phase README lists a sentence for it as something Pratik may ask for. Recommended: leave it, since such a message has no text to lose and its empty row is visible in the Inbox. Closed when Pratik answers and the answer is carried out with a case, or he decides the row is enough | open |  | 2026-10-16T12:00:00.000Z |  |
+| 865 | 13.2 | todo | src/service/oauth.rs |  | 13.2-15, finding #23 of the audit of 2026-10-14: Microsoft's sign-in is told which address to sign in as by the login hint and is not checked for who consented, as the verdict allows. Not built because a token from this sign-in is for Outlook's IMAP and SMTP resource, so asking Graph who signed in, GET https://graph.microsoft.com/v1.0/me for mail or userPrincipalName, needs a second token for Graph, and Graph may answer a Microsoft 365 mailbox's primary address where the account typed an alias, so a strict comparison could refuse a correct sign-in. Nothing here has met a Microsoft account (ledger 702). Closed when a real Microsoft account settles the alias question and the check is built before the store with a case, or Pratik decides the hint is enough | open |  | 2026-10-16T12:00:00.000Z |  |
+| 866 | 13.2 | unrun-verify | src/service/oauth.rs |  | 13.2-15, finding #23 of the audit of 2026-10-14, on a build holding 13.2-15's merge with NVDA running: Sign In for Calendars, Contacts and Tasks on a Gmail account whose browser offers a second Google account, the second chosen, and the Account Manager says Google signed in as that address and nothing was kept, nothing of the second account's arrives on closing the window, and the credential store holds no entry for it. Held by the gate's cases against a loopback stand-in, a reading that authorize asks before it keeps, and two records; nothing here has met Google. Phase 14's sittings can carry it | open |  | 2026-10-16T12:00:00.000Z |  |
+| 867 | 13.2 | unrun-verify | src/service/oauth.rs |  | 13.2-15, finding #23 of the audit of 2026-10-14, on a build holding 13.2-15's merge: the same sign-in with the right account chosen, the browser offering that address first because of the login hint, and the sign-in kept and the calendars, contacts and tasks brought as before; and a Gmail account typed with different dots or as googlemail.com kept the same way. Held by the comparison's rows, the login hint's rows and the kept case; nothing here has met Google. Phase 14's sittings can carry it | open |  | 2026-10-16T12:00:00.000Z |  |
+| 868 | 13.2 | unrun-verify | src/application/mail_auth.rs |  | 13.2-15, finding #18 of the audit of 2026-10-14, on a build holding 13.2-15's merge with NVDA running: a Gmail account on the browser sign-in with its IMAP server typed as imap.gmial.com, and Sign In Again and the next mail check both say the server is not one of Google's and nothing was sent; with the servers corrected, the mail check, the watch, the Outbox and a read receipt sign in as before. Held by the check's rows, the Account Manager's case and a record; no real account has met it | open |  | 2026-10-16T12:00:00.000Z |  |
+| 869 | 13.2 | todo | src/service/oauth.rs |  | 13.2-15: Google's concepts page, last updated 2026-09-03, says a primary calendar's ID usually matches the account's primary address, so a Google Workspace account entered here under one of its other addresses is refused, the refusal naming the main address, until the account's address here is changed to it. Recommended: keep it strict, since the sentence names the address to use and accepting any address of the organisation would accept a colleague. Closed when Pratik answers, or a real Workspace account in phase 14 shows what Google returns | open |  | 2026-10-16T12:00:00.000Z |  |
 
 ````json
 [
@@ -11245,6 +11250,66 @@ last_updated: 2026-10-16T12:00:00.000Z
     "file": "src/application/pop_sync.rs",
     "line": null,
     "description": "13.2-14: a POP message nobody can read is kept as plain text and said only by the row it makes and a log line naming its identifier, as the IMAP header path treats the same failure, and the check's sentence does not mention it. The phase README lists a sentence for it as something Pratik may ask for. Recommended: leave it, since such a message has no text to lose and its empty row is visible in the Inbox. Closed when Pratik answers and the answer is carried out with a case, or he decides the row is enough",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 865,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "13.2-15, finding #23 of the audit of 2026-10-14: Microsoft's sign-in is told which address to sign in as by the login hint and is not checked for who consented, as the verdict allows. Not built because a token from this sign-in is for Outlook's IMAP and SMTP resource, so asking Graph who signed in, GET https://graph.microsoft.com/v1.0/me for mail or userPrincipalName, needs a second token for Graph, and Graph may answer a Microsoft 365 mailbox's primary address where the account typed an alias, so a strict comparison could refuse a correct sign-in. Nothing here has met a Microsoft account (ledger 702). Closed when a real Microsoft account settles the alias question and the check is built before the store with a case, or Pratik decides the hint is enough",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 866,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "13.2-15, finding #23 of the audit of 2026-10-14, on a build holding 13.2-15's merge with NVDA running: Sign In for Calendars, Contacts and Tasks on a Gmail account whose browser offers a second Google account, the second chosen, and the Account Manager says Google signed in as that address and nothing was kept, nothing of the second account's arrives on closing the window, and the credential store holds no entry for it. Held by the gate's cases against a loopback stand-in, a reading that authorize asks before it keeps, and two records; nothing here has met Google. Phase 14's sittings can carry it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 867,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "13.2-15, finding #23 of the audit of 2026-10-14, on a build holding 13.2-15's merge: the same sign-in with the right account chosen, the browser offering that address first because of the login hint, and the sign-in kept and the calendars, contacts and tasks brought as before; and a Gmail account typed with different dots or as googlemail.com kept the same way. Held by the comparison's rows, the login hint's rows and the kept case; nothing here has met Google. Phase 14's sittings can carry it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 868,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/mail_auth.rs",
+    "line": null,
+    "description": "13.2-15, finding #18 of the audit of 2026-10-14, on a build holding 13.2-15's merge with NVDA running: a Gmail account on the browser sign-in with its IMAP server typed as imap.gmial.com, and Sign In Again and the next mail check both say the server is not one of Google's and nothing was sent; with the servers corrected, the mail check, the watch, the Outbox and a read receipt sign in as before. Held by the check's rows, the Account Manager's case and a record; no real account has met it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 869,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/service/oauth.rs",
+    "line": null,
+    "description": "13.2-15: Google's concepts page, last updated 2026-09-03, says a primary calendar's ID usually matches the account's primary address, so a Google Workspace account entered here under one of its other addresses is refused, the refusal naming the main address, until the account's address here is changed to it. Recommended: keep it strict, since the sentence names the address to use and accepting any address of the organisation would accept a colleague. Closed when Pratik answers, or a real Workspace account in phase 14 shows what Google returns",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T12:00:00.000Z",

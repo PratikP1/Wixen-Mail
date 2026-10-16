@@ -61,6 +61,17 @@ Removing the account erases it, and so does uninstalling. The Google sign-in key
 sign-in uses is yours, in `oauth.toml` in the `config` folder, and Wixen Mail sends it only
 to Google, when it signs in or renews the sign-in.
 
+A browser sign-in is only ever sent to Google's or Microsoft's own servers, since
+2026-10-16. Before a sign-in is fetched or renewed for mail, every server it would reach,
+the incoming one and the outgoing one, is checked, and an account naming a server that is
+not the provider's is refused with a sentence naming that server, so nothing is sent to it.
+A Google sign-in is kept only for the address it was asked for: as it finishes, Wixen Mail
+asks Google which account the sign-in belongs to, and if somebody else's account was chosen
+in the browser, nothing is kept and nothing of theirs is brought here. Both are held by
+`src/application/mail_auth.rs` and `src/service/oauth.rs`, and neither has been tried
+against a real account. Microsoft's sign-in is told which address to sign in as and is not
+yet checked for who signed in.
+
 The PGP private keys you import are in the Windows credential store too, under the name
 `wixen-mail-pgp`. One entry there holds at most 1,280 characters and an ordinary key is
 longer, so each key is split across several entries named `key-1-part-1`, `key-1-part-2` and
