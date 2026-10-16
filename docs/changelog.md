@@ -1427,6 +1427,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Replying to or forwarding a message no longer fetches the pictures it points at
+  (2026-10-16, LIST-09, LIST-10).** Reading a newsletter leaves its tracking pixels out, but
+  pressing Reply on it fetched every picture it pointed at, tracking pixels included, and so
+  told the sender the message had been opened. The editor a reply or a forward opens in now
+  shows only the pictures a message carries and the ones you insert. A picture the original
+  only points at shows as an empty box in the editor, even when Settings lets the reading
+  window fetch it, and the message you send still points at it, as the original did. Whether
+  the browser control honours this on a real reply has not been watched on the wire yet.
+- **A meeting update in a message marked as spam or phishing no longer moves the meeting
+  (2026-10-16, GAP-04).** The check that only the organiser can move a meeting read the
+  message's From address, which anybody can write. A message your mail provider marked as
+  spam or phishing, or put in the junk folder, now changes nothing on your calendar, and the
+  reader says: "Your calendar was not changed, because this message is marked as phishing, so
+  it may not really come from the organiser." A cancellation in such a message offers no
+  Remove from Calendar. A message this program only marks as suspicious is not affected,
+  because every mailing list trips that.
 - **A message whose layout is nested thousands of levels deep no longer closes Wixen Mail
   (2026-10-15, LIST-25, FOUND-03).** Anybody could send a message whose layout put thousands
   of boxes one inside another. Selecting it closed Wixen Mail at once, with nothing in the

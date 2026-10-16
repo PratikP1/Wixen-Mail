@@ -507,13 +507,23 @@ was synced and how many events moved.
 A message can carry its pictures or point at them. A picture it carries is already on your
 computer, and showing it tells nobody anything. Where it points at one, the address the
 sender wrote is in the message, and a surface that shows the message in a browser asks that
-address for the picture. Two surfaces do that: the preview pane, which is off until you
-switch it on in the View menu, and the formatted message window, which is where a message
-opens when you press Enter on it unless Settings, Reading, "Open messages" says plain text,
-and which a whole conversation opens into as well. The plain-text reader is a text control
-and asks nobody for anything. Until 2026-09-20 this paragraph said the window a message
-opens into was the text control; that stopped being the default on 2026-07-30 and the page
-did not follow.
+address for the picture. Three surfaces did that until 2026-10-16: the preview pane, which
+is off until you switch it on in the View menu; the formatted message window, which is where
+a message opens when you press Enter on it unless Settings, Reading, "Open messages" says
+plain text, and which a whole conversation opens into as well; and the editor a reply or a
+forward opens in, which quotes the original. The plain-text reader is a text control and
+asks nobody for anything. Until 2026-09-20 this paragraph said the window a message opens
+into was the text control; that stopped being the default on 2026-07-30 and the page did not
+follow.
+
+**Since 2026-10-16 the reply and forward editor fetches none of the pictures a message points
+at, tracking pixels included.** The page it shows allows only the pictures it carries: those
+the message carried and those you insert. Until then it fetched every one, including the
+tracking pixels the two reading surfaces leave out, so replying to a newsletter told its
+sender it had been opened. A picture the original only points at shows in the editor as an
+empty box, whatever the switch below says, and the message you send still points at it, as
+the original did. Until 2026-10-16 this paragraph counted two surfaces and left the editor
+out.
 
 The request tells whoever is at the other end that the message was opened and roughly when.
 Senders use that on purpose: a picture the size of a full stop, with a different address
@@ -549,7 +559,9 @@ The third sentence is still true of the reading window, and the switch is the ot
 This was read out of the code rather than measured on the wire: `src/application/pictures.rs`
 holds the rules, `looks_like_a_beacon` and `what_to_do_about_a_tag`, and
 `src/presentation/html_renderer.rs` applies them where a message is shown and nowhere a
-message is sent.
+message is sent. The editor's rule is one line at the top of the page
+`src/presentation/editor_document.rs` builds, and whether the browser control honours it on a
+real reply has not yet been watched on the wire.
 
 ## Where a link opens
 
@@ -606,8 +618,10 @@ the wire.
 
 **Pictures a message points at.** The section above. Shown by default since 2026-09-19;
 tracking pixels and decorative pictures left out; the switch on the Reading tab fetches none.
-What it cannot protect against: a tracker the size of a picture. Read from
-`src/application/pictures.rs` and `src/presentation/html_renderer.rs`.
+The reply and forward editor fetches none of them, whatever the switch says, since
+2026-10-16. What it cannot protect against: a tracker the size of a picture, in the preview
+pane and the formatted window. Read from `src/application/pictures.rs`,
+`src/presentation/html_renderer.rs` and `src/presentation/editor_document.rs`.
 
 **Text a sender hid.** Since 2026-09-20 a block the sender hid, and the invisible padding a
 newsletter puts before its preview line, are left out before the message is shown, by the
