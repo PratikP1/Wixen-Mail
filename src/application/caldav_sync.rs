@@ -671,11 +671,12 @@ fn say_the_change_cannot_be_saved(
 ///
 /// Named rather than written twice. The pass that removes what did not arrive
 /// has to ask about exactly the stretch of time the read asked for, and two
-/// copies of "six months back" drift the moment one of them is edited.
-const HOW_FAR_BACK_THE_READ_ASKS: i64 = 180;
+/// copies of "six months back" drift the moment one of them is edited. The
+/// Outlook read asks about the same stretch and uses the same two names.
+pub(crate) const HOW_FAR_BACK_THE_READ_ASKS: i64 = 180;
 
 /// How far forward a calendar server is asked about, in days.
-const HOW_FAR_AHEAD_THE_READ_ASKS: i64 = 365;
+pub(crate) const HOW_FAR_AHEAD_THE_READ_ASKS: i64 = 365;
 
 /// How much of a calendar the answer that has just arrived speaks for.
 ///
@@ -685,7 +686,7 @@ const HOW_FAR_AHEAD_THE_READ_ASKS: i64 = 365;
 /// answers about that stretch only, so it is silent about everything outside
 /// it, and reading that silence as a deletion takes an event off this computer
 /// while the server still holds it.
-enum WhatTheAnswerCovers {
+pub(crate) enum WhatTheAnswerCovers {
     /// Everything the calendar holds.
     AllOfIt,
     /// One stretch of time, and nothing outside it either way.
@@ -707,7 +708,7 @@ impl WhatTheAnswerCovers {
     /// starts rather than the occurrences the server worked out. That keeps a
     /// row the server really has dropped, which leaves something stale on a
     /// calendar instead of taking something off one.
-    fn would_have_named(&self, event: &CalendarEventEntry) -> bool {
+    pub(crate) fn would_have_named(&self, event: &CalendarEventEntry) -> bool {
         let (from, to) = match self {
             Self::AllOfIt => return true,
             Self::OnlyBetween(from, to) => (from, to),
@@ -757,7 +758,7 @@ fn a_moment(stored: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 /// deleted.
 ///
 /// And an absence only says anything when the answer covered the event at all.
-fn may_be_taken_off_this_computer(
+pub(crate) fn may_be_taken_off_this_computer(
     event: &CalendarEventEntry,
     covered: &WhatTheAnswerCovers,
 ) -> bool {
