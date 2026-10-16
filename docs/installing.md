@@ -151,17 +151,22 @@ Help, then Check for Updates, does the same thing on demand whatever that settin
 never have to change a setting to look deliberately.
 
 **Anything this project did not sign is refused, not warned about.** Before Wixen Mail will
-offer to run a downloaded installer it checks two things: that the signature on the file is
-valid, and that the name on that signature is this project's own. The second is the one that
-matters, because a file can be perfectly validly signed and still be somebody else's program.
-A file failing either check is deleted and you are told which check it failed. You are never
-asked whether to run it anyway.
+offer to run a downloaded installer it checks three things: that the signature on the file is
+valid, that the name on that signature is this project's own, and that the signature was made
+with this project's own signing certificate. The last two are the ones that matter, because a
+file can be perfectly validly signed and still be somebody else's program. The name alone is
+not enough: a certificate in the name Pratik Patel can be had by anyone who shares that name,
+so since 2026-10-16 the check also reads the certificate itself. A file failing any check is
+deleted and you are told which check it failed. You are never asked whether to run it anyway.
 
 **Today that refuses everything.** Nothing this project publishes is signed yet, so an update
 will download, be refused, and send you to the
 [releases page](https://github.com/PratikP1/Wixen-Mail/releases) to fetch it by hand. That is
 the intended behaviour rather than a fault: the refusal was built before the signing, so that
-it could never be added afterwards to something already running installers.
+it could never be added afterwards to something already running installers. The signing
+certificate the third check looks for does not exist yet either, so even a signed installer
+would be refused until this project's own certificate is set up and a version that knows it
+is released.
 
 Signing, when it arrives, changes the name in the SmartScreen box. It does not remove the box.
 The section at the top of this page still applies.

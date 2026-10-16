@@ -1427,6 +1427,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Files saved from mail are marked as coming from the internet (2026-10-16).** An attachment
+  saved with Save Attachment, from the main window or a message's own window, and a message
+  saved with File, Save As, were written as though they had been made on this computer. So a
+  Word or Excel file with macros opened outside Protected View, and a script ran on a
+  double-click with no question from Windows, where Outlook, Thunderbird and every browser
+  would have stopped both. Now each saved file carries the Mark of the Web, the note Windows
+  reads to treat a file as a download: Office opens it in Protected View and Windows asks
+  before a script or program saved from mail runs. A drive that cannot hold the note, such as
+  a memory stick formatted FAT or exFAT or some network shares, still gets the file, without
+  the note, and nothing is said; the log records that a saved file could not be marked. Not
+  yet tried by a tester on a real attachment.
+- **The update check no longer trusts a signature by its name alone (2026-10-16).** An
+  installer the update check downloaded was accepted when its signature was valid and the name
+  on it was Pratik Patel. A public certificate authority gives a certificate in that name to
+  anyone who has it, so an installer signed by somebody else of the same name would have been
+  offered to run. Now the signature must also have been made with this project's own signing
+  certificate, which Windows can tell apart however the name reads, and an installer that
+  carries the name without it is refused, deleted, and said: "The update Wixen Mail downloaded
+  carries the name Pratik Patel but was not signed with this project's own certificate, so
+  Wixen Mail will not run it." This changes nothing you see today. Nothing this project
+  publishes is signed yet, so every update is already refused as unsigned, and the project's
+  own certificate does not exist yet either, so even a signed installer would be refused until
+  it does and a version that knows it is released.
+
 - **A browser sign-in is sent only to Google's or Microsoft's own servers (2026-10-16).** An
   account set to sign in through the browser handed its sign-in to whatever server the account
   named. A Gmail sign-in opens the whole mailbox, to read, delete and send, so a typo of
