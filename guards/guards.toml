@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 747 records have arrived since and have not been through it.
+# 749 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -737,7 +737,7 @@ tests_last_seen = [
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 170 },
-    { file = "src/service/ical_subscription.rs", tests = 19 },
+    { file = "src/service/ical_subscription.rs", tests = 23 },
 ]
 
 # ── One contact, however many address books hold a copy ─────────────────────
@@ -40592,4 +40592,41 @@ red = [
 tests_last_seen = [
     { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
+]
+
+# A calendar feed's host is given a time limit to answer and finish (audit
+# finding #20). The break builds the client with no limit, and a host that
+# accepts the connection and never answers holds a followed webcal link, or
+# a subscribed feed's refresh and the guard that refuses undoing a calendar
+# deletion, for ever. Added 2026-10-16 by 13.2-14 and measured against the
+# whole library.
+[[guard]]
+name = "a calendar feed's host has thirty seconds to answer, not for ever"
+file = "src/service/ical_subscription.rs"
+before = '''        let http = reqwest::Client::builder()
+            .timeout(limit)
+            .build()'''
+after = '''        let http = reqwest::Client::builder()
+            .build()'''
+red = [
+    "service::ical_subscription::tests::test_a_feed_host_that_never_answers_is_given_up_on_within_the_limit",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 23 },
+]
+
+# A calendar feed is read as it arrives and refused once it passes the cap
+# (audit finding #20). The break never refuses, and an endless reply is read
+# into memory until the host stops sending, which a hostile one never does.
+# Added 2026-10-16 by 13.2-14 and measured against the whole library.
+[[guard]]
+name = "a calendar feed larger than the cap is refused as it arrives, not read whole"
+file = "src/service/ical_subscription.rs"
+before = '''            if arrived.len() + chunk.len() > self.cap {'''
+after = '''            if false && arrived.len() + chunk.len() > self.cap {'''
+red = [
+    "service::ical_subscription::tests::test_a_feed_larger_than_the_cap_is_refused_as_it_arrives",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 23 },
 ]

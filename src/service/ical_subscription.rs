@@ -17,8 +17,16 @@ pub const A_FEED_HAS_THIS_LONG: Duration = Duration::from_secs(30);
 pub const THE_LARGEST_FEED_READ: usize = 20 * 1024 * 1024;
 
 /// ICS feed subscription client.
+///
+/// Held to a time limit and a size cap, because the host decides when it
+/// answers and how much it sends: a feed is fetched from whatever address a
+/// web page handed over, or on a timer from one somebody subscribed to. With
+/// neither, a host that accepted the connection and never answered held the
+/// fetch for ever, and an endless reply was read into memory without a bound
+/// (audit finding #20).
 pub struct ICalSubscriptionClient {
     http: reqwest::Client,
+    cap: usize,
 }
 
 impl Default for ICalSubscriptionClient {
@@ -32,21 +40,32 @@ impl ICalSubscriptionClient {
         Self::answering_within(A_FEED_HAS_THIS_LONG, THE_LARGEST_FEED_READ)
     }
 
-    fn answering_within(_limit: Duration, _cap: usize) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-        }
+    /// A client that gives a host `limit` to answer and finish, and reads at
+    /// most `cap` bytes of what it sends.
+    fn answering_within(limit: Duration, cap: usize) -> Self {
+        // Built the way every other client here is built. If the builder
+        // fails the client still works without the limit, which beats
+        // refusing every calendar, and the log says so.
+        let http = reqwest::Client::builder()
+            .timeout(limit)
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::warn!("The calendar feed client kept default timeouts: {e}");
+                reqwest::Client::new()
+            });
+        Self { http, cap }
     }
 
     /// Fetch a raw .ics feed from a URL.
     pub async fn fetch_ics(&self, url: &str) -> Result<String> {
-        let response = self
+        let host = the_host_in(url);
+        let mut response = self
             .http
             .get(url)
             .header("Accept", "text/calendar")
             .send()
             .await
-            .map_err(|e| Error::Network(format!("ICS fetch failed: {}", e)))?;
+            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS fetch failed"))?;
 
         if !response.status().is_success() {
             return Err(Error::Network(format!(
@@ -55,16 +74,56 @@ impl ICalSubscriptionClient {
             )));
         }
 
-        response
-            .text()
+        // Read as it arrives and refused the moment it passes the cap, rather
+        // than read whole and measured afterwards, which is the memory the cap
+        // is there to save.
+        let mut arrived = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
             .await
-            .map_err(|e| Error::Network(format!("ICS response read error: {}", e)))
+            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS response read error"))?
+        {
+            if arrived.len() + chunk.len() > self.cap {
+                return Err(Error::InPlainWords(format!(
+                    "The calendar at {host} is larger than Wixen Mail reads, so it was \
+                     not fetched. Nothing on this calendar was changed here."
+                )));
+            }
+            arrived.extend_from_slice(&chunk);
+        }
+        // Lossy, as `text()` decoded it.
+        Ok(String::from_utf8_lossy(&arrived).into_owned())
     }
 
     /// Fetch and parse a .ics feed into CalDavEvent structs.
     pub async fn fetch_and_parse(&self, url: &str) -> Result<Vec<CalDavEvent>> {
         let ical_data = self.fetch_ics(url).await?;
         parse_ics(&ical_data)
+    }
+}
+
+/// The host a feed's address names, for a sentence to say.
+///
+/// The host and never the whole address: a subscription address often carries
+/// a private token in its path or query, and a sentence is spoken aloud and
+/// written to the log.
+fn the_host_in(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|parsed| parsed.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "That address".to_string())
+}
+
+/// What a failed request says: a host that ran out its time in words a person
+/// can act on, and anything else as the network failure it is.
+fn why_the_feed_did_not_arrive(failed: &reqwest::Error, host: &str, layer: &str) -> Error {
+    if failed.is_timeout() {
+        Error::InPlainWords(format!(
+            "{host} did not answer in time, so the calendar was not fetched. Nothing on \
+             this calendar was changed here."
+        ))
+    } else {
+        Error::Network(format!("{layer}: {failed}"))
     }
 }
 
