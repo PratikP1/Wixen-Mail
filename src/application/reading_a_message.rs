@@ -604,8 +604,9 @@ fn the_row_standing_for(
 /// A meeting found inside an envelope opened here is asked about too, and
 /// said, and never changes the calendar: [`meeting_changes`] answers
 /// `InsideEncryptedMail` for it (question 9, T-13-14-02). `from` is the sender
-/// as the header carried it; `answering_as` says what the account the message
-/// arrived on may change.
+/// as the header carried it, and goes with the verdict stored on the message,
+/// read here; `answering_as` says what the account the message arrived on may
+/// change.
 ///
 /// [`meeting_changes`]: crate::application::meeting_changes
 pub fn what_opening_it_in_a_reader_changed(
@@ -637,7 +638,10 @@ pub fn what_opening_it_changed_among(
     dates: impl FnOnce() -> DateSettings,
     answering_as: impl FnOnce(&str) -> AnsweringAs,
 ) -> MeetingChange {
-    use crate::application::meeting_changes::{self, TheCalendarsCopy, WhereItWasFound, Why};
+    use crate::application::meeting_changes::{
+        self, TheCalendarsCopy, TheSender, WhereItWasFound, Why,
+    };
+    use crate::service::safety::Safety;
 
     if !carries_a_calendar_part_among(cache, message_row_id, inside) {
         return MeetingChange::Nothing;
@@ -669,6 +673,16 @@ pub fn what_opening_it_changed_among(
                 None
             })
     });
+    // What the message is marked as, read from the store beside the organiser
+    // rather than taken from the caller, so every way of opening a message
+    // carries the verdict and none can leave it at the default.
+    let marked = cache
+        .message_safety(message_row_id)
+        .map(|verdict| verdict.level)
+        .unwrap_or_else(|e| {
+            tracing::warn!("Could not read what a message is marked as: {e}");
+            Safety::Ordinary
+        });
     let answered_version = about
         .the_row_it_changes(&invitation)
         .and_then(|row| the_version_answered_on(cache, row));
@@ -684,7 +698,7 @@ pub fn what_opening_it_changed_among(
             answered_version,
             allows: &allows,
         }),
-        from,
+        TheSender { from, marked },
         if found.inside_encrypted_mail {
             WhereItWasFound::InsideEncryptedMail
         } else {
@@ -1863,6 +1877,52 @@ mod tests {
             .expect("the calendar read")
             .expect("the meeting still there");
         assert_eq!(still.start_datetime, "2026-03-05T08:00:00");
+    }
+
+    #[test]
+    fn test_an_update_marked_as_phishing_leaves_the_calendar_as_it_was_and_queues_nothing() {
+        // Audit finding #21. The organiser's address on a message the
+        // receiving server found failing the sender's own domain records: in
+        // the clear and unmarked it moves the meeting; marked, the From is
+        // the thing in doubt, and the verdict is read from the store, as the
+        // list shows it.
+        let cache = a_cache();
+        let row = a_message_in(&cache, 1);
+        carrying_the_invitation(&cache, row);
+        answered_at_version_one(&cache);
+        cache
+            .remember_where_it_came_from("evt-1", Some("m-1@example.com"), Some("ada@example.com"))
+            .expect("the organiser remembered");
+        cache
+            .set_message_safety(
+                row,
+                &crate::service::safety::Verdict {
+                    level: crate::service::safety::Safety::Phishing,
+                    reasons: vec!["Failed the sender's own domain records.".to_string()],
+                },
+            )
+            .expect("the verdict stored");
+
+        let change = what_opening_it_in_a_reader_changed(
+            Some(&cache),
+            row,
+            "Ada Lovelace <ada@example.com>",
+            written_out_in_full,
+            answering_as_me,
+        );
+
+        assert_eq!(
+            change,
+            MeetingChange::SaidNotApplied(crate::application::meeting_changes::Why::MarkedAs(
+                crate::service::safety::Safety::Phishing
+            ))
+        );
+        let still = cache
+            .get_event_by_ical_uid("acc-1", "m-1@example.com")
+            .expect("the calendar read")
+            .expect("the meeting still there");
+        assert_eq!(still.start_datetime, "2026-03-05T08:00:00");
+        assert!(!still.pending, "nothing is queued for a provider");
     }
 
     #[test]
