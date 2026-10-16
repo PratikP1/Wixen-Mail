@@ -1250,6 +1250,40 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "run in a process of its own by the case after it, because an overflow ends the test program"]
+    fn test_the_audits_message_is_saved_html_only_on_the_windows_stack() {
+        // The worker's path: an HTML-only body is read for its snippet and
+        // its search index row when it is saved, before the message reaches
+        // the list. On the window's stack, the smallest this program runs on;
+        // the sync worker's is twice it.
+        use crate::common::how_deep_markup_nests::{
+            THE_WINDOWS_STACK, on_a_stack_of, the_audits_message,
+        };
+        use crate::data::message_cache::searching::WhereToSearch;
+        let (snippet, found) = on_a_stack_of(THE_WINDOWS_STACK, || {
+            let cache = body_test_cache();
+            let id = cache.save_message(&cached(6, "Deep")).unwrap();
+            cache
+                .save_message_body(id, None, Some(&the_audits_message()))
+                .unwrap();
+            let found = cache
+                .search_messages("a1", "words", WhereToSearch::EveryFolder, 10)
+                .unwrap()
+                .len();
+            (snippet_of_message(&cache, id), found)
+        });
+        assert_eq!(snippet.as_deref(), Some("Deep words"));
+        assert_eq!(found, 1);
+    }
+
+    #[test]
+    fn test_the_audits_message_is_saved_html_only_without_ending_the_program() {
+        crate::common::how_deep_markup_nests::passes_in_a_process_of_its_own(
+            "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_on_the_windows_stack",
+        );
+    }
+
+    #[test]
     fn test_a_snippet_of_a_heading_and_a_list_holds_the_words_and_no_markers() {
         // The reader the message goes through writes `# ` for a heading and
         // `- ` for an item, which is right for a box somebody edits and wrong

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 743 records have arrived since and have not been through it.
+# 745 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -8165,6 +8165,9 @@ file = "src/application/long_text.rs"
 # recorded body was three quarters of a function that had grown. The anchor is
 # the whole function again, which is what it was before and what it has to be:
 # the break replaces the whole of it.
+#
+# Rewritten again on 2026-10-15 by 13.2-12, which put the depth check for audit
+# finding #17 after the parse, so the whole function is still the anchor.
 before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
     // What the sender hid is dropped before anything reads it (#90), so a
     // hidden preheader and its padding reach neither a row's snippet nor a
@@ -8189,6 +8192,14 @@ before = '''fn read_markup(html: &str, keeping: Keeping) -> String {
     super::hidden_text::keep_the_layout_claim(&mut cleaner);
     let cleaned = cleaner.clean(&shown).to_string();
     let fragment = scraper::Html::parse_fragment(&cleaned);
+    // The walk calls itself once per level, so markup nested past the limit
+    // is its words alone, a paragraph per text node (audit finding #17).
+    if nests_deeper_than(fragment.tree.root(), DEEPEST_MARKUP_WALKED) {
+        tracing::warn!(
+            "Markup nested more than {DEEPEST_MARKUP_WALKED} elements deep was read as its words alone"
+        );
+        return the_words_alone(fragment.tree.root()).join("\n\n");
+    }
     let mut out = String::new();
     markup::blocks(*fragment.root_element().deref(), &mut out, keeping);
     collapse_blank_lines(&out)
@@ -8231,6 +8242,14 @@ red = [
     "application::long_text::tests::test_an_address_holding_a_bracket_is_written_so_it_can_be_read_back",
     "application::long_text::tests::test_link_text_and_image_alt_text_survive_markup_being_read",
     "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
+    # Five more from 13.2-12's depth check, measured 2026-10-15: the cases at
+    # the limit and past it read their markup through this function too.
+    "application::long_text::tests::test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_markup_as_deep_as_the_limit_is_still_read_as_its_structure",
+    "application::long_text::tests::test_markup_nested_past_the_limit_gives_its_words_as_paragraphs",
+    "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_without_ending_the_program",
     "service::onenote_page::tests::test_a_heading_at_every_level_comes_back",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
     "service::onenote_page::tests::test_a_horizontal_rule_does_not_come_back_at_all",
@@ -8273,8 +8292,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/long_text.rs", tests = 60 },
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/application/long_text.rs", tests = 65 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
@@ -9499,7 +9518,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9560,8 +9579,8 @@ red = [
     "service::onenote_page::tests::test_struck_out_text_comes_back_as_plain_words",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/application/long_text.rs", tests = 65 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9581,7 +9600,7 @@ red = [
     "application::long_text::markup::tests::test_a_div_joins_its_inline_content_into_one_line_like_a_paragraph",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9596,6 +9615,9 @@ after = '''                        list(child, out, Some(1), "", keeping);'''
 red = [
     "application::calendar::tests::test_an_outlook_event_body_written_as_html_is_read_as_the_structure_it_carries",
     "application::long_text::markup::tests::test_a_bullet_list_does_not_run_into_the_paragraph_after_it",
+    # 13.2-12's case of a list item as deep as the depth check allows, found by
+    # the re-measure of 2026-10-15.
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
     "application::long_text::tests::test_a_nested_list_in_a_providers_markup_comes_back_nested",
     "application::long_text::tests::test_markup_from_a_provider_is_read_as_the_structure_it_carries",
     "service::onenote_page::tests::test_a_heading_straight_after_a_list_comes_back",
@@ -9608,7 +9630,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 196 },
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9626,7 +9648,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9641,7 +9663,7 @@ before = '''                        push_item("- ", child, out, keeping);'''
 after = '''                        let _ = &child;'''
 red = ["application::long_text::markup::tests::test_a_list_item_with_no_list_around_it_still_becomes_a_bullet"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9659,7 +9681,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9670,7 +9692,7 @@ before = """                    "br" => out.push('\\n'),
 after = """                    // An image reached without a paragraph around it."""
 red = ["application::long_text::markup::tests::test_a_bare_line_break_between_blocks_is_a_newline"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9684,7 +9706,7 @@ red = [
     "application::long_text::markup::tests::test_a_style_reaching_the_block_walk_directly_is_silently_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9712,7 +9734,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9731,7 +9753,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9749,7 +9771,7 @@ red = [
     "service::onenote_page::tests::test_microsofts_own_list_comes_back_as_a_list",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9778,7 +9800,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9794,7 +9816,7 @@ after = """            if let Node::Element(element) = child.value()
                 saw_a_paragraph = true;"""
 red = ["application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9811,7 +9833,7 @@ red = [
     "application::long_text::markup::tests::test_a_blockquote_quotes_each_paragraph_on_its_own_line",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 [[guard]]
@@ -9837,7 +9859,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9866,7 +9888,7 @@ red = [
     "service::onenote_page::tests::test_every_row_of_the_fidelity_table_is_true",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -9896,7 +9918,7 @@ after = '''                    // A block met inside inline content, a paragraph
                     tag if is_a_block(tag) => {'''
 red = ["application::long_text::markup::tests::test_a_script_reaching_inline_text_directly_is_silently_dropped"]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
 ]
 
 # ── contacts.rs's card-over-what-is-held merge, field by field ─────────────
@@ -14595,7 +14617,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -15984,7 +16006,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -16064,7 +16086,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -16104,7 +16126,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -16773,7 +16795,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_cancellations_calendar_part_is_called_a_meeting_cancellation",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # ── Borrowing a description off the picture that names the part ─────────────
@@ -17037,7 +17059,7 @@ tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The half-fix, which is the one a check for the question alone cannot see. The
@@ -17065,7 +17087,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
@@ -17091,7 +17113,7 @@ red = [
     "test_every_composer_asks_what_form_the_message_is_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
@@ -17126,7 +17148,7 @@ red = [
     "presentation::wx_reader::tests::test_everything_else_is_not_pretended_to_be_readable",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
@@ -17160,7 +17182,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_the_picture_is_named_from_what_the_sender_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # ── A bound that is asked after the thing it was supposed to prevent ────────
@@ -17222,7 +17244,7 @@ red = [
     "presentation::reader_text::picture_shown_tests::test_a_picture_that_could_not_be_read_says_so_and_draws_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # ── The verdict a rule asks about is the row's, not a constant ──────────────
@@ -17988,7 +18010,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # ── A PGP key nobody could import, so no message ever opened ────────────────
@@ -18113,7 +18135,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_reasons_are_pairwise_different_and_none_is_the_smime_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # ── Undo Send: the hold reaching the row, and the clock letting it go ────────
@@ -22094,6 +22116,10 @@ red = [
     "application::printing::tests::test_an_event_prints_its_start_end_place_and_description_one_to_a_line",
     "application::printing::tests::test_one_message_shown_as_a_conversation_prints_as_that_message",
     "application::printing::tests::test_the_date_on_paper_is_the_full_date_and_time",
+    # Found by 13.2-12's re-measure of 2026-10-15: the key list's dates came
+    # through this picture since 13-36.1 (`9774c35e`), in a file this record
+    # never named, so the count check could not see it arrive.
+    "presentation::wx_pgp_keys::tests::test_a_rows_dates_in_words_are_the_dates_every_list_writes",
 ]
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
@@ -22104,8 +22130,9 @@ tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
 ]
 
 # ── The catalogue, 06-03 task 3 ──────────────────────────────────────────────
@@ -24597,9 +24624,12 @@ red = [
     "data::message_cache::bodies::tests::test_an_html_only_body_still_gives_a_snippet",
     "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
     "data::message_cache::searching::finding_things::test_an_html_only_body_is_indexed_by_its_words_and_not_by_its_stylesheet",
+    # 13.2-12's audit's message, saved in a process of its own, whose snippet
+    # is its words; measured 2026-10-15.
+    "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_without_ending_the_program",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -24621,7 +24651,7 @@ red = [
     "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -24646,7 +24676,7 @@ red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
 ]
 
 # Undo Send taken off the Edit menu, which is the shape the tester met on
@@ -25168,7 +25198,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The preview pane's bar. The reader window and the conversation window put
@@ -25194,7 +25224,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_preview_says_why_a_pgp_message_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # A finding about one message of several, said where that message begins.
@@ -25217,7 +25247,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_of_several_messages_says_where_one_did_not_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The guard that names every surface. It named two of six until 2026-09-16,
@@ -25581,7 +25611,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
 ]
 
 # A chunk of the text pass stops before the next message when it is asked
@@ -26012,7 +26042,7 @@ red = [
     "data::message_cache::bodies::tests::test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
 ]
 
 # ── The check's worker opens its cache with how much text stays (#23) ───────
@@ -28534,7 +28564,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -28564,7 +28594,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 50 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -28834,7 +28864,7 @@ red = [
     "test_a_note_with_an_address_in_code_keeps_it_as_code",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
 ]
 
@@ -29033,7 +29063,7 @@ red = [
     "application::hidden_text::tests::test_opacity_nought_alone_is_not_a_hiding",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
 ]
 
 # max-height:0 hides only together with overflow:hidden: alone, the block
@@ -29052,7 +29082,7 @@ red = [
     "application::hidden_text::tests::test_max_height_nought_hides_only_together_with_overflow_hidden",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
 ]
 
 # The drop is the reading path's and never the sending path's. sanitize_html
@@ -29103,7 +29133,7 @@ red = [
     "test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -29128,7 +29158,7 @@ red = [
     "test_a_label_is_kept_where_it_is_a_name_and_dropped_where_it_named_a_grouping",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 29 },
+    { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -29153,7 +29183,7 @@ red = [
     "test_the_reader_reads_the_newsletter_as_blocks_apart_and_no_layout_table_as_a_table",
 ]
 tests_last_seen = [
-    { file = "src/application/long_text.rs", tests = 60 },
+    { file = "src/application/long_text.rs", tests = 65 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -31940,7 +31970,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_an_invitation_on_a_signed_message_is_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 [[guard]]
@@ -31963,7 +31993,7 @@ red = [
     "test_a_signed_invitation_says_the_meeting_above_the_account_of_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "tests/an_invitation_is_said_before_the_body.rs", tests = 12 },
 ]
 
@@ -31981,7 +32011,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_one_message_of_several_says_its_meeting_under_its_own_heading",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The kind the message gave put over the one warning that changes what
@@ -31997,7 +32027,7 @@ red = [
     "presentation::reader_text::invitation_tests::test_a_calendar_part_named_like_a_program_is_still_called_a_program",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The download of everything writing a message's parts over the ones the
@@ -32091,7 +32121,7 @@ red = [
     "presentation::reader_text::answer_button_tests::test_why_an_invitation_cannot_be_answered_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The reader building the three buttons for every tab, answerable or not, which
@@ -32387,7 +32417,7 @@ red = [
     "presentation::reader_text::meeting_change_tests::test_a_move_made_on_opening_is_said_above_the_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The preview applying what a message changes, so arrowing past an organiser's
@@ -32479,12 +32509,22 @@ red = [
     "presentation::reader_text::encryption_tests::test_it_still_reaches_the_spoken_half_when_a_signature_verdict_follows",
     "presentation::reader_text::encryption_tests::test_opening_one_message_as_a_page_folds_what_is_said_in_order",
     "presentation::reader_text::encryption_tests::test_the_same_sentence_is_spoken_as_the_message_opens",
+    # Four more found by 13.2-12's re-measure of 2026-10-15, in files this
+    # record never named: a sent copy and a message sealed here are opened
+    # through the same store, and open to zeros under this break.
+    "application::protecting::tests::from_the_queue::test_a_row_queued_encrypted_to_a_kept_certificate_is_a_sent_copy_its_sender_opens",
+    "service::protocols::smtp::tests::protected::test_a_signed_and_encrypted_message_opens_to_a_signed_one_that_holds",
+    "service::protocols::smtp::tests::protected::test_an_encrypted_message_opens_with_the_senders_own_key_to_its_words",
+    "service::signed_mail::sending::tests::with_the_keyholders_key::test_what_is_sealed_here_opens_with_the_keyholders_key_to_the_same_bytes",
 ]
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
+    { file = "src/application/protecting.rs", tests = 32 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
     { file = "src/service/signed_mail.rs", tests = 127 },
+    { file = "src/service/signed_mail/sending.rs", tests = 8 },
 ]
 
 # A page holding mail opened from its encryption left to the Reading tab's
@@ -32510,7 +32550,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 93 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # What an envelope opened to written back to the cache, so an encrypted
@@ -32570,7 +32610,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_the_files_inside_a_pgp_mime_message_that_opened_are_the_files_listed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The protocol read out of the raw header rather than through the reading that
@@ -32646,10 +32686,14 @@ after = """                Some((_, parts)) => WhatTheEnvelopeSays::OpenedWithPg
 red = [
     "application::opening_pgp::tests::pgp_mime::test_a_pgp_mime_message_to_alice_opens_to_its_words_with_her_key",
     "presentation::reader_text::encryption_tests::test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture",
+    # Found by 13.2-12's re-measure of 2026-10-15, in a file this record never
+    # named: a message sent PGP-encrypted is opened by the same arm.
+    "service::protocols::smtp::tests::pgp_protected::test_a_pgp_encrypted_message_is_marked_as_one_and_opens_to_its_words",
 ]
 tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "src/service/protocols/smtp.rs", tests = 48 },
 ]
 
 # A PGP/MIME message that opened left out of the mark every rule about
@@ -32671,7 +32715,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/encrypted_mail.rs", tests = 11 },
     { file = "src/application/opening_pgp.rs", tests = 12 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The reason a PGP/MIME message did not open dropped on the way to the reader,
@@ -32760,7 +32804,7 @@ tests_last_seen = [
     { file = "src/application/opening_pgp.rs", tests = 12 },
     { file = "src/application/pgp_keys.rs", tests = 22 },
     { file = "src/application/reading_a_message.rs", tests = 21 },
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
     { file = "src/service/pgp/keys.rs", tests = 33 },
     { file = "src/service/pgp/sending.rs", tests = 14 },
@@ -32907,7 +32951,7 @@ red = [
     "presentation::wx_reader::tests::test_a_pgp_key_can_be_read_here_whichever_way_it_says_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/presentation/wx_reader.rs", tests = 15 },
 ]
 
@@ -33036,7 +33080,7 @@ red = [
     "presentation::reader_text::signature_tests::test_each_message_of_a_conversation_says_its_own_pgp_verdict",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 
 # The signing time left out of a signature made here, so Windows writes no
@@ -34938,7 +34982,7 @@ red = [
     "test_one_message_opened_to_files_alone_says_it_opened_on_its_page_and_not_that_nothing_arrived",
 ]
 tests_last_seen = [
-    { file = "src/presentation/reader_text.rs", tests = 151 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "tests/an_encrypted_message_is_not_left_unexplained.rs", tests = 19 },
 ]
 
@@ -40434,4 +40478,68 @@ red = [
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/renumbered.rs", tests = 17 },
+]
+
+# Markup nested past the limit is never handed to a recursive walker, since
+# a sender's nesting would otherwise overflow the window's stack and end the
+# program (audit finding #17). Added 2026-10-15 by 13.2-12 and taken by hand
+# against the whole library: the question that never answers yes reddens the
+# question's own cases, the three entry points' cases past the limit, and the
+# six cases at the limit, whose first assertion is that their markup is
+# exactly that deep. Task 2 of the same plan added three: the text reader's
+# sentence, which is said only for markup found too deep, and the audit's
+# message previewed and saved, each run in a process of its own, where the
+# break is an overflow the case reports as its own failure rather than the
+# end of the test program.
+[[guard]]
+name = "markup nested past the limit is found to be, so no walker is handed it"
+file = "src/common/how_deep_markup_nests.rs"
+before = '''                depth += 1;
+                if depth > limit {
+                    return true;
+                }'''
+after = '''                depth += 1;
+                if depth > limit {
+                    return false;
+                }'''
+red = [
+    "application::hidden_text::tests::test_markup_nested_past_the_limit_goes_on_unchanged_and_nothing_is_counted",
+    "application::long_text::tests::test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack",
+    "application::long_text::tests::test_markup_nested_past_the_limit_gives_its_words_as_paragraphs",
+    "common::how_deep_markup_nests::tests::test_a_hundred_thousand_levels_are_answered_on_the_windows_stack",
+    "common::how_deep_markup_nests::tests::test_markup_one_level_past_the_limit_is_deeper_than_it",
+    "common::how_deep_markup_nests::tests::test_siblings_side_by_side_are_not_counted_as_depth",
+    "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_without_ending_the_program",
+    "presentation::reader_text::tests::test_markup_too_deep_to_show_as_a_page_is_its_words_after_a_sentence_saying_so",
+    "presentation::reader_text::tests::test_the_audits_message_is_previewed_without_ending_the_program",
+    "vendor::paperback::tests::test_a_heading_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_a_list_item_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_divs_as_deep_as_the_limit_are_walked_whole_on_the_windows_stack",
+    "vendor::paperback::tests::test_markup_nested_past_the_limit_is_read_as_its_words_alone",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 30 },
+    { file = "src/application/long_text.rs", tests = 65 },
+    { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
+    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "src/vendor/paperback/mod.rs", tests = 14 },
+]
+
+# The text reader says why a message is read as its words alone, before the
+# words, since a run of lines with no heading, link or list otherwise reads
+# as a message written that way (audit finding #17). Added 2026-10-15 by
+# 13.2-12 and taken by hand against the whole library.
+[[guard]]
+name = "the text reader says a message nested too deep is read as its words alone"
+file = "src/presentation/reader_text.rs"
+before = '''        text = format!("{NESTED_TOO_DEEPLY}\n\n{text}");'''
+after = '''        let _ = NESTED_TOO_DEEPLY;'''
+red = [
+    "presentation::reader_text::tests::test_markup_too_deep_to_show_as_a_page_is_its_words_after_a_sentence_saying_so",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 155 },
 ]

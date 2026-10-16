@@ -24,8 +24,12 @@
 //
 // Local changes: import paths point at this module rather than paperback-core;
 // the translated strings route through Wixen Mail's own i18n registry; the
-// markdown and roman-numeral helpers were dropped or replaced; and parsers and
-// types this application does not use were left behind. The code itself is
+// markdown and roman-numeral helpers were dropped or replaced; parsers and
+// types this application does not use were left behind; and `convert` asks how
+// deep the parsed markup nests before walking it, reading markup past
+// `DEEPEST_MARKUP_WALKED` as its words alone, with `read_the_words_alone` to
+// say so, because a sender's nesting would otherwise overflow the stack (audit
+// finding #17, 2026-10-14). A re-sync keeps that check. The code itself is
 // otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 
 use std::{collections::HashMap, fmt::Write, mem};
@@ -41,6 +45,9 @@ use super::text::{
 use super::types::{
     ConverterOutput, FormatInfo, HeadingInfo, ImageInfo, LinkInfo, ListInfo, ListItemInfo,
     SeparatorInfo, TableInfo,
+};
+use crate::common::how_deep_markup_nests::{
+    DEEPEST_MARKUP_WALKED, nests_deeper_than, the_words_alone,
 };
 
 /// The three strings this converter puts into the text it produces.
@@ -121,6 +128,8 @@ pub struct HtmlToText {
     /// When `true`, tables are emitted as their full tab-separated rendering; otherwise as a
     /// `"[Table]: <first row>"` placeholder. A config flag, not parse state: it survives `clear()`.
     render_tables_inline: bool,
+    /// Whether the last conversion read the markup as its words alone. Local change.
+    words_alone: bool,
 }
 
 impl HtmlToText {
@@ -156,6 +165,7 @@ impl HtmlToText {
             source_mode: HtmlSourceMode::NativeHtml,
             cached_char_length: 0,
             render_tables_inline: false,
+            words_alone: false,
         }
     }
 
@@ -175,6 +185,16 @@ impl HtmlToText {
         self.source_mode = mode;
         let document = Html::parse_document(html_content);
         let root = document.tree.root();
+        // Local change: the walk below calls itself once per level, so markup
+        // nested past the limit is read as its words alone rather than walked
+        // off the end of the stack (audit finding #17).
+        if nests_deeper_than(root, DEEPEST_MARKUP_WALKED) {
+            self.words_alone = true;
+            for line in the_words_alone(root) {
+                self.add_line(line);
+            }
+            return true;
+        }
         self.process_node(root, &document);
         self.finalize_current_line();
         true
@@ -183,6 +203,13 @@ impl HtmlToText {
     #[must_use]
     pub fn get_text(&self) -> String {
         self.lines.join("\n")
+    }
+
+    /// Whether the last conversion read the markup as its words alone,
+    /// because it nested too deep to walk as a page.
+    #[must_use]
+    pub const fn read_the_words_alone(&self) -> bool {
+        self.words_alone
     }
 
     #[must_use]
@@ -268,6 +295,7 @@ impl HtmlToText {
         self.open_italics.clear();
         self.open_underlines.clear();
         self.cached_char_length = 0;
+        self.words_alone = false;
     }
 
     const fn get_bullet_for_level(level: i32) -> &'static str {

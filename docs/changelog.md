@@ -1427,6 +1427,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message whose layout is nested thousands of levels deep no longer closes Wixen Mail
+  (2026-10-15, LIST-25, FOUND-03).** Anybody could send a message whose layout put thousands
+  of boxes one inside another. Selecting it closed Wixen Mail at once, with nothing in the
+  log, and it closed again every time the message was selected. If the message had no plain
+  text part, Wixen Mail closed while downloading it, before it ever reached the list. Now a
+  message nested deeper than 512 levels, the most a web browser shows, is read as its words
+  alone. The text reader says first that the layout is nested too deeply to show as a page,
+  so only its words follow, and the list's preview line and search use the same words. The
+  formatted view shows the message as before. Known limitation: taking apart a layout that
+  deep is slow in itself, and the time grows fast with the depth, so a message nested 20,000
+  levels deep can still keep Wixen Mail busy for a few seconds when it arrives or is selected.
 - **A change you made while offline no longer undoes a newer one, or lands on the wrong
   message (2026-10-15, LIST-21, LIST-22).** If you read a message while changes were off, then
   turned changes on and marked it unread, the next check sent the old "read" to the server

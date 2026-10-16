@@ -10,6 +10,9 @@ pub mod answering;
 /// imports from none of them.
 pub mod catalogue;
 pub mod error;
+/// How deep a stranger's markup nests, asked without recursion, and the
+/// limit the readers that walk it are held to.
+pub mod how_deep_markup_nests;
 /// How this computer writes a date, asked rather than assumed.
 ///
 /// Here rather than beside the other date code in `presentation`, because

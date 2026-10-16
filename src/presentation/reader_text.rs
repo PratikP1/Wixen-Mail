@@ -165,6 +165,15 @@ fn nothing_to_read() -> String {
     "This message has no text, or it has not been downloaded yet.".to_string()
 }
 
+/// What the text reader says before the words of a message whose markup
+/// nests too deep to read as a page (audit finding #17).
+///
+/// Said first, so somebody who hears a run of lines with no headings, links
+/// or lists knows the message was not written that way, in the register of
+/// the sentence about blocks the sender did not show.
+const NESTED_TOO_DEEPLY: &str =
+    "This message's layout is nested too deeply to show as a page, so only its words follow.";
+
 /// Whether a body has anything in it at all.
 ///
 /// Asked of every part it holds, not just the plain one: `as_plain` answers
@@ -256,6 +265,13 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
         .collect();
 
     let mut text = converter.get_text();
+    if converter.read_the_words_alone() {
+        // Before the signature's landmark is placed, which counts from here.
+        tracing::warn!(
+            "A message's markup nested too deep to read as a page; its words are read alone"
+        );
+        text = format!("{NESTED_TOO_DEEPLY}\n\n{text}");
+    }
     landmarks.extend(signature_landmark(&text));
 
     // Link targets are gathered at the end rather than left inline. A URL read
@@ -2379,6 +2395,66 @@ mod tests {
         let row = attachment("Report.pdf", "application/pdf", 245_760).label();
 
         assert_eq!(row, "Report.pdf, PDF document, 240 KB, no description");
+    }
+
+    // ── Markup nested too deep to read as a page ─────────────────────────
+
+    #[test]
+    fn test_markup_too_deep_to_show_as_a_page_is_its_words_after_a_sentence_saying_so() {
+        // Audit finding #17. Past the limit the converter reads the words
+        // alone, which is a run of lines with no heading, link or list, and
+        // nothing about the message says why unless the reader does.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
+        };
+        let deep = MessageBody::Html(nested("div", DEEPEST_MARKUP_WALKED + 1, "Deep words"));
+        let (text, _) = on_a_stack_of(ROOM_FOR_ANY_WALK, move || body_text(&deep));
+        assert_eq!(
+            text,
+            "This message's layout is nested too deeply to show as a page, so only its words \
+             follow.\n\nDeep words"
+        );
+        assert!(text.starts_with(NESTED_TOO_DEEPLY), "{text}");
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the case after it, because an overflow ends the test program"]
+    fn test_the_audits_message_is_previewed_on_the_windows_stack() {
+        // The path the audit traced: selecting the message builds the
+        // preview on the window's thread, through the text reader's
+        // conversation and the page's sanitiser. As `div` elements alone and
+        // inside a heading, whose words a walk of their own gathered.
+        use crate::common::how_deep_markup_nests::{
+            THE_WINDOWS_STACK, on_a_stack_of, the_audits_message,
+        };
+        for markup in [
+            the_audits_message(),
+            format!("<h1>{}</h1>", the_audits_message()),
+        ] {
+            let page = on_a_stack_of(THE_WINDOWS_STACK, move || {
+                let part = ConversationPart {
+                    message: message(),
+                    body: MessageBody::Html(markup),
+                    said: crate::application::reading_a_message::WhatIsSaidAboutIt::nothing(),
+                    depth: 0,
+                };
+                preview_html("Deep", &[part])
+            });
+            assert!(page.contains("Deep words"), "{page}");
+        }
+    }
+
+    #[test]
+    fn test_the_audits_message_is_previewed_without_ending_the_program() {
+        crate::common::how_deep_markup_nests::passes_in_a_process_of_its_own(
+            "presentation::reader_text::tests::test_the_audits_message_is_previewed_on_the_windows_stack",
+        );
+    }
+
+    #[test]
+    fn test_an_ordinary_message_says_nothing_about_its_layout() {
+        let (text, _) = body_text(&MessageBody::Html("<p>Hello</p>".to_string()));
+        assert_eq!(text, "Hello");
     }
 
     // ── What the sender said, and saying so when they said nothing ──────

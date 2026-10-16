@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 730
+open_count: 733
 waived_count: 0
 fixed_count: 126
-total_count: 856
-last_updated: 2026-10-15T20:00:00.000Z
+total_count: 859
+last_updated: 2026-10-16T01:15:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -871,6 +871,9 @@ last_updated: 2026-10-15T20:00:00.000Z
 | 854 | 13.2 | todo | src/service/protocols/imap.rs |  | 13.2-11, for 13.2-32's closing read: ImapSession::uids_with_message_id searches HEADER MESSAGE-ID, which matches any message whose Message-ID contains the text asked for (RFC 3501, section 6.4.4). 13.2-11 made the renumbering decision read the one message found and require an exact match before anything is sent. The same search also serves remove_by_message_id, which takes a sent draft's filed copies out of Drafts and removes every number it answers, so a message in Drafts whose identifier merely contains the draft's would be removed with it. Left shared and unchanged by 13.2-11 because the draft path is 13.2-05's and its identifiers are this program's own, which makes a containing identifier unlikely rather than impossible. Recommended: keep only the numbers whose message carries the identifier exactly before the removal, as the decision does. Closed when 13.2-32's closing read carries it out with a case, or Pratik decides the draft path may stay as it is | open |  | 2026-10-15T20:00:00.000Z |  |
 | 855 | 13.2 | todo | src/application/flag_changes_waiting.rs |  | 13.2-11: a read or star kept from offline that cannot be placed after its folder was renumbered is put back and said in the existing sentence, The mail server refused your change, so it has been put back: the mail server has renumbered the folder since the change was made, and the message could not be found in it. The server refused nothing. The plan chose that sentence so one count covers both kinds; a move put back the same way says Could not move, which is true. Recommended: when every change put back in one check was put back for a renumbering, open with Your change could not be sent, so it has been put back, and the same reason. Closed when Pratik answers and the answer is carried out with a case, or he decides the sentence may stay | open |  | 2026-10-15T20:00:00.000Z |  |
 | 856 | 13.2 | todo | .github/workflows/accessibility.yml |  | 13.2-11's pull request 180: the Accessibility run 38803731724's first attempt failed with These windows were not scanned: blocked-senders : the application exited with code 0 before the scan, and its rerun of the failed job passed with every window scanned. 13.2-11 changes nothing the blocked-senders scan target reaches, and no earlier summary or ledger row records that refusal, so it is read as a flake. Why a scan target's process can exit cleanly before the scanner attaches is not diagnosed. Closed when it is diagnosed and made to say its cause, or it has not recurred by 13.2-32's closing read | open |  | 2026-10-15T21:35:00.000Z |  |
+| 857 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12, found and left: html5ever's parse of nested div elements is quadratic in their depth, since every div start tag looks back along the open elements for a p in button scope, and the depth check runs after the parse, so it cannot remove that cost. Timed on 2026-10-16 in a release build at de4df4d6, long_text::pieces_of_markup over div elements nested around two words, three takes each, by a throwaway probe in the session scratchpad run as cargo run --release with the project's Cargo.lock: 5,000 levels 90 ms, 10,000 levels 367 ms, 20,000 levels 2.02 s median (1.48 s to 2.17 s). The preview parses the same markup several times on the window's thread, so a message 20,000 levels deep holds the window for some seconds, and the time grows with the square of the depth. The changelog says so as a known limitation. Closed when a parse past a size or depth bound is refused or done off the window's thread with a case, or Pratik decides the cost may stay | open |  | 2026-10-16T01:15:00.000Z |  |
+| 858 | 13.2 | unrun-verify | src/presentation/reader_text.rs |  | 13.2-12, finding #17 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-12's merge: a message whose layout nests thousands of levels deep, selected and opened in the text reader, says This message's layout is nested too deeply to show as a page, so only its words follow, before its words, and the program stays open. Held by the reader's case past the limit, the audit's message previewed and saved on a 1 MiB thread in processes of their own, and two new records; no NVDA case opens such a message. Closed when he has heard it | open |  | 2026-10-16T01:15:00.000Z |  |
+| 859 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are | open |  | 2026-10-16T01:15:00.000Z |  |
 
 ````json
 [
@@ -11144,6 +11147,42 @@ last_updated: 2026-10-15T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-15T21:35:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 857,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/common/how_deep_markup_nests.rs",
+    "line": null,
+    "description": "13.2-12, found and left: html5ever's parse of nested div elements is quadratic in their depth, since every div start tag looks back along the open elements for a p in button scope, and the depth check runs after the parse, so it cannot remove that cost. Timed on 2026-10-16 in a release build at de4df4d6, long_text::pieces_of_markup over div elements nested around two words, three takes each, by a throwaway probe in the session scratchpad run as cargo run --release with the project's Cargo.lock: 5,000 levels 90 ms, 10,000 levels 367 ms, 20,000 levels 2.02 s median (1.48 s to 2.17 s). The preview parses the same markup several times on the window's thread, so a message 20,000 levels deep holds the window for some seconds, and the time grows with the square of the depth. The changelog says so as a known limitation. Closed when a parse past a size or depth bound is refused or done off the window's thread with a case, or Pratik decides the cost may stay",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T01:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 858,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13.2-12, finding #17 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-12's merge: a message whose layout nests thousands of levels deep, selected and opened in the text reader, says This message's layout is nested too deeply to show as a page, so only its words follow, before its words, and the program stays open. Held by the reader's case past the limit, the audit's message previewed and saved on a 1 MiB thread in processes of their own, and two new records; no NVDA case opens such a message. Closed when he has heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T01:15:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 859,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/common/how_deep_markup_nests.rs",
+    "line": null,
+    "description": "13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T01:15:00.000Z",
     "resolved_at": null
   }
 ]

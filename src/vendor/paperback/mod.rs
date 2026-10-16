@@ -153,6 +153,100 @@ mod tests {
     }
 
     #[test]
+    fn test_markup_nested_past_the_limit_is_read_as_its_words_alone() {
+        // Audit finding #17: the walk below calls itself once per level, so
+        // markup nested deep enough ends the program on the window's thread.
+        // Past the limit the converter reads the text nodes in order and
+        // nothing else, and says it did, rather than handing back the markup
+        // for a screen reader to read tag by tag. A big stack, so the walk
+        // before the fix finishes and fails on an assertion here.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
+        };
+        let converter = on_a_stack_of(ROOM_FOR_ANY_WALK, || {
+            let deep = nested(
+                "div",
+                DEEPEST_MARKUP_WALKED + 1,
+                "Deep  words <a href=\"https://example.com/\">a link</a>",
+            );
+            convert(&format!(
+                "<html><head><title>Kept out</title><style>p{{color:red}}</style></head>\
+                 <body><h1>{deep}</h1><script>alert(1)</script></body></html>"
+            ))
+        });
+        assert!(converter.read_the_words_alone());
+        assert_eq!(converter.get_text(), "Deep words\na link");
+        assert!(converter.get_headings().is_empty());
+        assert!(converter.get_links().is_empty());
+    }
+
+    /// Convert markup the parser makes exactly as deep as the limit, `outer`
+    /// elements of the sender's around enough `div` elements to reach it, on
+    /// a stack the size of the window's own thread.
+    ///
+    /// The limit is the deepest markup every walker gets through on that
+    /// stack in a debug build, whose frames are larger than a release
+    /// build's, so these cases are what chose it.
+    fn convert_at_the_limit_on_the_windows_stack(
+        open: &str,
+        close: &str,
+        outer: usize,
+    ) -> HtmlToText {
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, THE_WINDOWS_STACK, nested, nests_deeper_than, on_a_stack_of,
+        };
+        // `parse_document` adds `html` and `body` above the sender's markup.
+        let divs = DEEPEST_MARKUP_WALKED - 2 - outer;
+        let markup = format!(
+            "<html><body>{open}{}{close}</body></html>",
+            nested("div", divs, "Deep words")
+        );
+        let parsed = scraper::Html::parse_document(&markup);
+        assert!(nests_deeper_than(
+            parsed.tree.root(),
+            DEEPEST_MARKUP_WALKED - 1
+        ));
+        assert!(!nests_deeper_than(
+            parsed.tree.root(),
+            DEEPEST_MARKUP_WALKED
+        ));
+        let converter = on_a_stack_of(THE_WINDOWS_STACK, move || convert(&markup));
+        assert!(!converter.read_the_words_alone());
+        assert!(
+            converter.get_text().contains("Deep words"),
+            "{}",
+            converter.get_text()
+        );
+        converter
+    }
+
+    #[test]
+    fn test_divs_as_deep_as_the_limit_are_walked_whole_on_the_windows_stack() {
+        convert_at_the_limit_on_the_windows_stack("", "", 0);
+    }
+
+    #[test]
+    fn test_a_heading_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack() {
+        // A heading's words are gathered by a walk of their own, under the
+        // walk of the page.
+        let converter = convert_at_the_limit_on_the_windows_stack("<h1>", "</h1>", 1);
+        assert_eq!(converter.get_headings().len(), 1);
+    }
+
+    #[test]
+    fn test_a_list_item_as_deep_as_the_limit_is_walked_whole_on_the_windows_stack() {
+        let converter = convert_at_the_limit_on_the_windows_stack("<ul><li>", "</li></ul>", 2);
+        assert_eq!(converter.get_list_items().len(), 1);
+    }
+
+    #[test]
+    fn test_markup_within_the_limit_is_read_as_a_page() {
+        let converter = convert("<html><body><h1>Title</h1><p>Words</p></body></html>");
+        assert!(!converter.read_the_words_alone());
+        assert_eq!(converter.get_headings().len(), 1);
+    }
+
+    #[test]
     fn test_malformed_html_does_not_panic() {
         // Message bodies come from strangers, and half of them are malformed.
         for html in [
