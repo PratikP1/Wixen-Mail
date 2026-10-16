@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 746
+open_count: 747
 waived_count: 0
 fixed_count: 126
-total_count: 872
+total_count: 873
 last_updated: 2026-10-16T12:00:00.000Z
 ---
 
@@ -887,6 +887,7 @@ last_updated: 2026-10-16T12:00:00.000Z
 | 870 | 13.2 | todo | src/service/update_download.rs |  | 13.2-16, finding #24 of the audit of 2026-10-14, beside 329: THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH ships empty, so the update check refuses every installer, which nothing a person sees today shows because nothing is signed. Its value is the identifier of Pratik's Artifact Signing certificate profile, a usage beginning 1.3.6.1.4.1.311.97. that only his signing account can give, and it is set in the plan that closes 329. Until it is, an installer signed with that profile is refused as not signed with this project's certificate, which would then be untrue, so the value goes in before the first signed release. Microsoft's page on certificate management, updated 2026-10-01 and read 2026-10-16: deleting the profile and making a new one assigns a new identifier, so once a release ships with the value set, recreating the profile leaves every installed copy refusing every update until a new version is installed by hand | open |  | 2026-10-16T12:00:00.000Z |  |
 | 871 | 13.2 | unrun-verify | src/service/attachment_name.rs |  | 13.2-16, finding #22 of the audit of 2026-10-14, on a build holding 13.2-16's merge: a .docm saved with Save Attachment opens in Word's Protected View, a .js saved the same way asks before it runs, the reader window's Save Attachment and File, Save As do the same, and the file's Properties show the Unblock box. Held by the case on a real file, the reading of both saves and its record; nobody has opened a saved file since | open |  | 2026-10-16T12:00:00.000Z |  |
 | 872 | 13.2 | todo | src/presentation/html_renderer.rs |  | Found by 13.2-16's pull request 185, Accessibility run 38908878280 on 2026-10-16: the scan's page target, the formatted message window whose document html_renderer.rs builds, scanned with 6 UI Automation errors where 13.2-15's run 38897887887 the same day found 4 on the same code. The two new ones are WebView2's own panes, Chrome_WidgetWin_1 and BrowserRootView, whose Name is the whole data:text/html;charset=utf-8;base64 address of the page, past Axe's 512-character limit; the first had keyboard focus. A screen reader landing there could read that address aloud. It comes and goes between runs on unchanged code, so it depends on when the pane is read, most likely before the page's own title is applied. Not caused by 13.2-16, which changed no window. Recommended: give the page document a title before it is handed to WebView2, or load it so the address is never its name, and hold it with a case that reads the pane's name; for a later plan or 13.2-32's closing read | open |  | 2026-10-16T12:00:00.000Z |  |
+| 873 | 13.2 | unrun-verify | src/application/contacts_sync.rs |  | 13.2-17, findings #25 and #26 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-17's merge: a Gmail account and an Outlook account each given a contact in the Contacts window after their first contacts sync, and the contact found in Google Contacts and in Outlook's people on the phone after the next sync, once and not twice; and a Gmail account whose last full contacts read is more than seven days old, its contacts still arriving, with the log line saying the marker was too old and the whole address book read again. Held by the scripted stand-ins, which answer with Google's documented 400 naming EXPIRED_SYNC_TOKEN (the page for people.connections.list, last updated 2024-08-06, read 2026-10-16); nobody has seen Google send it from a live account | open |  | 2026-10-16T12:00:00.000Z |  |
 
 ````json
 [
@@ -11349,6 +11350,18 @@ last_updated: 2026-10-16T12:00:00.000Z
     "file": "src/presentation/html_renderer.rs",
     "line": null,
     "description": "Found by 13.2-16's pull request 185, Accessibility run 38908878280 on 2026-10-16: the scan's page target, the formatted message window whose document html_renderer.rs builds, scanned with 6 UI Automation errors where 13.2-15's run 38897887887 the same day found 4 on the same code. The two new ones are WebView2's own panes, Chrome_WidgetWin_1 and BrowserRootView, whose Name is the whole data:text/html;charset=utf-8;base64 address of the page, past Axe's 512-character limit; the first had keyboard focus. A screen reader landing there could read that address aloud. It comes and goes between runs on unchanged code, so it depends on when the pane is read, most likely before the page's own title is applied. Not caused by 13.2-16, which changed no window. Recommended: give the page document a title before it is handed to WebView2, or load it so the address is never its name, and hold it with a case that reads the pane's name; for a later plan or 13.2-32's closing read",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-16T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 873,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/contacts_sync.rs",
+    "line": null,
+    "description": "13.2-17, findings #25 and #26 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-17's merge: a Gmail account and an Outlook account each given a contact in the Contacts window after their first contacts sync, and the contact found in Google Contacts and in Outlook's people on the phone after the next sync, once and not twice; and a Gmail account whose last full contacts read is more than seven days old, its contacts still arriving, with the log line saying the marker was too old and the whole address book read again. Held by the scripted stand-ins, which answer with Google's documented 400 naming EXPIRED_SYNC_TOKEN (the page for people.connections.list, last updated 2024-08-06, read 2026-10-16); nobody has seen Google send it from a live account",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T12:00:00.000Z",

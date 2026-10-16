@@ -1427,6 +1427,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Google contacts keep syncing after the first week (2026-10-16).** Google's marker for
+  where the last contacts sync finished runs out seven days after a full read, and Google says
+  so with an answer the sync did not recognise. So from about a week after setup, every
+  contacts sync for a Gmail account failed, and nothing changed on a phone ever arrived here
+  again. Now that answer, a 400 naming `EXPIRED_SYNC_TOKEN` or saying "Sync token is
+  expired", makes the sync read the whole address book once and keep Google's fresh marker,
+  as Outlook's answer for the same thing already did. Any other refusal, a server fault or a
+  dropped connection still stops the sync rather than downloading everything. Read from
+  Google's documentation and not yet seen from a real account.
+- **A contact added here reaches Google and Outlook at the next sync (2026-10-16).** A contact
+  typed in the Contacts window was sent to the address book only when the sync read the whole
+  of it. For Outlook that was the first sync alone, so a contact added afterwards, or one
+  Outlook refused that first time, was never sent; for Google it was the read after an
+  expired marker, which the fix above is the first to make happen. Somebody added a contact
+  here, saw it here, and never found it on their phone, and nothing said so. Now every sync
+  sends a contact made here that no address book knows yet. A contact that came from an
+  address book, or that one already holds, is still never sent as new, so no sync makes a
+  second copy. Not yet tried against a real account.
 - **Files saved from mail are marked as coming from the internet (2026-10-16).** An attachment
   saved with Save Attachment, from the main window or a message's own window, and a message
   saved with File, Save As, were written as though they had been made on this computer. So a
@@ -13706,7 +13724,10 @@ live account or a live calendar server:
   marker is too old, rather than on any error at all, so a dropped connection no
   longer turns into a full download. Unverified against a real account: the
   first sync after this still reads everything, and only the second can be
-  shorter.
+  shorter. Corrected 2026-10-16: for Google, that recovery never ran. It waited
+  for a 410, which Google's contacts service does not send; Google answers an
+  expired marker with a 400 naming `EXPIRED_SYNC_TOKEN`, and the sync reads that
+  as expired from 2026-10-16 (see Fixed under Unreleased).
 
 - **A new contact is no longer sent with the fields the address book fills in
   itself.** Creating a contact sent an empty identifier and an empty version
