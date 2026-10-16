@@ -2547,6 +2547,15 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     where the markup is parsed, how deeply a stranger's HTML nests, and reads anything deeper
     than the limit as its words alone, so a snippet or the index can no longer overflow a
     thread's stack (finding #17). It adds no `[D]` clause and the box stays ticked.
+  - 13.2-12 on 2026-10-15: `long_text`'s reader asks
+    `common::how_deep_markup_nests::nests_deeper_than` right after its parse, and markup
+    nested more than 512 elements deep is its text nodes as paragraphs, gathered without
+    recursion, so the snippet and the index row of an HTML-only message are its words and
+    the save no longer overflows the worker's stack (finding #17). Held by the reader's cases
+    past and at the limit, the at-limit ones on a 1 MiB thread, and by the audit's message,
+    4,000 nested `div` elements, saved HTML-only on a 1 MiB thread in a process of its own,
+    which overflowed with the check taken out. The parse itself stays quadratic in depth
+    (ledger 857).
 
 - [x] **FOUND-04**: Undo Send is on the Edit menu.
   - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-03, merged 2026-09-16 at
@@ -5421,6 +5430,17 @@ insert (11-11.0 after 11-11, which changes the same renderer for pictures, and b
     whose markup nests past the depth limit as its words alone, with one sentence saying so,
     rather than overflowing a thread's stack (finding #17). It adds no `[D]` clause and the box
     stays ticked.
+  - 13.2-12 on 2026-10-15: one iterative depth check, `nests_deeper_than` in
+    `common::how_deep_markup_nests`, sits right after the three parses that feed a recursive
+    walker: `drop_what_the_sender_hid` hands markup nested more than 512 elements deep on
+    unchanged for the sanitiser and the page, the vendored `HtmlToText::convert` reads it as
+    its text nodes alone and says so through `read_the_words_alone`, and `long_text`'s reader
+    gives the same words as paragraphs. The text reader puts "This message's layout is nested
+    too deeply to show as a page, so only its words follow." before the words; the formatted
+    view is unchanged. 512 walks whole through both readers on a 1 MiB thread in a debug
+    build, and 1024 overflowed (`docs/development/measurements.md`). The audit's message,
+    4,000 nested `div` elements, previewed on a 1 MiB thread in a process of its own, and
+    overflowed with the check taken out. Hearing the sentence is ledger 858.
 - [x] **LIST-26**: A setting saved in Settings applies without a restart. Mark as read after
   governs the next tick the moment it is saved, because the setting lives in the window's
   state, written at startup and by the Settings-saved arm through an update, and the timer
@@ -7749,7 +7769,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PERF-07 | Phase 8 | Revised, open: the whole-tree run was not made, its cost is written down, two areas ran |
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
-| FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
+| FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause; 13.2-12 done 2026-10-15, an HTML-only message nested past 512 levels is saved with its words as its snippet and index row instead of overflowing the worker's stack (ledger 857) |
 | FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845) |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
@@ -7799,7 +7819,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause; 13.2-11 done 2026-10-15, a waiting crossing takes its source copy from its own message after a renumbering or comes back (ledger 853) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |
-| LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559); phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause |
+| LIST-25 | Phase 11 | Complete, 11-11.0 at `fab0ecea`; the newsletter heard once under NVDA with no table and no grouping announced, the subtitle where the sender's line stands, the subject once and the sender once, and another newsletter of his choosing the same way are the tester's ear (ledger 559); phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause; 13.2-12 done 2026-10-15, a message nested past 512 levels is read as its words alone after one sentence saying so instead of overflowing the window's stack (ledger 858) |
 | LIST-26 | Phase 11 | Complete, 11-11.1.1 at `051c3529`; the delay changed in Settings and a message marked after the new wait without a restart, the list's dates following a save at once, and the two sentences heard under their controls are the tester's ear (ledger 561) |
 | LIST-27 | Phase 11 | Complete, 11-11.1.2 at `ae0fa4d2` (the setting, the rule, the landing, the box, the pages) and 11-11.1.3 at `1e39650a` (All Inboxes' own view, the every-inbox listing, the row's own account, the sentence, the pages); a folder never set heard as conversations (ledger 562), All Inboxes threaded and its view kept and a two-account conversation as two rows (ledger 563), are his ear's |
 | ALPHA-01 | Phase 12 | Complete, 12-04, 2026-09-23; the `[S]` lines, the dialog heard under NVDA and the two pages answering, are ledger 587 and 588 |
