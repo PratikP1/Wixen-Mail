@@ -7,7 +7,9 @@ use crate::common::{Error, Result, types::Id};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 /// Application-wide configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1198,7 +1200,7 @@ impl ConfigManager {
         };
         let content = serde_json::to_string_pretty(&stamped_by_this_build)
             .map_err(|e| Error::Config(format!("Failed to serialize app config: {}", e)))?;
-        fs::write(self.app_config_path(), content)
+        written_whole(&self.app_config_path(), &content)
             .map_err(|e| Error::Config(format!("Failed to write app config: {}", e)))?;
         Ok(())
     }
@@ -1214,7 +1216,7 @@ impl ConfigManager {
             let content = serde_json::to_string_pretty(account_config)
                 .map_err(|e| Error::Config(format!("Failed to serialize account config: {}", e)))?;
             let path = self.account_config_path(&account_config.id);
-            fs::write(path, content)
+            written_whole(&path, &content)
                 .map_err(|e| Error::Config(format!("Failed to write account config: {}", e)))?;
         }
 
@@ -1230,6 +1232,59 @@ impl ConfigManager {
     pub fn app_config_mut(&mut self) -> &mut AppConfig {
         &mut self.app_config
     }
+}
+
+/// One settings file written at a time in this process. `load` writes the
+/// defaults on whichever thread first finds no file, while the window's thread
+/// saves what somebody chose, and the two would share one unfinished name.
+static ONE_SAVE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Put `content` under `target` whole or not at all.
+///
+/// `fs::write` empties the file before it writes it, so a power cut, a crash of
+/// Windows or a forced reset in that moment left settings that every load
+/// refused. So the content goes beside the target first, onto the disk, and is
+/// then renamed over it, the way the mailbox export writes its files: the name
+/// holds either the old file or the whole new one. `sync_all` comes before the
+/// rename because without it NTFS can still leave a zero-filled file under the
+/// name after a power cut. The unfinished name ends in `.partial`, never
+/// `.json`, so `load` never reads one as settings or as an account.
+fn written_whole(target: &Path, content: &str) -> std::io::Result<()> {
+    let _our_turn = ONE_SAVE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let on_the_way = the_name_on_the_way_to(target);
+    let file = fs::File::create(&on_the_way)?;
+    onto_the_disk_and_over(file, content, &on_the_way, target).map_err(|why| {
+        // What is left of it is not a file anybody should keep, and one that
+        // cannot be taken away is said, since somebody will find it.
+        match fs::remove_file(&on_the_way) {
+            Ok(()) => why,
+            Err(also) => std::io::Error::other(format!(
+                "{why}; the unfinished {} could not be taken away either: {also}",
+                on_the_way.display()
+            )),
+        }
+    })
+}
+
+fn onto_the_disk_and_over(
+    mut file: fs::File,
+    content: &str,
+    on_the_way: &Path,
+    target: &Path,
+) -> std::io::Result<()> {
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(on_the_way, target)
+}
+
+/// Where a file is written until it is whole: its name with `.partial` added.
+fn the_name_on_the_way_to(target: &Path) -> PathBuf {
+    let mut named = target.as_os_str().to_owned();
+    named.push(".partial");
+    PathBuf::from(named)
 }
 
 #[cfg(test)]
