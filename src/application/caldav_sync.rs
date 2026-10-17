@@ -1020,7 +1020,23 @@ fn one_caldav_day_kept_out_of_its_series(
 
     // Asked about the series as well as about the day. A series somebody
     // deleted here would otherwise come back one changed day at a time.
-    if deleted_here.holds(&compound_id) || deleted_here.holds(&changed.uid) {
+    if deleted_here.holds(&changed.uid) {
+        return Ok(());
+    }
+    // A changed day deleted here stays deleted, and so does the day it
+    // replaced. Its row is not written back, and the day is kept off the
+    // series the read has just written down again, or the series draws the
+    // occurrence at its old time: the meeting somebody deleted, back on the
+    // diary in another shape. A feed is never told of the deletion and names
+    // the day for as long as its publisher does.
+    if deleted_here.holds(&compound_id) {
+        if let Some(series) = cache.get_event_by_provider_id(account_id, &changed.uid)? {
+            let called_off =
+                crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+            let (after, _) =
+                crate::application::calendar::with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&after)?;
+        }
         return Ok(());
     }
 
@@ -1158,12 +1174,27 @@ pub async fn refresh_subscription(
     let deleted_here =
         crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
 
+    // Whole events first, the days the feed changed out of a series after. A
+    // feed writes a series and its moved or cancelled days the way a calendar
+    // server does, under the series' own UID and told apart by RECURRENCE-ID.
+    // Saved each under that UID, they landed on one row and whichever the feed
+    // listed last won: the series became its one moved day, or the moved or
+    // cancelled day was lost. Told apart here and folded the way the
+    // calendar-server read folds them, through the same function.
+    let (whole_events, changed_days): (Vec<&CalDavEvent>, Vec<&CalDavEvent>) = remote_events
+        .iter()
+        .partition(|event| event.recurrence_id.is_none());
+
     // Everything the feed carries is written down before anything is removed.
     // There is no transaction to reach for here, so the order is what stops a
     // feed that fails halfway through from leaving an empty calendar behind.
-    let mut in_feed = std::collections::HashSet::new();
-    for remote in &remote_events {
-        in_feed.insert(remote.uid.as_str());
+    //
+    // Owned strings, because a changed day is stored under an identity built
+    // here rather than borrowed from the feed, and it has to be in this set or
+    // the pass below removes the day the fold has just stored.
+    let mut in_feed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for remote in whole_events {
+        in_feed.insert(remote.uid.clone());
 
         // An event somebody deleted on this computer. The feed goes on
         // carrying it for as long as its publisher does, and writing it back
@@ -1199,6 +1230,24 @@ pub async fn refresh_subscription(
                 result.created += 1;
             }
         }
+    }
+    // After every whole event is stored, so a series is held by the time its
+    // changed day is folded into it, whichever the feed listed first. The
+    // provider itself took the day out, so the series is not left waiting to
+    // send anything to a feed that is never written to.
+    for changed in changed_days {
+        let Some(the_day_it_was) = changed.recurrence_id.as_deref() else {
+            continue;
+        };
+        one_caldav_day_kept_out_of_its_series(
+            cache,
+            (account_id, &calendar.id),
+            changed,
+            the_day_it_was,
+            &deleted_here,
+            &mut in_feed,
+            &mut result,
+        )?;
     }
     // Only what the feed has stopped carrying goes. An event filed here by
     // hand has no identity from the feed and is left alone. Silently, for the
@@ -4852,6 +4901,344 @@ mod tests {
              on the diary: {:?}",
             everything_drawn_on(&cache, the_cancelled_thursday())
         );
+    }
+
+    // ── A subscribed feed's series and the days it changed ───────────────
+    //
+    // A feed writes a series and its moved or cancelled days the way a
+    // calendar server does: VEVENTs sharing one UID, told apart by
+    // RECURRENCE-ID. The refresh saved each under that UID, and the table
+    // keeps one row per identity, so whichever VEVENT came last won. Series
+    // last, the moved day was lost; series first, the whole series became
+    // that one day.
+
+    /// Assembly, every Tuesday at nine, as a school's feed writes it.
+    const THE_ASSEMBLY: &str = "BEGIN:VEVENT\r\nUID:assembly\r\nSUMMARY:Assembly\r\n\
+         DTSTART:20260303T090000Z\r\nDTEND:20260303T093000Z\r\n\
+         RRULE:FREQ=WEEKLY;BYDAY=TU\r\nEND:VEVENT\r\n";
+
+    /// The assembly of Tuesday 10 March, moved to two in the afternoon.
+    const THE_ASSEMBLY_MOVED: &str = "BEGIN:VEVENT\r\nUID:assembly\r\n\
+         RECURRENCE-ID:20260310T090000Z\r\nSUMMARY:Assembly\\, after lunch\r\n\
+         DTSTART:20260310T140000Z\r\nDTEND:20260310T143000Z\r\nEND:VEVENT\r\n";
+
+    /// The assembly of Tuesday 10 March, called off.
+    const THE_ASSEMBLY_CANCELLED: &str = "BEGIN:VEVENT\r\nUID:assembly\r\n\
+         RECURRENCE-ID:20260310T090000Z\r\nSUMMARY:Assembly\r\n\
+         DTSTART:20260310T090000Z\r\nDTEND:20260310T093000Z\r\n\
+         STATUS:CANCELLED\r\nEND:VEVENT\r\n";
+
+    /// The identity the moved Tuesday is stored under: the series' UID and
+    /// the day it was, the shape the calendar-server read gives it.
+    const THE_MOVED_TUESDAYS_IDENTITY: &str = "assembly:2026-03-10T09:00:00Z";
+
+    fn a_feed_of(vevents: &[&str]) -> String {
+        format!(
+            "BEGIN:VCALENDAR\r\nVERSION:2.0\r\n{}END:VCALENDAR\r\n",
+            vevents.concat()
+        )
+    }
+
+    fn the_changed_tuesday() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 10).expect("a real date")
+    }
+
+    fn the_tuesday_after() -> chrono::NaiveDate {
+        chrono::NaiveDate::from_ymd_opt(2026, 3, 17).expect("a real date")
+    }
+
+    fn a_subscribed_calendar(id: &str) -> CalendarContainer {
+        let mut calendar = container(id, "acct");
+        calendar.name = "School".to_string();
+        calendar.source_provider = Some("subscription".to_string());
+        calendar
+    }
+
+    /// One refresh of the calendar from a feed carrying exactly this text.
+    async fn refreshed_from(
+        cache: &MessageCache,
+        calendar: &mut CalendarContainer,
+        feed: String,
+    ) -> CalendarSyncResult {
+        let (address, _heard) = answering("200 OK", "text/calendar; charset=utf-8", feed).await;
+        calendar.subscription_url = Some(format!("http://{address}/feed.ics"));
+        let result = refresh_subscription(cache, &ICalSubscriptionClient::new(), calendar, "acct")
+            .await
+            .expect("the refresh to finish");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        result
+    }
+
+    /// The series and its moved Tuesday, each checked for what it has to
+    /// hold, and both handed back for whatever else a case asks.
+    fn the_series_and_its_moved_tuesday(
+        cache: &MessageCache,
+        calendar: &CalendarContainer,
+        case: &str,
+    ) -> (CalendarEventEntry, CalendarEventEntry) {
+        let stored = cache
+            .get_events_for_calendar(&calendar.id)
+            .expect("the calendar to be readable");
+        assert_eq!(
+            stored.len(),
+            2,
+            "{case}: a series and its moved day should leave two rows: {stored:?}"
+        );
+        let series = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() == Some("assembly"))
+            .unwrap_or_else(|| panic!("{case}: the series under its own UID: {stored:?}"))
+            .clone();
+        assert_eq!(
+            series.recurrence_rule.as_deref(),
+            Some("FREQ=WEEKLY;BYDAY=TU"),
+            "{case}: the series lost its repeat rule"
+        );
+        assert!(
+            series.start_datetime.starts_with("2026-03-03T09:00"),
+            "{case}: the series starts at {}",
+            series.start_datetime
+        );
+        assert!(
+            series
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260310T090000"),
+            "{case}: the moved Tuesday was not taken off the series: {:?}",
+            series.exception_dates
+        );
+        assert!(
+            !series.pending,
+            "{case}: a feed is never written to, so nothing may wait to be sent"
+        );
+        let moved = stored
+            .iter()
+            .find(|row| row.provider_event_id.as_deref() == Some(THE_MOVED_TUESDAYS_IDENTITY))
+            .unwrap_or_else(|| panic!("{case}: the moved day under its own identity: {stored:?}"))
+            .clone();
+        assert!(
+            moved.start_datetime.starts_with("2026-03-10T14:00"),
+            "{case}: the moved day is at {}",
+            moved.start_datetime
+        );
+        assert_eq!(moved.summary, "Assembly, after lunch", "{case}");
+        assert_eq!(
+            moved.cut_from_event_id.as_deref(),
+            Some(series.id.as_str()),
+            "{case}: the moved day does not say which series it came out of"
+        );
+        let drawn = everything_drawn_on(cache, the_changed_tuesday());
+        assert!(
+            drawn.len() == 1 && drawn[0].starts_with("2026-03-10T14:00"),
+            "{case}: the changed Tuesday should show the assembly once, after \
+             lunch: {drawn:?}"
+        );
+        assert_eq!(
+            everything_drawn_on(cache, the_tuesday_after()).len(),
+            1,
+            "{case}: the series stopped repeating"
+        );
+        (series, moved)
+    }
+
+    #[tokio::test]
+    async fn test_a_feeds_series_and_its_moved_day_are_kept_apart_whichever_the_feed_lists_first() {
+        for (index, (case, feed)) in [
+            (
+                "series first",
+                a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]),
+            ),
+            (
+                "moved day first",
+                a_feed_of(&[THE_ASSEMBLY_MOVED, THE_ASSEMBLY]),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cache = temp_cache(&format!("feed_series_and_moved_day_{index}"));
+            let mut calendar = a_subscribed_calendar("sub-assembly");
+            refreshed_from(&cache, &mut calendar, feed).await;
+            the_series_and_its_moved_tuesday(&cache, &calendar, case);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_day_a_feed_cancels_comes_off_its_series_whichever_the_feed_lists_first() {
+        for (index, (case, feed)) in [
+            (
+                "series first",
+                a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_CANCELLED]),
+            ),
+            (
+                "cancelled day first",
+                a_feed_of(&[THE_ASSEMBLY_CANCELLED, THE_ASSEMBLY]),
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cache = temp_cache(&format!("feed_series_and_cancelled_day_{index}"));
+            let mut calendar = a_subscribed_calendar("sub-assembly-off");
+            refreshed_from(&cache, &mut calendar, feed).await;
+
+            let stored = cache
+                .get_events_for_calendar(&calendar.id)
+                .expect("the calendar to be readable");
+            assert_eq!(
+                stored.len(),
+                1,
+                "{case}: a cancelled day is no appointment of its own: {stored:?}"
+            );
+            assert_eq!(
+                stored[0].recurrence_rule.as_deref(),
+                Some("FREQ=WEEKLY;BYDAY=TU"),
+                "{case}: the series lost its repeat rule"
+            );
+            assert!(
+                stored[0]
+                    .exception_dates
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("20260310T090000"),
+                "{case}: the cancelled day was not taken off the series: {:?}",
+                stored[0].exception_dates
+            );
+            assert!(
+                everything_drawn_on(&cache, the_changed_tuesday()).is_empty(),
+                "{case}: the cancelled assembly still shows: {:?}",
+                everything_drawn_on(&cache, the_changed_tuesday())
+            );
+            assert_eq!(
+                everything_drawn_on(&cache, the_tuesday_after()).len(),
+                1,
+                "{case}: the series stopped repeating"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_refreshing_a_feed_again_leaves_its_series_and_moved_day_as_they_were() {
+        let cache = temp_cache("feed_moved_day_twice");
+        let mut calendar = a_subscribed_calendar("sub-assembly-twice");
+        let feed = a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]);
+
+        refreshed_from(&cache, &mut calendar, feed.clone()).await;
+        let (series, moved) = the_series_and_its_moved_tuesday(&cache, &calendar, "first");
+        let again = refreshed_from(&cache, &mut calendar, feed).await;
+        let (series_again, moved_again) =
+            the_series_and_its_moved_tuesday(&cache, &calendar, "second");
+
+        assert_eq!(
+            (again.created, again.deleted),
+            (0, 0),
+            "the second refresh made or removed a row: {again:?}"
+        );
+        assert_eq!(
+            (series.id, series.exception_dates),
+            (series_again.id, series_again.exception_dates),
+            "the series changed on a refresh that brought nothing new"
+        );
+        assert_eq!(
+            (moved.id, moved.start_datetime),
+            (moved_again.id, moved_again.start_datetime),
+            "the moved day changed on a refresh that brought nothing new"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_series_an_earlier_refresh_folded_onto_its_moved_day_is_put_right_by_the_next() {
+        // What the old refresh left when the moved day came last: one row
+        // under the series' UID, holding the moved day's time and no repeat
+        // rule. Nothing carries a RECURRENCE-ID over from a held row, so the
+        // series' own VEVENT writes the row back to the series.
+        let cache = temp_cache("feed_collapsed_row");
+        let mut calendar = a_subscribed_calendar("sub-assembly-collapsed");
+        let mut collapsed = held_event("collapsed-row", "assembly", &calendar.id, "acct");
+        collapsed.summary = "Assembly, after lunch".to_string();
+        collapsed.start_datetime = "2026-03-10T14:00:00Z".to_string();
+        collapsed.end_datetime = "2026-03-10T14:30:00Z".to_string();
+        collapsed.provider_recurrence_id = Some("2026-03-10T09:00:00Z".to_string());
+        cache
+            .save_calendar_event(&collapsed)
+            .expect("the row the old refresh left");
+
+        refreshed_from(
+            &cache,
+            &mut calendar,
+            a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]),
+        )
+        .await;
+
+        let (series, _moved) = the_series_and_its_moved_tuesday(&cache, &calendar, "put right");
+        assert_eq!(
+            series.id, "collapsed-row",
+            "the series should be the row already held, put right, not a new one"
+        );
+        assert_eq!(series.provider_recurrence_id, None);
+    }
+
+    #[tokio::test]
+    async fn test_a_moved_day_of_a_feed_deleted_here_stays_deleted() {
+        let cache = temp_cache("feed_moved_day_deleted_here");
+        let mut calendar = a_subscribed_calendar("sub-assembly-deleted-day");
+        let feed = a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]);
+        refreshed_from(&cache, &mut calendar, feed.clone()).await;
+        let (_series, moved) = the_series_and_its_moved_tuesday(&cache, &calendar, "before");
+        cache
+            .delete_calendar_event(&moved.id)
+            .expect("the moved day to be deleted here");
+
+        for pass in 1..=2 {
+            refreshed_from(&cache, &mut calendar, feed.clone()).await;
+            assert!(
+                cache
+                    .get_event_by_provider_id("acct", THE_MOVED_TUESDAYS_IDENTITY)
+                    .expect("the calendar to be readable")
+                    .is_none(),
+                "the moved day deleted here came back on refresh {pass}"
+            );
+            // Nothing at all, not the moved day and not the series at the
+            // time the day used to be: deleting the moved assembly is not
+            // asking for the nine o'clock one back.
+            assert!(
+                everything_drawn_on(&cache, the_changed_tuesday()).is_empty(),
+                "the moved day deleted here still shows after refresh {pass}: {:?}",
+                everything_drawn_on(&cache, the_changed_tuesday())
+            );
+            assert_eq!(
+                everything_drawn_on(&cache, the_tuesday_after()).len(),
+                1,
+                "the series stopped repeating after refresh {pass}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_feeds_series_deleted_here_stays_deleted() {
+        let cache = temp_cache("feed_series_deleted_here");
+        let mut calendar = a_subscribed_calendar("sub-assembly-deleted-series");
+        let feed = a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]);
+        refreshed_from(&cache, &mut calendar, feed.clone()).await;
+        let series = cache
+            .get_event_by_provider_id("acct", "assembly")
+            .expect("the calendar to be readable")
+            .expect("the series");
+        cache
+            .delete_calendar_event(&series.id)
+            .expect("the series to be deleted here");
+
+        for pass in 1..=2 {
+            refreshed_from(&cache, &mut calendar, feed.clone()).await;
+            assert!(
+                cache
+                    .get_event_by_provider_id("acct", "assembly")
+                    .expect("the calendar to be readable")
+                    .is_none(),
+                "the series deleted here came back on refresh {pass}"
+            );
+        }
     }
 
     #[tokio::test]

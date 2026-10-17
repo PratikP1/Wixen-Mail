@@ -1084,6 +1084,14 @@ write path added by this milestone passes through that gate.
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-19 keeps a subscribed
     feed's repeating event and its moved or cancelled days apart (finding #28). It adds no
     `[D]` clause and the box stays open.
+  - 13.2-19 on 2026-10-16: the feed refresh takes a series and the days changed out of it
+    apart by RECURRENCE-ID and folds each changed day through the calendar-server read's own
+    function, so a moved day shows once at its new time and a cancelled one not at all,
+    whichever the feed lists first, and a row the old refresh collapsed is put back to the
+    series at the next refresh (finding #28). The fold also keeps a changed day deleted here
+    off its series, for a feed and a calendar server alike. Held by five cases in
+    `application::caldav_sync` and two new guard records; ledger 876 is the tester's half and
+    878 the count it leaves. No `[D]` clause is added and the box stays open.
 
 - [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
   - Evidence: **that paragraph stopped being true on 2026-09-10, when `05.1-03` created
@@ -1327,6 +1335,13 @@ write path added by this milestone passes through that gate.
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-19 makes the address
     book's XML decoder the one the calendar server's reader uses too (finding #46). It adds no
     `[D]` clause and the box stays ticked.
+  - 13.2-19 on 2026-10-16: the address book's decoder moved into `service::caldav` and is
+    applied inside `extract_xml_value`, extended to numeric references and with a CDATA
+    section returned as written, so the calendar server's reader and the free and busy reader
+    now take XML's escaping off the same way the address book always did (finding #46). The
+    address book's own wrapper is gone, so no value is decoded twice. The calendar server's
+    reader itself sits under no requirement, which this line says rather than a requirement of
+    its own. Ledger 877 is the tester's half. No `[D]` clause is added and the box stays ticked.
 
 ### How the application speaks
 
@@ -7832,11 +7847,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
-| PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause |
+| PIM-03 | Phase 5 | Pending; phase 13.2: 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause. Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | PIM-04 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
-| PIM-05 | Phase 5 | Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause |
+| PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | FEEDBACK-01 | Phase 6 | Pending |
 | FEEDBACK-02 | Phase 6 | Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause |
 | FEEDBACK-03 | Phase 6 | Complete |
