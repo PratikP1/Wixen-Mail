@@ -1427,6 +1427,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Things said at the same moment are heard together (2026-10-17).** When several things
+  happened at once, such as a message that could not be sent, the connection dropping and the
+  Outbox finishing, each sentence was written over the one before it, so a screen reader spoke
+  only the last one, "The Outbox is done", and the reason the message failed was never heard.
+  Now everything one check, one round of updates or one command says at the same moment is
+  spoken as one line, the most urgent first. The status bar shows the same sentences in the
+  same order, where before it showed only the last. When one kind of event is reported several
+  times before the status bar is updated, such as new mail arriving three times in a row, the
+  bar shows its latest sentence once.
+
+  Known limitation: nobody has listened to the joined line yet, on a real failed send or
+  anywhere else. Buttons and lists in other windows and dialogs that say two things for one
+  key press are not joined; the ones checked say one thing at a time.
 - **A meeting or a contact deleted while this computer was away leaves at the next full read
   (2026-10-17).** Google Calendar, Google Contacts and Outlook contacts hand this program a
   marker so each sync asks only for what changed. When the marker is too old, or the first
