@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 769 records have arrived since and have not been through it.
+# 774 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -505,7 +505,7 @@ red = [
     "application::tasks_sync::tests::test_what_stays_here_is_said_without_being_called_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -520,7 +520,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_counts_what_went_up",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -533,7 +533,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_says_how_many_were_left_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -546,9 +546,15 @@ red = [
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
     "application::tasks_sync::tests::test_the_summary_says_what_happened_in_words",
+    # Added 2026-10-17 by 13.2-20's re-measure: the calendar holder's two
+    # summary cases read the tasks sentence through this branch, and the
+    # record had never named them.
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_alone_when_nobody_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -565,7 +571,7 @@ red = [
     "application::tasks_sync::tests::test_several_failures_are_counted_not_listed",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -737,7 +743,7 @@ tests_last_seen = [
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
@@ -914,7 +920,7 @@ tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -1620,6 +1626,100 @@ tests_last_seen = [
     { file = "src/service/carddav.rs", tests = 35 },
 ]
 
+# A task's push clearing the waiting flag whatever the row now says, so a tick
+# or a due-window completion made while the update was at the provider stops
+# waiting and never leaves (audit #1, T-13.2-17-01). Written 2026-10-17 by
+# 13.2-20, taken by hand against the whole library, 9,239 tests, with nothing
+# else red.
+[[guard]]
+name = "a task changed while its update was at the provider stays waiting"
+file = "src/data/message_cache/tasks.rs"
+before = '''                    pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END'''
+after = '''                    pending = CASE WHEN ?4 = ?4 THEN 0 ELSE pending END'''
+red = [
+    "application::tasks_sync::tests::test_a_task_completed_from_the_due_window_while_google_takes_its_update_stays_waiting",
+    "application::tasks_sync::tests::test_a_task_ticked_while_google_takes_its_update_is_sent_by_the_next_sync",
+    "data::message_cache::tasks::tests::test_a_task_completed_from_the_due_window_while_its_push_was_in_flight_stays_waiting",
+    "data::message_cache::tasks::tests::test_a_task_ticked_while_its_push_was_in_flight_stays_waiting_and_keeps_the_tick",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task made here and ticked while its create was at the provider renamed
+# with the provider's copy, so the tick is written over (audit #1,
+# T-13.2-17-02). Written 2026-10-17 by 13.2-20, taken by hand against the
+# whole library, 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task ticked while its create was at the provider keeps the tick under the provider's name"
+file = "src/data/message_cache/tasks.rs"
+before = '''            Some(here) if here.updated_at != read_at => self.put_under_the_providers_name('''
+after = '''            Some(here) if false && here.updated_at != read_at => self.put_under_the_providers_name('''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_ticked_while_google_creates_it_keeps_the_tick_and_is_sent_again",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_ticked_during_its_create_keeps_the_tick_under_the_providers_id",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task deleted here while its create was at the provider written back down
+# as the provider's copy, so it returns, and the provider keeps a task nobody
+# has. Written 2026-10-17 by 13.2-20, taken by hand against the whole library,
+# 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task deleted while its create was at the provider is owed to the provider"
+file = "src/data/message_cache/tasks.rs"
+before = '''            None => self.owe_the_provider_a_deletion(task, None)?,'''
+after = '''            None => self.put_under_the_providers_name(old_id, task)?,'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_deleted_while_google_creates_it_is_deleted_there_next",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_deleted_during_its_create_is_owed_to_the_provider",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task moved into another list while its create was at the provider renamed
+# in the list it moved to, so the next update asks the provider for a task in
+# a list it never put it in, and the copy in the old list is never deleted.
+# Written 2026-10-17 by 13.2-20, taken by hand against the whole library,
+# 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task moved while its create was at the provider stays moved and the first copy is owed"
+file = "src/data/message_cache/tasks.rs"
+before = '''            Some(here) if here.task_list_id != task.task_list_id => {'''
+after = '''            Some(here) if false && here.task_list_id != task.task_list_id => {'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_moved_while_google_creates_it_stays_moved",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# The Move command leaving a task's stamp where it was, so a push that read the
+# task before the move cannot tell it changed. Only the stamp's own assertion
+# goes red: the settle compares lists as well, so the move itself is still
+# kept. Written 2026-10-17 by 13.2-20, taken by hand against the whole
+# library, 9,239 tests, with nothing else red.
+[[guard]]
+name = "moving a task stamps it"
+file = "src/presentation/managers.rs"
+before = '''            task.updated_at = chrono::Utc::now().to_rfc3339();'''
+after = '''            let _ = chrono::Utc::now().to_rfc3339();'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_moved_while_google_creates_it_stays_moved",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/presentation/managers.rs", tests = 137 },
+]
+
 [[guard]]
 name = "the tasks read does not write back a task deleted here"
 file = "src/application/tasks_sync.rs"
@@ -1637,7 +1737,7 @@ red = [
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── What the clearing itself refuses ───────────────────────────────────────
@@ -1717,8 +1817,8 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -1732,8 +1832,8 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 # The other half of keeping that note: it now outlives the list it names, and a
@@ -1750,7 +1850,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_for_a_list_that_has_gone_is_not_sent_again_and_is_not_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── What lets a deletion go ────────────────────────────────────────────────
@@ -1832,7 +1932,7 @@ tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
     { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -3375,7 +3475,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_held_by_allow_changes_waits_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3398,7 +3498,7 @@ red = [
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3411,7 +3511,7 @@ red = [
     "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3434,7 +3534,7 @@ red = [
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── The days a series calls off, crossing time zones whole ──────────────────
@@ -6687,9 +6787,15 @@ red = [
     "service::tasks_api::tests::test_a_microsoft_task_read_asks_for_the_list_under_the_name_graph_gave_it",
     "service::tasks_api::tests::test_a_new_google_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
     "service::tasks_api::tests::test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
+    # Added 2026-10-17 by 13.2-20's re-measure: the request log's two task
+    # cases build their address through this function, and the record had
+    # never named them.
+    "service::asked_and_answered::tests::test_a_refused_task_change_writes_its_reason_and_keeps_no_body",
+    "service::asked_and_answered::tests::test_a_task_delete_answered_not_found_writes_the_status_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -6714,7 +6820,7 @@ red = [
     "application::tasks_sync::tests::test_the_trait_the_sync_talks_through_still_asks_the_read_only_client",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -7341,7 +7447,7 @@ red = [
     "service::tasks_api::tests::test_the_only_words_that_can_leave_here_as_an_importance_are_the_three_microsoft_takes",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -11377,7 +11483,7 @@ after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, 
 }"""
 red = ["application::tasks_sync::tests::test_a_tasks_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -11387,7 +11493,7 @@ before = """        Ok(removed > 0)"""
 after = """        Ok(removed >= 0)"""
 red = ["data::message_cache::tasks::tests::test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there"]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -20110,7 +20216,7 @@ red = [
     "application::tasks_sync::tests::test_a_move_whose_delete_is_refused_is_finished_by_the_sync_after_it",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`
@@ -20159,7 +20265,7 @@ red = [
     "application::tasks_sync::tests::test_a_task_microsoft_holds_moves_list_the_same_way",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -20258,7 +20364,7 @@ red = [
     "test_a_move_of_a_task_that_is_no_longer_here_writes_neither_half",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
     { file = "tests/a_half_finished_task_move.rs", tests = 8 },
 ]
 
@@ -22942,7 +23048,7 @@ red = [
     "data::message_cache::tasks::tests::test_completing_a_task_sets_done_once_and_never_toggles_it_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 # ── 06-09 task 3: one window, every due thing a row ─────────────────────────
@@ -38811,7 +38917,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -38843,7 +38949,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 

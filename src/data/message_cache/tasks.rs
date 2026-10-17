@@ -548,17 +548,26 @@ impl MessageCache {
     /// change went up. Without recording the progress word here too, it goes
     /// stale the moment a change is pushed: the next local edit would echo
     /// back a word the provider has already moved past.
+    ///
+    /// The stamp and the word are always written; the flag is cleared only when
+    /// the row still carries `read_at`, the `updated_at` the push read. The
+    /// window writes on a connection of its own while a sync pushes, so a tick
+    /// made during the push lands on a row that is no longer the one sent, and
+    /// clearing the flag there would keep that tick from ever leaving. One
+    /// statement, so nothing can land between the comparison and the write.
     pub fn mark_task_sent(
         &self,
         task_id: &str,
         remote_updated: Option<&str>,
         remote_status: Option<&str>,
-        _read_at: &str,
+        read_at: &str,
     ) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE tasks SET pending = 0, remote_updated = ?1, remote_status = ?2 WHERE id = ?3",
-                rusqlite::params![remote_updated, remote_status, task_id],
+                "UPDATE tasks SET remote_updated = ?1, remote_status = ?2,
+                    pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END
+                 WHERE id = ?3",
+                rusqlite::params![remote_updated, remote_status, task_id, read_at],
             )
             .map_err(|e| Error::Other(format!("Failed to clear the pending flag: {}", e)))?;
         Ok(())
@@ -567,11 +576,89 @@ impl MessageCache {
     /// A task the provider has given a new id, because it was made here.
     ///
     /// The row is rewritten rather than updated, because the id is the key.
-    pub fn rename_task(&self, old_id: &str, task: &TaskEntry, _read_at: &str) -> Result<()> {
-        self.save_task(task)?;
-        if old_id != task.id {
+    ///
+    /// `read_at` is the `updated_at` the push read, and what the person did to
+    /// the task while its create was at the provider is kept rather than
+    /// written over by the copy that was sent: a tick stays and waits to go up
+    /// as an update, a move becomes a move of a task the provider holds, and a
+    /// deletion becomes one the provider is owed. The read and the write are
+    /// one immediate transaction, so nothing the window does can land between
+    /// them.
+    pub fn rename_task(&self, old_id: &str, task: &TaskEntry, read_at: &str) -> Result<()> {
+        let renaming = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|e| Error::Other(format!("Failed to start naming a task: {}", e)))?;
+        match self.find_task(old_id)? {
+            // Deleted here while the provider was making it, so the provider
+            // holds a task nobody has any more. Written down, it would come back.
+            None => self.owe_the_provider_a_deletion(task, None)?,
+            // Moved into another list. The provider made it in the old one, so
+            // this is a move of a task the provider holds, half done: the row
+            // stays as the copy still to be made where it was put, and the copy
+            // the provider made waits to be deleted until that one exists, the
+            // state `move_a_task_the_provider_holds` leaves.
+            Some(here) if here.task_list_id != task.task_list_id => {
+                self.owe_the_provider_a_deletion(task, Some(old_id))?
+            }
+            // Ticked or completed. The provider's name and answers are kept
+            // and the change waits, so the next sync sends it as an update.
+            Some(here) if here.updated_at != read_at => self.put_under_the_providers_name(
+                old_id,
+                &TaskEntry {
+                    id: task.id.clone(),
+                    remote_updated: task.remote_updated.clone(),
+                    remote_status: task.remote_status.clone(),
+                    pending: true,
+                    ..here
+                },
+            )?,
+            Some(_) => self.put_under_the_providers_name(old_id, task)?,
+        }
+        renaming
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to name a task: {}", e)))
+    }
+
+    /// Write `named` and take away the row it was made under.
+    ///
+    /// The new row first and the old one last, for the reason
+    /// [`Self::move_a_task_the_provider_holds`] gives.
+    fn put_under_the_providers_name(&self, old_id: &str, named: &TaskEntry) -> Result<()> {
+        self.save_task(named)?;
+        if old_id != named.id {
             self.drop_synced_task(old_id)?;
         }
+        Ok(())
+    }
+
+    /// Leave the provider a deletion of `theirs`, the copy it made, waiting
+    /// for the task named `waiting_for` to be made first when there is one.
+    fn owe_the_provider_a_deletion(
+        &self,
+        theirs: &TaskEntry,
+        waiting_for: Option<&str>,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO deleted_tasks
+                    (id, account_id, task_list_id, deleted_at, waiting_for_task_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    theirs.id,
+                    theirs.account_id,
+                    theirs.task_list_id,
+                    chrono::Utc::now().to_rfc3339(),
+                    waiting_for,
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the provider is owed for a task: {}",
+                    e
+                ))
+            })?;
         Ok(())
     }
 

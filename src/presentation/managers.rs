@@ -8080,6 +8080,10 @@ pub fn file_under(
             }
             task.task_list_id = Some(into.to_string());
             task.pending = true;
+            // Stamped, as every write that leaves a task waiting is: a push
+            // reading the task before this tells a change made since by the
+            // stamp, and a move that kept the old one would read as unchanged.
+            task.updated_at = chrono::Utc::now().to_rfc3339();
             if filing.makes_a_new_row() {
                 // A task carries the provider's identity in the identifier
                 // itself, which `tasks_sync::a_provider_holds` reads, so
