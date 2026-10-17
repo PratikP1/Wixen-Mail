@@ -7805,7 +7805,9 @@ mod tests {
 
     // ── Sending what is waiting here ─────────────────────────────────────
 
-    use crate::common::answering::{answering_as_asked, answering_several};
+    use crate::common::answering::{
+        answering_as_asked, answering_each_with_its_own_status, answering_several,
+    };
 
     /// Ensure a provider's calendar and put one waiting change in it.
     fn a_pending_event_in(
@@ -10777,6 +10779,326 @@ mod tests {
         assert!(
             still_here(&cache, "from-graph"),
             "a meeting sent to Outlook in this sync was taken off by its own read"
+        );
+    }
+
+    // ── A whole Google read speaks for its window ─────────────────────────
+    //
+    // Google answers a read with no marker with every event of the calendar in
+    // the window asked for, so a row inside that window the answer did not
+    // name was deleted at Google while the marker was stale (audit #29). A
+    // read from a marker names only what changed, and its silence says nothing.
+
+    /// A Google row filed under Google's main calendar, this many days from
+    /// now, an hour long.
+    fn a_google_row(
+        cache: &MessageCache,
+        id: &str,
+        at_google: &str,
+        days: i64,
+    ) -> CalendarEventEntry {
+        let container = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("the Google calendar");
+        let starts = chrono::Utc::now() + chrono::Duration::days(days);
+        let mut row = already_held(id, at_google);
+        row.calendar_id = Some(container.id);
+        row.source_provider = Some(GOOGLE.to_string());
+        row.start_datetime = starts.format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        row.end_datetime = (starts + chrono::Duration::hours(1))
+            .format("%Y-%m-%dT%H:%M:%SZ")
+            .to_string();
+        cache
+            .save_calendar_event(&row)
+            .expect("the row to be stored");
+        row
+    }
+
+    /// One Google event this many days from now, an item of an answer.
+    fn a_google_item(at_google: &str, days: i64) -> String {
+        let starts = chrono::Utc::now() + chrono::Duration::days(days);
+        let written = |at: chrono::DateTime<chrono::Utc>| at.format("%Y-%m-%dT%H:%M:%SZ");
+        format!(
+            "{{\"id\":\"{at_google}\",\"status\":\"confirmed\",\"summary\":\"Held\",\
+               \"etag\":\"\\\"e1\\\"\",\"start\":{{\"dateTime\":\"{}\"}},\
+               \"end\":{{\"dateTime\":\"{}\"}}}}",
+            written(starts),
+            written(starts + chrono::Duration::hours(1))
+        )
+    }
+
+    /// A marker stored for the main Google calendar, so its next read follows
+    /// it.
+    fn a_google_marker(cache: &MessageCache, marker: &str) {
+        cache
+            .save_sync_state(&SyncState {
+                id: "sync-google".to_string(),
+                account_id: "acct".to_string(),
+                sync_type: "calendar".to_string(),
+                provider: GOOGLE.to_string(),
+                sync_token: Some(marker.to_string()),
+                delta_link: None,
+                last_full_sync: Some(days_from_now(-3)),
+                last_incremental_sync: None,
+            })
+            .expect("the sync marker to be stored");
+    }
+
+    fn the_google_marker(cache: &MessageCache) -> Option<String> {
+        cache
+            .get_sync_state("acct", "calendar", GOOGLE)
+            .expect("the sync state to be readable")
+            .and_then(|state| state.sync_token)
+    }
+
+    /// Whether a request read a window whole rather than following a marker.
+    fn reads_google_whole(request: &str) -> bool {
+        let line = asked_for(request);
+        line.contains("timeMin=") && line.contains("timeMax=") && !line.contains("syncToken=")
+    }
+
+    #[tokio::test]
+    async fn test_a_whole_google_read_takes_off_what_it_did_not_name_inside_its_window() {
+        let cache = temp_cache("google_a_whole_read_takes_off");
+        a_google_row(&cache, "gone-here", "gone-1", 10);
+        a_google_row(&cache, "early-here", "early-1", -170);
+        a_google_row(&cache, "far-here", "far-1", 730);
+        a_google_row(&cache, "kept-here", "kept-1", 10);
+        let mut waiting = a_google_row(&cache, "waiting-here", "waiting-1", 10);
+        waiting.pending = true;
+        cache.save_calendar_event(&waiting).expect("the change");
+        let mut series = a_google_row(&cache, "series-here", "series-1", -200);
+        series.recurrence_rule = Some("FREQ=WEEKLY".to_string());
+        cache.save_calendar_event(&series).expect("the series");
+        let mut day = a_google_row(&cache, "day-here", "series-1_day", 10);
+        day.cut_from_event_id = Some(series.id.clone());
+        cache.save_calendar_event(&day).expect("the changed day");
+        let noted = a_google_row(&cache, "noted-here", "noted-1", 10);
+        cache
+            .delete_calendar_event(&noted.id)
+            .expect("the event to be deleted here");
+        cache.save_calendar_event(&noted).expect("the row back");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![a_google_answer(&[
+                a_google_item("kept-1", 10),
+                a_google_item("series-1_day", 10),
+            ])],
+        )
+        .await;
+
+        let result =
+            sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+                .await
+                .expect("the sync to finish");
+        let asked = heard(listening, "one read").await.expect("one request");
+
+        assert!(reads_google_whole(&asked[0]), "{}", asked_for(&asked[0]));
+        for (at_google, why) in [("gone-1", "ten days ahead"), ("early-1", "170 days back")] {
+            assert!(
+                !still_here(&cache, at_google),
+                "a meeting {why}, inside the window, that Google no longer holds is still here"
+            );
+        }
+        for (at_google, why) in [
+            ("far-1", "outside the window the read asked about"),
+            ("kept-1", "named by the answer"),
+            ("waiting-1", "carrying a change waiting here"),
+            ("series-1", "a series starting before the window"),
+            (
+                "series-1_day",
+                "a changed day the answer named under its own id",
+            ),
+            ("noted-1", "deleted here"),
+        ] {
+            assert!(
+                still_here(&cache, at_google),
+                "a row {why} was taken off: {at_google}"
+            );
+        }
+        assert_eq!(result.deleted, 2, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_whole_google_read_asks_for_six_months_back_and_a_year_ahead() {
+        // The window the read asks for and the one the pass after it speaks
+        // for are one value, so neither can drift from the other.
+        let cache = temp_cache("google_the_window_asked_for");
+        let (address, listening) =
+            answering_several("200 OK", "application/json", vec![a_google_answer(&[])]).await;
+        let before = chrono::Utc::now();
+
+        sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+            .await
+            .expect("the sync to finish");
+        let after = chrono::Utc::now();
+        let asked = heard(listening, "one read").await.expect("one request");
+
+        let line = asked_for(&asked[0]);
+        let address = url::Url::parse(&format!(
+            "http://loopback{}",
+            line.strip_prefix("GET ").unwrap_or(line)
+        ))
+        .expect("the request to be an address");
+        let asked_about = |name: &str| {
+            address
+                .query_pairs()
+                .find(|(key, _)| key == name)
+                .and_then(|(_, value)| chrono::DateTime::parse_from_rfc3339(&value).ok())
+                .map(|at| at.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|| panic!("no {name} in {line}"))
+        };
+        let back = chrono::Duration::days(HOW_FAR_BACK_THE_READ_ASKS);
+        let ahead = chrono::Duration::days(HOW_FAR_AHEAD_THE_READ_ASKS);
+        let from = asked_about("timeMin");
+        let to = asked_about("timeMax");
+        assert!(from >= before - back && from <= after - back, "{line}");
+        assert!(to >= before + ahead && to <= after + ahead, "{line}");
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_from_a_marker_takes_nothing_off_for_being_missing() {
+        let cache = temp_cache("google_a_marker_read_takes_nothing_off");
+        a_google_row(&cache, "quiet-here", "quiet-1", 10);
+        a_google_marker(&cache, "marker-old");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec!["{\"items\":[],\"nextSyncToken\":\"marker-2\"}".to_string()],
+        )
+        .await;
+
+        let result =
+            sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+                .await
+                .expect("the sync to finish");
+        let asked = heard(listening, "one read").await.expect("one request");
+
+        assert!(
+            asked_for(&asked[0]).contains("syncToken=marker-old"),
+            "{}",
+            asked_for(&asked[0])
+        );
+        assert!(
+            still_here(&cache, "quiet-1"),
+            "a meeting a read of what changed did not mention was taken off"
+        );
+        assert_eq!(result.deleted, 0, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_google_marker_answered_gone_is_read_whole_and_takes_off_what_went_meanwhile() {
+        // A laptop shut for two weeks: the marker has expired, Google says
+        // 410, and the whole read after it is the only word on what was
+        // cancelled meanwhile.
+        let cache = temp_cache("google_a_marker_gone");
+        a_google_row(&cache, "gone-here", "gone-1", 10);
+        a_google_row(&cache, "kept-here", "kept-1", 10);
+        a_google_marker(&cache, "marker-old");
+        let whole = a_google_answer(&[a_google_item("kept-1", 10)]);
+        let (address, listening) = answering_each_with_its_own_status(
+            "application/json",
+            vec![
+                Box::new(|_: &[String]| {
+                    (
+                        "410 Gone",
+                        "{\"error\":{\"code\":410,\"message\":\"Sync token is no longer \
+                         valid, a full sync is required.\"}}"
+                            .to_string(),
+                    )
+                }),
+                Box::new(move |_: &[String]| ("200 OK", whole.clone())),
+            ],
+        )
+        .await;
+
+        let result =
+            sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct")
+                .await
+                .expect("the sync to finish");
+        let asked = heard(listening, "the refused read and the whole one")
+            .await
+            .expect("two requests");
+
+        assert!(asked_for(&asked[0]).contains("syncToken=marker-old"));
+        assert!(reads_google_whole(&asked[1]), "{}", asked_for(&asked[1]));
+        assert!(
+            !still_here(&cache, "gone-1"),
+            "a meeting cancelled while the marker was stale is still here"
+        );
+        assert!(still_here(&cache, "kept-1"));
+        assert_eq!(result.deleted, 1, "{result:?}");
+        assert_eq!(the_google_marker(&cache).as_deref(), Some("marker-1"));
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_that_fails_another_way_keeps_its_marker_and_reads_nothing_whole() {
+        // Anything but Google saying the marker expired is a fault to say,
+        // not a reason to download the whole calendar again (audit #29 (a)).
+        let cache = temp_cache("google_a_read_fails_another_way");
+        a_google_row(&cache, "gone-here", "gone-1", 10);
+        a_google_marker(&cache, "marker-old");
+        // Room for the whole read the old code made, so it is seen if made.
+        let (address, _listening) = answering_each_with_its_own_status(
+            "application/json",
+            vec![
+                Box::new(|_: &[String]| ("404 Not Found", "{}".to_string())),
+                Box::new(|_: &[String]| ("200 OK", a_google_answer(&[]))),
+            ],
+        )
+        .await;
+
+        let read =
+            sync_google_calendar(&cache, &google_reading_from(&address), "a-token", "acct").await;
+
+        assert!(
+            read.is_err(),
+            "a read refused for a reason other than an expired marker was read whole: {read:?}"
+        );
+        assert_eq!(
+            the_google_marker(&cache).as_deref(),
+            Some("marker-old"),
+            "the marker was let go of over a passing fault"
+        );
+        assert!(still_here(&cache, "gone-1"));
+    }
+
+    #[tokio::test]
+    async fn test_a_meeting_this_sync_sent_to_google_is_not_taken_off_by_its_read() {
+        // The calendar server's rule and Outlook's: what the push has just put
+        // there counts as named, since an answer read a moment after the
+        // create may not carry it yet.
+        let cache = temp_cache("google_what_was_just_sent");
+        let mut made_here = a_google_row(&cache, "made-here", "unused", 10);
+        made_here.provider_event_id = None;
+        made_here.pending = true;
+        cache.save_calendar_event(&made_here).expect("the change");
+        let (address, listening) = answering_several(
+            "200 OK",
+            "application/json",
+            vec![
+                "{\"id\":\"from-google\",\"updated\":\"2026-03-06T10:00:00Z\"}".to_string(),
+                a_google_answer(&[]),
+            ],
+        )
+        .await;
+
+        sync_google_calendar(
+            &cache,
+            &GoogleApiClient::allowed_to_change_things_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish");
+        heard(listening, "a create and a read")
+            .await
+            .expect("two requests");
+
+        assert!(
+            still_here(&cache, "from-google"),
+            "a meeting sent to Google in this sync was taken off by its own read"
         );
     }
 

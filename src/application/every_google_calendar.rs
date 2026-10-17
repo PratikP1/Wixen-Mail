@@ -165,7 +165,10 @@ pub fn taken_off_this_computer(how_many: usize) -> String {
 mod tests {
     use super::*;
     use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
-    use crate::common::answering::{Reply, answering_as_asked, asked_for, heard};
+    use crate::common::answering::{
+        Reply, ReplyWithItsStatus, answering_as_asked, answering_each_with_its_own_status,
+        asked_for, heard,
+    };
     use crate::common::temp_home::TempHome;
 
     fn a_cache(label: &str) -> TempHome<MessageCache> {
@@ -296,21 +299,30 @@ mod tests {
     const NOTHING: &str = "{\"items\":[]}";
 
     /// What one calendar's read is answered with, by whether it carried a
-    /// marker.
+    /// marker, and the status a read from a marker is answered under.
     #[derive(Clone)]
     struct ItsAnswers {
         whole: String,
-        from_a_marker: String,
+        from_a_marker: (&'static str, String),
     }
 
     impl ItsAnswers {
         fn always(answer: String) -> Self {
             Self {
                 whole: answer.clone(),
-                from_a_marker: answer,
+                from_a_marker: ("200 OK", answer),
             }
         }
     }
+
+    /// Google's answer to a marker it no longer honours, from its guide
+    /// "Synchronize resources efficiently": the read from a marker is answered
+    /// 410 and a whole read is owed.
+    const A_MARKER_GOOGLE_NO_LONGER_HONOURS: (&str, &str) = (
+        "410 Gone",
+        "{\"error\":{\"code\":410,\"message\":\"Sync token is no longer valid, \
+         a full sync is required.\"}}",
+    );
 
     /// A stand-in for Google: one list, and each calendar's events by the
     /// calendar's id as it appears in an address. A change sent is answered
@@ -322,15 +334,18 @@ mod tests {
     }
 
     impl StandIn {
-        fn answering(&self) -> Reply {
+        fn answering(&self) -> ReplyWithItsStatus {
             let google = self.clone();
             Box::new(move |asked: &[String]| {
                 let line = asked.last().map(|r| asked_for(r)).unwrap_or_default();
+                let answered = |body: String| ("200 OK", body);
                 if line.starts_with("GET /users/me/calendarList") {
-                    return google.list.clone();
+                    return answered(google.list.clone());
                 }
                 if !line.starts_with("GET ") {
-                    return "{\"id\":\"sent\",\"updated\":\"2026-03-06T10:00:00Z\"}".to_string();
+                    return answered(
+                        "{\"id\":\"sent\",\"updated\":\"2026-03-06T10:00:00Z\"}".to_string(),
+                    );
                 }
                 google
                     .calendars
@@ -338,9 +353,9 @@ mod tests {
                     .find(|(at, _)| line.starts_with(&format!("GET /calendars/{at}/events?")))
                     .map(|(_, answers)| match line.contains("syncToken=") {
                         true => answers.from_a_marker.clone(),
-                        false => answers.whole.clone(),
+                        false => answered(answers.whole.clone()),
                     })
-                    .unwrap_or_else(|| NOTHING.to_string())
+                    .unwrap_or_else(|| answered(NOTHING.to_string()))
             })
         }
     }
@@ -353,8 +368,7 @@ mod tests {
         requests: usize,
         may_change: bool,
     ) -> (CalendarSyncResult, Vec<String>) {
-        let (address, listening) = answering_as_asked(
-            "200 OK",
+        let (address, listening) = answering_each_with_its_own_status(
             "application/json",
             (0..requests).map(|_| google.answering()).collect(),
         )
@@ -690,9 +704,12 @@ mod tests {
                     THE_TEAM_CALENDAR_IN_AN_ADDRESS,
                     ItsAnswers {
                         whole: with_a_marker("team-evt", "team-marker"),
-                        // What a refused marker looks like to the read: an
-                        // answer it cannot take, so it reads the calendar whole.
-                        from_a_marker: "refused".to_string(),
+                        // Google saying the marker has expired, so the
+                        // calendar is read whole.
+                        from_a_marker: (
+                            A_MARKER_GOOGLE_NO_LONGER_HONOURS.0,
+                            A_MARKER_GOOGLE_NO_LONGER_HONOURS.1.to_string(),
+                        ),
                     },
                 ),
             ],
@@ -723,6 +740,114 @@ mod tests {
         assert!(
             !team_reads[1].contains("syncToken=") && team_reads[1].contains("timeMin="),
             "a refused marker was not followed by a whole read: {lines:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_whole_read_of_one_calendar_takes_nothing_from_another() {
+        // The pass after a whole read speaks for the calendar that was read
+        // and nothing else, so a meeting in the team calendar is not taken off
+        // because the main calendar's answer never named it.
+        let cache = a_cache("every_google_calendar_whole_read_keeps_its_own");
+        let in_ten_days = chrono::Utc::now() + chrono::Duration::days(10);
+        let written = |at: chrono::DateTime<chrono::Utc>| at.format("%Y-%m-%dT%H:%M:%SZ");
+        let the_team_meeting = format!(
+            "{{\"items\":[{{\"id\":\"team-evt\",\"status\":\"confirmed\",\
+               \"summary\":\"Planning\",\"start\":{{\"dateTime\":\"{}\"}},\
+               \"end\":{{\"dateTime\":\"{}\"}}}}],\"nextSyncToken\":\"team-marker\"}}",
+            written(in_ten_days),
+            written(in_ten_days + chrono::Duration::hours(1))
+        );
+        let google = StandIn {
+            list: the_main_calendar_and_the_team_calendar(),
+            calendars: vec![
+                ("primary", ItsAnswers::always(NOTHING.to_string())),
+                (
+                    THE_TEAM_CALENDAR_IN_AN_ADDRESS,
+                    ItsAnswers {
+                        whole: the_team_meeting,
+                        from_a_marker: ("200 OK", NOTHING.to_string()),
+                    },
+                ),
+            ],
+        };
+
+        one_sync(&cache, &google, 3, false).await;
+        one_sync(&cache, &google, 3, false).await;
+
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "team-evt")
+                .expect("the calendar to be readable")
+                .is_some(),
+            "the main calendar's whole read took off the team calendar's meeting"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_calendar_whose_read_fails_another_way_keeps_its_marker_and_is_not_read_whole() {
+        // Only Google saying the marker expired earns a whole read. Anything
+        // else, here an answer the read cannot take, is said and the marker
+        // kept, or a passing fault costs a download of the whole calendar
+        // (audit #29 (a)).
+        let cache = a_cache("every_google_calendar_other_failure");
+        let whole_team = "{\"items\":[{\"id\":\"team-evt\",\"status\":\"confirmed\",\
+                          \"summary\":\"Planning\",\
+                          \"start\":{\"dateTime\":\"2026-03-06T09:00:00Z\"},\
+                          \"end\":{\"dateTime\":\"2026-03-06T09:15:00Z\"}}],\
+                          \"nextSyncToken\":\"team-marker\"}"
+            .to_string();
+        let google = StandIn {
+            list: the_main_calendar_and_the_team_calendar(),
+            calendars: vec![(
+                THE_TEAM_CALENDAR_IN_AN_ADDRESS,
+                ItsAnswers::always(whole_team),
+            )],
+        };
+        one_sync(&cache, &google, 3, false).await;
+
+        let unreadable = StandIn {
+            list: the_main_calendar_and_the_team_calendar(),
+            calendars: vec![(
+                THE_TEAM_CALENDAR_IN_AN_ADDRESS,
+                ItsAnswers {
+                    whole: one_event("team-whole", "Read whole"),
+                    from_a_marker: ("200 OK", "not an answer".to_string()),
+                },
+            )],
+        };
+        // Room for the whole read the old code made, so it is seen if made.
+        let (address, _listening) = answering_each_with_its_own_status(
+            "application/json",
+            (0..4).map(|_| unreadable.answering()).collect(),
+        )
+        .await;
+        let result = sync(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await
+        .expect("the sync to finish, the main calendar read");
+
+        assert!(
+            cache
+                .get_event_by_provider_id("acct", "team-whole")
+                .expect("the calendar to be readable")
+                .is_none(),
+            "a read that failed for a reason other than an expired marker was read whole"
+        );
+        let team = the_row_for(&cache, THE_TEAM_CALENDAR).expect("the team calendar");
+        assert_eq!(
+            team.sync_token.as_deref(),
+            Some("team-marker"),
+            "the marker was let go of over a passing fault"
+        );
+        assert!(
+            result.errors.iter().any(|e| e.starts_with("Team: ")),
+            "the team calendar's failure was not said: {:?}",
+            result.errors
         );
     }
 
