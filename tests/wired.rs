@@ -5066,6 +5066,11 @@ fn test_the_tick_and_every_command_speak_as_one_turn() {
 }
 
 /// The reading above can see either turn taken out of the real main window.
+///
+/// It plants on the tree as it is, so it asserts first that each turn is
+/// there to take out, and it goes red beside the check above when a turn is
+/// really taken out of the main window. The two guard records that take one
+/// out name both.
 #[test]
 fn test_the_reading_of_the_turns_can_see_either_taken_out() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");

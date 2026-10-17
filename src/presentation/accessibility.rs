@@ -37,12 +37,111 @@ pub struct Accessibility {
     /// than reading the settings file per line.
     how_much_to_say:
         std::sync::Mutex<crate::application::what_is_said_while_fetching::HowMuchToSay>,
-    /// The most recent event's written form, for the status line to pick up.
+    /// Every sentence shown since the status line last took them, for it to
+    /// pick up joined, most urgent first, the way the speech said them.
     ///
     /// The visual channel has no API of its own here: the window owns the
     /// status bar. Leaving the text where the caller can read it keeps this
     /// layer free of widget handles.
-    visual: std::sync::Mutex<Option<String>>,
+    visual: std::sync::Mutex<Vec<Shown>>,
+    /// How many turns are open. While any is, an announcement is queued and
+    /// not released, and the end of the outermost releases what they said as
+    /// one line. See [`Self::as_one_turn`].
+    turns: std::sync::atomic::AtomicUsize,
+}
+
+/// A sentence waiting for the status line, with what decides its place.
+#[derive(Debug)]
+struct Shown {
+    text: String,
+    priority: announcements::Priority,
+    /// The event it is about, so a later sentence about the same event
+    /// replaces it rather than growing the line, as the speech queue's topics
+    /// do. `None` for a sentence about no event, such as the player's
+    /// complaint, which is kept beside the rest.
+    event: Option<feedback::Event>,
+}
+
+impl Shown {
+    /// An event's sentence, ranked as the event is.
+    fn about(event: feedback::Event, text: String) -> Self {
+        Self {
+            text,
+            priority: event.priority(),
+            event: Some(event),
+        }
+    }
+
+    /// A sentence about no event, ranked with the ordinary ones.
+    fn about_no_event(text: String) -> Self {
+        Self {
+            text,
+            priority: announcements::Priority::Normal,
+            event: None,
+        }
+    }
+}
+
+/// One open turn, closed when it is dropped, whether the work in it finished
+/// or panicked: a turn left open would silence everything said after it.
+struct OpenTurn<'a>(&'a std::sync::atomic::AtomicUsize);
+
+impl<'a> OpenTurn<'a> {
+    /// Open a turn, saying whether it is the outermost one open.
+    fn open(turns: &'a std::sync::atomic::AtomicUsize) -> (Self, bool) {
+        let already_open = turns.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        (Self(turns), already_open == 0)
+    }
+}
+
+impl Drop for OpenTurn<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);
+    }
+}
+
+impl From<announcements::Priority> for screen_reader::Urgency {
+    /// The queue's priority as the screen reader is told it: urgent is never
+    /// to be dropped, high keeps the latest of its kind, and the rest may be
+    /// replaced by a newer line on the same topic.
+    fn from(priority: announcements::Priority) -> Self {
+        match priority {
+            announcements::Priority::Urgent => Self::Urgent,
+            announcements::Priority::High => Self::Important,
+            announcements::Priority::Normal | announcements::Priority::Low => Self::Routine,
+        }
+    }
+}
+
+/// Write one released line to the log, so a report of silence can be checked
+/// against whether anything was ever released to be spoken.
+///
+/// Message content is logged by length only: a body read aloud must not be
+/// written to a file on disk. So is anything else carrying what a person
+/// typed, such as the part of a name being looked up in a recipient line.
+fn log_what_is_said(spoken: &announcements::Spoken) {
+    match spoken.in_the_log {
+        announcements::InTheLog::TheWords => {
+            tracing::info!(topic = ?spoken.topic, "Speaking: {}", spoken.text)
+        }
+        announcements::InTheLog::HowManyCharacters => {
+            tracing::info!(
+                topic = ?spoken.topic,
+                "Speaking {} characters that are not written down here",
+                spoken.text.len()
+            )
+        }
+    }
+}
+
+impl From<announcements::Spoken> for screen_reader::Line {
+    fn from(spoken: announcements::Spoken) -> Self {
+        Self {
+            urgency: spoken.priority.into(),
+            topic: spoken.topic.unwrap_or_default(),
+            text: spoken.text,
+        }
+    }
 }
 
 impl Accessibility {
@@ -60,7 +159,8 @@ impl Accessibility {
             how_much_to_say: std::sync::Mutex::new(
                 crate::application::what_is_said_while_fetching::HowMuchToSay::default(),
             ),
-            visual: std::sync::Mutex::new(None),
+            visual: std::sync::Mutex::new(Vec::new()),
+            turns: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -229,15 +329,23 @@ impl Accessibility {
         let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
         let played = self.earcons.play(event, &scheme);
         if let Some(complaint) = self.earcons.take_complaint() {
-            self.show(complaint);
+            self.show(Shown::about_no_event(complaint));
         }
         Ok(played)
     }
 
-    /// Put a sentence where the status line picks it up.
-    fn show(&self, sentence: String) {
+    /// Put a sentence where the status line picks it up, beside the others
+    /// shown since it last looked, or in place of an earlier one about the
+    /// same event.
+    fn show(&self, shown: Shown) {
         if let Ok(mut visual) = self.visual.lock() {
-            *visual = Some(sentence);
+            let same_event = visual
+                .iter_mut()
+                .find(|earlier| shown.event.is_some() && earlier.event == shown.event);
+            match same_event {
+                Some(earlier) => *earlier = shown,
+                None => visual.push(shown),
+            }
         }
     }
 
@@ -264,7 +372,7 @@ impl Accessibility {
 
         let mut shown = channels
             .contains(&feedback::Channel::Visual)
-            .then(|| text.clone());
+            .then(|| Shown::about(event, text.clone()));
         if channels.contains(&feedback::Channel::Earcon) {
             let scheme = self.scheme.lock().map(|s| s.clone()).unwrap_or_default();
             self.earcons.play(event, &scheme);
@@ -273,7 +381,7 @@ impl Accessibility {
             // reaches (#81): the silence is explained where it is noticed,
             // and the event's words still go out below.
             if let Some(complaint) = self.earcons.take_complaint() {
-                shown = Some(complaint);
+                shown = Some(Shown::about_no_event(complaint));
             }
         }
         // Speech and braille both ride the one screen reader notification, so
@@ -290,12 +398,25 @@ impl Accessibility {
         Ok(())
     }
 
-    /// Take the last event's text for the status line, if there is one.
+    /// Take what was shown since the status line last looked, as one line,
+    /// most urgent first and oldest first within an urgency, joined the way
+    /// the speech for the same moment is, if anything was shown.
     ///
     /// Taking rather than reading, so the status line shows each event once
-    /// and does not redisplay an old one on the next timer tick.
+    /// and does not redisplay an old one on the next timer tick. It used to
+    /// keep the last sentence alone, so a failed send followed by the lost
+    /// connection ended on "Disconnected" and the reason never reached a
+    /// braille display (audit finding #32).
     pub fn take_visual_feedback(&self) -> Option<String> {
-        self.visual.lock().ok().and_then(|mut v| v.take())
+        let mut shown = self
+            .visual
+            .lock()
+            .map(|mut visual| std::mem::take(&mut *visual))
+            .unwrap_or_default();
+        // A stable sort, so sentences of one urgency stay in the order shown.
+        shown.sort_by_key(|one| std::cmp::Reverse(one.priority));
+        let line = screen_reader::said_together(shown.iter().map(|one| one.text.as_str()));
+        (!line.is_empty()).then_some(line)
     }
 
     /// Read the current feedback preferences.
@@ -340,14 +461,15 @@ impl Accessibility {
         }
     }
 
-    /// Queue an announcement about the application and speak what is due now.
+    /// Queue an announcement about the application and speak what is due now,
+    /// or, inside [`Self::as_one_turn`], when the turn ends.
     ///
     /// The queue paces itself, so a burst leaves a remainder behind. The UI
     /// timer calls `flush_announcements` to pick that up.
     pub fn announce(&self, text: &str, priority: announcements::Priority) -> Result<()> {
         self.announcements
             .push(announcements::Announcement::interface(text, priority))?;
-        self.flush_announcements()
+        self.release_unless_a_turn_is_open()
     }
 
     /// Queue an announcement that supersedes earlier ones on the same topic.
@@ -362,7 +484,7 @@ impl Accessibility {
     ) -> Result<()> {
         self.announcements
             .push(announcements::Announcement::interface(text, priority).with_topic(topic))?;
-        self.flush_announcements()
+        self.release_unless_a_turn_is_open()
     }
 
     /// Queue an announcement that carries something a person typed.
@@ -387,14 +509,14 @@ impl Accessibility {
                 .with_topic(topic)
                 .not_in_the_log(),
         )?;
-        self.flush_announcements()
+        self.release_unless_a_turn_is_open()
     }
 
     /// Read message content aloud. Silenced when content is muted.
     pub fn announce_content(&self, text: &str) -> Result<()> {
         self.announcements
             .push(announcements::Announcement::content(text))?;
-        self.flush_announcements()
+        self.release_unless_a_turn_is_open()
     }
 
     /// Register the control that announcements are carried on.
@@ -428,49 +550,60 @@ impl Accessibility {
         self.screen_reader.announce(text)
     }
 
-    /// Speak whatever the queue will release now, most important first.
+    /// Speak whatever the queue will release now as one line, most important
+    /// first.
     ///
-    /// Called both after queueing and from the UI timer, so announcements held
-    /// back by the rate limit are picked up rather than stranded.
+    /// Called after queueing outside a turn, at the end of a turn, and from
+    /// the UI timer, so announcements held back by the rate limit, or said
+    /// inside a turn that is still open while a dialog it opened waits, are
+    /// picked up rather than stranded.
+    ///
+    /// One line because each line ends as one write to the one control a
+    /// screen reader reads, so lines handed over one after another are heard
+    /// as the last (audit finding #32). Each is still logged on its own, and
+    /// the joined line never is.
     pub fn flush_announcements(&self) -> Result<()> {
-        for spoken in self.announcements.drain(std::time::Instant::now())? {
-            // Logged so a report of silence can be checked against whether
-            // anything was ever released to be spoken. Message content is
-            // logged by length only: a body read aloud must not be written to
-            // a file on disk. So is anything else carrying what a person
-            // typed, such as the part of a name being looked up in a
-            // recipient line.
-            match spoken.in_the_log {
-                announcements::InTheLog::TheWords => {
-                    tracing::info!(topic = ?spoken.topic, "Speaking: {}", spoken.text)
-                }
-                announcements::InTheLog::HowManyCharacters => {
-                    tracing::info!(
-                        topic = ?spoken.topic,
-                        "Speaking {} characters that are not written down here",
-                        spoken.text.len()
-                    )
-                }
-            }
-            self.screen_reader.announce_with(
-                &spoken.text,
-                match spoken.priority {
-                    announcements::Priority::Urgent => screen_reader::Urgency::Urgent,
-                    announcements::Priority::High => screen_reader::Urgency::Important,
-                    announcements::Priority::Normal | announcements::Priority::Low => {
-                        screen_reader::Urgency::Routine
-                    }
-                },
-                spoken.topic.as_deref().unwrap_or(""),
-            )?;
+        let released = self.announcements.drain(std::time::Instant::now())?;
+        for spoken in &released {
+            log_what_is_said(spoken);
         }
-        Ok(())
+        let lines: Vec<screen_reader::Line> = released.into_iter().map(Into::into).collect();
+        match screen_reader::handed_over_together(&lines) {
+            Some(line) => self
+                .screen_reader
+                .announce_with(&line.text, line.urgency, &line.topic),
+            None => Ok(()),
+        }
     }
 
-    /// Run `work` as one turn: everything it announces is said as one line
-    /// when it ends.
+    /// Release what is due now, unless a turn is open, in which case its end
+    /// releases it with everything else the turn says.
+    fn release_unless_a_turn_is_open(&self) -> Result<()> {
+        if self.turns.load(std::sync::atomic::Ordering::Acquire) > 0 {
+            return Ok(());
+        }
+        self.flush_announcements()
+    }
+
+    /// Run `work` as one turn: everything announced while it runs is said as
+    /// one line when it ends, most urgent first.
+    ///
+    /// For the places where several things are said for one reason: the UI
+    /// tick handling every update the workers sent since the last one, and
+    /// one menu, accelerator or tray command. A turn inside a turn releases
+    /// nothing; the outermost releases once. A turn whose work panics is
+    /// closed all the same and releases nothing, so the next announcement is
+    /// spoken. While a turn waits on a dialog it opened, the UI timer's own
+    /// flush releases what has been said so far, so nothing waits for the
+    /// dialog to close.
     pub fn as_one_turn<T>(&self, work: impl FnOnce() -> T) -> T {
-        work()
+        let (open, is_outermost) = OpenTurn::open(&self.turns);
+        let answer = work();
+        drop(open);
+        if is_outermost && let Err(why) = self.flush_announcements() {
+            tracing::warn!("What one turn said could not be released: {why}");
+        }
+        answer
     }
 
     /// Diagnostic snapshot of automation tree.
@@ -502,7 +635,8 @@ impl Default for Accessibility {
             how_much_to_say: std::sync::Mutex::new(
                 crate::application::what_is_said_while_fetching::HowMuchToSay::default(),
             ),
-            visual: std::sync::Mutex::new(None),
+            visual: std::sync::Mutex::new(Vec::new()),
+            turns: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 }
@@ -745,9 +879,13 @@ mod tests {
         // announcements is registered after this runs.
         let a11y = Accessibility::new().expect("accessibility");
         a11y.initialize().expect("initialize");
+        // Said together with where the cursor landed since 13.2-22, so the
+        // startup sentence is one sentence of the one line released.
         let released = lines_released(&a11y);
         assert!(
-            released.iter().any(|line| line == "Wixen Mail is ready"),
+            released
+                .iter()
+                .any(|line| line.split(". ").any(|said| said == "Wixen Mail is ready")),
             "startup released {:?}",
             released
         );
@@ -776,14 +914,21 @@ mod tests {
         let a11y = Accessibility::new().expect("accessibility");
         a11y.initialize().expect("initialize");
 
+        // One line since 13.2-22: the two are released by one flush, and so
+        // joined there rather than at the handover.
         let waiting = a11y.screen_reader.held();
+        let says = |sentence: &str| {
+            waiting
+                .iter()
+                .any(|line| line.split(". ").any(|said| said == sentence))
+        };
         assert!(
-            waiting.iter().any(|line| line == "Wixen Mail is ready"),
+            says("Wixen Mail is ready"),
             "the startup line was not waiting for a window: {:?}",
             waiting
         );
         assert!(
-            waiting.iter().any(|line| line == "Focus moved to Folders"),
+            says("Focus moved to Folders"),
             "where the cursor landed was not waiting for a window: {:?}",
             waiting
         );
@@ -1283,6 +1428,29 @@ mod tests {
         assert_eq!(
             a11y.take_visual_feedback().as_deref(),
             Some("Message not sent, the server refused the password. Disconnected")
+        );
+    }
+
+    #[test]
+    fn test_an_event_shown_again_before_the_status_line_looks_is_shown_once_at_its_latest() {
+        // The status line now keeps every sentence shown since it last
+        // looked, so it needs the bound the speech queue's topics give it: a
+        // tick that hears of new mail three times shows the latest count
+        // once, not three counts in a row, however many arrive (guardrail 5).
+        // A pin against the last-sentence-only status line, which passed it
+        // by keeping one sentence; taken red by hand against the join with no
+        // replacement, and held by its guard record.
+        let a11y = Accessibility::new().expect("accessibility");
+        for detail in ["1 message", "2 messages", "3 messages"] {
+            a11y.signal(feedback::Event::NewMail, detail)
+                .expect("signal");
+        }
+        a11y.signal(feedback::Event::ConnectionLost, "")
+            .expect("signal");
+
+        assert_eq!(
+            a11y.take_visual_feedback().as_deref(),
+            Some("Disconnected. New mail, 3 messages")
         );
     }
 

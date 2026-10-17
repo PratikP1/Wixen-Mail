@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 799 records have arrived since and have not been through it.
+# 806 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -1864,7 +1864,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -5055,7 +5055,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # Rewritten 2026-09-19 by 11-07 onto the batch's shape, where the branch
@@ -5085,7 +5085,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -11719,7 +11719,7 @@ after = """            description: Some("Primary application window".to_string(
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11732,7 +11732,7 @@ after = """            description: Some("Folder navigation".to_string()),
             state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11743,7 +11743,7 @@ before = """                state: automation::AutomationState {
 after = """                state: automation::AutomationState {"""
 red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11759,7 +11759,7 @@ after = """        let _ = (node_id, state);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11769,7 +11769,7 @@ before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"
 after = """        Default::default()"""
 red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11785,7 +11785,7 @@ after = """        let _ = (region_id, text);
         Ok(())"""
 red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 [[guard]]
@@ -11809,7 +11809,7 @@ red = [
     "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
     { file = "src/presentation/accessibility/automation.rs", tests = 2 },
 ]
 
@@ -13129,7 +13129,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -13145,7 +13145,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -13175,7 +13175,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -13189,7 +13189,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -15468,7 +15468,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -15997,7 +15997,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -18468,7 +18468,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -18511,7 +18511,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -18582,7 +18582,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -18609,7 +18609,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -19115,7 +19115,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -19370,7 +19370,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -25735,7 +25735,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # Mail out of an Outlook data file goes through the one place that files an
@@ -25865,7 +25865,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # The import worker hands an Outlook data file to the module that reads
@@ -25894,7 +25894,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # The folder import's picker answers with a folder and the handler hands it
@@ -25927,7 +25927,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # The wait before asking a mail server again grows with each failure. The
@@ -28945,7 +28945,7 @@ red = [
     "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
     { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]
 
@@ -28979,19 +28979,21 @@ tests_last_seen = [
 # that loses the device for good and reads the status bar goes red.
 #
 # Measured 2026-09-19 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`.
+# `scripts/guards.sh --remeasure`. The anchor rewritten 2026-10-17 by
+# 13.2-22, when the status line came to keep each sentence with its rank,
+# and measured again then.
 [[guard]]
 name = "signal puts the player's complaint where the eye reads it"
 file = "src/presentation/accessibility.rs"
 before = """            if let Some(complaint) = self.earcons.take_complaint() {
-                shown = Some(complaint);
+                shown = Some(Shown::about_no_event(complaint));
             }"""
 after = """            let _ = &mut shown;"""
 red = [
     "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 25 },
+    { file = "src/presentation/accessibility.rs", tests = 35 },
 ]
 
 # The plain part taken as written, its words joined and nothing skipped,
@@ -31446,7 +31448,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/help.rs", tests = 9 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # ── Every Help page has a menu id of its own (found by 12-10) ───────────────
@@ -31680,7 +31682,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 15 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # Two items in the reader window claiming Ctrl+W, so the second looks bound and
@@ -31698,7 +31700,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 15 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # A message opened in the reader with nothing composed for paper, so Print in
@@ -38580,7 +38582,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # An export item renamed on the File menu and not in the guide, so the page
@@ -40305,7 +40307,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 78 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
 
 # A save that empties where an account sits and resets the day it was added,
@@ -41813,4 +41815,142 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
+]
+
+# One flush handing the bridge only the last line it released, which is what
+# a screen reader was left to read when each line was written over the one
+# before (audit finding #32). Five cases written for the join go red, and two
+# older startup cases with them, because the startup sentence is released
+# with where the cursor landed and only the second would be left. Added
+# 2026-10-17 by 13.2-22 and taken by hand against the whole library, 9,294
+# tests, nothing else red.
+[[guard]]
+name = "lines one flush releases go out as one line, not the last alone"
+file = "src/presentation/accessibility.rs"
+before = '''        match screen_reader::handed_over_together(&lines) {'''
+after = '''        match lines.last().cloned() {'''
+red = [
+    "presentation::accessibility::tests::test_a_failed_send_the_lost_connection_and_the_outbox_said_in_one_turn_are_one_line",
+    "presentation::accessibility::tests::test_a_line_ending_in_a_question_or_an_exclamation_keeps_its_mark_when_joined",
+    "presentation::accessibility::tests::test_a_turn_inside_a_turn_releases_once_at_the_end_of_the_outer_one",
+    "presentation::accessibility::tests::test_flush_announcements_priority_order",
+    "presentation::accessibility::tests::test_lines_released_together_go_out_as_urgent_as_the_most_urgent_with_no_topic",
+    "presentation::accessibility::tests::test_nothing_said_at_startup_is_wording_from_inside_the_program",
+    "presentation::accessibility::tests::test_the_first_lines_of_a_session_are_still_waiting_when_the_window_arrives",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 35 },
+]
+
+# An announcement inside a turn released at once rather than held for the
+# turn's end, so the lines of one tick or one command are written over each
+# other again. The two cases that announce inside a turn and read what was
+# released go red. Added 2026-10-17 by 13.2-22 and taken by hand against the
+# whole library, nothing else red.
+[[guard]]
+name = "an announcement inside a turn waits for the turn's end"
+file = "src/presentation/accessibility.rs"
+before = '''        if self.turns.load(std::sync::atomic::Ordering::Acquire) > 0 {'''
+after = '''        if self.turns.load(std::sync::atomic::Ordering::Acquire) > usize::MAX - 1 {'''
+red = [
+    "presentation::accessibility::tests::test_a_failed_send_the_lost_connection_and_the_outbox_said_in_one_turn_are_one_line",
+    "presentation::accessibility::tests::test_a_turn_inside_a_turn_releases_once_at_the_end_of_the_outer_one",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 35 },
+]
+
+# A turn that is never closed when it ends, so everything said after it is
+# held for good. Only the case whose turn panics and then announces goes red:
+# the other cases announce in one turn and read what it released, and a turn
+# opened as the outermost still releases at its end. Added 2026-10-17 by
+# 13.2-22 and taken by hand against the whole library, nothing else red.
+[[guard]]
+name = "a turn is closed when it ends or panics, not left holding everything after it"
+file = "src/presentation/accessibility.rs"
+before = '''        self.0.fetch_sub(1, std::sync::atomic::Ordering::AcqRel);'''
+after = '''        let _ = self.0;'''
+red = [
+    "presentation::accessibility::tests::test_a_turn_whose_work_panics_leaves_the_next_announcement_spoken",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 35 },
+]
+
+# The status line given the last sentence shown alone, as it was, so a failed
+# send followed by the lost connection ends on "Disconnected" and the reason
+# never reaches a braille display. Added 2026-10-17 by 13.2-22 and taken by
+# hand against the whole library, nothing else red.
+[[guard]]
+name = "the status line shows every sentence of the moment, most urgent first"
+file = "src/presentation/accessibility.rs"
+before = '''        let line = screen_reader::said_together(shown.iter().map(|one| one.text.as_str()));'''
+after = '''        let line = shown.last().map(|one| one.text.clone()).unwrap_or_default();'''
+red = [
+    "presentation::accessibility::tests::test_an_event_shown_again_before_the_status_line_looks_is_shown_once_at_its_latest",
+    "presentation::accessibility::tests::test_the_status_line_shows_the_failure_before_the_lost_connection_not_the_last_alone",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 35 },
+]
+
+# A sentence about an event shown again kept beside the earlier one rather
+# than in its place, so a tick hearing of new mail three times shows three
+# counts in a row and the line grows with the mailbox (guardrail 5). Added
+# 2026-10-17 by 13.2-22 and taken by hand against the whole library, nothing
+# else red.
+[[guard]]
+name = "a sentence about an event shown again replaces the earlier one on the status line"
+file = "src/presentation/accessibility.rs"
+before = '''                .find(|earlier| shown.event.is_some() && earlier.event == shown.event);'''
+after = '''                .find(|_| false);'''
+red = [
+    "presentation::accessibility::tests::test_an_event_shown_again_before_the_status_line_looks_is_shown_once_at_its_latest",
+]
+tests_last_seen = [
+    { file = "src/presentation/accessibility.rs", tests = 35 },
+]
+
+# The command dispatch left unwrapped, so each menu, accelerator, tray or
+# conversation command says its lines one over another again. The reading
+# and its companion, which asserts the turn is there to take out, go red.
+# Added 2026-10-17 by 13.2-22 and taken by hand against the wired target, 80
+# tests, nothing else red.
+[[guard]]
+name = "every command the main window runs is one turn"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''                std::rc::Rc::new(move |id| a11y.as_one_turn(|| dispatch(id)))'''
+after = '''                std::rc::Rc::new(move |id| {
+                    let _ = &a11y;
+                    dispatch(id)
+                })'''
+red = [
+    "test_the_reading_of_the_turns_can_see_either_taken_out",
+    "test_the_tick_and_every_command_speak_as_one_turn",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 80 },
+]
+
+# The tick's drain run as a turn of a throwaway accessibility layer, so the
+# real one holds nothing and every update the workers sent is said line over
+# line again. The reading and its companion go red. Added 2026-10-17 by
+# 13.2-22 and taken by hand against the wired target, nothing else red.
+[[guard]]
+name = "the tick's drain of the workers' updates is one turn"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''                    a11y.as_one_turn(|| {
+                        while let Ok(update) = ui_rx.try_recv() {'''
+after = '''                    Accessibility::default().as_one_turn(|| {
+                        while let Ok(update) = ui_rx.try_recv() {'''
+red = [
+    "test_the_reading_of_the_turns_can_see_either_taken_out",
+    "test_the_tick_and_every_command_speak_as_one_turn",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
