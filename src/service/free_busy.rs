@@ -403,25 +403,16 @@ fn where_it_closes(xml: &str, local: &str) -> Option<usize> {
 }
 
 /// The text the first element of that name holds, with its escapes undone.
-fn text_inside(xml: &str, local: &str) -> Option<String> {
-    let held = elements_named(xml, local).first().copied()?;
-    let text = without_the_escapes(held.trim());
-    (!text.is_empty()).then_some(text)
-}
-
-/// XML's five escapes, put back.
 ///
 /// A calendar document carried inside XML has its ampersands and angle brackets
-/// written this way, and one read out with them still in it is a document with
-/// a mangled property in it.
-fn without_the_escapes(text: &str) -> String {
-    text.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        // Last, or an escaped ampersand written in front of one of the others
-        // would be put back and then read as an escape of its own.
-        .replace("&amp;", "&")
+/// written as escapes, and one read out with them still in it is a document
+/// with a mangled property in it. Undone by the calendar reader's own
+/// [`xml_text`](crate::service::caldav::xml_text), so a reply here and a
+/// calendar read there agree about what any piece of XML says.
+fn text_inside(xml: &str, local: &str) -> Option<String> {
+    let held = elements_named(xml, local).first().copied()?;
+    let text = crate::service::caldav::xml_text(held.trim());
+    (!text.is_empty()).then_some(text)
 }
 
 // ── Where the question is posted ────────────────────────────────────────────
@@ -504,7 +495,7 @@ fn the_outbox_named_in(xml: &str, server: &str) -> Option<TheOutbox> {
         .map(|held| {
             elements_named(held, "href")
                 .iter()
-                .map(|address| without_the_escapes(address.trim()))
+                .map(|address| crate::service::caldav::xml_text(address.trim()))
                 .filter(|address| !address.is_empty())
                 .collect()
         })
@@ -1556,9 +1547,23 @@ mod tests {
         // A calendar document inside XML has its ampersands written as escapes,
         // and one read out with them still in is a document with a broken
         // property in it.
-        assert_eq!(without_the_escapes("a &amp; b &lt;c&gt;"), "a & b <c>");
+        assert_eq!(
+            text_inside(
+                "<c:calendar-data>a &amp; b &lt;c&gt;</c:calendar-data>",
+                "calendar-data"
+            )
+            .as_deref(),
+            Some("a & b <c>")
+        );
         // An escaped ampersand in front of another escape is put back once.
-        assert_eq!(without_the_escapes("&amp;lt;"), "&lt;");
+        assert_eq!(
+            text_inside(
+                "<c:calendar-data>&amp;lt;</c:calendar-data>",
+                "calendar-data"
+            )
+            .as_deref(),
+            Some("&lt;")
+        );
     }
 
     #[test]

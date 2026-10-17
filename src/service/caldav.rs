@@ -1280,6 +1280,12 @@ pub(crate) fn opens_with_ignoring_case(line: &str, marker: &str) -> bool {
 /// both come back as nothing. `service::carddav` shares this one rather than
 /// growing a second extractor to tell them apart, which is written down in
 /// that file where the question arises.
+///
+/// The value comes back as the text it carries, through [`xml_text`]: XML's
+/// escaping taken off, so a title written `Dinner &amp; drinks` reaches the
+/// calendar as "Dinner & drinks" rather than being stored, read out and
+/// written back to the server with the escape in it, and a CDATA section
+/// returned exactly as written inside it.
 pub(crate) fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let open = format!("<{}", tag);
     let close = format!("</{}>", tag);
@@ -1288,8 +1294,117 @@ pub(crate) fn extract_xml_value(xml: &str, tag: &str) -> Option<String> {
     let content_start = after_open.find('>')? + 1;
     let content = &after_open[content_start..];
     let end = content.find(&close)?;
-    let value = content[..end].trim().to_string();
+    let value = xml_text(content[..end].trim());
     if value.is_empty() { None } else { Some(value) }
+}
+
+/// The text an element's content carries.
+///
+/// A CDATA section is XML's way of carrying text with nothing in it read as
+/// markup, so it comes back exactly as written inside its wrapper, `&amp;`
+/// staying `&amp;`. Everything outside one has XML's escaping taken off by
+/// [`xml_unescaped`]. A section never closed is left as it arrived, wrapper
+/// and all, since there is no telling where its text was meant to end.
+///
+/// Shared with `service::free_busy`, which finds its elements its own way and
+/// reads what is inside them the same way as everything here.
+pub(crate) fn xml_text(content: &str) -> String {
+    const OPENS: &str = "<![CDATA[";
+    const CLOSES: &str = "]]>";
+    let mut text = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(at) = rest.find(OPENS) {
+        text.push_str(&xml_unescaped(&rest[..at]));
+        let inside = &rest[at + OPENS.len()..];
+        let Some(ends) = inside.find(CLOSES) else {
+            text.push_str(&rest[at..]);
+            return text;
+        };
+        text.push_str(&inside[..ends]);
+        rest = &inside[ends + CLOSES.len()..];
+    }
+    text.push_str(&xml_unescaped(rest));
+    text
+}
+
+/// Text with every reference XML defines turned back into the character it
+/// stands for.
+///
+/// The five named ones, and a number naming a character, decimal as `&#38;`
+/// or hexadecimal as `&#x26;`. Only those, and only once. A reference this
+/// does not know is left exactly as it arrived, which is what keeps an entity a
+/// document declared for itself from ever being expanded: the document may
+/// declare what it likes and this reads the declaration as text and the
+/// reference as text. A number naming no character XML allows, `&#0;` or a
+/// surrogate, is left the same way. Reading once rather than until nothing
+/// changes is the other half of that, so a document writing `&amp;lt;` gets
+/// back `&lt;` and not `<`.
+pub(crate) fn xml_unescaped(text: &str) -> String {
+    let mut plain = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find('&') {
+        plain.push_str(&rest[..at]);
+        let from_the_ampersand = &rest[at..];
+        match the_reference_opening(from_the_ampersand) {
+            Some((letter, written_in)) => {
+                plain.push(letter);
+                rest = &from_the_ampersand[written_in..];
+            }
+            None => {
+                plain.push('&');
+                rest = &from_the_ampersand[1..];
+            }
+        }
+    }
+    plain.push_str(rest);
+    plain
+}
+
+/// The character a reference opening this text stands for, and how many bytes
+/// the reference takes, when it is one XML defines.
+fn the_reference_opening(text: &str) -> Option<(char, usize)> {
+    const NAMED: [(&str, char); 5] = [
+        ("&amp;", '&'),
+        ("&lt;", '<'),
+        ("&gt;", '>'),
+        ("&quot;", '"'),
+        ("&apos;", '\''),
+    ];
+    if let Some((reference, letter)) = NAMED
+        .iter()
+        .find(|(reference, _)| text.starts_with(reference))
+    {
+        return Some((*letter, reference.len()));
+    }
+    // The semicolon is looked for close by, so a document of "&#" with none
+    // after it costs one short look per ampersand rather than a walk to the
+    // end each time. Sixteen covers every character XML allows, written with
+    // room for leading zeros.
+    let number = text.strip_prefix("&#")?;
+    let ends = number.bytes().take(16).position(|byte| byte == b';')?;
+    let written = &number[..ends];
+    let code = match written.strip_prefix('x') {
+        Some(hex) if !hex.is_empty() && hex.bytes().all(|byte| byte.is_ascii_hexdigit()) => {
+            u32::from_str_radix(hex, 16).ok()?
+        }
+        Some(_) => return None,
+        None if !written.is_empty() && written.bytes().all(|byte| byte.is_ascii_digit()) => {
+            written.parse().ok()?
+        }
+        None => return None,
+    };
+    let letter = char::from_u32(code).filter(|&letter| is_an_xml_character(letter))?;
+    Some((letter, "&#".len() + ends + ";".len()))
+}
+
+/// Whether XML 1.0 allows this character in a document at all: a tab, a line
+/// feed, a carriage return, or anything from a space up but the two the
+/// standard leaves out. A surrogate is not a `char` and never reaches here.
+fn is_an_xml_character(letter: char) -> bool {
+    matches!(
+        letter,
+        '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..
+    )
 }
 
 /// Whether a line carries that property, whatever case it is written in.

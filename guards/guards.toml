@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 768 records have arrived since and have not been through it.
+# 769 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -743,7 +743,7 @@ tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
     { file = "src/service/ical_subscription.rs", tests = 23 },
 ]
 
@@ -1594,6 +1594,32 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
 ]
 
+# A calendar server's XML handed on with its escaping in it, so a title
+# holding "&" is stored, read out and written back as "&amp;", a quoted zone
+# name is split inside its quotes, and the address book's names and cards
+# arrive escaped now that its own decoder is gone (audit #46,
+# T-13.2-16-02). Written 2026-10-16 by 13.2-19, taken by hand against the
+# whole library, 9,229 tests, with nothing else red.
+[[guard]]
+name = "a calendar server's XML is read as the text it carries"
+file = "src/service/caldav.rs"
+before = '''    let value = xml_text(content[..end].trim());'''
+after = '''    let value = content[..end].trim().to_string();'''
+red = [
+    "service::caldav::tests::test_a_calendar_named_with_an_escape_is_named_as_written",
+    "service::caldav::tests::test_a_cdata_section_comes_back_exactly_as_written",
+    "service::caldav::tests::test_a_reference_is_read_once",
+    "service::caldav::tests::test_an_escaped_event_in_a_report_is_read_as_the_text_it_carries",
+    "service::caldav::tests::test_every_reference_xml_defines_is_read_as_its_character",
+    "service::carddav::tests::test_a_line_in_a_card_that_looks_like_a_tag_is_read_as_card_text",
+    "service::carddav::tests::test_an_escaped_ampersand_in_an_address_books_name_comes_back_as_an_ampersand",
+    "service::carddav::tests::test_card_text_arriving_with_escaped_xml_is_unescaped_before_the_card_reader_sees_it",
+]
+tests_last_seen = [
+    { file = "src/service/caldav.rs", tests = 176 },
+    { file = "src/service/carddav.rs", tests = 35 },
+]
+
 [[guard]]
 name = "the tasks read does not write back a task deleted here"
 file = "src/application/tasks_sync.rs"
@@ -2273,7 +2299,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 204 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -2659,7 +2685,7 @@ tests_last_seen = [
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -2687,7 +2713,7 @@ red = [
     "service::caldav::tests::test_a_whole_day_event_whose_column_holds_an_hour_still_goes_out_as_a_day",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # -- What a zone name of no letters means -----------------------------------
@@ -2727,7 +2753,7 @@ tests_last_seen = [
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # -- Which addresses say two records are one person -------------------------
@@ -3454,7 +3480,7 @@ red = [
     "service::caldav::tests::test_a_time_stored_with_a_small_z_still_goes_back_out_saying_it_is_utc",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # The column holds two shapes, and a comma means something different in each.
@@ -3478,7 +3504,7 @@ red = [
     "service::caldav::tests::test_the_column_is_walked_by_one_routine_whatever_shape_it_holds",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3537,7 +3563,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 204 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3555,7 +3581,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 204 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3574,7 +3600,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
     { file = "src/application/calendar.rs", tests = 204 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # ── The timezone rules a document must carry ────────────────────────────────
@@ -3615,7 +3641,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3633,7 +3659,7 @@ red = [
     "service::caldav::writing_tests::test_a_change_into_a_document_that_defines_no_zone_adds_the_rules",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3649,7 +3675,7 @@ red = [
     "service::caldav::writing_tests::test_a_change_into_a_document_already_defining_the_zone_adds_no_second_copy",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3661,7 +3687,7 @@ red = [
     "service::caldav::tests::test_a_document_that_names_no_zone_defines_none",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3689,7 +3715,7 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
     { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/presentation/managers.rs", tests = 137 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -3751,7 +3777,7 @@ red = [
     "service::vtimezone::tests::test_the_rules_for_a_zone_that_counts_weeks_forward",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
     { file = "src/service/vtimezone.rs", tests = 10 },
 ]
 
@@ -6959,7 +6985,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 204 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # ── A meeting that repeats, on its way to Outlook and back ──────────────────
@@ -8573,7 +8599,7 @@ red = [
     "service::outward::tests::test_a_read_that_is_not_a_get_can_only_ask_for_something",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
     { file = "src/service/outward.rs", tests = 38 },
 ]
 
@@ -9189,7 +9215,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # ── An occurrence is read off the document the same careful way ─────────────
@@ -9225,7 +9251,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 74 },
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # ── An occurrence exception is opened exactly as narrowly as intended ───────
@@ -10680,7 +10706,7 @@ after = """    for line in &lines {
         }"""
 red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10694,7 +10720,7 @@ after = """        if inside < 0 {
         }"""
 red = ["service::caldav::writing_tests::test_a_stray_zone_parameter_inside_a_timezone_blocks_own_definition_is_not_asked_about"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10704,7 +10730,7 @@ before = """    let is_a_component_name = !named.is_empty() && !named.contains([
 after = """    let is_a_component_name = !named.is_empty() || !named.contains([':', ';', ',', ' ', '\\t']);"""
 red = ["service::caldav::tests::test_a_marker_is_refused_unless_what_follows_it_is_a_clean_single_word"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10714,7 +10740,7 @@ before = """        (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_dig
 after = """        (!digits.is_empty() || digits.bytes().all(|b| b.is_ascii_digit()))"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10732,7 +10758,7 @@ after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
             }"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10750,7 +10776,7 @@ after = """            if let Some((secs, after)) = one_unit(rest, 'S') {
             }"""
 red = ["service::caldav::tests::test_ical_duration_reads_the_grammar_and_only_the_grammar"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10760,7 +10786,7 @@ before = """    parameter_among(&line[semicolon + 1..colon], parameter).map(str:
 after = """    parameter_among(&line[semicolon - 1..colon], parameter).map(str::to_string)"""
 red = ["service::caldav::tests::test_a_property_name_ending_in_more_than_one_octet_does_not_move_the_delimiter_mid_character"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10770,7 +10796,7 @@ before = """    if bytes.len() == 8 && bytes.iter().all(u8::is_ascii_digit) {"""
 after = """    if bytes.len() == 8 || bytes.iter().all(u8::is_ascii_digit) {"""
 red = ["service::caldav::tests::test_a_cancelled_day_is_a_whole_day_only_at_exactly_eight_digits"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -10807,7 +10833,7 @@ after = """fn the_occurrence_came_back_out(
 }"""
 red = ["service::caldav::writing_tests::test_the_occurrence_change_has_to_come_back_out_of_its_own_vevent"]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24398,7 +24424,7 @@ red = [
     "service::caldav::tests::test_a_clock_that_is_not_digits_is_not_dressed_up_as_a_time",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24413,7 +24439,7 @@ red = [
     "service::caldav::tests::test_a_collection_is_recognised_by_its_element_and_not_by_a_name_that_starts_the_same_way",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24425,7 +24451,7 @@ red = [
     "service::caldav::tests::test_a_document_whose_first_line_is_indented_keeps_that_line",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24439,7 +24465,7 @@ red = [
     "service::caldav::discovery_tests::test_a_home_set_answered_with_a_plain_200_is_still_read",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24455,7 +24481,7 @@ red = [
     "service::caldav::discovery_tests::test_a_report_the_server_refuses_is_a_refusal_and_not_an_empty_calendar",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 [[guard]]
@@ -24500,7 +24526,7 @@ red = [
     "service::caldav::discovery_tests::test_a_journal_listing_the_server_refuses_says_which_status_it_refused_with",
 ]
 tests_last_seen = [
-    { file = "src/service/caldav.rs", tests = 170 },
+    { file = "src/service/caldav.rs", tests = 176 },
 ]
 
 # ── 09-01: the version is 1.0.0-alpha.1 ─────────────────────────────────────

@@ -182,7 +182,7 @@ pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressB
 
     let mut address_books = Vec::new();
     for block in response_blocks(xml) {
-        let href = value_in(block, "d:href").unwrap_or_default();
+        let href = extract_xml_value(block, "d:href").unwrap_or_default();
         // An address book with nowhere to ask is worse than none: every later
         // request for it resolves the empty address against the base and goes
         // somewhere nobody chose.
@@ -194,9 +194,9 @@ pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressB
         }
         address_books.push(CardDavAddressBook {
             url: resolved_against(&href, base_url),
-            display_name: value_in(block, "d:displayname")
+            display_name: extract_xml_value(block, "d:displayname")
                 .unwrap_or_else(|| "Untitled".to_string()),
-            ctag: value_in(block, "cs:getctag"),
+            ctag: extract_xml_value(block, "cs:getctag"),
         });
     }
     Ok(address_books)
@@ -317,7 +317,7 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
             sent.could_not_be_read += 1;
             continue;
         };
-        let href = value_in(block, "d:href").unwrap_or_default();
+        let href = extract_xml_value(block, "d:href").unwrap_or_default();
         sent.cards.push(CardOnAServer {
             // Nothing rather than the address book's own address when the
             // server said none. An empty address resolved against the base is
@@ -327,7 +327,7 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
                 true => String::new(),
                 false => resolved_against(&href, base_url),
             },
-            version: value_in(block, "d:getetag"),
+            version: extract_xml_value(block, "d:getetag"),
             contact,
         });
     }
@@ -344,62 +344,17 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
 fn the_card_in(block: &str) -> Option<String> {
     ["card:address-data", "C:address-data", "address-data"]
         .iter()
-        .find_map(|named| value_in(block, named))
+        .find_map(|named| extract_xml_value(block, named))
 }
 
-/// One element's value, with XML's own escaping taken off.
-///
-/// Everything this file takes out of a document comes through here, so a value
-/// reaches the rest of the program as the text it is rather than as the text
-/// XML needed to carry it. An address book called `Sam &amp; Co` is read out to
-/// somebody, and that is not a name.
-///
-/// The calendar's reader does not do this: it hands the document it takes out
-/// straight to the calendar parser. That is a gap there rather than a decision,
-/// and this plan does not reach into that file to fix it.
-fn value_in(block: &str, tag: &str) -> Option<String> {
-    extract_xml_value(block, tag).map(|value| xml_unescaped(&value))
-}
-
-/// Text with the five references XML defines turned back into the characters
-/// they stand for.
-///
-/// Only those five, and only once. A reference this does not know is left
-/// exactly as it arrived, which is what keeps an entity a document declared for
-/// itself from ever being expanded: the document may declare what it likes and
-/// this reads the declaration as text and the reference as text. Reading once
-/// rather than until nothing changes is the other half of that, so a document
-/// writing `&amp;lt;` gets back `&lt;` and not `<`.
-fn xml_unescaped(text: &str) -> String {
-    const REFERENCES: [(&str, char); 5] = [
-        ("&amp;", '&'),
-        ("&lt;", '<'),
-        ("&gt;", '>'),
-        ("&quot;", '"'),
-        ("&apos;", '\''),
-    ];
-    let mut plain = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = rest.find('&') {
-        plain.push_str(&rest[..at]);
-        let from_the_ampersand = &rest[at..];
-        match REFERENCES
-            .iter()
-            .find(|(reference, _)| from_the_ampersand.starts_with(reference))
-        {
-            Some((reference, letter)) => {
-                plain.push(*letter);
-                rest = &from_the_ampersand[reference.len()..];
-            }
-            None => {
-                plain.push('&');
-                rest = &from_the_ampersand[1..];
-            }
-        }
-    }
-    plain.push_str(rest);
-    plain
-}
+// Every value this file takes out of a document comes through the calendar's
+// `extract_xml_value`, which takes XML's own escaping off, so a value reaches
+// the rest of the program as the text it is rather than as the text XML needed
+// to carry it. An address book called `Sam &amp; Co` is read out to somebody,
+// and that is not a name. Until 2026-10-16 this file took the escaping off
+// itself, over a reader that did not, and called the calendar's leaving it on
+// "a gap there rather than a decision". The gap is closed and the one decoder
+// is in `service::caldav`, so a value is never decoded twice.
 
 // ── The requests, which nothing here has ever made ──────────────────────────
 //
@@ -1343,13 +1298,16 @@ mod tests {
     #[test]
     fn test_a_reference_this_reader_does_not_know_is_left_as_the_text_it_is() {
         // The other half of unescaping, and the one that matters for safety:
-        // the five references XML defines are turned back into their
-        // characters and anything else is left alone. An entity a document
-        // declared for itself is therefore never expanded.
+        // the references XML defines are turned back into their characters
+        // and anything else is left alone. An entity a document declared for
+        // itself is therefore never expanded, and a number naming no
+        // character is not made into one. Until 2026-10-16 this case held
+        // `&#65;` as unknown too; XML defines it as "A", and the shared
+        // reader in `service::caldav` now reads it so.
         let card = a_readable_card(
             "Grace Hopper",
             "grace@example.com",
-            "&somewhere; and &#65; too",
+            "&somewhere; and &#0; too",
         );
         let answer = a_multistatus(&a_card_block(
             "/carddav/sam/contacts/grace.vcf",
@@ -1361,7 +1319,7 @@ mod tests {
 
         assert_eq!(
             sent.cards[0].contact.notes.as_deref(),
-            Some("&somewhere; and &#65; too")
+            Some("&somewhere; and &#0; too")
         );
     }
 
