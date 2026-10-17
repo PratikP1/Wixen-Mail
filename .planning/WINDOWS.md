@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 752
+open_count: 753
 waived_count: 0
 fixed_count: 126
-total_count: 878
-last_updated: 2026-10-17T02:40:00.000Z
+total_count: 879
+last_updated: 2026-10-17T03:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -893,6 +893,7 @@ last_updated: 2026-10-17T02:40:00.000Z
 | 876 | 13.2 | unrun-verify | src/application/caldav_sync.rs |  | 13.2-19, finding #28 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-19's merge: a real published calendar subscribed to here, such as a school's or a team's, carrying a weekly event with one day moved and one called off, the event shown every week, the moved day once at its new time and the cancelled day not at all, after the first refresh and after the next. Held by the cases against a loopback feed listing the series first and last, and their two guard records; nobody has subscribed to a real feed with a changed day since | open |  | 2026-10-17T02:40:00.000Z |  |
 | 877 | 13.2 | unrun-verify | src/service/caldav.rs |  | 13.2-19, finding #46 of the audit of 2026-10-14, for phase 14: a server of the SabreDAV family (Nextcloud, ownCloud or Baïkal) read through this program, settling whether its answers end each line of calendar data with &#13;, which the audit's verdict read from libxml and nothing here has seen; and an event titled with an & on that server shown here as written, then edited here and read at the server with no &amp; in its title. Held by the report fixture's rows and the guard record on extract_xml_value; nothing here has met such a server | open |  | 2026-10-17T02:40:00.000Z |  |
 | 878 | 13.2 | todo | src/application/caldav_sync.rs |  | Found by 13.2-19: a day a feed or a calendar server has cancelled is counted as one deleted on every read, because the read writes the series down again from the server's copy, which names no cancelled day, and one_caldav_day_kept_out_of_its_series then takes the day off once more as though for the first time. So the status line says "1 deleted" on every refresh of a feed with a cancelled day, though nothing new went; measured on 2026-10-16 by refreshing the case's feed twice. Not caused by 13.2-19 for the calendar server, whose read already folded its days; new for feeds, which now fold theirs. "N updated" already counts every event on every read, so the counts are not change counts today either. Recommended: count a day deleted only when the series held before the read did not already have it off, by handing the fold the held series' days; for a later plan, Pratik's to schedule | open |  | 2026-10-17T02:40:00.000Z |  |
+| 879 | 13.2 | todo | Cargo.lock |  | Found by 13.2-19's pull request 187, CI run 38995903050 on 2026-10-17: the Security Audit job failed on three advisories published 2026-10-09 and 2026-10-10 against zip 7.2.0, RUSTSEC-2026-0367 (SUID and SGID bits kept on extraction), RUSTSEC-2026-0368 (extract makes symbolic links pointing outside the destination) and RUSTSEC-2026-0369 (extract applies Unix permissions through symbolic links, rated 9.1), each fixed only in zip 9.0.0. 13.2-18's run 38977413373 the evening before passed, and 13.2-19 changed no dependency, so every branch and main now fail the audit until this is decided. Read 2026-10-17: nothing in src calls ZipArchive::extract; sound_scheme_import.rs reads entries one at a time through by_index with its own checks, and mailbox_archive.rs reads without extracting, and the three concern Unix permissions and links on a program built for Windows. Recommended: move to zip 9 in a plan of its own, a two-major step whose reading and writing calls need checking; or, until then, accept the three ids in .cargo/audit.toml with that reasoning and the exit condition. Pratik's to choose; 13.2-32's full gate runs the audit and fails until one is done | open |  | 2026-10-17T03:30:00.000Z |  |
 
 ````json
 [
@@ -11430,6 +11431,18 @@ last_updated: 2026-10-17T02:40:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T02:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 879,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "Cargo.lock",
+    "line": null,
+    "description": "Found by 13.2-19's pull request 187, CI run 38995903050 on 2026-10-17: the Security Audit job failed on three advisories published 2026-10-09 and 2026-10-10 against zip 7.2.0, RUSTSEC-2026-0367 (SUID and SGID bits kept on extraction), RUSTSEC-2026-0368 (extract makes symbolic links pointing outside the destination) and RUSTSEC-2026-0369 (extract applies Unix permissions through symbolic links, rated 9.1), each fixed only in zip 9.0.0. 13.2-18's run 38977413373 the evening before passed, and 13.2-19 changed no dependency, so every branch and main now fail the audit until this is decided. Read 2026-10-17: nothing in src calls ZipArchive::extract; sound_scheme_import.rs reads entries one at a time through by_index with its own checks, and mailbox_archive.rs reads without extracting, and the three concern Unix permissions and links on a program built for Windows. Recommended: move to zip 9 in a plan of its own, a two-major step whose reading and writing calls need checking; or, until then, accept the three ids in .cargo/audit.toml with that reasoning and the exit condition. Pratik's to choose; 13.2-32's full gate runs the audit and fails until one is done",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T03:30:00.000Z",
     "resolved_at": null
   }
 ]
