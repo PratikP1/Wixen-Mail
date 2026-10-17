@@ -395,11 +395,7 @@ async fn push_what_is_waiting<S: NotesService>(
                 known_as: there,
                 what_it_could_keep,
             }) => {
-                match cache.a_backend_took_the_note(
-                    &note.id,
-                    &there.named,
-                    there.version.as_deref(),
-                ) {
+                match cache.a_backend_took_the_note(&note, &there.named, there.version.as_deref()) {
                     // The note's id, not its title. This goes to the log, and a
                     // title is the person's own words in the same way a message
                     // body is. The id finds the row.
@@ -534,15 +530,13 @@ async fn offer_it_as_a_new_note<S: NotesService>(
         Ok(WhatTheBackendSaid::Done {
             known_as: there,
             what_it_could_keep,
-        }) => {
-            match cache.a_backend_took_the_note(&note.id, &there.named, there.version.as_deref()) {
-                Ok(()) => {
-                    result.sent += 1;
-                    keep_what_the_backend_could(cache, note, what_it_could_keep, result);
-                }
-                Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+        }) => match cache.a_backend_took_the_note(note, &there.named, there.version.as_deref()) {
+            Ok(()) => {
+                result.sent += 1;
+                keep_what_the_backend_could(cache, note, what_it_could_keep, result);
             }
-        }
+            Err(e) => result.errors.push(format!("Note {}: {e}", note.id)),
+        },
         Ok(WhatTheBackendSaid::NotAllowedToChangeAnything) => {
             result.waiting_on_the_setting += 1;
         }
@@ -661,7 +655,7 @@ fn hold_these_two_copies(
 ) {
     if said.title == note.title && said.body == note.body {
         match cache.a_backend_took_the_note(
-            &note.id,
+            note,
             &said.known_as.named,
             said.known_as.version.as_deref().or(version_now.as_deref()),
         ) {
@@ -813,7 +807,7 @@ async fn take_what_has_arrived<S: NotesService>(
             && here.body == said.body
         {
             match cache.a_backend_took_the_note(
-                &here.id,
+                here,
                 &said.known_as.named,
                 said.known_as.version.as_deref(),
             ) {
@@ -1039,6 +1033,25 @@ mod tests {
         written: Mutex<Vec<String>>,
         /// Every note this service was asked to remove, in the order asked.
         taken_away: Mutex<Vec<String>>,
+        /// What a backend that cannot hold every byte keeps of a note it
+        /// takes, where that is not what it was handed.
+        keeps: Option<crate::application::notes_backend::WhatTheBackendKept>,
+        /// What the person does in the window while the first note is at the
+        /// backend, run once before this service answers it, on a second
+        /// connection to the same folder, so the race is the real one.
+        meanwhile: Mutex<Option<Box<dyn FnOnce() + Send>>>,
+    }
+
+    /// The person doing `work` in the window while the push is in flight.
+    fn while_it_is_at_the_backend(
+        work: impl FnOnce() + Send + 'static,
+    ) -> Mutex<Option<Box<dyn FnOnce() + Send>>> {
+        Mutex::new(Some(Box::new(work)))
+    }
+
+    /// The window's own connection to the folder a test's store lives in.
+    fn the_window_on(folder: &std::path::Path) -> MessageCache {
+        MessageCache::new(folder.to_path_buf(), None).expect("the window's connection")
     }
 
     impl Scripted {
@@ -1089,16 +1102,27 @@ mod tests {
                 .lock()
                 .expect("the record of what was written")
                 .push(title.to_string());
+            let meanwhile = self
+                .meanwhile
+                .lock()
+                .expect("what the person does meanwhile")
+                .take();
+            if let Some(work) = meanwhile {
+                work();
+            }
             Ok(match self.writes {
                 Writes::NothingIsSent => {
                     WhatTheBackendSaid::CouldNotBeReached("the backend said no".to_string())
                 }
-                Writes::Accepted => WhatTheBackendSaid::done(ANoteThere {
-                    named: known_as
-                        .map(|there| there.named.clone())
-                        .unwrap_or_else(|| format!("made-for-{title}")),
-                    version: Some(Self::A_NEW_MARKER.to_string()),
-                }),
+                Writes::Accepted => WhatTheBackendSaid::Done {
+                    known_as: ANoteThere {
+                        named: known_as
+                            .map(|there| there.named.clone())
+                            .unwrap_or_else(|| format!("made-for-{title}")),
+                        version: Some(Self::A_NEW_MARKER.to_string()),
+                    },
+                    what_it_could_keep: self.keeps.clone(),
+                },
                 Writes::RefusedByTheSetting => WhatTheBackendSaid::NotAllowedToChangeAnything,
                 Writes::NotSignedIn => WhatTheBackendSaid::NotSignedIn,
                 Writes::ItMovedFirst => WhatTheBackendSaid::ItMovedFirst {
@@ -1810,6 +1834,190 @@ mod tests {
             *service.taken_away.lock().expect("what was removed"),
             ["there-1"],
             "the removal never went, so the note stays in both containers for ever"
+        );
+    }
+
+    /// A note made here in the first container's folder, waiting to be made at
+    /// the backend.
+    fn a_note_made_here_waiting(cache: &MessageCache) {
+        let mut note = a_note("n1", "Before", "Words");
+        note.pending = true;
+        cache.save_note(&note).expect("a note waiting to be sent");
+    }
+
+    #[test]
+    fn test_a_note_edited_while_the_backend_makes_it_is_sent_again_under_the_name_it_was_given() {
+        // Finding #1 of the 2026-10-14 audit, the notes half, on the two
+        // connections the program really has. The backend's name has to be
+        // recorded even though the edit stays waiting, or the next push makes a
+        // second note rather than changing the first.
+        let cache = a_store();
+        a_note_made_here_waiting(&cache);
+        let folder = cache.path().to_path_buf();
+        let service = Scripted {
+            writes: Writes::Accepted,
+            meanwhile: while_it_is_at_the_backend(move || {
+                the_window_on(&folder)
+                    .the_person_changed_the_note("n1", "Edited", "Typed meanwhile")
+                    .expect("the edit");
+            }),
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        let after = cache.get_note("n1").expect("the note").expect("the note");
+        assert_eq!(after.title, "Edited", "the edit was lost");
+        assert!(
+            after.pending,
+            "an edit typed while the note was being sent stopped waiting, so it never leaves"
+        );
+        assert_eq!(after.known_as.as_deref(), Some("made-for-Before"));
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a second sync");
+
+        assert_eq!(
+            *service.written.lock().expect("what was written"),
+            ["Before", "Edited"],
+            "the edit was never offered to the backend"
+        );
+        let sent = cache.get_note("n1").expect("the note").expect("the note");
+        assert!(!sent.pending, "the edit is still waiting after it was sent");
+        assert_eq!(
+            sent.known_as.as_deref(),
+            Some("made-for-Before"),
+            "the edit was made as a second note rather than sent to the first"
+        );
+    }
+
+    #[test]
+    fn test_a_note_edited_while_the_backend_keeps_a_different_copy_is_not_written_over() {
+        // A backend that cannot hold every byte says what it kept, and the copy
+        // here becomes that copy. Not when the person typed something else in
+        // the meantime: that is their edit, still to be sent.
+        let cache = a_store();
+        a_note_made_here_waiting(&cache);
+        let folder = cache.path().to_path_buf();
+        let service = Scripted {
+            writes: Writes::Accepted,
+            keeps: Some(crate::application::notes_backend::WhatTheBackendKept {
+                title: "Before".to_string(),
+                body: "Words, as the backend keeps them".to_string(),
+            }),
+            meanwhile: while_it_is_at_the_backend(move || {
+                the_window_on(&folder)
+                    .the_person_changed_the_note("n1", "Edited", "Typed meanwhile")
+                    .expect("the edit");
+            }),
+            ..Scripted::default()
+        };
+
+        let result = run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        let after = cache.get_note("n1").expect("the note").expect("the note");
+        assert_eq!(
+            (after.title.as_str(), after.body.as_str()),
+            ("Edited", "Typed meanwhile"),
+            "the backend's copy of what was sent was written over the edit"
+        );
+        assert!(after.pending, "the edit is not waiting to be sent");
+        assert_eq!(
+            result.not_kept_exactly, 0,
+            "a note the backend's copy was not written to was counted as changed"
+        );
+    }
+
+    #[test]
+    fn test_a_note_made_here_and_moved_while_the_backend_makes_it_stays_moved() {
+        // Moved through the Move command, which is the write whose stamp the
+        // settle reads. The backend made the note in the first container, so
+        // that copy is owed a removal once the moved note exists in its own.
+        let cache = a_store();
+        let elsewhere = a_second_folder(&cache);
+        a_note_made_here_waiting(&cache);
+        let folder = cache.path().to_path_buf();
+        let into = elsewhere.clone();
+        let service = Scripted {
+            writes: Writes::Accepted,
+            meanwhile: while_it_is_at_the_backend(move || {
+                crate::presentation::managers::file_under(
+                    &the_window_on(&folder),
+                    crate::application::new_item::ItemKind::Note,
+                    "n1",
+                    &into,
+                    ACCOUNT,
+                    crate::application::destinations::Filing::Moving,
+                )
+                .expect("the move");
+            }),
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        let moved = cache
+            .get_note("n1")
+            .expect("the note")
+            .expect("the moved note");
+        assert_eq!(moved.folder_id.as_deref(), Some(elsewhere.as_str()));
+        assert!(moved.pending, "the moved note is not waiting to be made");
+        assert_eq!(
+            moved.known_as, None,
+            "the moved note carries the name of a copy in a container it is not in"
+        );
+        assert_ne!(
+            moved.updated_at, "2026-01-01",
+            "the move did not stamp the note, so nothing can tell it changed during the push"
+        );
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("the old container again");
+        assert!(
+            service
+                .taken_away
+                .lock()
+                .expect("what was removed")
+                .is_empty(),
+            "the first copy was removed before the moved note existed"
+        );
+
+        run(sync_notes(&cache, &service, ACCOUNT, ANOTHER_CONTAINER)).expect("the new container");
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("the old container once more");
+
+        assert_eq!(
+            *service.taken_away.lock().expect("what was removed"),
+            ["made-for-Before"],
+            "the copy in the container the note left is never removed"
+        );
+    }
+
+    #[test]
+    fn test_a_note_made_here_and_deleted_while_the_backend_makes_it_is_removed_there_next() {
+        let cache = a_store();
+        a_note_made_here_waiting(&cache);
+        let folder = cache.path().to_path_buf();
+        let service = Scripted {
+            writes: Writes::Accepted,
+            meanwhile: while_it_is_at_the_backend(move || {
+                the_window_on(&folder)
+                    .delete_note("n1")
+                    .expect("the deletion");
+            }),
+            ..Scripted::default()
+        };
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a sync");
+
+        assert!(
+            cache.get_note("n1").expect("a lookup").is_none(),
+            "a note somebody deleted came back when its create landed"
+        );
+
+        run(sync_notes(&cache, &service, ACCOUNT, CONTAINER)).expect("a second sync");
+
+        assert_eq!(
+            *service.taken_away.lock().expect("what was removed"),
+            ["made-for-Before"],
+            "the note the backend made is still there, for a note somebody deleted"
         );
     }
 
