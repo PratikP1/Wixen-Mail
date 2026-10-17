@@ -7023,6 +7023,273 @@ mod tests {
         );
     }
 
+    // ── What a push writes down once Google or Outlook has answered ──────
+
+    /// The window's own connection to the same file. It writes while a sync
+    /// is pushing, which is the whole of what these cases are about.
+    fn the_window_on(cache: &TempHome<MessageCache>) -> MessageCache {
+        MessageCache::new(cache.path().to_path_buf(), None).expect("the window's connection")
+    }
+
+    /// An event waiting to be sent, stored and read back the way a push reads
+    /// it, so the stamp it carries is the one the store gave it.
+    fn waiting_as_the_push_read_it(
+        cache: &MessageCache,
+        waiting: CalendarEventEntry,
+    ) -> CalendarEventEntry {
+        let waiting = CalendarEventEntry {
+            pending: true,
+            ..waiting
+        };
+        cache
+            .save_calendar_event(&waiting)
+            .expect("the event waiting to be sent");
+        cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to be there")
+    }
+
+    /// The stamp Google or Outlook hands back with its answer.
+    const THE_PROVIDERS_STAMP: &str = "2026-03-06T09:00:00Z";
+
+    #[test]
+    fn test_an_event_edited_while_its_create_was_at_the_provider_keeps_the_edit_and_waits() {
+        // The push read the event, sent it, and wrote the whole row it read
+        // back once the provider answered, so a title and a time somebody
+        // changed in between were gone from this computer as well as unsent.
+        let cache = temp_cache("settle_edited_during_create");
+        let as_read = waiting_as_the_push_read_it(&cache, an_event_stored_here());
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                summary: "Sprint planning, in the big room".to_string(),
+                start_datetime: "2026-03-06 11:00".to_string(),
+                end_datetime: "2026-03-06 12:00".to_string(),
+                ..as_read.clone()
+            })
+            .expect("the edit made while the create was out");
+
+        settled(
+            &cache,
+            &as_read,
+            "cal-google",
+            "g-1",
+            Some(THE_PROVIDERS_STAMP.to_string()),
+        )
+        .expect("the provider's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.summary, "Sprint planning, in the big room");
+        assert_eq!(stored.start_datetime, "2026-03-06 11:00");
+        assert_eq!(stored.end_datetime, "2026-03-06 12:00");
+        assert!(
+            stored.pending,
+            "the edit never reached the provider, so it has to wait for the next push"
+        );
+        assert_eq!(stored.provider_event_id.as_deref(), Some("g-1"));
+        assert_eq!(stored.calendar_id.as_deref(), Some("cal-google"));
+        assert_eq!(
+            stored.last_modified_remote.as_deref(),
+            Some(THE_PROVIDERS_STAMP)
+        );
+    }
+
+    #[test]
+    fn test_an_event_edited_while_its_change_was_at_the_provider_keeps_the_edit_and_waits() {
+        let cache = temp_cache("settle_edited_during_update");
+        let as_read = waiting_as_the_push_read_it(
+            &cache,
+            CalendarEventEntry {
+                provider_event_id: Some("g-1".to_string()),
+                calendar_id: Some("cal-google".to_string()),
+                ..an_event_stored_here()
+            },
+        );
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                location: Some("Room 7".to_string()),
+                ..as_read.clone()
+            })
+            .expect("the edit made while the change was out");
+
+        settled(
+            &cache,
+            &as_read,
+            "cal-google",
+            "g-1",
+            Some(THE_PROVIDERS_STAMP.to_string()),
+        )
+        .expect("the provider's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.location.as_deref(), Some("Room 7"));
+        assert!(stored.pending, "the new place has not been sent yet");
+        assert_eq!(
+            stored.last_modified_remote.as_deref(),
+            Some(THE_PROVIDERS_STAMP)
+        );
+    }
+
+    #[test]
+    fn test_an_event_nobody_touched_during_its_push_stops_waiting_with_the_providers_answer() {
+        // Column for column what the settle has always written: the calendar,
+        // the provider's name and stamp, and the flag down. Nothing else moves.
+        let cache = temp_cache("settle_untouched");
+        let as_read = waiting_as_the_push_read_it(&cache, an_event_stored_here());
+
+        settled(
+            &cache,
+            &as_read,
+            "cal-google",
+            "g-1",
+            Some(THE_PROVIDERS_STAMP.to_string()),
+        )
+        .expect("the provider's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored,
+            CalendarEventEntry {
+                calendar_id: Some("cal-google".to_string()),
+                provider_event_id: Some("g-1".to_string()),
+                last_modified_remote: Some(THE_PROVIDERS_STAMP.to_string()),
+                pending: false,
+                updated_at: stored.updated_at.clone(),
+                ..as_read
+            }
+        );
+    }
+
+    #[test]
+    fn test_an_event_deleted_while_its_create_was_at_the_provider_is_not_written_back() {
+        // Deleted here before it had a name at the provider, so the deletion
+        // was written down with nothing to send. The provider then made it,
+        // and the settle used to write the whole row back.
+        let cache = temp_cache("settle_deleted_during_create");
+        let the_main_one = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("Google's calendar")
+            .id;
+        let as_read = waiting_as_the_push_read_it(
+            &cache,
+            CalendarEventEntry {
+                calendar_id: Some(the_main_one.clone()),
+                ..an_event_stored_here()
+            },
+        );
+        the_window_on(&cache)
+            .delete_calendar_event(&as_read.id)
+            .expect("the deletion made while the create was out");
+
+        settled(
+            &cache,
+            &as_read,
+            &the_main_one,
+            "g-1",
+            Some(THE_PROVIDERS_STAMP.to_string()),
+        )
+        .expect("the provider's answer to be written down");
+
+        assert!(
+            cache
+                .get_event_by_id(&as_read.id)
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event somebody deleted came back"
+        );
+        let mut result = CalendarSyncResult::default();
+        let owed = deletions_for(
+            &cache,
+            "acct",
+            GOOGLE,
+            crate::service::google_api::THE_MAIN_CALENDAR,
+            &mut result,
+        );
+        assert_eq!(
+            owed.iter()
+                .map(|(note, _)| note.provider_event_id.as_deref())
+                .collect::<Vec<_>>(),
+            [Some("g-1")],
+            "the next push has to delete what the provider made"
+        );
+    }
+
+    #[test]
+    fn test_an_event_moved_while_its_create_was_at_the_provider_stays_where_it_was_put() {
+        // The provider made it in the calendar it was in when the push read
+        // it. Kept where it was put, it is made again there by the next push,
+        // and the copy the provider made in the old calendar is owed a
+        // deletion; written back, the move would be undone with nothing said.
+        let cache = temp_cache("settle_moved_during_create");
+        let the_main_one = cache
+            .ensure_provider_calendar("acct", GOOGLE, GOOGLE_CALENDAR_NAME)
+            .expect("Google's calendar")
+            .id;
+        cache
+            .save_calendar(&a_calendar_from("cal-home", "Home", None, false))
+            .expect("a calendar made here");
+        let as_read = waiting_as_the_push_read_it(
+            &cache,
+            CalendarEventEntry {
+                calendar_id: Some(the_main_one.clone()),
+                ..an_event_stored_here()
+            },
+        );
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                calendar_id: Some("cal-home".to_string()),
+                ..as_read.clone()
+            })
+            .expect("the move made while the create was out");
+
+        settled(
+            &cache,
+            &as_read,
+            &the_main_one,
+            "g-1",
+            Some(THE_PROVIDERS_STAMP.to_string()),
+        )
+        .expect("the provider's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.calendar_id.as_deref(), Some("cal-home"));
+        assert_eq!(
+            stored.provider_event_id, None,
+            "the provider holds nothing in the calendar it was moved to"
+        );
+        assert!(stored.pending);
+        let mut result = CalendarSyncResult::default();
+        let owed = deletions_for(
+            &cache,
+            "acct",
+            GOOGLE,
+            crate::service::google_api::THE_MAIN_CALENDAR,
+            &mut result,
+        );
+        assert_eq!(
+            owed.iter()
+                .map(|(note, _)| (
+                    note.provider_event_id.as_deref(),
+                    note.calendar_id.as_deref()
+                ))
+                .collect::<Vec<_>>(),
+            [(Some("g-1"), Some(the_main_one.as_str()))],
+            "the copy in the calendar it left is owed a deletion"
+        );
+    }
+
     // ── Who a provider is told is coming ─────────────────────────────────
 
     /// An event with two guests: one written down with a name, one an address
