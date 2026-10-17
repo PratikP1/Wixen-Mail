@@ -1427,6 +1427,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Settings are saved whole or not at all (2026-10-17).** Saving your settings used to empty
+  the settings file first and then write it again. A power cut, a crash of Windows or a forced
+  restart in that moment left an empty file, and from then on the program could not read your
+  settings at all: no account synced, which is the safe answer to settings that cannot be read,
+  and your theme, columns, mute and every other choice came back as the defaults. Now the settings and
+  each account's settings are written to a separate file first, saved to the disk, and only
+  then put in place of the old file, so the old settings stay until the new ones are complete.
+  If a save cannot finish, the old file is left as it was and the save says it failed.
+
+  Known limitation: a settings file that cannot be read for another reason, such as a disk
+  fault or a hand edit, is still reported only in the log. Settings then opens on the
+  defaults and saving writes over the file, and nothing on screen says so.
 - **Things said at the same moment are heard together (2026-10-17).** When several things
   happened at once, such as a message that could not be sent, the connection dropping and the
   Outbox finishing, each sentence was written over the one before it, so a screen reader spoke
