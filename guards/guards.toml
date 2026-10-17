@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 806 records have arrived since and have not been through it.
+# 811 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -12524,7 +12524,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -12539,7 +12539,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -12566,7 +12566,7 @@ red = [
     "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
@@ -12596,7 +12596,7 @@ red = [
     "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
@@ -12627,7 +12627,7 @@ red = [
     "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/service/spellcheck/mod.rs", tests = 64 },
 ]
 
@@ -14043,7 +14043,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
 ]
 
 [[guard]]
@@ -14936,9 +14936,15 @@ red = [
     # about a settings file and never guarded this rule on purpose.
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
+# On 2026-10-17, re-measured by 13.2-23 three times on Pratik's machine, that
+# test went red in company each time beside the one named. It reaches
+# `allowed_for`, which reads the real profile, and the profile there has no
+# `reading` field, so the break reads it as false. On a runner the profile is
+# written fresh with the field, so naming it would fail the sweep there. Kept
+# off the list, the count below written by hand; ledger 890.
 tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 28 },
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
 ]
 
 # ── What a saved search covers, said rather than only worked out ───────────
@@ -19398,7 +19404,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -20792,7 +20798,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -22183,7 +22189,7 @@ red = [
     "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
 ]
 
 # Nothing published reading as up to date, which is T-07-19 in one line. The
@@ -24870,7 +24876,7 @@ red = [
     "data::config::tests::test_a_saved_settings_file_names_the_build_that_wrote_it",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
 ]
 
 # The reading in tests/installer.rs is a second copy of the script's
@@ -29433,7 +29439,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/describing_pictures.rs", tests = 8 },
-    { file = "src/data/config.rs", tests = 68 },
+    { file = "src/data/config.rs", tests = 73 },
 ]
 
 # A reader's word sent to a recipient. The undescribed rule moves into
@@ -41953,4 +41959,88 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/wired.rs", tests = 80 },
+]
+
+# Audit finding #7: the settings file written with `fs::write` again, which
+# empties it before writing it, so a save that cannot finish has already
+# lost the old settings. Added 2026-10-17 by 13.2-23, taken by hand against
+# `data::config::`.
+[[guard]]
+name = "the settings file is written whole or not at all"
+file = "src/data/config.rs"
+before = '''        written_whole(&self.app_config_path(), &content)'''
+after = '''        fs::write(self.app_config_path(), &content)'''
+red = [
+    "data::config::tests::test_a_save_that_cannot_finish_leaves_the_settings_as_they_were",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 73 },
+]
+
+# The same for an account's file, which the save loop writes on its own.
+# Added 2026-10-17 by 13.2-23, taken by hand against `data::config::`.
+[[guard]]
+name = "an account's settings file is written whole or not at all"
+file = "src/data/config.rs"
+before = '''            written_whole(&path, &content)'''
+after = '''            fs::write(&path, &content)'''
+red = [
+    "data::config::tests::test_a_save_that_cannot_finish_an_account_leaves_that_account_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 73 },
+]
+
+# The unfinished file copied over the name rather than renamed, so it stays
+# in the folder after every save. The two cases that stand a folder at the
+# unfinished name go red as well: the first save's leftover is already there.
+# Added 2026-10-17 by 13.2-23, taken by hand against `data::config::`.
+[[guard]]
+name = "a save leaves nothing unfinished beside the settings"
+file = "src/data/config.rs"
+before = '''    drop(file);
+    fs::rename(on_the_way, target)'''
+after = '''    drop(file);
+    fs::copy(on_the_way, target).map(drop)'''
+red = [
+    "data::config::tests::test_a_save_leaves_nothing_unfinished_in_the_settings_folder",
+    "data::config::tests::test_a_save_that_cannot_finish_an_account_leaves_that_account_as_it_was",
+    "data::config::tests::test_a_save_that_cannot_finish_leaves_the_settings_as_they_were",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 73 },
+]
+
+# `load` reading any name that holds `.json`, so half an account file left by
+# a power cut fails every load from then on. Added 2026-10-17 by 13.2-23,
+# taken by hand against `data::config::`.
+[[guard]]
+name = "an unfinished account file is not read as an account"
+file = "src/data/config.rs"
+before = '''                if filename_str.starts_with("account_") && filename_str.ends_with(".json") {'''
+after = '''                if filename_str.starts_with("account_") && filename_str.contains(".json") {'''
+red = [
+    "data::config::tests::test_a_file_left_unfinished_beside_an_account_is_not_read_as_one",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 73 },
+]
+
+# The one-at-a-time lock taken out, so saves made at once on several threads
+# share the unfinished name and one renames away what another is writing.
+# This break is a race: by hand it went red three runs in three against
+# `data::config::`, eight threads of forty saves each. Added 2026-10-17 by
+# 13.2-23.
+[[guard]]
+name = "settings saves made at once take turns"
+file = "src/data/config.rs"
+before = '''    let _our_turn = ONE_SAVE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);'''
+after = '''    let _our_turn = ();'''
+red = [
+    "data::config::tests::test_saves_made_at_once_on_several_threads_all_land_whole",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 73 },
 ]

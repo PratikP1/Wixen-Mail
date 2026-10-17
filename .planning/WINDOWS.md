@@ -1,9 +1,9 @@
 ---
 schema_version: 1
-open_count: 762
+open_count: 764
 waived_count: 0
 fixed_count: 126
-total_count: 888
+total_count: 890
 last_updated: 2026-10-18T00:30:00.000Z
 ---
 
@@ -903,6 +903,8 @@ last_updated: 2026-10-18T00:30:00.000Z
 | 886 | 13.2 | unrun-verify | src/presentation/accessibility.rs |  | 13.2-22, finding #32 of the audit of 2026-10-14, for the tester on a build holding 13.2-22's merge: on a POP account with a wrong outgoing password, sending from the Outbox is heard under NVDA as one line, "Message not sent" with the server's reason, then "Disconnected", then "The Outbox is done: 0 sent, 1 not sent", and the status bar shows the failure before "Disconnected". Also that a menu command opening a dialog still has what it said heard while the dialog waits: the command's turn stays open until the dialog closes, and the timer's own flush releases its lines within a tick, which no case drives because the tick and a dialog need a running window. Held by the cases in presentation::accessibility and the reading in tests/wired.rs; no screen reader has heard a joined line | open |  | 2026-10-17T23:30:00.000Z |  |
 | 887 | 13.2 | todo | src/presentation/wx_app.rs |  | Found by 13.2-22: only the tick's drain of the workers' updates and the main window's one dispatch, which the menu bar, its accelerators, the tray and the conversation window's commands share, run as one turn. A handler bound anywhere else that says two things on one path still writes the second over the first. Read by 13.2-22 and saying one thing per path: the notes editor's Save, the folder tree's Enter and selection, the contacts tree's selection, the contact list's selection, the module switch, the calendar's Today, Previous, Next and view picker, the message list's Enter and the calendar sidebar's Enter. The reader window, the composer and every dialog's own handlers were not read. Recommended: read them, or run every handler the main window binds as a turn where it is bound; for a later plan | open |  | 2026-10-17T23:30:00.000Z |  |
 | 888 | 13.2 | todo | Cargo.lock |  | Found by 13.2-22 on pull request 188, CI run 39072333951: Security Audit failed on RUSTSEC-2026-0373 against ammonia 4.1.7, "Missing case-insensitive matching for CSS url function", dated 2026-10-16, solution "Upgrade to >=4.2.4 OR >=4.1.8, <4.2.0", besides ledger 879's three zip advisories. ammonia is what sanitizes a stranger's HTML before the preview shows it, so a CSS url written in capitals may get past it; whether this project's allowed attributes and styles let a url through at all was not read. 13.2-22 changed no dependency. Recommended: move ammonia to 4.1.8, a patch release, in a plan of its own with a case that a message's CSS url in capitals fetches nothing; Pratik's decision, since it changes a dependency | open |  | 2026-10-18T00:30:00.000Z |  |
+| 889 | 13.2 | todo | src/data/config.rs |  | Left by 13.2-23, finding #7 of the audit of 2026-10-14: a settings file that cannot be read is said only in the log. Since 13.2-23 a save can no longer leave it half written, but a disk fault or a hand edit still can, and then every load fails, the person meets the defaults with no sentence, Allow Changes answers nothing for every account, and the next save from Settings writes the defaults over the file. The verdict on finding #7 called telling the person a separate, larger change. Recommended: at start-up, when the stored settings exist and cannot be read, say so once in plain words and keep the unreadable file beside the new one under another name before anything saves; Pratik's to schedule | open |  | 2026-10-17T23:55:00.000Z |  |
+| 890 | 13.2 | todo | guards/guards.toml |  | Found by 13.2-23: the record "a settings file written before reading was a setting still loads" reddens application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first on Pratik's machine, three runs in three, because that test reaches allowed_for, which reads the real profile, and the profile there has no reading field. On a runner the profile is written fresh with the field, so the test stays green there. A guard whose measurement depends on the settings file of the machine running it can agree on one and disagree on the other. Recommended: have scripts/guards.py run the library with WIXEN_MAIL_DATA pointed at a fresh empty folder, so every measurement reads the profile a runner reads; a small tooling change, for a later plan | open |  | 2026-10-17T23:55:00.000Z |  |
 
 ````json
 [
@@ -11560,6 +11562,30 @@ last_updated: 2026-10-18T00:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-18T00:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 889,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/config.rs",
+    "line": null,
+    "description": "Left by 13.2-23, finding #7 of the audit of 2026-10-14: a settings file that cannot be read is said only in the log. Since 13.2-23 a save can no longer leave it half written, but a disk fault or a hand edit still can, and then every load fails, the person meets the defaults with no sentence, Allow Changes answers nothing for every account, and the next save from Settings writes the defaults over the file. The verdict on finding #7 called telling the person a separate, larger change. Recommended: at start-up, when the stored settings exist and cannot be read, say so once in plain words and keep the unreadable file beside the new one under another name before anything saves; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T23:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 890,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "guards/guards.toml",
+    "line": null,
+    "description": "Found by 13.2-23: the record \"a settings file written before reading was a setting still loads\" reddens application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first on Pratik's machine, three runs in three, because that test reaches allowed_for, which reads the real profile, and the profile there has no reading field. On a runner the profile is written fresh with the field, so the test stays green there. A guard whose measurement depends on the settings file of the machine running it can agree on one and disagree on the other. Recommended: have scripts/guards.py run the library with WIXEN_MAIL_DATA pointed at a fresh empty folder, so every measurement reads the profile a runner reads; a small tooling change, for a later plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T23:55:00.000Z",
     "resolved_at": null
   }
 ]

@@ -7,7 +7,9 @@ use crate::common::{Error, Result, types::Id};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, PoisonError};
 
 /// Application-wide configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1198,7 +1200,7 @@ impl ConfigManager {
         };
         let content = serde_json::to_string_pretty(&stamped_by_this_build)
             .map_err(|e| Error::Config(format!("Failed to serialize app config: {}", e)))?;
-        fs::write(self.app_config_path(), content)
+        written_whole(&self.app_config_path(), &content)
             .map_err(|e| Error::Config(format!("Failed to write app config: {}", e)))?;
         Ok(())
     }
@@ -1214,7 +1216,7 @@ impl ConfigManager {
             let content = serde_json::to_string_pretty(account_config)
                 .map_err(|e| Error::Config(format!("Failed to serialize account config: {}", e)))?;
             let path = self.account_config_path(&account_config.id);
-            fs::write(path, content)
+            written_whole(&path, &content)
                 .map_err(|e| Error::Config(format!("Failed to write account config: {}", e)))?;
         }
 
@@ -1230,6 +1232,59 @@ impl ConfigManager {
     pub fn app_config_mut(&mut self) -> &mut AppConfig {
         &mut self.app_config
     }
+}
+
+/// One settings file written at a time in this process. `load` writes the
+/// defaults on whichever thread first finds no file, while the window's thread
+/// saves what somebody chose, and the two would share one unfinished name.
+static ONE_SAVE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Put `content` under `target` whole or not at all.
+///
+/// `fs::write` empties the file before it writes it, so a power cut, a crash of
+/// Windows or a forced reset in that moment left settings that every load
+/// refused. So the content goes beside the target first, onto the disk, and is
+/// then renamed over it, the way the mailbox export writes its files: the name
+/// holds either the old file or the whole new one. `sync_all` comes before the
+/// rename because without it NTFS can still leave a zero-filled file under the
+/// name after a power cut. The unfinished name ends in `.partial`, never
+/// `.json`, so `load` never reads one as settings or as an account.
+fn written_whole(target: &Path, content: &str) -> std::io::Result<()> {
+    let _our_turn = ONE_SAVE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let on_the_way = the_name_on_the_way_to(target);
+    let file = fs::File::create(&on_the_way)?;
+    onto_the_disk_and_over(file, content, &on_the_way, target).map_err(|why| {
+        // What is left of it is not a file anybody should keep, and one that
+        // cannot be taken away is said, since somebody will find it.
+        match fs::remove_file(&on_the_way) {
+            Ok(()) => why,
+            Err(also) => std::io::Error::other(format!(
+                "{why}; the unfinished {} could not be taken away either: {also}",
+                on_the_way.display()
+            )),
+        }
+    })
+}
+
+fn onto_the_disk_and_over(
+    mut file: fs::File,
+    content: &str,
+    on_the_way: &Path,
+    target: &Path,
+) -> std::io::Result<()> {
+    file.write_all(content.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(on_the_way, target)
+}
+
+/// Where a file is written until it is whole: its name with `.partial` added.
+fn the_name_on_the_way_to(target: &Path) -> PathBuf {
+    let mut named = target.as_os_str().to_owned();
+    named.push(".partial");
+    PathBuf::from(named)
 }
 
 #[cfg(test)]
@@ -1342,6 +1397,136 @@ mod tests {
         manager.save().unwrap();
 
         assert!(config_dir.join("app_config.json").is_file());
+    }
+
+    #[test]
+    fn test_a_save_that_cannot_finish_leaves_the_settings_as_they_were() {
+        // Audit finding #7: `fs::write` emptied the file before writing it,
+        // so a power cut in that moment left settings nothing could read. A
+        // folder standing where the unfinished file goes is a save that cannot
+        // finish, made on purpose.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.app_config_mut().working_day_starts = 6;
+        manager.save().expect("the first save to be written");
+        let before = fs::read(config_dir.join("app_config.json")).expect("the saved settings");
+
+        fs::create_dir(config_dir.join("app_config.json.partial")).expect("a folder in the way");
+        manager.app_config_mut().working_day_starts = 7;
+
+        assert!(
+            manager.save().is_err(),
+            "a save that could not finish said it did"
+        );
+        assert_eq!(
+            fs::read(config_dir.join("app_config.json")).expect("the settings still there"),
+            before,
+            "a save that could not finish changed the settings it was replacing"
+        );
+    }
+
+    #[test]
+    fn test_a_save_that_cannot_finish_an_account_leaves_that_account_as_it_was() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.account_configs.insert(
+            "acc-1".to_string(),
+            AccountConfig::new("acc-1".to_string(), "Work".to_string()),
+        );
+        manager.save().expect("the first save to be written");
+        let account_file = config_dir.join("account_acc-1.json");
+        let before = fs::read(&account_file).expect("the saved account");
+
+        fs::create_dir(config_dir.join("account_acc-1.json.partial")).expect("a folder in the way");
+        if let Some(account) = manager.account_configs.get_mut("acc-1") {
+            account.name = "Home".to_string();
+        }
+
+        assert!(
+            manager.save().is_err(),
+            "a save that could not finish said it did"
+        );
+        assert_eq!(
+            fs::read(&account_file).expect("the account still there"),
+            before,
+            "a save that could not finish changed the account it was replacing"
+        );
+    }
+
+    #[test]
+    fn test_a_save_leaves_nothing_unfinished_in_the_settings_folder() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.account_configs.insert(
+            "acc-1".to_string(),
+            AccountConfig::new("acc-1".to_string(), "Work".to_string()),
+        );
+
+        manager.save().expect("the settings to be written");
+
+        let mut names: Vec<String> = fs::read_dir(&config_dir)
+            .expect("the settings folder")
+            .map(|entry| {
+                entry
+                    .expect("an entry in the settings folder")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, ["account_acc-1.json", "app_config.json"]);
+    }
+
+    #[test]
+    fn test_a_file_left_unfinished_beside_an_account_is_not_read_as_one() {
+        // What a power cut part way through writing an account leaves behind.
+        // Read as an account, half a file would fail every load from then on.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+        fs::write(
+            config_dir.join("account_acc-1.json.partial"),
+            "{\"id\": \"acc-1\", \"na",
+        )
+        .expect("half an account file");
+
+        let mut manager = ConfigManager::in_dir(config_dir).expect("a settings folder");
+        manager
+            .load()
+            .expect("the settings to be read past what was left");
+
+        assert!(manager.account_configs.is_empty());
+    }
+
+    #[test]
+    fn test_saves_made_at_once_on_several_threads_all_land_whole() {
+        // `load` writes the defaults on whatever thread first finds no file,
+        // while the window's thread saves what somebody chose. Two saves share
+        // the one unfinished name, so without a turn each, one renames away
+        // the file the other is still writing and the other fails.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let savers: Vec<_> = (0..8)
+            .map(|_| {
+                let config_dir = config_dir.clone();
+                std::thread::spawn(move || {
+                    let manager = ConfigManager::in_dir(config_dir).expect("a settings folder");
+                    (0..40).map(|_| manager.save()).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        for saver in savers {
+            for saved in saver.join().expect("a saving thread") {
+                saved.expect("every save made at once to be written");
+            }
+        }
+        let mut manager = ConfigManager::in_dir(config_dir).expect("the same settings folder");
+        manager.load().expect("the settings left whole");
     }
 
     #[test]
