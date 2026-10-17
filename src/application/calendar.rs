@@ -60,7 +60,8 @@ use crate::common::Result;
 #[cfg(test)]
 use crate::data::message_cache::SyncState;
 use crate::data::message_cache::{
-    CalendarContainer, CalendarEventEntry, MessageCache, OneProvidersCalendar,
+    CalendarContainer, CalendarEventEntry, MessageCache, OneProvidersCalendar, TheProvidersVersion,
+    WhatTheProviderHolds,
 };
 use crate::service::caldav::worth_sending;
 use crate::service::google_api::{
@@ -629,7 +630,8 @@ pub(crate) fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncRes
     }
 }
 
-/// Write down that the provider now holds this event.
+/// Write down that the provider now holds this event, and hand back the row as
+/// it stands afterwards.
 ///
 /// The provider's answer is not read back over the stored copy. A create and a
 /// change both hand back the provider's own copy of the event, which knows
@@ -637,7 +639,12 @@ pub(crate) fn record(sent: Result<()>, doing: &str, result: &mut CalendarSyncRes
 /// sparsely would blank the row. The identity and the stamp are all the push
 /// needs: the identity is how the event is found again, and the stamp is what
 /// stops the next pull deciding the provider changed it and overwriting what
-/// was just sent.
+/// was just sent. Anything done to the event here while it was being sent is
+/// kept, as [`MessageCache::the_provider_holds_the_event`] says.
+///
+/// An event deleted while it was being sent has no row to hand back, so the
+/// copy that was sent comes back under the provider's name instead, which is
+/// all a caller reads off it.
 fn settled(
     cache: &MessageCache,
     event: &CalendarEventEntry,
@@ -645,15 +652,25 @@ fn settled(
     provider_event_id: &str,
     stamp: Option<String>,
 ) -> Result<CalendarEventEntry> {
-    let mut settled = event.clone();
-    settled.calendar_id = Some(filed_under.to_string());
-    if !provider_event_id.is_empty() {
-        settled.provider_event_id = Some(provider_event_id.to_string());
-    }
-    settled.last_modified_remote = stamp;
-    settled.pending = false;
-    cache.save_calendar_event(&settled)?;
-    Ok(settled)
+    let known_as = Some(provider_event_id).filter(|named| !named.is_empty());
+    cache.the_provider_holds_the_event(
+        event,
+        WhatTheProviderHolds {
+            filed_under: Some(filed_under),
+            known_as,
+            address: None,
+            version: TheProvidersVersion::Stamp(stamp.as_deref()),
+        },
+    )?;
+    Ok(match cache.get_event_by_id(&event.id)? {
+        Some(now) => now,
+        None => CalendarEventEntry {
+            provider_event_id: known_as
+                .map(str::to_string)
+                .or_else(|| event.provider_event_id.clone()),
+            ..event.clone()
+        },
+    })
 }
 
 /// Whether the copy stored here is the newer one and has to be left alone.

@@ -23,7 +23,10 @@ mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;
 pub use address_books::AddressBookContainer;
-pub use calendar::{AnsweredHere, DeletedCalendarEvent, OneProvidersCalendar};
+pub use calendar::{
+    AnsweredHere, DeletedCalendarEvent, OneProvidersCalendar, TheProvidersVersion,
+    WhatTheProviderHolds,
+};
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};

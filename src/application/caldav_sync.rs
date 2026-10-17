@@ -56,7 +56,9 @@
 
 use crate::application::calendar::CalendarSyncResult;
 use crate::common::Result;
-use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::data::message_cache::{
+    CalendarContainer, CalendarEventEntry, MessageCache, TheProvidersVersion, WhatTheProviderHolds,
+};
 use crate::service::caldav::{
     CalDavClient, CalDavEvent, build_ical_vevent, ical_with_the_event_changed,
     ical_with_the_occurrence_changed, the_occurrence_as_the_document_holds_it,
@@ -519,10 +521,15 @@ fn settled_here_for_an_occurrence(
     event: &CalendarEventEntry,
     tag: Option<String>,
 ) -> Result<()> {
-    let mut settled = event.clone();
-    settled.etag = tag;
-    settled.pending = false;
-    cache.save_calendar_event(&settled)
+    cache.the_provider_holds_the_event(
+        event,
+        WhatTheProviderHolds {
+            filed_under: event.calendar_id.as_deref(),
+            known_as: None,
+            address: None,
+            version: TheProvidersVersion::Tag(tag.as_deref()),
+        },
+    )
 }
 
 /// Write down that the calendar server now holds this event.
@@ -532,6 +539,8 @@ fn settled_here_for_an_occurrence(
 /// Outlook passes give: a server that answers sparsely would blank it. The
 /// address matters most: without it the next change would add a second copy
 /// under a fresh identity, and the next deletion would have nowhere to go.
+/// Anything done to the event here while it was being sent is kept, as
+/// [`MessageCache::the_provider_holds_the_event`] says.
 fn settled_here(
     cache: &MessageCache,
     event: &CalendarEventEntry,
@@ -539,12 +548,15 @@ fn settled_here(
     at: &str,
     tag: Option<String>,
 ) -> Result<()> {
-    let mut settled = event.clone();
-    settled.provider_event_id = Some(uid.to_string());
-    settled.web_link = Some(at.to_string());
-    settled.etag = tag;
-    settled.pending = false;
-    cache.save_calendar_event(&settled)
+    cache.the_provider_holds_the_event(
+        event,
+        WhatTheProviderHolds {
+            filed_under: event.calendar_id.as_deref(),
+            known_as: Some(uid),
+            address: Some(at),
+            version: TheProvidersVersion::Tag(tag.as_deref()),
+        },
+    )
 }
 
 /// Everything waiting to go to this calendar, days cut out of a series first.
@@ -4368,6 +4380,12 @@ mod tests {
         cache
             .save_calendar_event(&edited)
             .expect("the edit to be stored");
+        // Read back, the way the push reads what is waiting, so the stamp it
+        // carries is the one the store gave the edit.
+        let edited = cache
+            .get_event_by_id(&edited.id)
+            .expect("the cache to be readable")
+            .expect("the edit to be there");
 
         let sent = send_one_change(
             &cache,

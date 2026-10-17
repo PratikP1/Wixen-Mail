@@ -76,6 +76,39 @@ pub struct DeletedCalendarEvent {
     pub so_far: TheDeletionSoFar,
 }
 
+/// What a provider answered for an event a push sent it.
+#[derive(Debug, Clone, Copy)]
+pub struct WhatTheProviderHolds<'a> {
+    /// The calendar here the provider's copy belongs to, when the push filed
+    /// it under one.
+    pub filed_under: Option<&'a str>,
+    /// The provider's name for the event, when its answer gave one.
+    pub known_as: Option<&'a str>,
+    /// Where a calendar server keeps the event.
+    pub address: Option<&'a str>,
+    /// The version its answer carried.
+    pub version: TheProvidersVersion<'a>,
+}
+
+/// The version a provider hands back, which each kind keeps in a column of
+/// its own.
+#[derive(Debug, Clone, Copy)]
+pub enum TheProvidersVersion<'a> {
+    /// A calendar server's entity tag.
+    Tag(Option<&'a str>),
+    /// Google's or Outlook's stamp for when it last changed the event.
+    Stamp(Option<&'a str>),
+}
+
+impl<'a> TheProvidersVersion<'a> {
+    fn column_and_value(self) -> (&'static str, Option<&'a str>) {
+        match self {
+            Self::Tag(tag) => ("etag", tag),
+            Self::Stamp(stamp) => ("last_modified_remote", stamp),
+        }
+    }
+}
+
 /// SQL column list for calendar events (used in all SELECT queries).
 const EVENT_COLS: &str =
     "id, account_id, provider_event_id, calendar_id, summary, description, location,
@@ -831,23 +864,136 @@ impl MessageCache {
         Ok(events)
     }
 
-    /// This copy now agrees with the provider.
+    /// The provider now holds this event, as the push read it.
     ///
-    /// Called after a change has been sent, with the stamp the provider gave
-    /// back, so the next pull compares against what the provider holds now
-    /// rather than against what it held before the change went up.
-    pub fn mark_calendar_event_sent(
+    /// What the provider answered is written rather than the whole row,
+    /// because the row the push read is the one it sent, and the window writes
+    /// on a connection of its own while a sync pushes. Saving the copy that
+    /// was sent wrote over anything somebody did to the event in between. Each
+    /// thing they can do is kept:
+    ///
+    /// - edited: the provider's name, address and version are recorded and the
+    ///   event stays waiting, because the stamp it carries is no longer
+    ///   `as_sent.updated_at`, so the next push sends the edit;
+    /// - moved into another calendar while it was first being made: the
+    ///   provider made it in the calendar it left, so the row stays where it
+    ///   was put with no name, to be made there by the next push, and the copy
+    ///   the provider made is owed a deletion;
+    /// - deleted: the deletion written while the event had no name gains the
+    ///   provider's, so the next push deletes what the provider made.
+    ///
+    /// The flag is the only thing the comparison decides. The name, address
+    /// and version are written either way, since without them the next push
+    /// would make the event a second time. The read and the write are one
+    /// immediate transaction, so nothing the window does can land between them.
+    pub fn the_provider_holds_the_event(
         &self,
-        event_id: &str,
-        last_modified_remote: Option<&str>,
+        as_sent: &CalendarEventEntry,
+        holds: WhatTheProviderHolds,
+    ) -> Result<()> {
+        let settling = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|e| Error::Other(format!("Failed to start recording an event as sent: {e}")))?;
+        match self.get_event_by_id(&as_sent.id)? {
+            None => self.name_the_deleted_event(&as_sent.id, holds)?,
+            Some(here)
+                if as_sent.provider_event_id.is_none()
+                    && here.calendar_id != as_sent.calendar_id =>
+            {
+                self.owe_a_deletion_from_the_calendar_it_left(as_sent, holds)?
+            }
+            Some(_) => self.write_down_what_the_provider_holds(as_sent, holds)?,
+        }
+        settling
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to record an event as sent: {e}")))
+    }
+
+    /// The provider's answer written onto the row, with the flag cleared only
+    /// when the row still carries the stamp the push read.
+    ///
+    /// The calendar is only ever filled in, never moved: a row already filed
+    /// under one keeps it.
+    fn write_down_what_the_provider_holds(
+        &self,
+        as_sent: &CalendarEventEntry,
+        holds: WhatTheProviderHolds,
+    ) -> Result<()> {
+        let (version_column, version) = holds.version.column_and_value();
+        self.conn
+            .execute(
+                &format!(
+                    "UPDATE calendar_events
+                     SET calendar_id = COALESCE(calendar_id, ?2),
+                         provider_event_id = COALESCE(?3, provider_event_id),
+                         web_link = COALESCE(?4, web_link),
+                         {version_column} = ?5,
+                         pending = CASE WHEN updated_at = ?6 THEN 0 ELSE pending END
+                     WHERE id = ?1"
+                ),
+                params![
+                    as_sent.id,
+                    holds.filed_under,
+                    holds.known_as,
+                    holds.address,
+                    version,
+                    as_sent.updated_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to record an event as sent: {e}")))?;
+        Ok(())
+    }
+
+    /// Give a deletion written before the event had a name the name, calendar
+    /// and address the provider's copy has. One that already names a copy is
+    /// left as it is.
+    fn name_the_deleted_event(&self, event_id: &str, holds: WhatTheProviderHolds) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE deleted_calendar_events
+                 SET provider_event_id = ?2,
+                     calendar_id = COALESCE(?3, calendar_id),
+                     event_url = COALESCE(?4, event_url)
+                 WHERE id = ?1 AND provider_event_id IS NULL",
+                params![event_id, holds.known_as, holds.filed_under, holds.address],
+            )
+            .map_err(|e| Error::Other(format!("Failed to name a deleted event: {e}")))?;
+        Ok(())
+    }
+
+    /// Leave the provider a deletion of the copy it made in the calendar the
+    /// event was in when it was sent.
+    ///
+    /// Under an identifier of its own rather than the event's: the event is
+    /// still here, and deleting it later would write its own note under its id
+    /// and replace this one, leaving the copy in the old calendar named by
+    /// nothing.
+    fn owe_a_deletion_from_the_calendar_it_left(
+        &self,
+        as_sent: &CalendarEventEntry,
+        holds: WhatTheProviderHolds,
     ) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE calendar_events SET pending = 0, last_modified_remote = ?1
-                 WHERE id = ?2",
-                params![last_modified_remote, event_id],
+                "INSERT INTO deleted_calendar_events
+                    (id, account_id, provider_event_id, calendar_id, deleted_at, event_url)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    format!("event-{}", uuid::Uuid::new_v4()),
+                    as_sent.account_id,
+                    holds.known_as,
+                    holds.filed_under,
+                    chrono::Utc::now().to_rfc3339(),
+                    holds.address,
+                ],
             )
-            .map_err(|e| Error::Other(format!("Failed to clear the pending flag: {}", e)))?;
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the provider is owed for a moved event: {e}"
+                ))
+            })?;
         Ok(())
     }
 
@@ -2690,9 +2836,21 @@ mod tests {
         let mut changed = make_event("evt-1", "acct", "uid-1", "Standup");
         changed.pending = true;
         cache.save_calendar_event(&changed).expect("the change");
+        let as_sent = cache
+            .get_event_by_id("evt-1")
+            .expect("the calendar to be readable")
+            .expect("the change to be there");
 
         cache
-            .mark_calendar_event_sent("evt-1", Some("2026-03-06T09:00:00Z"))
+            .the_provider_holds_the_event(
+                &as_sent,
+                WhatTheProviderHolds {
+                    filed_under: None,
+                    known_as: Some("uid-1"),
+                    address: None,
+                    version: TheProvidersVersion::Stamp(Some("2026-03-06T09:00:00Z")),
+                },
+            )
             .expect("the provider to have answered");
 
         let stored = cache
