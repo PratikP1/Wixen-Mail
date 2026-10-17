@@ -1345,6 +1345,136 @@ mod tests {
     }
 
     #[test]
+    fn test_a_save_that_cannot_finish_leaves_the_settings_as_they_were() {
+        // Audit finding #7: `fs::write` emptied the file before writing it,
+        // so a power cut in that moment left settings nothing could read. A
+        // folder standing where the unfinished file goes is a save that cannot
+        // finish, made on purpose.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.app_config_mut().working_day_starts = 6;
+        manager.save().expect("the first save to be written");
+        let before = fs::read(config_dir.join("app_config.json")).expect("the saved settings");
+
+        fs::create_dir(config_dir.join("app_config.json.partial")).expect("a folder in the way");
+        manager.app_config_mut().working_day_starts = 7;
+
+        assert!(
+            manager.save().is_err(),
+            "a save that could not finish said it did"
+        );
+        assert_eq!(
+            fs::read(config_dir.join("app_config.json")).expect("the settings still there"),
+            before,
+            "a save that could not finish changed the settings it was replacing"
+        );
+    }
+
+    #[test]
+    fn test_a_save_that_cannot_finish_an_account_leaves_that_account_as_it_was() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.account_configs.insert(
+            "acc-1".to_string(),
+            AccountConfig::new("acc-1".to_string(), "Work".to_string()),
+        );
+        manager.save().expect("the first save to be written");
+        let account_file = config_dir.join("account_acc-1.json");
+        let before = fs::read(&account_file).expect("the saved account");
+
+        fs::create_dir(config_dir.join("account_acc-1.json.partial")).expect("a folder in the way");
+        if let Some(account) = manager.account_configs.get_mut("acc-1") {
+            account.name = "Home".to_string();
+        }
+
+        assert!(
+            manager.save().is_err(),
+            "a save that could not finish said it did"
+        );
+        assert_eq!(
+            fs::read(&account_file).expect("the account still there"),
+            before,
+            "a save that could not finish changed the account it was replacing"
+        );
+    }
+
+    #[test]
+    fn test_a_save_leaves_nothing_unfinished_in_the_settings_folder() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.account_configs.insert(
+            "acc-1".to_string(),
+            AccountConfig::new("acc-1".to_string(), "Work".to_string()),
+        );
+
+        manager.save().expect("the settings to be written");
+
+        let mut names: Vec<String> = fs::read_dir(&config_dir)
+            .expect("the settings folder")
+            .map(|entry| {
+                entry
+                    .expect("an entry in the settings folder")
+                    .file_name()
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .collect();
+        names.sort();
+        assert_eq!(names, ["account_acc-1.json", "app_config.json"]);
+    }
+
+    #[test]
+    fn test_a_file_left_unfinished_beside_an_account_is_not_read_as_one() {
+        // What a power cut part way through writing an account leaves behind.
+        // Read as an account, half a file would fail every load from then on.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+        fs::write(
+            config_dir.join("account_acc-1.json.partial"),
+            "{\"id\": \"acc-1\", \"na",
+        )
+        .expect("half an account file");
+
+        let mut manager = ConfigManager::in_dir(config_dir).expect("a settings folder");
+        manager
+            .load()
+            .expect("the settings to be read past what was left");
+
+        assert!(manager.account_configs.is_empty());
+    }
+
+    #[test]
+    fn test_saves_made_at_once_on_several_threads_all_land_whole() {
+        // `load` writes the defaults on whatever thread first finds no file,
+        // while the window's thread saves what somebody chose. Two saves share
+        // the one unfinished name, so without a turn each, one renames away
+        // the file the other is still writing and the other fails.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let savers: Vec<_> = (0..8)
+            .map(|_| {
+                let config_dir = config_dir.clone();
+                std::thread::spawn(move || {
+                    let manager = ConfigManager::in_dir(config_dir).expect("a settings folder");
+                    (0..40).map(|_| manager.save()).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        for saver in savers {
+            for saved in saver.join().expect("a saving thread") {
+                saved.expect("every save made at once to be written");
+            }
+        }
+        let mut manager = ConfigManager::in_dir(config_dir).expect("the same settings folder");
+        manager.load().expect("the settings left whole");
+    }
+
+    #[test]
     fn test_the_settings_folder_is_created_if_it_is_not_there() {
         // A first run has an empty application data folder, and the manager is
         // built before anything asks it to save.
