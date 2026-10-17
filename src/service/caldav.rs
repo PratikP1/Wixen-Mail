@@ -5510,6 +5510,155 @@ mod tests {
         assert_eq!(extract_xml_value(xml, "d:missing"), None);
     }
 
+    // ── A value read as the text it carries ──────────────────────────────
+    //
+    // XML carries "&" as "&amp;", and a reader that hands the escape on as it
+    // came stores "Dinner &amp; drinks", reads it out that way, and writes it
+    // back to the server for every other calendar to show (audit #46).
+
+    /// What the reader makes of one element holding exactly this.
+    fn read_as_text(written: &str) -> Option<String> {
+        extract_xml_value(
+            &format!("<d:displayname>{written}</d:displayname>"),
+            "d:displayname",
+        )
+    }
+
+    #[test]
+    fn test_every_reference_xml_defines_is_read_as_its_character() {
+        for (written, meant) in [
+            ("&amp; &lt; &gt; &quot; &apos;", "& < > \" '"),
+            ("Dinner &amp; drinks", "Dinner & drinks"),
+            ("&#38;", "&"),
+            ("&#x26;", "&"),
+            ("&#x2a;&#x2A;", "**"),
+            ("caf&#233;", "caf\u{e9}"),
+            ("&#x1F4C5;", "\u{1F4C5}"),
+            ("a line&#13;", "a line\r"),
+        ] {
+            assert_eq!(
+                read_as_text(written).as_deref(),
+                Some(meant),
+                "{written} was not read as the text it carries"
+            );
+        }
+    }
+
+    #[test]
+    fn test_what_names_no_character_is_left_as_it_arrived() {
+        // An entity a document declares for itself is never expanded, and a
+        // number naming no character XML allows is not one to make up.
+        for written in [
+            "&nope;",
+            "&#xZZ;",
+            "&#0;",
+            "&#xD800;",
+            "&#X26;",
+            "&#+38;",
+            "&#;",
+            "&#x;",
+            "fish & chips",
+            "&amp",
+        ] {
+            assert_eq!(
+                read_as_text(written).as_deref(),
+                Some(written),
+                "{written} names no character and should have been left alone"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_reference_is_read_once() {
+        // A document writing "&amp;lt;" means the four characters "&lt;".
+        assert_eq!(read_as_text("&amp;lt;").as_deref(), Some("&lt;"));
+        assert_eq!(read_as_text("&amp;amp;").as_deref(), Some("&amp;"));
+        assert_eq!(read_as_text("&amp;#38;").as_deref(), Some("&#38;"));
+    }
+
+    #[test]
+    fn test_a_cdata_section_comes_back_exactly_as_written() {
+        for (written, meant) in [
+            ("<![CDATA[a &amp; b]]>", "a &amp; b"),
+            ("<![CDATA[ two  spaces ]]>", " two  spaces "),
+            ("x &amp; <![CDATA[&amp;]]> y", "x & &amp; y"),
+            ("<![CDATA[one]]><![CDATA[two]]>", "onetwo"),
+            // Never closed: the section is left as it arrived, wrapper and all.
+            ("&amp; <![CDATA[a &amp; b", "& <![CDATA[a &amp; b"),
+        ] {
+            assert_eq!(
+                read_as_text(written).as_deref(),
+                Some(meant),
+                "{written} was not read as written"
+            );
+        }
+    }
+
+    #[test]
+    fn test_an_escaped_event_in_a_report_is_read_as_the_text_it_carries() {
+        // A title holding "&", a quoted zone name, and lines ending in a
+        // carriage return written as a reference, which some servers send.
+        // Read with the escapes in, the title is "Dinner &amp; drinks", the
+        // zone name is split inside its quotes, and every line carries
+        // "&#13;" on its end.
+        let document = [
+            "BEGIN:VCALENDAR",
+            "VERSION:2.0",
+            "BEGIN:VEVENT",
+            "UID:dinner-1",
+            "SUMMARY:Dinner &amp; drinks",
+            "DTSTART;TZID=&quot;America/Argentina/Buenos_Aires&quot;:20260305T190000",
+            "END:VEVENT",
+            "END:VCALENDAR",
+        ]
+        .join("&#13;\n");
+        let answer = format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/dav/sam/work/dinner-1.ics</d:href><d:propstat><d:prop>\
+             <d:getetag>&quot;v1&quot;</d:getetag>\
+             <c:calendar-data>{document}</c:calendar-data>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>"
+        );
+
+        let events = parse_report_events(&answer, "https://cal.example.com/dav/sam/work/")
+            .expect("the report to be read");
+
+        assert_eq!(events.len(), 1, "{events:?}");
+        let dinner = &events[0];
+        assert_eq!(dinner.summary, "Dinner & drinks");
+        assert_eq!(dinner.uid, "dinner-1");
+        assert_eq!(dinner.dtstart, "2026-03-05T19:00:00");
+        assert_eq!(
+            dinner.time_zone.as_deref(),
+            Some("America/Argentina/Buenos_Aires")
+        );
+        assert_eq!(dinner.etag.as_deref(), Some("\"v1\""));
+        assert!(
+            !dinner.ical_data.contains("&amp;") && !dinner.ical_data.contains("&#13;"),
+            "the document kept for writing back still carries XML's escapes: {}",
+            dinner.ical_data
+        );
+    }
+
+    #[test]
+    fn test_a_calendar_named_with_an_escape_is_named_as_written() {
+        let answer = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <d:multistatus xmlns:d=\"DAV:\" xmlns:c=\"urn:ietf:params:xml:ns:caldav\">\
+             <d:response><d:href>/dav/sam/home/</d:href><d:propstat><d:prop>\
+             <d:displayname>Work &amp; Home</d:displayname>\
+             <d:resourcetype><d:collection/><c:calendar/></d:resourcetype>\
+             </d:prop></d:propstat></d:response>\
+             </d:multistatus>";
+
+        let calendars = parse_propfind_calendars(answer, "https://cal.example.com/dav/sam/")
+            .expect("the listing to be read");
+
+        assert_eq!(calendars.len(), 1, "{calendars:?}");
+        assert_eq!(calendars[0].display_name, "Work & Home");
+    }
+
     // ── Hostile calendar data ───────────────────────────────────────────
     //
     // An .ics feed is fetched over the network from a URL the user subscribed
