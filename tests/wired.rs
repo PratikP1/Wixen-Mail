@@ -4993,3 +4993,110 @@ fn test_the_reading_of_the_folder_import_can_see_the_hand_over_taken_out() {
         "the folder picker was swapped for a file picker and the reading did not see it"
     );
 }
+
+/// The tick's drain of the workers' updates, run as one turn, in the main
+/// window with the whitespace taken out.
+const THE_TICK_DRAINS_AS_ONE_TURN: &str =
+    "a11y.as_one_turn(||{whileletOk(update)=ui_rx.try_recv(){";
+
+/// The menu bar's, the tray's and the conversation window's one dispatch,
+/// wrapped so each command it runs is one turn, with the whitespace taken out.
+const EVERY_COMMAND_RUNS_AS_ONE_TURN: &str = "a11y.as_one_turn(||dispatch(id))";
+
+/// The three places a command reaches the dispatch, with the whitespace taken
+/// out: the menu bar and its accelerators, the tray icon, and the
+/// conversation window's Act arm through `runs_a_command`.
+const WHERE_COMMANDS_REACH_THE_DISPATCH: [&str; 3] = [
+    "move|event|dispatch(event.get_id())",
+    "*answers_the_tray.borrow_mut()=Some(std::rc::Rc::clone(&dispatch));",
+    "*runs_a_command.borrow_mut()=Some(std::rc::Rc::clone(&dispatch));",
+];
+
+/// Whether the main window runs its tick's drain and every command as one
+/// turn, so what each says is joined into one line (audit finding #32).
+#[derive(Debug, PartialEq)]
+struct TheTurns {
+    the_tick_drains_as_one: bool,
+    every_command_runs_as_one: bool,
+}
+
+/// Reads the turns out of the main window's shipping half, whitespace taken
+/// out, so wrapping by the formatter moves nothing.
+///
+/// A command counts as wrapped when each place a command reaches the
+/// dispatch comes after the wrap in the text, which inside the one function
+/// that builds them is after the `let` that shadows the bare dispatch.
+///
+/// What this cannot see: a second `let dispatch` between the wrap and a
+/// hookup that undoes it, a handler bound anywhere else that announces more
+/// than once, or whether the turn's flush says anything. Those are held, or
+/// left, by the cases in `presentation::accessibility` and the plan's summary.
+fn the_turns(squashed: &str) -> TheTurns {
+    let wrapped_at = squashed.find(EVERY_COMMAND_RUNS_AS_ONE_TURN);
+    TheTurns {
+        the_tick_drains_as_one: squashed.contains(THE_TICK_DRAINS_AS_ONE_TURN),
+        every_command_runs_as_one: wrapped_at.is_some_and(|at| {
+            WHERE_COMMANDS_REACH_THE_DISPATCH
+                .iter()
+                .all(|hookup| squashed[at..].contains(hookup))
+        }),
+    }
+}
+
+/// Everything the workers report in one tick, and everything one command
+/// says, goes out as one line.
+///
+/// Each line ends as one write to one hidden control, and a screen reader
+/// reads that control's text when it gets round to the event, so two lines
+/// written a moment apart are heard as the second. The tick drains every
+/// update in one loop; a failed send, the lost connection and the Outbox's
+/// closing count arrive together, and only the count was heard.
+#[test]
+fn test_the_tick_and_every_command_speak_as_one_turn() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    assert_eq!(
+        the_turns(&without_whitespace(&what_ships(&app))),
+        TheTurns {
+            the_tick_drains_as_one: true,
+            every_command_runs_as_one: true,
+        },
+        "the tick's drain or the command dispatch is no longer run as one turn, so lines said \
+         together overwrite each other again"
+    );
+}
+
+/// The reading above can see either turn taken out of the real main window.
+///
+/// It plants on the tree as it is, so it asserts first that each turn is
+/// there to take out, and it goes red beside the check above when a turn is
+/// really taken out of the main window. The two guard records that take one
+/// out name both.
+#[test]
+fn test_the_reading_of_the_turns_can_see_either_taken_out() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let squashed = without_whitespace(&what_ships(&app));
+
+    let no_tick_turn = squashed.replacen(
+        THE_TICK_DRAINS_AS_ONE_TURN,
+        "{whileletOk(update)=ui_rx.try_recv(){",
+        1,
+    );
+    assert_ne!(
+        no_tick_turn, squashed,
+        "the tick's turn was not there to take out"
+    );
+    assert!(
+        !the_turns(&no_tick_turn).the_tick_drains_as_one,
+        "the tick's turn was taken out and the reading still found it"
+    );
+
+    let no_command_turn = squashed.replacen(EVERY_COMMAND_RUNS_AS_ONE_TURN, "dispatch(id)", 1);
+    assert_ne!(
+        no_command_turn, squashed,
+        "the commands' turn was not there to take out"
+    );
+    assert!(
+        !the_turns(&no_command_turn).every_command_runs_as_one,
+        "the commands' turn was taken out and the reading still found it"
+    );
+}

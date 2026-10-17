@@ -6310,6 +6310,16 @@ impl WxMailApp {
                     }
                 }
             });
+            // Each command as one turn, so what one command says is heard as
+            // one line rather than each sentence written over the one before
+            // (audit finding #32). Wrapped here rather than at the menu bar so
+            // the tray and the conversation window, which reach the same
+            // dispatch through `answers_the_tray` and `runs_a_command`, are
+            // covered as well.
+            let dispatch: std::rc::Rc<dyn Fn(i32)> = {
+                let a11y = a11y.clone();
+                std::rc::Rc::new(move |id| a11y.as_one_turn(|| dispatch(id)))
+            };
             // ── Which program Windows opens things with ───────────────────
             //
             // Only when asked for. Somebody who has chosen another mail program
@@ -6556,34 +6566,45 @@ impl WxMailApp {
                             }
                         }
                     };
-                    while let Ok(update) = ui_rx.try_recv() {
-                        handle_update(
-                            &update,
-                            UpdateTargets {
-                                state: &state,
-                                folder_tree: &folder_tree,
-                                msg_list: &msg_list,
-                                column_layout: &column_layout,
-                                preview: &preview_host,
-                                frame: &frame,
-                                toolbar: toolbar_handle,
-                                a11y: &a11y,
-                                pim: &pim_refs,
-                                message_cache: &message_cache,
-                                back_online_offer: &back_online_offer,
-                                reader: &reader,
-                                tx: &ui_tx,
-                                rt: &runtime,
-                                focus_home: &focus_home_cell,
-                                waiting_to_be_asked_about: &waiting_to_be_asked_about,
-                                opens_a_handover: &open_a_handover,
-                            },
-                        );
-                    }
+                    // Every update the workers sent since the last tick, as
+                    // one turn: a failed send, the lost connection and the
+                    // Outbox's closing count arrive together, and said one
+                    // after another each was written over the one before, so
+                    // only the count was heard (audit finding #32).
+                    a11y.as_one_turn(|| {
+                        while let Ok(update) = ui_rx.try_recv() {
+                            handle_update(
+                                &update,
+                                UpdateTargets {
+                                    state: &state,
+                                    folder_tree: &folder_tree,
+                                    msg_list: &msg_list,
+                                    column_layout: &column_layout,
+                                    preview: &preview_host,
+                                    frame: &frame,
+                                    toolbar: toolbar_handle,
+                                    a11y: &a11y,
+                                    pim: &pim_refs,
+                                    message_cache: &message_cache,
+                                    back_online_offer: &back_online_offer,
+                                    reader: &reader,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                    focus_home: &focus_home_cell,
+                                    waiting_to_be_asked_about: &waiting_to_be_asked_about,
+                                    opens_a_handover: &open_a_handover,
+                                },
+                            );
+                        }
+                    });
 
                     // The queue paces itself, so a burst leaves a remainder
                     // behind. Without this tick nothing would collect it and
-                    // those announcements would never be spoken.
+                    // those announcements would never be spoken. It also
+                    // releases what a command has said so far while a dialog
+                    // the command opened is waiting, since that command's
+                    // turn stays open until the dialog closes and the tick
+                    // runs inside it.
                     let _ = a11y.flush_announcements();
 
                     // The visual channel. This is what a deaf-blind user's

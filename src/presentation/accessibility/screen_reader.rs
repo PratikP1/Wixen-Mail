@@ -415,12 +415,16 @@ fn carrier(registered: bool, handle: isize) -> Carrier {
     }
 }
 
-/// A line said before there was anywhere to carry it.
+/// One line for the screen reader: its words, how hard to hold on to it, and
+/// the topic whose earlier line it may replace, empty when it has none.
+///
+/// What the bridge keeps while there is nowhere to carry a line, and what the
+/// layer above hands it when several lines are released at once.
 #[derive(Debug, Clone)]
-struct Held {
-    text: String,
-    urgency: Urgency,
-    topic: String,
+pub(crate) struct Line {
+    pub(crate) text: String,
+    pub(crate) urgency: Urgency,
+    pub(crate) topic: String,
 }
 
 /// How many waiting lines to keep.
@@ -445,32 +449,67 @@ fn notification_processing(urgency: Urgency, topic: &str) -> native::Processing 
     }
 }
 
-/// Everything that was waiting, as the one announcement it has to become.
+/// Several sentences as the one they become when said together, in the order
+/// given.
 ///
-/// The waiting lines all go to the same control, and carrying one means writing
-/// its text there. Handed over one after another they would overwrite each
-/// other in the time it takes to run a loop, so only the last would still be
-/// there to be read: two lines held would deliver one, which is the failure the
-/// holding exists to prevent.
+/// One sentence comes back exactly as it was written. Several are joined with
+/// a full stop between each and the next, and none at the end, except that a
+/// sentence already ending in a question or an exclamation keeps its mark and
+/// is followed by a space alone. Empty sentences are left out.
+///
+/// The one rule for both channels: the speech the layer above releases in one
+/// go, and the status bar it shows at the same moment, so the two say the same
+/// thing in the same order.
+pub(crate) fn said_together<'a>(sentences: impl IntoIterator<Item = &'a str>) -> String {
+    let sentences: Vec<&str> = sentences
+        .into_iter()
+        .filter(|sentence| !without_its_full_stop(sentence).is_empty())
+        .collect();
+    if let [only] = sentences[..] {
+        return only.to_string();
+    }
+    let mut joined = String::new();
+    for sentence in sentences.into_iter().map(without_its_full_stop) {
+        if !joined.is_empty() {
+            joined.push_str(if joined.ends_with(['?', '!']) {
+                " "
+            } else {
+                ". "
+            });
+        }
+        joined.push_str(sentence);
+    }
+    joined
+}
+
+/// A sentence without the full stop and spaces it ends with.
+fn without_its_full_stop(sentence: &str) -> &str {
+    sentence.trim_end_matches(['.', ' '])
+}
+
+/// Lines released together, as the one announcement they have to become.
+///
+/// They all go to the same control, and carrying one means writing its text
+/// there. Handed over one after another they would overwrite each other in the
+/// time it takes to run a loop, so only the last would still be there to be
+/// read: the lines waiting for a window would deliver one, which is the failure
+/// the holding exists to prevent, and lines released by one flush would lose
+/// all but the least urgent, which was audit finding #32.
 ///
 /// The most urgent of them decides how the whole is treated, because the
 /// handover cannot be less urgent than the most urgent thing in it. The topic
 /// is dropped: a topic says which earlier line this one replaces, and no single
 /// topic is true of a joined line. Keeping one would let a later announcement
-/// on that topic silence the whole opening of the session.
-fn handed_over_together(waiting: &[Held]) -> Option<Held> {
-    let text = waiting
-        .iter()
-        .map(|line| line.text.trim_end_matches(['.', ' ']))
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join(". ");
+/// on that topic silence the whole opening of the session. A line alone is
+/// handed over as it is, topic and all.
+pub(crate) fn handed_over_together(lines: &[Line]) -> Option<Line> {
+    let text = said_together(lines.iter().map(|line| line.text.as_str()));
     if text.is_empty() {
         return None;
     }
-    Some(Held {
+    Some(Line {
         text,
-        urgency: waiting
+        urgency: lines
             .iter()
             .map(|line| line.urgency)
             .min_by_key(|urgency| match urgency {
@@ -479,7 +518,10 @@ fn handed_over_together(waiting: &[Held]) -> Option<Held> {
                 Urgency::Routine => 2,
             })
             .unwrap_or(Urgency::Routine),
-        topic: String::new(),
+        topic: match lines {
+            [only] => only.topic.clone(),
+            _ => String::new(),
+        },
     })
 }
 
@@ -494,7 +536,7 @@ pub struct ScreenReaderBridge {
     /// Whether a window has been offered at all, which zero cannot say.
     registered: AtomicBool,
     /// Lines said before there was anywhere to carry them, oldest first.
-    held: Mutex<Vec<Held>>,
+    held: Mutex<Vec<Line>>,
 }
 
 impl ScreenReaderBridge {
@@ -566,7 +608,7 @@ impl ScreenReaderBridge {
         if held.len() >= MAX_HELD {
             held.remove(0);
         }
-        held.push(Held {
+        held.push(Line {
             text: text.to_string(),
             urgency,
             topic: topic.to_string(),
@@ -626,6 +668,23 @@ impl ScreenReaderBridge {
     pub fn held(&self) -> Vec<String> {
         match self.held.lock() {
             Ok(held) => held.iter().map(|line| line.text.clone()).collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// The lines still waiting for a window, each with how hard the screen
+    /// reader is to hold on to it and the topic it may replace.
+    ///
+    /// For the tests of the layer above, which have no other way to see what
+    /// urgency and topic a line was handed over with. Never log what this
+    /// returns, for the reason [`Self::held`] gives.
+    #[cfg(test)]
+    pub(crate) fn held_as_handed_over(&self) -> Vec<(String, Urgency, String)> {
+        match self.held.lock() {
+            Ok(held) => held
+                .iter()
+                .map(|line| (line.text.clone(), line.urgency, line.topic.clone()))
+                .collect(),
             Err(_) => Vec::new(),
         }
     }
@@ -937,12 +996,12 @@ pub(crate) mod tests {
         // This says what the code builds. Whether a reader speaks it is a
         // separate question and only a screen reader answers it.
         let waiting = vec![
-            Held {
+            Line {
                 text: "Focus moved to Folders".to_string(),
                 urgency: Urgency::Routine,
                 topic: "focus".to_string(),
             },
-            Held {
+            Line {
                 text: "Wixen Mail is ready.".to_string(),
                 urgency: Urgency::Important,
                 topic: String::new(),

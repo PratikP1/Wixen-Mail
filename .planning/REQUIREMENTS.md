@@ -4222,6 +4222,16 @@ provider does.
     `test_a_second_check_of_one_account_waits_for_the_first` and
     `test_a_check_takes_its_accounts_turn_before_its_session` with its companion. Hearing it is
     ledger 852. No `[D]` clause is added and the box stays ticked.
+  - 13.2-22 on 2026-10-17: what arrived is no longer written over by the sentences that close
+    a check, or by anything else said at the same moment (finding #32). Lines released
+    together go to the screen reader as one line, most urgent first, the UI tick's handling of
+    the workers' updates and each menu, accelerator or tray command run as one turn whose lines
+    are joined, and the status bar shows the same sentences in the same order. Held by
+    `test_a_failed_send_the_lost_connection_and_the_outbox_said_in_one_turn_are_one_line`,
+    `test_flush_announcements_priority_order` and their neighbours in
+    `presentation::accessibility`, and by `test_the_tick_and_every_command_speak_as_one_turn`
+    in `tests/wired.rs` with its companion. Hearing it is ledger 886; handlers outside a turn
+    are ledger 887. No `[D]` clause is added and the box stays ticked.
 
 ### Reading, and the list
 
@@ -7924,7 +7934,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850 |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, each message's text asked for at most once a run, ledger 851 |
 | MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864 |
-| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852 |
+| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852; 13.2-22 done 2026-10-17, lines said at the same moment are joined into one line, most urgent first, and the status bar shows them in the same order, ledger 886 and 887 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |

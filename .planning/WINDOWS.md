@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 759
+open_count: 762
 waived_count: 0
 fixed_count: 126
-total_count: 885
-last_updated: 2026-10-17T22:00:00.000Z
+total_count: 888
+last_updated: 2026-10-18T00:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -900,6 +900,9 @@ last_updated: 2026-10-17T22:00:00.000Z
 | 883 | 13.2 | todo | src/data/message_cache/calendar.rs |  | Found by 13.2-20.1: delete_calendar_event writes the deletion note and then removes the row in two statements with no transaction around them. A sync settling that event's create between the two writes the provider's name onto the row, which is then removed, while the note keeps no name, so the provider keeps a copy nobody is owed the deletion of. The window is two statements wide on the window's thread and has not been seen. delete_task and delete_note were not read for the same shape. Recommended: run the two statements in one immediate transaction, as the settles now do; for a later plan | open |  | 2026-10-17T12:00:00.000Z |  |
 | 884 | 13.2 | unrun-verify | src/application/contacts_sync.rs |  | 13.2-21, findings #29 and #30 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-21's merge: a Gmail account whose calendar and contacts last synced more than seven days before, with a meeting cancelled in Google Calendar and a contact deleted in Google Contacts meanwhile, both gone here after the next sync and the log saying the marker was too old and the whole calendar and address book read again; a meeting a year and a half ahead kept; and the same for an Outlook contact deleted while the delta link aged out. Held by the stand-in servers and scripted address books, which answer as Google's guide "Synchronize resources efficiently" says (last updated 2026-09-11, read 2026-10-17: an incremental request with an invalid sync token is answered 410, which "should trigger a full wipe of the client's store and a new full sync"); nobody has seen Google or Graph do it from a live account, and no CardDAV server has been met | open |  | 2026-10-17T22:00:00.000Z |  |
 | 885 | 13.2 | todo | src/data/message_cache/taking_back.rs |  | Found by 13.2-21: the_contact, which Undo reads before a delete, finds one contact by reading every contact of her account and keeping one, the read per person 13.2-21 took out of the three syncs. MessageCache::get_contact now reads one contact with the address books that know her. Recommended: have the_contact call get_contact; one line, for a later plan | open |  | 2026-10-17T22:00:00.000Z |  |
+| 886 | 13.2 | unrun-verify | src/presentation/accessibility.rs |  | 13.2-22, finding #32 of the audit of 2026-10-14, for the tester on a build holding 13.2-22's merge: on a POP account with a wrong outgoing password, sending from the Outbox is heard under NVDA as one line, "Message not sent" with the server's reason, then "Disconnected", then "The Outbox is done: 0 sent, 1 not sent", and the status bar shows the failure before "Disconnected". Also that a menu command opening a dialog still has what it said heard while the dialog waits: the command's turn stays open until the dialog closes, and the timer's own flush releases its lines within a tick, which no case drives because the tick and a dialog need a running window. Held by the cases in presentation::accessibility and the reading in tests/wired.rs; no screen reader has heard a joined line | open |  | 2026-10-17T23:30:00.000Z |  |
+| 887 | 13.2 | todo | src/presentation/wx_app.rs |  | Found by 13.2-22: only the tick's drain of the workers' updates and the main window's one dispatch, which the menu bar, its accelerators, the tray and the conversation window's commands share, run as one turn. A handler bound anywhere else that says two things on one path still writes the second over the first. Read by 13.2-22 and saying one thing per path: the notes editor's Save, the folder tree's Enter and selection, the contacts tree's selection, the contact list's selection, the module switch, the calendar's Today, Previous, Next and view picker, the message list's Enter and the calendar sidebar's Enter. The reader window, the composer and every dialog's own handlers were not read. Recommended: read them, or run every handler the main window binds as a turn where it is bound; for a later plan | open |  | 2026-10-17T23:30:00.000Z |  |
+| 888 | 13.2 | todo | Cargo.lock |  | Found by 13.2-22 on pull request 188, CI run 39072333951: Security Audit failed on RUSTSEC-2026-0373 against ammonia 4.1.7, "Missing case-insensitive matching for CSS url function", dated 2026-10-16, solution "Upgrade to >=4.2.4 OR >=4.1.8, <4.2.0", besides ledger 879's three zip advisories. ammonia is what sanitizes a stranger's HTML before the preview shows it, so a CSS url written in capitals may get past it; whether this project's allowed attributes and styles let a url through at all was not read. 13.2-22 changed no dependency. Recommended: move ammonia to 4.1.8, a patch release, in a plan of its own with a case that a message's CSS url in capitals fetches nothing; Pratik's decision, since it changes a dependency | open |  | 2026-10-18T00:30:00.000Z |  |
 
 ````json
 [
@@ -11521,6 +11524,42 @@ last_updated: 2026-10-17T22:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 886,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/accessibility.rs",
+    "line": null,
+    "description": "13.2-22, finding #32 of the audit of 2026-10-14, for the tester on a build holding 13.2-22's merge: on a POP account with a wrong outgoing password, sending from the Outbox is heard under NVDA as one line, \"Message not sent\" with the server's reason, then \"Disconnected\", then \"The Outbox is done: 0 sent, 1 not sent\", and the status bar shows the failure before \"Disconnected\". Also that a menu command opening a dialog still has what it said heard while the dialog waits: the command's turn stays open until the dialog closes, and the timer's own flush releases its lines within a tick, which no case drives because the tick and a dialog need a running window. Held by the cases in presentation::accessibility and the reading in tests/wired.rs; no screen reader has heard a joined line",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 887,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "Found by 13.2-22: only the tick's drain of the workers' updates and the main window's one dispatch, which the menu bar, its accelerators, the tray and the conversation window's commands share, run as one turn. A handler bound anywhere else that says two things on one path still writes the second over the first. Read by 13.2-22 and saying one thing per path: the notes editor's Save, the folder tree's Enter and selection, the contacts tree's selection, the contact list's selection, the module switch, the calendar's Today, Previous, Next and view picker, the message list's Enter and the calendar sidebar's Enter. The reader window, the composer and every dialog's own handlers were not read. Recommended: read them, or run every handler the main window binds as a turn where it is bound; for a later plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 888,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "Cargo.lock",
+    "line": null,
+    "description": "Found by 13.2-22 on pull request 188, CI run 39072333951: Security Audit failed on RUSTSEC-2026-0373 against ammonia 4.1.7, \"Missing case-insensitive matching for CSS url function\", dated 2026-10-16, solution \"Upgrade to >=4.2.4 OR >=4.1.8, <4.2.0\", besides ledger 879's three zip advisories. ammonia is what sanitizes a stranger's HTML before the preview shows it, so a CSS url written in capitals may get past it; whether this project's allowed attributes and styles let a url through at all was not read. 13.2-22 changed no dependency. Recommended: move ammonia to 4.1.8, a patch release, in a plan of its own with a case that a message's CSS url in capitals fetches nothing; Pratik's decision, since it changes a dependency",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-18T00:30:00.000Z",
     "resolved_at": null
   }
 ]
