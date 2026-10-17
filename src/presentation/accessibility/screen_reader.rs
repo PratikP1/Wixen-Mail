@@ -630,6 +630,23 @@ impl ScreenReaderBridge {
         }
     }
 
+    /// The lines still waiting for a window, each with how hard the screen
+    /// reader is to hold on to it and the topic it may replace.
+    ///
+    /// For the tests of the layer above, which have no other way to see what
+    /// urgency and topic a line was handed over with. Never log what this
+    /// returns, for the reason [`Self::held`] gives.
+    #[cfg(test)]
+    pub(crate) fn held_as_handed_over(&self) -> Vec<(String, Urgency, String)> {
+        match self.held.lock() {
+            Ok(held) => held
+                .iter()
+                .map(|line| (line.text.clone(), line.urgency, line.topic.clone()))
+                .collect(),
+            Err(_) => Vec::new(),
+        }
+    }
+
     /// Announce text to the screen reader.
     ///
     /// Speech and braille both come from this one call on Windows, so nothing

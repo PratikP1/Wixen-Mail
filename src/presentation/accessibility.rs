@@ -467,6 +467,12 @@ impl Accessibility {
         Ok(())
     }
 
+    /// Run `work` as one turn: everything it announces is said as one line
+    /// when it ends.
+    pub fn as_one_turn<T>(&self, work: impl FnOnce() -> T) -> T {
+        work()
+    }
+
     /// Diagnostic snapshot of automation tree.
     pub fn automation_snapshot(&self) -> Result<Vec<automation::AutomationNode>> {
         self.automation.snapshot()
@@ -1085,6 +1091,263 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(spoken, vec!["urgent", "high", "normal"]);
+        // One line, most urgent first. Three lines handed over one after
+        // another would each be written to the one control the screen reader
+        // reads, so only "normal", the least urgent, would still be there to
+        // be read (audit finding #32).
+        assert_eq!(spoken, vec!["urgent. high. normal"]);
+    }
+
+    #[test]
+    fn test_lines_released_together_go_out_as_urgent_as_the_most_urgent_with_no_topic() {
+        // The joined line cannot be less urgent than the most urgent thing in
+        // it, and no one topic is true of it: a later line on "message-count"
+        // must not be allowed to replace a failure that rode along with it.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.announcements
+            .push(
+                announcements::Announcement::interface(
+                    "12 of 40 messages",
+                    announcements::Priority::Normal,
+                )
+                .with_topic("message-count"),
+            )
+            .expect("push");
+        a11y.announcements
+            .push(announcements::Announcement::interface(
+                "Message not sent",
+                announcements::Priority::Urgent,
+            ))
+            .expect("push");
+
+        a11y.flush_announcements().expect("flush");
+
+        assert_eq!(
+            a11y.screen_reader.held_as_handed_over(),
+            vec![(
+                "Message not sent. 12 of 40 messages".to_string(),
+                screen_reader::Urgency::Urgent,
+                String::new(),
+            )]
+        );
+    }
+
+    #[test]
+    fn test_a_line_ending_in_a_question_or_an_exclamation_keeps_its_mark_when_joined() {
+        // "Is it sent?. Stop!. Done" reads as a fault and is spoken with a
+        // stop where none belongs. A question or an exclamation is already
+        // the end of a sentence, so only a space follows it.
+        let a11y = Accessibility::new().expect("accessibility");
+        for (text, priority) in [
+            ("Is it sent?", announcements::Priority::High),
+            ("Stop!", announcements::Priority::Normal),
+            ("Done.", announcements::Priority::Low),
+        ] {
+            a11y.announcements
+                .push(announcements::Announcement::interface(text, priority))
+                .expect("push");
+        }
+
+        a11y.flush_announcements().expect("flush");
+
+        assert_eq!(lines_released(&a11y), vec!["Is it sent? Stop! Done"]);
+    }
+
+    #[test]
+    fn test_one_line_goes_out_exactly_as_it_was_said_and_an_empty_flush_says_nothing() {
+        // A pin, green before the join existed: the join is for lines said
+        // together, and a line said alone keeps its own full stop, its own
+        // urgency and its own topic, so the screen reader may still let the
+        // next count replace this one.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.flush_announcements().expect("an empty flush");
+        assert!(
+            lines_released(&a11y).is_empty(),
+            "an empty flush released {:?}",
+            lines_released(&a11y)
+        );
+
+        a11y.announce_topic(
+            "12 of 40 messages.",
+            announcements::Priority::Low,
+            "message-count",
+        )
+        .expect("announce");
+
+        assert_eq!(
+            a11y.screen_reader.held_as_handed_over(),
+            vec![(
+                "12 of 40 messages.".to_string(),
+                screen_reader::Urgency::Routine,
+                "message-count".to_string(),
+            )]
+        );
+    }
+
+    #[test]
+    fn test_each_line_joined_is_still_logged_on_its_own_and_message_text_by_its_length() {
+        // A pin, green before the join existed. The log is a file people
+        // attach to bug reports, so message text read aloud is written there
+        // by its length alone. Joining it to an interface line must not
+        // smuggle it into the log under the interface line's rule.
+        let a11y = Accessibility::new().expect("accessibility");
+        let captured = screen_reader::tests::CapturedLogs::default();
+        let _listening = captured.as_the_default();
+
+        a11y.announcements
+            .push(announcements::Announcement::interface(
+                "Connected",
+                announcements::Priority::Normal,
+            ))
+            .expect("push");
+        a11y.announcements
+            .push(announcements::Announcement::content(
+                "first placeholder line",
+            ))
+            .expect("push");
+        a11y.flush_announcements().expect("flush");
+
+        assert!(
+            captured.has(tracing::Level::INFO, "Speaking: Connected"),
+            "the interface line was not logged on its own: {:?}",
+            captured.events()
+        );
+        assert!(
+            captured.has(
+                tracing::Level::INFO,
+                "Speaking 22 characters that are not written down here"
+            ),
+            "the message text was not logged by its length: {:?}",
+            captured.events()
+        );
+        assert!(
+            !captured
+                .events()
+                .iter()
+                .any(|(_, message)| message.contains("placeholder")),
+            "the message text reached the log: {:?}",
+            captured.events()
+        );
+    }
+
+    #[test]
+    fn test_a_failed_send_the_lost_connection_and_the_outbox_said_in_one_turn_are_one_line() {
+        // The audit's case (#32): a POP account with a wrong outgoing
+        // password. The Outbox pass sends its result, the connection change
+        // and its closing count back to back, the tick handles all three, and
+        // each used to be written over the one before, so only "The Outbox is
+        // done" was there to be read and the reason never was.
+        let a11y = Accessibility::new().expect("accessibility");
+
+        a11y.as_one_turn(|| {
+            a11y.signal(
+                feedback::Event::SendFailed,
+                "the server refused the password",
+            )
+            .expect("signal");
+            a11y.signal(feedback::Event::ConnectionLost, "")
+                .expect("signal");
+            a11y.announce(
+                "The Outbox is done: 0 sent, 1 not sent.",
+                announcements::Priority::Normal,
+            )
+            .expect("announce");
+        });
+
+        assert_eq!(
+            lines_released(&a11y),
+            vec![
+                "Message not sent, the server refused the password. Disconnected. \
+                 The Outbox is done: 0 sent, 1 not sent"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_the_status_line_shows_the_failure_before_the_lost_connection_not_the_last_alone() {
+        // The status bar is what a braille display reads with speech off. It
+        // kept the last sentence shown, so the same case ended on
+        // "Disconnected" and the reason was lost there too.
+        let a11y = Accessibility::new().expect("accessibility");
+
+        a11y.as_one_turn(|| {
+            a11y.signal(
+                feedback::Event::SendFailed,
+                "the server refused the password",
+            )
+            .expect("signal");
+            a11y.signal(feedback::Event::ConnectionLost, "")
+                .expect("signal");
+        });
+
+        assert_eq!(
+            a11y.take_visual_feedback().as_deref(),
+            Some("Message not sent, the server refused the password. Disconnected")
+        );
+    }
+
+    #[test]
+    fn test_an_announcement_outside_a_turn_is_spoken_at_once() {
+        // A pin, green before turns existed. Forty-odd call sites announce
+        // from handlers no turn wraps, and each of them must still be said
+        // the moment it is made.
+        let a11y = Accessibility::new().expect("accessibility");
+        a11y.announce("Connected", announcements::Priority::Normal)
+            .expect("announce");
+        assert_eq!(lines_released(&a11y), vec!["Connected"]);
+        a11y.announce("Message moved to Archive", announcements::Priority::Normal)
+            .expect("announce");
+        assert_eq!(
+            lines_released(&a11y),
+            vec!["Connected", "Message moved to Archive"]
+        );
+    }
+
+    #[test]
+    fn test_a_turn_whose_work_panics_leaves_the_next_announcement_spoken() {
+        // A pin until the hold exists, measured by its guard record. A hold
+        // left set by a command that panicked would silence every line after
+        // it for the rest of the session, which is worse than the overwrite
+        // the hold exists to stop.
+        let a11y = Accessibility::new().expect("accessibility");
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            a11y.as_one_turn(|| panic!("a command that fails part way"))
+        }));
+        assert!(outcome.is_err(), "the work did not panic");
+
+        a11y.announce("After the fault", announcements::Priority::Normal)
+            .expect("announce");
+
+        assert_eq!(
+            lines_released(&a11y).last().map(String::as_str),
+            Some("After the fault")
+        );
+    }
+
+    #[test]
+    fn test_a_turn_inside_a_turn_releases_once_at_the_end_of_the_outer_one() {
+        // A command that runs another command is still one thing somebody
+        // did, so what both say is one line, and nothing goes out before the
+        // outer one ends.
+        let a11y = Accessibility::new().expect("accessibility");
+
+        a11y.as_one_turn(|| {
+            a11y.announce("Moved to Archive", announcements::Priority::Normal)
+                .expect("announce");
+            a11y.as_one_turn(|| {
+                a11y.announce("Marked as read", announcements::Priority::Normal)
+                    .expect("announce");
+            });
+            assert!(
+                lines_released(&a11y).is_empty(),
+                "a line went out before the outer turn ended: {:?}",
+                lines_released(&a11y)
+            );
+        });
+
+        assert_eq!(
+            lines_released(&a11y),
+            vec!["Moved to Archive. Marked as read"]
+        );
     }
 }
