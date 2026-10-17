@@ -4657,16 +4657,55 @@ fn jobs_that_run_the_tests_without_the_history(workflow: &str) -> Vec<String> {
         .collect()
 }
 
+/// The same reading over several workflows, given as `(file name, text)`,
+/// each line led by the name of the file it is about.
+///
+/// The test below read `ci.yml` alone until 2026-10-17, while the release
+/// gate and the Linux and macOS jobs ran the tests on one commit in two other
+/// files (audit finding #39).
+fn workflows_that_run_the_tests_without_the_history(workflows: &[(String, String)]) -> Vec<String> {
+    workflows
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_run_the_tests_without_the_history(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect()
+}
+
+/// Every workflow as `(file name, text)`, in the order `the_workflows` gives.
+fn every_workflow_with_its_name() -> Vec<(String, String)> {
+    the_workflows()
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("a workflow file name")
+                .to_string();
+            let text = fs::read_to_string(&path).expect("a workflow file");
+            (name, text)
+        })
+        .collect()
+}
+
 #[test]
 fn test_every_job_that_runs_the_tests_checks_out_the_whole_history() {
-    // The workflow file is the artefact, and it cannot be run from here. What
-    // this cannot see is whether the job passes on a runner, only whether its
-    // checkout is the shape the fraction test needs.
-    let workflow = fs::read_to_string(".github/workflows/ci.yml").expect("the CI workflow");
-    let wrong = jobs_that_run_the_tests_without_the_history(&workflow);
+    // The workflow files are the artefact, and they cannot be run from here.
+    // What this cannot see is whether a job passes on a runner, only whether
+    // its checkout is the shape the fraction test needs.
+    let workflows = every_workflow_with_its_name();
+    assert!(
+        workflows.len() > 1 && workflows.iter().any(|(name, _)| name == "ci.yml"),
+        "the reading did not read every workflow, so it would cover one file and read \
+         as cover for all of them: {:?}",
+        workflows.iter().map(|(name, _)| name).collect::<Vec<_>>()
+    );
+    let wrong = workflows_that_run_the_tests_without_the_history(&workflows);
     assert!(
         wrong.is_empty(),
-        "CI would fail the fraction test on the runner:\n  {}",
+        "A workflow would fail the fraction test on the runner:\n  {}",
         wrong.join("\n  ")
     );
 }
@@ -4713,6 +4752,19 @@ fn test_the_history_reading_can_see_a_job_with_one_commit() {
     assert!(
         jobs_that_run_the_tests_without_the_history(builds_over_the_history).is_empty(),
         "a job running the build script over the whole history was named"
+    );
+
+    // Read across files, a shallow job in the second of two is named with its
+    // file's name, and the sound first file adds nothing. A reading that went
+    // back to one file would miss it.
+    let two_files = [
+        ("first.yml".to_string(), whole.to_string()),
+        ("second.yml".to_string(), shallow.clone()),
+    ];
+    let wrong = workflows_that_run_the_tests_without_the_history(&two_files);
+    assert!(
+        wrong.len() == 1 && wrong[0].starts_with("second.yml: the test job"),
+        "a shallow job in the second of two workflows was not named by its file: {wrong:?}"
     );
 }
 
