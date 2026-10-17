@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 753
+open_count: 755
 waived_count: 0
 fixed_count: 126
-total_count: 879
-last_updated: 2026-10-17T03:30:00.000Z
+total_count: 881
+last_updated: 2026-10-17T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -894,6 +894,8 @@ last_updated: 2026-10-17T03:30:00.000Z
 | 877 | 13.2 | unrun-verify | src/service/caldav.rs |  | 13.2-19, finding #46 of the audit of 2026-10-14, for phase 14: a server of the SabreDAV family (Nextcloud, ownCloud or Baïkal) read through this program, settling whether its answers end each line of calendar data with &#13;, which the audit's verdict read from libxml and nothing here has seen; and an event titled with an & on that server shown here as written, then edited here and read at the server with no &amp; in its title. Held by the report fixture's rows and the guard record on extract_xml_value; nothing here has met such a server | open |  | 2026-10-17T02:40:00.000Z |  |
 | 878 | 13.2 | todo | src/application/caldav_sync.rs |  | Found by 13.2-19: a day a feed or a calendar server has cancelled is counted as one deleted on every read, because the read writes the series down again from the server's copy, which names no cancelled day, and one_caldav_day_kept_out_of_its_series then takes the day off once more as though for the first time. So the status line says "1 deleted" on every refresh of a feed with a cancelled day, though nothing new went; measured on 2026-10-16 by refreshing the case's feed twice. Not caused by 13.2-19 for the calendar server, whose read already folded its days; new for feeds, which now fold theirs. "N updated" already counts every event on every read, so the counts are not change counts today either. Recommended: count a day deleted only when the series held before the read did not already have it off, by handing the fold the held series' days; for a later plan, Pratik's to schedule | open |  | 2026-10-17T02:40:00.000Z |  |
 | 879 | 13.2 | todo | Cargo.lock |  | Found by 13.2-19's pull request 187, CI run 38995903050 on 2026-10-17: the Security Audit job failed on three advisories published 2026-10-09 and 2026-10-10 against zip 7.2.0, RUSTSEC-2026-0367 (SUID and SGID bits kept on extraction), RUSTSEC-2026-0368 (extract makes symbolic links pointing outside the destination) and RUSTSEC-2026-0369 (extract applies Unix permissions through symbolic links, rated 9.1), each fixed only in zip 9.0.0. 13.2-18's run 38977413373 the evening before passed, and 13.2-19 changed no dependency, so every branch and main now fail the audit until this is decided. Read 2026-10-17: nothing in src calls ZipArchive::extract; sound_scheme_import.rs reads entries one at a time through by_index with its own checks, and mailbox_archive.rs reads without extracting, and the three concern Unix permissions and links on a program built for Windows. Recommended: move to zip 9 in a plan of its own, a two-major step whose reading and writing calls need checking; or, until then, accept the three ids in .cargo/audit.toml with that reasoning and the exit condition. Pratik's to choose; 13.2-32's full gate runs the audit and fails until one is done | open |  | 2026-10-17T03:30:00.000Z |  |
+| 880 | 13.2 | unrun-verify | src/data/message_cache/tasks.rs |  | 13.2-20, finding #1 of the audit of 2026-10-14, tasks and notes, for phase 14 on a build holding 13.2-20's merge: a Gmail or Outlook account with a task changed here and a sync started, the task ticked in the Tasks window while the sync's status says it is sending, and the task found ticked in Google Tasks or Outlook after the next sync; the same for a task made here and moved to another list while its first sync runs, found once and in the new list at the provider; and a note edited in the notes editor, saved, synced and read at the notes backend. Held by the cases that make the change on a second connection inside the stand-in services' answers, and the twelve guard records; nobody has raced a real sync | open |  | 2026-10-17T12:00:00.000Z |  |
+| 881 | 13.2 | todo | src/application/tasks_sync.rs |  | Found by 13.2-20: a task made here loses its created and changed times the moment its create lands, because push_one builds the provider's copy through google_task_to_entry and ms_task_to_entry, which leave created_at and updated_at empty, and rename_task writes that copy whole. So a new task's row carries no time it was made or changed, and anything that orders by those columns, such as pending_tasks, reads it as the earliest. Older than 13.2-20, which keeps the local times only when the task changed during its create. Recommended: carry created_at and updated_at from the task as sent onto the provider's copy in settle, the way carry_over_local_only carries the priority; for a later plan | open |  | 2026-10-17T12:00:00.000Z |  |
 
 ````json
 [
@@ -11443,6 +11445,30 @@ last_updated: 2026-10-17T03:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T03:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 880,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/data/message_cache/tasks.rs",
+    "line": null,
+    "description": "13.2-20, finding #1 of the audit of 2026-10-14, tasks and notes, for phase 14 on a build holding 13.2-20's merge: a Gmail or Outlook account with a task changed here and a sync started, the task ticked in the Tasks window while the sync's status says it is sending, and the task found ticked in Google Tasks or Outlook after the next sync; the same for a task made here and moved to another list while its first sync runs, found once and in the new list at the provider; and a note edited in the notes editor, saved, synced and read at the notes backend. Held by the cases that make the change on a second connection inside the stand-in services' answers, and the twelve guard records; nobody has raced a real sync",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 881,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/tasks_sync.rs",
+    "line": null,
+    "description": "Found by 13.2-20: a task made here loses its created and changed times the moment its create lands, because push_one builds the provider's copy through google_task_to_entry and ms_task_to_entry, which leave created_at and updated_at empty, and rename_task writes that copy whole. So a new task's row carries no time it was made or changed, and anything that orders by those columns, such as pending_tasks, reads it as the earliest. Older than 13.2-20, which keeps the local times only when the task changed during its create. Recommended: carry created_at and updated_at from the task as sent onto the provider's copy in settle, the way carry_over_local_only carries the priority; for a later plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T12:00:00.000Z",
     "resolved_at": null
   }
 ]
