@@ -165,6 +165,34 @@ pub async fn answering_as_asked(
     std::net::SocketAddr,
     tokio::sync::oneshot::Receiver<Vec<String>>,
 ) {
+    answering_each_with_its_own_status(
+        content_type,
+        replies
+            .into_iter()
+            .map(|reply| -> ReplyWithItsStatus { Box::new(move |asked| (status, reply(asked))) })
+            .collect(),
+    )
+    .await
+}
+
+/// One answer and the status line it goes out under, worked out from
+/// everything that has been asked so far.
+pub type ReplyWithItsStatus = Box<dyn Fn(&[String]) -> (&'static str, String) + Send>;
+
+/// Answer several requests, each with a status and a reply worked out from what
+/// was asked.
+///
+/// Otherwise exactly [`answering_as_asked`]. This exists because a provider
+/// refuses one request and answers the next: a read whose marker has expired
+/// is answered `410 Gone` and the whole read after it `200 OK`, and a server
+/// that gives every reply one status cannot say that.
+pub async fn answering_each_with_its_own_status(
+    content_type: &'static str,
+    replies: Vec<ReplyWithItsStatus>,
+) -> (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Receiver<Vec<String>>,
+) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("a loopback port");
@@ -178,7 +206,7 @@ pub async fn answering_as_asked(
                 return;
             };
             requests.push(read_request(&mut stream).await);
-            let body = reply(&requests);
+            let (status, body) = reply(&requests);
             let _ = stream
                 .write_all(head(status, content_type, None, body.len()).as_bytes())
                 .await;
@@ -915,6 +943,41 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert_eq!(asked_for(&requests[0]), "POST /first");
         assert_eq!(asked_for(&requests[1]), "GET /second");
+    }
+
+    #[tokio::test]
+    async fn test_each_reply_can_go_out_under_a_status_of_its_own() {
+        // A marker refused and the whole read after it are two statuses in one
+        // conversation, and a test of that fallback is only as good as the
+        // stand-in's ability to say both.
+        let (address, listening) = answering_each_with_its_own_status(
+            "application/json",
+            vec![
+                Box::new(|_: &[String]| ("410 Gone", "{}".to_string())),
+                Box::new(|_: &[String]| ("200 OK", "{\"items\":[]}".to_string())),
+            ],
+        )
+        .await;
+        let client = reqwest::Client::new();
+
+        let first = client
+            .get(format!("http://{address}/refused"))
+            .send()
+            .await
+            .expect("the first to be answered");
+        let second = client
+            .get(format!("http://{address}/whole"))
+            .send()
+            .await
+            .expect("the second to be answered");
+
+        assert_eq!(first.status().as_u16(), 410);
+        assert_eq!(second.status().as_u16(), 200);
+        assert_eq!(
+            second.text().await.expect("the second's body"),
+            "{\"items\":[]}"
+        );
+        heard(listening, "two requests").await.expect("both");
     }
 
     #[tokio::test]

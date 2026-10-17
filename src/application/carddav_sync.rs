@@ -204,6 +204,9 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
         ));
     }
 
+    // Read once for every card rather than once per card, and kept in step
+    // with every write, as the other two syncs do (audit #30).
+    let mut here = contacts_sync::TheContactsHere::read(cache, account_id)?;
     for card in &arrived.cards {
         if card.url.is_empty() {
             continue;
@@ -219,6 +222,21 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
             card,
             &filed_under,
             &still_built_on_an_old_copy,
+            &mut here,
+            &mut result,
+        )?;
+    }
+
+    // Every card is in every read, so a card the server no longer holds was
+    // deleted there, and nothing took it off here on any read. Not when some
+    // cards could not be read: one missing may only be one of those.
+    if arrived.could_not_be_read == 0 {
+        let named = arrived.cards.iter().map(|card| card.url.as_str()).collect();
+        contacts_sync::take_off_who_a_whole_answer_left_out(
+            cache,
+            &mut here,
+            &filed_under,
+            &named,
             &mut result,
         )?;
     }
@@ -379,20 +397,19 @@ fn take_in_one_card(
     card: &CardOnAServer,
     filed_under: &AddressBook,
     still_built_on_an_old_copy: &Contacts,
+    here: &mut contacts_sync::TheContactsHere,
     result: &mut SyncResult,
 ) -> Result<()> {
-    let locals = cache.get_contacts_for_account(&card.contact.account_id)?;
-    let Some(local) =
-        contacts_sync::the_stored_contact_this_is(&locals, filed_under, &card.url, &card.contact)
-    else {
-        cache.save_contact(&card.contact.also_known_to(
-            filed_under.clone(),
-            &card.url,
-            card.version.as_deref(),
-        ))?;
+    let Some(local) = here.the_one_this_is(cache, filed_under, &card.url, &card.contact)? else {
+        let made =
+            card.contact
+                .also_known_to(filed_under.clone(), &card.url, card.version.as_deref());
+        cache.save_contact(&made)?;
         result.created_local.note(&card.contact.id);
+        here.written(made);
         return Ok(());
     };
+    let local = &local;
 
     // A contact waiting on somebody's choice is left exactly as it is. Without
     // this the sync after the one that raised the question answers it, and
@@ -440,14 +457,10 @@ fn take_in_one_card(
         &card.url,
         card.version.as_deref(),
     );
-    cache.save_contact(&contacts_sync::a_change_here_that_lost(
-        merged,
-        local,
-        filed_under,
-        answer,
-        result,
-    ))?;
+    let saved = contacts_sync::a_change_here_that_lost(merged, local, filed_under, answer, result);
+    cache.save_contact(&saved)?;
     result.updated_local.note(&local.id);
+    here.written(saved);
     Ok(())
 }
 
@@ -1149,5 +1162,214 @@ mod tests {
             "how many could not be read was not said: {:?}",
             result.errors
         );
+    }
+
+    // ── The contacts here, read once a sync ──────────────────────────────
+    //
+    // A read of the whole account for every card made a sync of a large
+    // address book decode a row per card per card, on every sync, since a
+    // CardDAV address book is read whole each time its marker moves (audit
+    // #30).
+
+    /// The address of one card in the test's address book.
+    fn the_card_at(label: &str) -> String {
+        format!("{THE_ADDRESS_BOOK}{label}.vcf")
+    }
+
+    /// A contact this address book holds as one card, at version "v1", that
+    /// nobody has changed here since.
+    fn held_as_a_card(
+        cache: &MessageCache,
+        filed_under: &AddressBook,
+        label: &str,
+    ) -> ContactEntry {
+        let mut contact = a_contact(
+            &format!("here-{label}"),
+            &format!("Person {label}"),
+            &format!("{label}@example.com"),
+        );
+        contact.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
+        contact.known_to = vec![ProviderIdentity {
+            address_book: filed_under.clone(),
+            provider_contact_id: the_card_at(label),
+            provider_version: Some("\"v1\"".to_string()),
+            change_is_waiting: false,
+        }];
+        cache.save_contact(&contact).expect("she saves");
+        contact
+    }
+
+    /// The server's card for that contact, unchanged, carrying a contact of
+    /// its own as a real read does.
+    fn its_unchanged_card(label: &str) -> CardOnAServer {
+        CardOnAServer {
+            contact: a_contact(
+                &format!("from-the-server-{label}"),
+                &format!("Person {label}"),
+                &format!("{label}@example.com"),
+            ),
+            ..a_card_for(&the_card_at(label), "\"v1\"", "", "")
+        }
+    }
+
+    /// How many times a sync of this many cards, every one already here and
+    /// unchanged, read the whole account's contacts.
+    async fn reads_by_a_card_sync_of(how_many: usize) -> usize {
+        let (_paths, cache) = cache_for(&format!("carddav-reads-once-{how_many}"));
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        let labels: Vec<String> = (0..how_many).map(|n| format!("p{n}")).collect();
+        for label in &labels {
+            held_as_a_card(&cache, &filed_under, label);
+        }
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: labels.iter().map(|l| its_unchanged_card(l)).collect(),
+            ..Scripted::default()
+        };
+        let before = MessageCache::whole_account_reads_on_this_thread();
+        sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+        MessageCache::whole_account_reads_on_this_thread() - before
+    }
+
+    #[tokio::test]
+    async fn test_a_card_sync_reads_the_contacts_here_as_often_for_two_hundred_cards_as_for_two() {
+        let for_two = reads_by_a_card_sync_of(2).await;
+        let for_two_hundred = reads_by_a_card_sync_of(200).await;
+
+        assert_eq!(
+            for_two_hundred, for_two,
+            "the reads of the whole address book here grew with the cards"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_cards_at_one_address_are_one_adopted_and_one_made() {
+        // The first card adopts the contact at its address, which the
+        // address book then knows, so the second is made a contact of its
+        // own, as when every card read the store again.
+        let (_paths, cache) = cache_for("carddav-two-cards-one-address");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        cache
+            .save_contact(&a_contact(
+                "here-harvested",
+                "Shared inbox",
+                "team@example.com",
+            ))
+            .expect("it saves");
+        let a_card = |label: &str, name: &str| CardOnAServer {
+            contact: a_contact(
+                &format!("from-the-server-{label}"),
+                name,
+                "team@example.com",
+            ),
+            ..a_card_for(&the_card_at(label), "\"v1\"", "", "")
+        };
+        let server = Scripted {
+            marker: Some("\"ctag-1\"".to_string()),
+            cards: vec![a_card("ann", "Ann Team"), a_card("bob", "Bob Team")],
+            ..Scripted::default()
+        };
+
+        let result = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        let stored = cache.get_contacts_for_account("a1").expect("the contacts");
+        assert_eq!(stored.len(), 2, "{stored:?}");
+        let harvested = stored
+            .iter()
+            .find(|contact| contact.id == "here-harvested")
+            .expect("the contact at that address");
+        assert_eq!(
+            harvested.id_in(&filed_under),
+            Some(the_card_at("ann").as_str())
+        );
+        assert!(
+            stored.iter().any(|contact| contact.id != "here-harvested"
+                && contact.id_in(&filed_under) == Some(the_card_at("bob").as_str())),
+            "{stored:?}"
+        );
+        assert_eq!(result.created_local.count(), 1, "{result:?}");
+        assert_eq!(result.updated_local.count(), 1, "{result:?}");
+    }
+
+    // ── A whole read speaks for every card ────────────────────────────────
+    //
+    // A CardDAV address book is read whole every time its marker moves, so a
+    // card it no longer holds was deleted at the server, and nothing here took
+    // it off on any read. Unless some cards could not be read: then the answer
+    // is not whole, and a card missing from it may only be one of those.
+
+    #[tokio::test]
+    async fn test_a_card_the_server_no_longer_holds_is_taken_off_here() {
+        let (_paths, cache) = cache_for("carddav-card-gone");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        held_as_a_card(&cache, &filed_under, "gone");
+        let mut waiting = held_as_a_card(&cache, &filed_under, "waiting");
+        waiting.pending = true;
+        cache.save_contact(&waiting).expect("the change saves");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            ..Scripted::default()
+        };
+
+        let result = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        let ids: Vec<String> = cache
+            .get_contacts_for_account("a1")
+            .expect("the contacts")
+            .into_iter()
+            .map(|contact| contact.id)
+            .collect();
+        assert!(
+            !ids.contains(&"here-gone".to_string()),
+            "a card the server no longer holds is still here: {ids:?}"
+        );
+        assert!(ids.contains(&"here-kept".to_string()), "{ids:?}");
+        assert!(
+            ids.contains(&"here-waiting".to_string()),
+            "a contact with a change waiting here was taken off: {ids:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_read_with_cards_that_could_not_be_read_takes_nobody_off() {
+        let (_paths, cache) = cache_for("carddav-card-unreadable-not-gone");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        held_as_a_card(&cache, &filed_under, "unread");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            could_not_be_read: 1,
+            ..Scripted::default()
+        };
+
+        let result = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        let ids: Vec<String> = cache
+            .get_contacts_for_account("a1")
+            .expect("the contacts")
+            .into_iter()
+            .map(|contact| contact.id)
+            .collect();
+        assert!(
+            ids.contains(&"here-unread".to_string()),
+            "a card that may only have been unreadable was taken off: {ids:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
     }
 }

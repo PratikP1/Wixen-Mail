@@ -875,7 +875,11 @@ const GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER: [&str; 2] =
 /// Nothing else counts. A network blip, a server fault or any other refusal
 /// must not, or a sync that could not connect would turn into a full download
 /// of everything somebody has.
-fn is_expired_sync_token(error: &Error) -> bool {
+///
+/// The Google calendar read asks the same question and calls this rather than
+/// a copy: Google's Calendar API answers an expired marker with 410, and never
+/// with the People API's 400, so sharing the one answer costs nothing.
+pub(crate) fn is_expired_sync_token(error: &Error) -> bool {
     match error {
         Error::Api {
             status: SYNC_TOKEN_EXPIRED,
@@ -980,6 +984,123 @@ pub(crate) fn the_stored_contact_this_is<'a>(
     locals
         .iter()
         .find(|c| c.shares_an_address_with(arriving) && c.id_in(address_book).is_none())
+}
+
+/// The contacts of one account as a sync has them: read from the store once
+/// per sync, and kept in step with every write the sync makes.
+///
+/// Once rather than once per person. Read again for every person an address
+/// book sent, a first sync of 3,000 contacts decoded about 4.5 million rows
+/// (audit #30). Kept in step, because the next person is matched against what
+/// the last one left: a contact one person adopted is known to that address
+/// book, so a second person at the same address is not handed it too.
+///
+/// The contact a person matches is read again by id just before her fate is
+/// decided, so an edit made here while the sync runs is decided on the edited
+/// copy, the window a read per person gave. Read once and trusted, that window
+/// would have been the whole loop.
+pub(crate) struct TheContactsHere {
+    contacts: Vec<ContactEntry>,
+}
+
+impl TheContactsHere {
+    pub(crate) fn read(cache: &MessageCache, account_id: &str) -> Result<Self> {
+        Ok(Self {
+            contacts: cache.get_contacts_for_account(account_id)?,
+        })
+    }
+
+    /// The stored contact this address book's copy of a person is, as the
+    /// store holds her now. [`the_stored_contact_this_is`] decides which.
+    ///
+    /// One the store no longer holds is matched by nobody, and the next that
+    /// could be is asked about instead, which is what a read per person found.
+    pub(crate) fn the_one_this_is(
+        &mut self,
+        cache: &MessageCache,
+        address_book: &AddressBook,
+        provider_contact_id: &str,
+        arriving: &ContactEntry,
+    ) -> Result<Option<ContactEntry>> {
+        while let Some(found) =
+            the_stored_contact_this_is(&self.contacts, address_book, provider_contact_id, arriving)
+        {
+            let id = found.id.clone();
+            if let Some(now) = self.as_the_store_holds(cache, &id)? {
+                return Ok(Some(now));
+            }
+        }
+        Ok(None)
+    }
+
+    /// The contact this address book knows by this name, as the store holds
+    /// her now.
+    pub(crate) fn the_one_known_as(
+        &mut self,
+        cache: &MessageCache,
+        address_book: &AddressBook,
+        provider_contact_id: &str,
+    ) -> Result<Option<ContactEntry>> {
+        let Some(id) = self
+            .contacts
+            .iter()
+            .find(|held| held.id_in(address_book) == Some(provider_contact_id))
+            .map(|held| held.id.clone())
+        else {
+            return Ok(None);
+        };
+        self.as_the_store_holds(cache, &id)
+    }
+
+    /// Every contact this address book knows, as this sync has them.
+    pub(crate) fn known_to(&self, address_book: &AddressBook) -> Vec<ContactEntry> {
+        self.contacts
+            .iter()
+            .filter(|held| held.id_in(address_book).is_some())
+            .cloned()
+            .collect()
+    }
+
+    /// One contact read again by id, and her place here brought up to date:
+    /// what the store holds, or nothing when she has gone.
+    pub(crate) fn as_the_store_holds(
+        &mut self,
+        cache: &MessageCache,
+        id: &str,
+    ) -> Result<Option<ContactEntry>> {
+        let now = cache.get_contact(id)?;
+        match &now {
+            Some(contact) => self.written(contact.clone()),
+            None => self.gone(id),
+        }
+        Ok(now)
+    }
+
+    /// A contact this sync has just written, in place of what was here.
+    pub(crate) fn written(&mut self, contact: ContactEntry) {
+        match self.contacts.iter_mut().find(|held| held.id == contact.id) {
+            Some(held) => *held = contact,
+            None => self.contacts.push(contact),
+        }
+    }
+
+    /// What one address book's deletion of a contact left, in her place.
+    pub(crate) fn left_by_a_deletion(&mut self, id: &str, left: WhatTheDeletionLeft) {
+        match left {
+            WhatTheDeletionLeft::HerWithoutThatAddressBook(contact) => self.written(*contact),
+            WhatTheDeletionLeft::Nothing => self.gone(id),
+        }
+    }
+
+    fn gone(&mut self, id: &str) {
+        self.contacts.retain(|held| held.id != id);
+    }
+
+    /// Every contact as this sync left them, for the pass that sends what
+    /// was made here.
+    pub(crate) fn into_contacts(self) -> Vec<ContactEntry> {
+        self.contacts
+    }
 }
 
 // ── Whose copy wins ─────────────────────────────────────────────────────────
@@ -1137,16 +1258,22 @@ fn another_address_book_still_has_them(
 ///
 /// Where nobody else holds her, the row goes, and any work in it goes with it,
 /// which is what `say_if_a_change_went_too` is for.
+///
+/// Answers with what it left, so a caller keeping the contacts in step writes
+/// that down rather than deciding again what happened.
 pub(crate) fn one_address_book_deleted_them(
     cache: &MessageCache,
     local: &ContactEntry,
     address_book: &AddressBook,
     result: &mut SyncResult,
-) -> Result<()> {
+) -> Result<WhatTheDeletionLeft> {
     if another_address_book_still_has_them(local, address_book) {
-        cache.save_contact(&local.no_longer_in(address_book))?;
+        let without_it = local.no_longer_in(address_book);
+        cache.save_contact(&without_it)?;
         result.updated_local.note(&local.id);
-        return Ok(());
+        return Ok(WhatTheDeletionLeft::HerWithoutThatAddressBook(Box::new(
+            without_it,
+        )));
     }
     say_if_a_change_went_too(local, result);
     // Dropped rather than deleted. The address book is the one saying she is
@@ -1155,6 +1282,55 @@ pub(crate) fn one_address_book_deleted_them(
     // ask the other address book to delete a contact nobody asked it to.
     cache.drop_synced_contact(&local.id)?;
     result.deleted_local.note(&local.id);
+    Ok(WhatTheDeletionLeft::Nothing)
+}
+
+/// What one address book's deletion of a person left on this computer.
+pub(crate) enum WhatTheDeletionLeft {
+    /// Another address book still holds her, so she stays without this one.
+    HerWithoutThatAddressBook(Box<ContactEntry>),
+    /// Nobody else held her, so the row went.
+    Nothing,
+}
+
+/// Take off this address book's people that a whole answer did not name.
+///
+/// Only after a whole answer. An address book asked for everything names
+/// everybody it holds, so a person this computer knows by its name for her
+/// whom the answer left out was deleted there, while the marker was stale or
+/// the computer was away (audit #29). A read of what changed since a marker
+/// says nothing about who it does not name, and neither does an answer some of
+/// whose people could not be read.
+///
+/// Each is carried out as a deletion the address book named outright would
+/// be, by [`one_address_book_deleted_them`], except where taking her off would
+/// lose something: a change waiting here, which the address book never had,
+/// and a choice somebody has not made yet. Those stay, as a change kept here
+/// stays, and are counted as nothing. Each is read again by id first, so an
+/// edit made while the sync ran keeps her too.
+pub(crate) fn take_off_who_a_whole_answer_left_out(
+    cache: &MessageCache,
+    here: &mut TheContactsHere,
+    address_book: &AddressBook,
+    named: &std::collections::HashSet<&str>,
+    result: &mut SyncResult,
+) -> Result<()> {
+    for known in here.known_to(address_book) {
+        let Some(local) = here.as_the_store_holds(cache, &known.id)? else {
+            continue;
+        };
+        let left_out = local
+            .id_in(address_book)
+            .is_some_and(|known_as| !named.contains(known_as));
+        if !left_out
+            || the_copy_here_holds_work_nobody_has_sent(&local)
+            || cache.is_held_for_a_choice(&local.id)?
+        {
+            continue;
+        }
+        let left = one_address_book_deleted_them(cache, &local, address_book, result)?;
+        here.left_by_a_deletion(&local.id, left);
+    }
     Ok(())
 }
 
@@ -2413,6 +2589,10 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         Err(e) => return Err(e),
     };
 
+    // Read once for the whole answer rather than once per person, and kept
+    // in step with every write below (audit #30). See `TheContactsHere`.
+    let mut here = TheContactsHere::read(cache, account_id)?;
+
     for person in &remote_contacts {
         if person.resource_name.is_empty() {
             continue;
@@ -2428,26 +2608,30 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
         // Check if deleted
         if person.metadata.as_ref().is_some_and(|m| m.deleted) {
             // Delete locally if we have it
-            let locals = cache.get_contacts_for_account(account_id)?;
-            if let Some(local) = locals
-                .iter()
-                .find(|c| c.id_in(&AddressBook::Google) == Some(person.resource_name.as_str()))
+            if let Some(local) =
+                here.the_one_known_as(cache, &AddressBook::Google, &person.resource_name)?
             {
-                one_address_book_deleted_them(cache, local, &AddressBook::Google, &mut result)?;
+                let left = one_address_book_deleted_them(
+                    cache,
+                    &local,
+                    &AddressBook::Google,
+                    &mut result,
+                )?;
+                here.left_by_a_deletion(&local.id, left);
             }
             continue;
         }
 
         let remote_contact = google_person_to_contact(person, account_id);
 
-        let locals = cache.get_contacts_for_account(account_id)?;
-        match the_stored_contact_this_is(
-            &locals,
+        match here.the_one_this_is(
+            cache,
             &AddressBook::Google,
             &person.resource_name,
             &remote_contact,
-        ) {
+        )? {
             Some(local) => {
+                let local = &local;
                 // A contact waiting on somebody's choice is left exactly as it
                 // is. This is what stops a hold being a pause: without it the
                 // sync after the one that raised the question answers it, and
@@ -2500,27 +2684,45 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     &person.resource_name,
                     arrived_at.as_deref(),
                 );
-                cache.save_contact(&a_change_here_that_lost(
+                let saved = a_change_here_that_lost(
                     merged,
                     local,
                     &AddressBook::Google,
                     answer,
                     &mut result,
-                ))?;
+                );
+                cache.save_contact(&saved)?;
                 result.updated_local.note(&local.id);
+                here.written(saved);
             }
             None => {
                 cache.save_contact(&remote_contact)?;
                 result.created_local.note(&remote_contact.id);
+                here.written(remote_contact);
             }
         }
+    }
+
+    if read_the_whole_address_book {
+        let named = remote_contacts
+            .iter()
+            .map(|person| person.resource_name.as_str())
+            .collect();
+        take_off_who_a_whole_answer_left_out(
+            cache,
+            &mut here,
+            &AddressBook::Google,
+            &named,
+            &mut result,
+        )?;
     }
 
     // Push contacts no address book knows to Google, on every sync. A contact
     // read from an address book is stored with its identity there, so the
     // filter below keeps every one of them out without waiting for a full
     // read, which for Google comes once and then only when a marker expires.
-    let locals = cache.get_contacts_for_account(account_id)?;
+    // As this sync left them rather than read again.
+    let locals = here.into_contacts();
     for local in &locals {
         // Made here and no address book knows it yet. `pending` is what
         // says made here: without it, every address auto-import harvested
@@ -2623,16 +2825,24 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
     // Gone, and passing that on left the dead link stored, so every later sync
     // failed the same way and Outlook contacts stopped syncing for good, in
     // both directions. The Google side has had this fallback all along.
-    let (remote_contacts, new_delta_link) = match ms_client.list_contacts(token, delta_link).await {
-        Ok(answer) => answer,
+    let (remote_contacts, new_delta_link, read_the_whole_address_book) = match ms_client
+        .list_contacts(token, delta_link)
+        .await
+    {
+        Ok((contacts, link)) => (contacts, link, delta_link.is_none()),
         Err(too_old) if is_expired_sync_token(&too_old) => {
             tracing::warn!(
                 "The marker from the last Outlook contacts sync was too old, so the whole address book is being read again"
             );
-            ms_client.list_contacts(token, None).await?
+            let (contacts, link) = ms_client.list_contacts(token, None).await?;
+            (contacts, link, true)
         }
         Err(other) => return Err(other),
     };
+
+    // Read once for the whole answer, for the reason written on the Google
+    // side.
+    let mut here = TheContactsHere::read(cache, account_id)?;
 
     for ms_contact in &remote_contacts {
         if ms_contact.id.is_empty() {
@@ -2647,26 +2857,30 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
 
         // Check if deleted (delta query marks removed contacts)
         if ms_contact.removed.is_some() {
-            let locals = cache.get_contacts_for_account(account_id)?;
-            if let Some(local) = locals
-                .iter()
-                .find(|c| c.id_in(&AddressBook::Microsoft) == Some(ms_contact.id.as_str()))
+            if let Some(local) =
+                here.the_one_known_as(cache, &AddressBook::Microsoft, &ms_contact.id)?
             {
-                one_address_book_deleted_them(cache, local, &AddressBook::Microsoft, &mut result)?;
+                let left = one_address_book_deleted_them(
+                    cache,
+                    &local,
+                    &AddressBook::Microsoft,
+                    &mut result,
+                )?;
+                here.left_by_a_deletion(&local.id, left);
             }
             continue;
         }
 
         let remote_contact = ms_contact_to_contact(ms_contact, account_id);
 
-        let locals = cache.get_contacts_for_account(account_id)?;
-        match the_stored_contact_this_is(
-            &locals,
+        match here.the_one_this_is(
+            cache,
             &AddressBook::Microsoft,
             &ms_contact.id,
             &remote_contact,
-        ) {
+        )? {
             Some(local) => {
+                let local = &local;
                 // A contact waiting on somebody's choice is left alone, for the
                 // reason written on the Google side.
                 if cache.is_held_for_a_choice(&local.id)? {
@@ -2714,27 +2928,44 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     &ms_contact.id,
                     arrived_at,
                 );
-                cache.save_contact(&a_change_here_that_lost(
+                let saved = a_change_here_that_lost(
                     merged,
                     local,
                     &AddressBook::Microsoft,
                     answer,
                     &mut result,
-                ))?;
+                );
+                cache.save_contact(&saved)?;
                 result.updated_local.note(&local.id);
+                here.written(saved);
             }
             None => {
                 cache.save_contact(&remote_contact)?;
                 result.created_local.note(&remote_contact.id);
+                here.written(remote_contact);
             }
         }
+    }
+
+    if read_the_whole_address_book {
+        let named = remote_contacts
+            .iter()
+            .map(|ms_contact| ms_contact.id.as_str())
+            .collect();
+        take_off_who_a_whole_answer_left_out(
+            cache,
+            &mut here,
+            &AddressBook::Microsoft,
+            &named,
+            &mut result,
+        )?;
     }
 
     // Push contacts no address book knows to Outlook, on every sync, for the
     // reason written on the Google side. A full read here is the first sync
     // alone, so a contact typed here later, or one Outlook refused that
     // first time, was never sent.
-    let locals = cache.get_contacts_for_account(account_id)?;
+    let locals = here.into_contacts();
     for local in &locals {
         // Made here and no address book knows it yet, for the reason
         // written on the Google side.
@@ -6814,6 +7045,10 @@ mod tests {
     #[derive(Default)]
     struct ScriptedMicrosoft {
         contacts: Vec<MsGraphContact>,
+        /// Whether a read following the last run's link is answered Gone, which
+        /// is what Graph says to a link that has aged out. A read with no link
+        /// is always answered.
+        refuses_the_link: bool,
         accepts_a_contact: bool,
         accepts_a_change: bool,
         /// Whether sending a change to this address book fails at the
@@ -6841,8 +7076,15 @@ mod tests {
         async fn list_contacts(
             &self,
             _token: &str,
-            _delta_link: Option<&str>,
+            delta_link: Option<&str>,
         ) -> Result<(Vec<MsGraphContact>, Option<String>)> {
+            if self.refuses_the_link && delta_link.is_some() {
+                return Err(Error::Api {
+                    status: 410,
+                    provider: "microsoft".to_string(),
+                    message: "The delta link has expired".to_string(),
+                });
+            }
             Ok((
                 self.contacts.clone(),
                 Some(A_MARKER_FOR_NEXT_TIME.to_string()),
@@ -9003,6 +9245,9 @@ mod tests {
         // Storing the blank throws away the only thing that could ever be used
         // to refuse a change made somewhere else in the meantime.
         let cache = a_cache("fan_out_blank_version_ms");
+        // A read of what changed, which names nobody here. A whole read
+        // naming nobody would take her off, since Outlook would have named her.
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
         let mut contact = a_local_contact("Alice Smith", "alice@example.com");
         contact.id = "local-blank-version".to_string();
         contact.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
@@ -12891,5 +13136,499 @@ mod tests {
         );
         assert!(!said.contains(".."), "a stop spoken twice: {said}");
         assert!(!said.contains("  "), "a space spoken twice: {said}");
+    }
+
+    // ── The contacts here, read once a sync ─────────────────────────────────
+    //
+    // A read of the whole account for every person an address book sent made a
+    // first sync of 3,000 contacts decode about 4.5 million rows (audit #30).
+    // The contacts are read once, kept in step with every write, and the one a
+    // person matches is read again by id before her fate is decided.
+
+    /// A contact the named address books know as "them-{label}", at version
+    /// "v1", that nobody has changed here since.
+    fn known_to_books(cache: &MessageCache, label: &str, books: &[AddressBook]) -> ContactEntry {
+        let mut contact =
+            a_local_contact(&format!("Person {label}"), &format!("{label}@example.com"));
+        contact.id = format!("local-{label}");
+        contact.last_synced_at = Some("2026-01-01T00:00:00Z".to_string());
+        contact.known_to = books
+            .iter()
+            .map(|book| ProviderIdentity {
+                address_book: book.clone(),
+                provider_contact_id: format!("them-{label}"),
+                provider_version: Some("v1".to_string()),
+                change_is_waiting: false,
+            })
+            .collect();
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+        contact
+    }
+
+    /// Google's copy of the person `known_to_books` stored, unchanged.
+    fn googles_unchanged_copy_of(label: &str) -> GooglePerson {
+        GooglePerson {
+            etag: "v1".to_string(),
+            ..a_google_person(
+                &format!("them-{label}"),
+                &format!("Person {label}"),
+                &format!("{label}@example.com"),
+            )
+        }
+    }
+
+    /// Outlook's copy of the same, unchanged.
+    fn outlooks_unchanged_copy_of(label: &str) -> MsGraphContact {
+        MsGraphContact {
+            odata_etag: Some("v1".to_string()),
+            ..a_microsoft_contact(
+                &format!("them-{label}"),
+                &format!("Person {label}"),
+                &format!("{label}@example.com"),
+            )
+        }
+    }
+
+    /// How many times a Google sync of this many people, every one of them
+    /// already here and unchanged, read the whole account's contacts.
+    async fn reads_by_a_google_sync_of(how_many: usize) -> usize {
+        let cache = a_cache(&format!("google_reads_the_contacts_once_{how_many}"));
+        let labels: Vec<String> = (0..how_many).map(|n| format!("p{n}")).collect();
+        for label in &labels {
+            known_to_books(&cache, label, &[AddressBook::Google]);
+        }
+        let google = ScriptedGoogle {
+            people: labels
+                .iter()
+                .map(|l| googles_unchanged_copy_of(l))
+                .collect(),
+            ..Default::default()
+        };
+        let before = MessageCache::whole_account_reads_on_this_thread();
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a Google sync");
+        MessageCache::whole_account_reads_on_this_thread() - before
+    }
+
+    /// The same for Outlook.
+    async fn reads_by_an_outlook_sync_of(how_many: usize) -> usize {
+        let cache = a_cache(&format!("outlook_reads_the_contacts_once_{how_many}"));
+        let labels: Vec<String> = (0..how_many).map(|n| format!("p{n}")).collect();
+        for label in &labels {
+            known_to_books(&cache, label, &[AddressBook::Microsoft]);
+        }
+        let outlook = ScriptedMicrosoft {
+            contacts: labels
+                .iter()
+                .map(|l| outlooks_unchanged_copy_of(l))
+                .collect(),
+            ..Default::default()
+        };
+        let before = MessageCache::whole_account_reads_on_this_thread();
+        sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync");
+        MessageCache::whole_account_reads_on_this_thread() - before
+    }
+
+    #[tokio::test]
+    async fn test_a_google_sync_reads_the_contacts_here_as_often_for_two_hundred_people_as_for_two()
+    {
+        let for_two = reads_by_a_google_sync_of(2).await;
+        let for_two_hundred = reads_by_a_google_sync_of(200).await;
+
+        assert_eq!(
+            for_two_hundred, for_two,
+            "the reads of the whole address book here grew with the people Google sent"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_sync_reads_the_contacts_here_as_often_for_two_hundred_people_as_for_two()
+     {
+        let for_two = reads_by_an_outlook_sync_of(2).await;
+        let for_two_hundred = reads_by_an_outlook_sync_of(200).await;
+
+        assert_eq!(
+            for_two_hundred, for_two,
+            "the reads of the whole address book here grew with the people Outlook sent"
+        );
+    }
+
+    #[test]
+    fn test_the_contact_a_person_matches_is_read_again_before_her_fate_is_decided() {
+        // Read once for the whole answer, a contact edited here while the
+        // sync runs would be decided on the copy from before the edit, and the
+        // edit written over. Read again by id, it is decided on the edit, the
+        // window a read per person gave.
+        let cache = a_cache("contacts_read_again_by_id");
+        known_to_books(&cache, "alice", &[AddressBook::Google]);
+        let mut here = TheContactsHere::read(&cache, AN_ACCOUNT).expect("the contacts here");
+        let mut edited = the_contact_under(&cache, "local-alice");
+        edited.name = "Alice, edited here".to_string();
+        edited.pending = true;
+        cache.save_contact(&edited).expect("the edit to be kept");
+        let arriving = google_person_to_contact(&googles_unchanged_copy_of("alice"), AN_ACCOUNT);
+
+        let found = here
+            .the_one_this_is(&cache, &AddressBook::Google, "them-alice", &arriving)
+            .expect("the store to answer")
+            .expect("the contact she is");
+
+        assert_eq!(
+            found.name, "Alice, edited here",
+            "her fate was decided on the copy from before the edit"
+        );
+        assert!(found.pending, "the edit's waiting flag was lost");
+        assert_eq!(
+            found.id_in(&AddressBook::Google),
+            Some("them-alice"),
+            "the copy read again lost the address books that know her"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_deleted_here_while_the_sync_runs_is_matched_by_nobody() {
+        // The other half of reading her again: gone from the store, she is
+        // not handed back from the copy read before, which is what a read per
+        // person found too.
+        let cache = a_cache("contacts_deleted_during_the_sync");
+        known_to_books(&cache, "alice", &[AddressBook::Google]);
+        let mut here = TheContactsHere::read(&cache, AN_ACCOUNT).expect("the contacts here");
+        cache.drop_synced_contact("local-alice").expect("her to go");
+        let arriving = google_person_to_contact(&googles_unchanged_copy_of("alice"), AN_ACCOUNT);
+
+        let found = here
+            .the_one_this_is(&cache, &AddressBook::Google, "them-alice", &arriving)
+            .expect("the store to answer");
+
+        assert!(
+            found.is_none(),
+            "a contact no longer here was matched: {found:?}"
+        );
+    }
+
+    /// A contact this computer took from a message's header: nobody typed it,
+    /// so nothing is waiting, and no address book knows it.
+    fn harvested_at(cache: &MessageCache, address: &str) {
+        let mut contact = a_local_contact("Shared inbox", address);
+        contact.id = "local-harvested".to_string();
+        cache
+            .save_contact(&contact)
+            .expect("a contact to be stored");
+    }
+
+    /// The contact an address book knows by this name, wherever it is stored.
+    fn the_one_known_as(
+        cache: &MessageCache,
+        address_book: &AddressBook,
+        known_as: &str,
+    ) -> Option<ContactEntry> {
+        cache
+            .get_contacts_for_account(AN_ACCOUNT)
+            .expect("the stored contacts")
+            .into_iter()
+            .find(|contact| contact.id_in(address_book) == Some(known_as))
+    }
+
+    #[tokio::test]
+    async fn test_two_people_google_sends_at_one_address_are_one_adopted_and_one_made() {
+        // The first adopts the contact at her address, which Google then
+        // knows, so the second is made a contact of her own, as when every
+        // person read the store again. A snapshot not kept in step would hand
+        // the second the same contact and take Google's name for the first
+        // off it.
+        let cache = a_cache("google_two_people_one_address");
+        harvested_at(&cache, "team@example.com");
+        let google = ScriptedGoogle {
+            people: vec![
+                a_google_person("people/a", "Ann Team", "team@example.com"),
+                a_google_person("people/b", "Bob Team", "team@example.com"),
+            ],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync");
+
+        assert_eq!(
+            the_names_stored(&cache).len(),
+            2,
+            "{:?}",
+            the_names_stored(&cache)
+        );
+        assert_eq!(
+            the_contact_under(&cache, "local-harvested").id_in(&AddressBook::Google),
+            Some("people/a")
+        );
+        let bob = the_one_known_as(&cache, &AddressBook::Google, "people/b")
+            .expect("the second person to be a contact");
+        assert_ne!(bob.id, "local-harvested");
+        assert_eq!(result.created_local.count(), 1, "{result:?}");
+        assert_eq!(result.updated_local.count(), 1, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_two_people_outlook_sends_at_one_address_are_one_adopted_and_one_made() {
+        let cache = a_cache("outlook_two_people_one_address");
+        harvested_at(&cache, "team@example.com");
+        let outlook = ScriptedMicrosoft {
+            contacts: vec![
+                a_microsoft_contact("AAMkA", "Ann Team", "team@example.com"),
+                a_microsoft_contact("AAMkB", "Bob Team", "team@example.com"),
+            ],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync");
+
+        assert_eq!(
+            the_names_stored(&cache).len(),
+            2,
+            "{:?}",
+            the_names_stored(&cache)
+        );
+        assert_eq!(
+            the_contact_under(&cache, "local-harvested").id_in(&AddressBook::Microsoft),
+            Some("AAMkA")
+        );
+        let bob = the_one_known_as(&cache, &AddressBook::Microsoft, "AAMkB")
+            .expect("the second person to be a contact");
+        assert_ne!(bob.id, "local-harvested");
+        assert_eq!(result.created_local.count(), 1, "{result:?}");
+        assert_eq!(result.updated_local.count(), 1, "{result:?}");
+    }
+
+    // ── A whole answer speaks for everybody ─────────────────────────────────
+    //
+    // An address book asked for everything names everybody it holds, so a
+    // person known here by its name for her whom the answer left out was
+    // deleted there while the marker was stale or the computer was away
+    // (audit #29). A read of what changed since a marker says nothing about
+    // who it does not name.
+
+    /// Hold a contact for somebody to choose between two copies of her.
+    fn held_for_a_choice(cache: &MessageCache, id: &str) {
+        cache
+            .hold_a_conflict(&AHeldConflict {
+                id: id.to_string(),
+                account_id: AN_ACCOUNT.to_string(),
+                at: GOOGLE_ADDRESS_BOOK.to_string(),
+                copies: BothCopies {
+                    what_it_is_called: "Person held".to_string(),
+                    other_copy: TheOtherCopy::AnAddressBook,
+                    here: Vec::new(),
+                    theirs: Vec::new(),
+                },
+                their_version: None,
+                held_at: "2026-10-17T12:00:00Z".to_string(),
+            })
+            .expect("the hold to be kept");
+    }
+
+    /// Five people one address book knows: one it still holds, one it has
+    /// dropped, one the other address book holds too, one with a change
+    /// waiting here and one held for a choice.
+    fn five_people_known_to(cache: &MessageCache, address_book: &AddressBook) {
+        known_to_books(cache, "kept", std::slice::from_ref(address_book));
+        known_to_books(cache, "gone", std::slice::from_ref(address_book));
+        let other = match address_book {
+            AddressBook::Google => AddressBook::Microsoft,
+            _ => AddressBook::Google,
+        };
+        known_to_books(cache, "both", &[address_book.clone(), other]);
+        let mut waiting = known_to_books(cache, "waiting", std::slice::from_ref(address_book));
+        waiting.pending = true;
+        cache.save_contact(&waiting).expect("the change to be kept");
+        known_to_books(cache, "held", std::slice::from_ref(address_book));
+        held_for_a_choice(cache, "local-held");
+    }
+
+    /// What a whole answer naming only "kept" must have done.
+    fn only_the_dropped_person_went(
+        cache: &MessageCache,
+        address_book: &AddressBook,
+        result: &SyncResult,
+    ) {
+        let ids: Vec<String> = cache
+            .get_contacts_for_account(AN_ACCOUNT)
+            .expect("the stored contacts")
+            .into_iter()
+            .map(|contact| contact.id)
+            .collect();
+        assert!(
+            !ids.contains(&"local-gone".to_string()),
+            "a person the address book no longer holds is still here: {ids:?}"
+        );
+        let both = the_contact_under(cache, "local-both");
+        assert_eq!(
+            both.id_in(address_book),
+            None,
+            "the address book that dropped her still knows her here"
+        );
+        assert!(
+            !both.known_to.is_empty(),
+            "the other address book was taken off her as well"
+        );
+        for (kept, why) in [
+            ("local-kept", "named by the answer"),
+            ("local-waiting", "carrying a change waiting here"),
+            ("local-held", "held for a choice"),
+        ] {
+            assert!(
+                the_contact_under(cache, kept).id_in(address_book).is_some(),
+                "a person {why} was taken off: {kept}"
+            );
+        }
+        assert!(result.deleted_local.holds("local-gone"), "{result:?}");
+        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_whole_google_read_takes_off_who_google_no_longer_holds() {
+        let cache = a_cache("google_whole_read_takes_off");
+        five_people_known_to(&cache, &AddressBook::Google);
+        let google = ScriptedGoogle {
+            people: vec![googles_unchanged_copy_of("kept")],
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync");
+
+        only_the_dropped_person_went(&cache, &AddressBook::Google, &result);
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds() {
+        let cache = a_cache("google_expired_marker_takes_off");
+        five_people_known_to(&cache, &AddressBook::Google);
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        let google = ScriptedGoogle {
+            people: vec![googles_unchanged_copy_of("kept")],
+            refuses_the_marker_with: Some((410, "the marker was refused".to_string())),
+            ..Default::default()
+        };
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync that read the whole address book");
+
+        only_the_dropped_person_went(&cache, &AddressBook::Google, &result);
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_from_a_marker_takes_nobody_off_for_being_missing() {
+        let cache = a_cache("google_marker_read_takes_nobody_off");
+        known_to_books(&cache, "quiet", &[AddressBook::Google]);
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        let google = ScriptedGoogle::default();
+
+        let result =
+            sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+                .await
+                .expect("a Google sync");
+
+        assert!(
+            the_contact_under(&cache, "local-quiet")
+                .id_in(&AddressBook::Google)
+                .is_some(),
+            "a person a read of what changed did not mention was taken off"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds() {
+        let cache = a_cache("outlook_whole_read_takes_off");
+        five_people_known_to(&cache, &AddressBook::Microsoft);
+        let outlook = ScriptedMicrosoft {
+            contacts: vec![outlooks_unchanged_copy_of("kept")],
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync");
+
+        only_the_dropped_person_went(&cache, &AddressBook::Microsoft, &result);
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds() {
+        let cache = a_cache("outlook_expired_link_takes_off");
+        five_people_known_to(&cache, &AddressBook::Microsoft);
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        let outlook = ScriptedMicrosoft {
+            contacts: vec![outlooks_unchanged_copy_of("kept")],
+            refuses_the_link: true,
+            ..Default::default()
+        };
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync that read the whole address book");
+
+        only_the_dropped_person_went(&cache, &AddressBook::Microsoft, &result);
+    }
+
+    #[tokio::test]
+    async fn test_an_outlook_read_from_a_link_takes_nobody_off_for_being_missing() {
+        let cache = a_cache("outlook_link_read_takes_nobody_off");
+        known_to_books(&cache, "quiet", &[AddressBook::Microsoft]);
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        let outlook = ScriptedMicrosoft::default();
+
+        let result = sync_microsoft_contacts(
+            &cache,
+            &outlook,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync");
+
+        assert!(
+            the_contact_under(&cache, "local-quiet")
+                .id_in(&AddressBook::Microsoft)
+                .is_some(),
+            "a person a read of what changed did not mention was taken off"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
     }
 }

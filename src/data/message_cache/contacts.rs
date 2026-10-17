@@ -5,8 +5,24 @@ use super::{
     TheDeletionSoFar,
 };
 use crate::common::{Error, Result};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 use std::collections::HashMap;
+
+/// A contact's own columns, in the order [`MessageCache::contact_from_row`]
+/// reads them. One list for every read, so a column added to one cannot be
+/// missing from another.
+const A_CONTACTS_OWN_COLUMNS: &str = "id, account_id, name, email, phone, company, job_title,
+     website, address, birthday, avatar_url, avatar_data_base64, source_provider,
+     last_synced_at, vcard_raw, notes, favorite, created_at, nickname, department,
+     relationship, emails_json, phones_json, addresses_json, custom_fields_json, pending,
+     given_name, family_name, name_prefix, middle_name, name_suffix";
+
+#[cfg(test)]
+thread_local! {
+    /// Every read of a whole account's contacts on this thread, counted for
+    /// [`MessageCache::whole_account_reads_on_this_thread`].
+    static WHOLE_ACCOUNT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 /// What taking a contact from one group to another came to.
 ///
@@ -192,9 +208,8 @@ impl MessageCache {
 
     /// Every address book identity in an account, by contact.
     ///
-    /// One query for the whole account rather than one per contact: a sync
-    /// reads the contacts once per remote contact already, and a query per
-    /// contact inside that would make a sync of a large address book crawl.
+    /// One query for the whole account rather than one per contact, so reading
+    /// an address book of thousands is two queries rather than thousands.
     fn identities_for_account(
         &self,
         account_id: &str,
@@ -210,33 +225,47 @@ impl MessageCache {
 
         let rows = stmt
             .query_map(params![account_id], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, bool>(4)?,
-                ))
+                Ok((row.get::<_, String>(0)?, Self::identity_from_row(row, 1)?))
             })
             .map_err(|e| Error::Other(format!("Failed to query contact identities: {}", e)))?
             .collect::<std::result::Result<Vec<_>, _>>()
             .map_err(|e| Error::Other(format!("Failed to collect contact identities: {}", e)))?;
 
         let mut by_contact: HashMap<String, Vec<ProviderIdentity>> = HashMap::new();
-        for (contact_id, address_book, provider_contact_id, provider_version, change_is_waiting) in
-            rows
-        {
-            by_contact
-                .entry(contact_id)
-                .or_default()
-                .push(ProviderIdentity {
-                    address_book: AddressBook::from_stored(&address_book),
-                    provider_contact_id,
-                    provider_version,
-                    change_is_waiting,
-                });
+        for (contact_id, identity) in rows {
+            by_contact.entry(contact_id).or_default().push(identity);
         }
         Ok(by_contact)
+    }
+
+    /// Every address book identity of one contact.
+    fn identities_of(&self, contact_id: &str) -> Result<Vec<ProviderIdentity>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(
+                "SELECT address_book, provider_contact_id, provider_version, change_is_waiting
+                 FROM contact_identities WHERE contact_id = ?1 ORDER BY address_book",
+            )
+            .map_err(|e| Error::Other(format!("Failed to prepare identity query: {}", e)))?;
+        stmt.query_map(params![contact_id], |row| Self::identity_from_row(row, 0))
+            .map_err(|e| Error::Other(format!("Failed to query contact identities: {}", e)))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|e| Error::Other(format!("Failed to collect contact identities: {}", e)))
+    }
+
+    /// One address book's identity for a contact, from the four columns
+    /// starting at `first`: the address book, its name for her, its version
+    /// marker and whether a change is waiting for it.
+    fn identity_from_row(
+        row: &rusqlite::Row<'_>,
+        first: usize,
+    ) -> rusqlite::Result<ProviderIdentity> {
+        Ok(ProviderIdentity {
+            address_book: AddressBook::from_stored(&row.get::<_, String>(first)?),
+            provider_contact_id: row.get(first + 1)?,
+            provider_version: row.get(first + 2)?,
+            change_is_waiting: row.get(first + 3)?,
+        })
     }
 
     /// Hand each contact the address books that know it.
@@ -255,17 +284,53 @@ impl MessageCache {
             .collect())
     }
 
+    /// How many times this thread has read a whole account's contacts.
+    ///
+    /// Test-only, and per thread so tests running side by side do not count
+    /// each other's reads. What lets a sync's tests say the number of reads
+    /// does not grow with the address book, which a read per person made it
+    /// do (audit #30).
+    #[cfg(test)]
+    pub(crate) fn whole_account_reads_on_this_thread() -> usize {
+        WHOLE_ACCOUNT_READS.with(std::cell::Cell::get)
+    }
+
+    /// One contact, with the address books that know her, or nothing when she
+    /// is not here.
+    ///
+    /// What a sync reads just before it decides a person's fate. It reads the
+    /// whole account once and this one contact again, so an edit made here
+    /// while it runs is decided on the edited copy.
+    pub fn get_contact(&self, contact_id: &str) -> Result<Option<ContactEntry>> {
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {A_CONTACTS_OWN_COLUMNS} FROM contacts WHERE id = ?1"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        let Some(mut contact) = stmt
+            .query_row(params![contact_id], Self::contact_from_row)
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read a contact: {}", e)))?
+        else {
+            return Ok(None);
+        };
+        contact.known_to = self.identities_of(contact_id)?;
+        Ok(Some(contact))
+    }
+
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
-                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
-                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
-             FROM contacts
-             WHERE account_id = ?1
-             ORDER BY favorite DESC, name ASC"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
+        #[cfg(test)]
+        WHOLE_ACCOUNT_READS.with(|reads| reads.set(reads.get() + 1));
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {A_CONTACTS_OWN_COLUMNS} FROM contacts
+                 WHERE account_id = ?1
+                 ORDER BY favorite DESC, name ASC"
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
 
         let contacts = stmt
             .query_map(params![account_id], Self::contact_from_row)
@@ -275,7 +340,7 @@ impl MessageCache {
         self.with_their_address_books(account_id, contacts)
     }
 
-    /// A contact's own details, in the column order both reads select.
+    /// A contact's own details, in the order of [`A_CONTACTS_OWN_COLUMNS`].
     fn contact_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContactEntry> {
         Ok(ContactEntry {
             id: row.get(0)?,
@@ -321,12 +386,10 @@ impl MessageCache {
         limit: usize,
     ) -> Result<Vec<ContactEntry>> {
         let pattern = super::like_pattern(query);
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
-                    avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
-                    nickname, department, relationship, emails_json, phones_json, addresses_json, custom_fields_json,
-                    pending, given_name, family_name, name_prefix, middle_name, name_suffix
-             FROM contacts
+        let mut stmt = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {A_CONTACTS_OWN_COLUMNS} FROM contacts
              WHERE account_id = ?1
                AND (
                     LOWER(name) LIKE ?2 ESCAPE '!' OR
@@ -337,7 +400,8 @@ impl MessageCache {
                )
              ORDER BY favorite DESC, name ASC
              LIMIT ?3"
-        ).map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
+            ))
+            .map_err(|e| Error::Other(format!("Failed to prepare search statement: {}", e)))?;
 
         let contacts = stmt
             .query_map(
