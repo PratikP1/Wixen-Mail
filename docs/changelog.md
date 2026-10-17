@@ -1427,6 +1427,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A subscribed calendar keeps its repeating events when the feed moves or cancels one day
+  (2026-10-16).** A published calendar, such as a school's or a team's, writes a repeating
+  event and each day of it that was moved or called off as separate entries sharing one
+  identity. The refresh saved each under that identity, so only one of them was kept.
+  Depending on the order in the feed, a weekly event became a single event on its moved day,
+  or a moved day showed at its old time and a cancelled day still showed. Now the series keeps
+  repeating, a moved day shows once at its new time, and a cancelled day shows nothing. A
+  calendar that lost a series this way is put right at its next refresh. Deleting a moved day
+  of a repeating event here, in a subscribed calendar or one on a calendar server, no longer
+  brings the event back on that day at its old time.
+
+  Known limitation: a feed with a cancelled day says "1 deleted" on every refresh, though
+  nothing new went. Not yet tried against a real published calendar.
+- **Titles and names from a calendar server read as written (2026-10-16).** A calendar server
+  answers in XML, which writes "&" as "&amp;", and the calendar's reader kept the escape. So
+  an event titled "Dinner & drinks" was stored and read out as "Dinner &amp; drinks", and
+  editing it here sent the escaped title back to the server, where every other calendar showed
+  it too. Calendar names, version tags and time zone names in quotes were read the same way.
+  Now every value the server sends is read as the text it carries, including characters
+  written as numbers, and the address book and the free and busy check use the same reader.
+
+  Known limitation: a title edited here before this fix was written back to the server with
+  the escape in it, so the server now holds "&amp;" as part of the title and it shows that way
+  until somebody corrects the title. Not yet tried against a real calendar server.
 - **An event made here on the first day of a week or a month shows in that view
   (2026-10-16).** A meeting made in the event window on a Monday was missing from that week's
   Week view, and one made on the first of a month was missing from that month's Month view,

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 749
+open_count: 752
 waived_count: 0
 fixed_count: 126
-total_count: 875
-last_updated: 2026-10-16T22:45:00.000Z
+total_count: 878
+last_updated: 2026-10-17T02:40:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -890,6 +890,9 @@ last_updated: 2026-10-16T22:45:00.000Z
 | 873 | 13.2 | unrun-verify | src/application/contacts_sync.rs |  | 13.2-17, findings #25 and #26 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-17's merge: a Gmail account and an Outlook account each given a contact in the Contacts window after their first contacts sync, and the contact found in Google Contacts and in Outlook's people on the phone after the next sync, once and not twice; and a Gmail account whose last full contacts read is more than seven days old, its contacts still arriving, with the log line saying the marker was too old and the whole address book read again. Held by the scripted stand-ins, which answer with Google's documented 400 naming EXPIRED_SYNC_TOKEN (the page for people.connections.list, last updated 2024-08-06, read 2026-10-16); nobody has seen Google send it from a live account | open |  | 2026-10-16T12:00:00.000Z |  |
 | 874 | 13.2 | unrun-verify | src/application/calendar.rs |  | 13.2-18, finding #27 and #29's Outlook calendar quarter of the audit of 2026-10-14, for phase 14 on a build holding 13.2-18's merge: an Outlook account whose calendar has synced for more than 30 days, a meeting booked at Outlook more than a year after the first sync arriving here at the next sync; a meeting made here more than a year ahead still here after two syncs; a meeting deleted at Outlook inside the year ahead taken off here; and, if Outlook answers 410 for an old marker, the log line saying the whole window was read again and the calendar syncing on. Held by the cases against a loopback Graph, which answer as Microsoft's event delta page says (dated 2024-06-21, read 2026-10-16: an event outside a round's date range that was added, deleted or updated comes back under @removed with the reason deleted, the same reason as a real deletion inside it); nobody has seen Graph do any of it from a live account | open |  | 2026-10-16T22:45:00.000Z |  |
 | 875 | 13.2 | unrun-verify | src/data/message_cache/calendar.rs |  | 13.2-18, finding #4 of the audit of 2026-10-14, on a build holding 13.2-18's merge: an event made in the event window on a Monday, and one with no times on the first of a month, each heard under NVDA in that week's Week view and that month's Month view, once and on its own day. Held by the two cases on the store's window and their guard record; nobody has listened to either view since | open |  | 2026-10-16T22:45:00.000Z |  |
+| 876 | 13.2 | unrun-verify | src/application/caldav_sync.rs |  | 13.2-19, finding #28 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-19's merge: a real published calendar subscribed to here, such as a school's or a team's, carrying a weekly event with one day moved and one called off, the event shown every week, the moved day once at its new time and the cancelled day not at all, after the first refresh and after the next. Held by the cases against a loopback feed listing the series first and last, and their two guard records; nobody has subscribed to a real feed with a changed day since | open |  | 2026-10-17T02:40:00.000Z |  |
+| 877 | 13.2 | unrun-verify | src/service/caldav.rs |  | 13.2-19, finding #46 of the audit of 2026-10-14, for phase 14: a server of the SabreDAV family (Nextcloud, ownCloud or Baïkal) read through this program, settling whether its answers end each line of calendar data with &#13;, which the audit's verdict read from libxml and nothing here has seen; and an event titled with an & on that server shown here as written, then edited here and read at the server with no &amp; in its title. Held by the report fixture's rows and the guard record on extract_xml_value; nothing here has met such a server | open |  | 2026-10-17T02:40:00.000Z |  |
+| 878 | 13.2 | todo | src/application/caldav_sync.rs |  | Found by 13.2-19: a day a feed or a calendar server has cancelled is counted as one deleted on every read, because the read writes the series down again from the server's copy, which names no cancelled day, and one_caldav_day_kept_out_of_its_series then takes the day off once more as though for the first time. So the status line says "1 deleted" on every refresh of a feed with a cancelled day, though nothing new went; measured on 2026-10-16 by refreshing the case's feed twice. Not caused by 13.2-19 for the calendar server, whose read already folded its days; new for feeds, which now fold theirs. "N updated" already counts every event on every read, so the counts are not change counts today either. Recommended: count a day deleted only when the series held before the read did not already have it off, by handing the fold the held series' days; for a later plan, Pratik's to schedule | open |  | 2026-10-17T02:40:00.000Z |  |
 
 ````json
 [
@@ -11391,6 +11394,42 @@ last_updated: 2026-10-16T22:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-16T22:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 876,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/caldav_sync.rs",
+    "line": null,
+    "description": "13.2-19, finding #28 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-19's merge: a real published calendar subscribed to here, such as a school's or a team's, carrying a weekly event with one day moved and one called off, the event shown every week, the moved day once at its new time and the cancelled day not at all, after the first refresh and after the next. Held by the cases against a loopback feed listing the series first and last, and their two guard records; nobody has subscribed to a real feed with a changed day since",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T02:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 877,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/service/caldav.rs",
+    "line": null,
+    "description": "13.2-19, finding #46 of the audit of 2026-10-14, for phase 14: a server of the SabreDAV family (Nextcloud, ownCloud or Baïkal) read through this program, settling whether its answers end each line of calendar data with &#13;, which the audit's verdict read from libxml and nothing here has seen; and an event titled with an & on that server shown here as written, then edited here and read at the server with no &amp; in its title. Held by the report fixture's rows and the guard record on extract_xml_value; nothing here has met such a server",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T02:40:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 878,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/caldav_sync.rs",
+    "line": null,
+    "description": "Found by 13.2-19: a day a feed or a calendar server has cancelled is counted as one deleted on every read, because the read writes the series down again from the server's copy, which names no cancelled day, and one_caldav_day_kept_out_of_its_series then takes the day off once more as though for the first time. So the status line says \"1 deleted\" on every refresh of a feed with a cancelled day, though nothing new went; measured on 2026-10-16 by refreshing the case's feed twice. Not caused by 13.2-19 for the calendar server, whose read already folded its days; new for feeds, which now fold theirs. \"N updated\" already counts every event on every read, so the counts are not change counts today either. Recommended: count a day deleted only when the series held before the read did not already have it off, by handing the fold the held series' days; for a later plan, Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T02:40:00.000Z",
     "resolved_at": null
   }
 ]
