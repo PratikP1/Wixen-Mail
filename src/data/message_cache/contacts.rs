@@ -8,6 +8,13 @@ use crate::common::{Error, Result};
 use rusqlite::params;
 use std::collections::HashMap;
 
+#[cfg(test)]
+thread_local! {
+    /// Every read of a whole account's contacts on this thread, counted for
+    /// [`MessageCache::whole_account_reads_on_this_thread`].
+    static WHOLE_ACCOUNT_READS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// What taking a contact from one group to another came to.
 ///
 /// Three answers rather than a bare success, for the reason
@@ -255,8 +262,21 @@ impl MessageCache {
             .collect())
     }
 
+    /// How many times this thread has read a whole account's contacts.
+    ///
+    /// Test-only, and per thread so tests running side by side do not count
+    /// each other's reads. What lets a sync's tests say the number of reads
+    /// does not grow with the address book, which a read per person made it
+    /// do (audit #30).
+    #[cfg(test)]
+    pub(crate) fn whole_account_reads_on_this_thread() -> usize {
+        WHOLE_ACCOUNT_READS.with(std::cell::Cell::get)
+    }
+
     /// Load all contacts for an account
     pub fn get_contacts_for_account(&self, account_id: &str) -> Result<Vec<ContactEntry>> {
+        #[cfg(test)]
+        WHOLE_ACCOUNT_READS.with(|reads| reads.set(reads.get() + 1));
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, account_id, name, email, phone, company, job_title, website, address, birthday,
                     avatar_url, avatar_data_base64, source_provider, last_synced_at, vcard_raw, notes, favorite, created_at,
