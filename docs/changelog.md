@@ -1443,6 +1443,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   did, and keeps its folder, its pin and its place at the backend.
 
   Known limitation: neither fix has been tried against a real Google, Outlook or notes account.
+- **An event changed while the calendar is being sent is kept and sent (2026-10-17).** Editing
+  an event while a sync was sending it to Google, Outlook or a calendar server used to undo
+  the edit: when the answer came back, the sync wrote the copy it had sent over the event, so
+  the new title or time was gone from this computer as well as never sent. Now the edit stays,
+  and it goes up at the next sync. An event made here and deleted while it was first being
+  sent no longer comes back, and it is deleted at the other end at the next sync. One made
+  here and moved to another calendar while it was first being sent stays in the calendar it
+  was moved to, and the copy made in the old calendar is deleted at the next sync.
+
+  Known limitation: this has not been tried against a real Google, Outlook or calendar server
+  account.
 - **A subscribed calendar keeps its repeating events when the feed moves or cancels one day
   (2026-10-16).** A published calendar, such as a school's or a team's, writes a repeating
   event and each day of it that was moved or called off as separate entries sharing one
