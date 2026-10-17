@@ -673,6 +673,16 @@ write path added by this milestone passes through that gate.
     is deleted at the provider at the next sync. Held by cases that make the change on a
     second connection inside the stand-in services' answers, and twelve guard records; events
     are 13.2-20.1's. No `[D]` clause; the box stays open.
+  - 13.2-20.1 on 2026-10-17: an event changed here during a push is no longer replaced by the
+    copy that was sent. Google's, Outlook's and a calendar server's settles write the
+    provider's name, address and version always and clear the waiting flag only when the
+    row's `updated_at` still matches what the push read, so an edit made meanwhile stays here
+    and goes up at the next sync. An event made here and deleted during its create is deleted
+    at the provider at the next sync; one moved to another calendar during its create stays
+    moved, with the copy the provider made owed a deletion. Held by cases that change the
+    event on a second connection between the push's read and its settle, and three guard
+    records. With 13.2-20, finding #1 is closed on the tree's side for all three kinds. No
+    `[D]` clause; the box stays open.
 
 ### Writing and reading a message
 
@@ -7852,7 +7862,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-03 | Phase 3 | Pending |
 | SCALE-04 | Phase 3 | Complete |
 | SCALE-05 | Phase 3 | Complete |
-| SCALE-06 | Phase 3 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, a change made to a task or a note during a push is kept and sent, adding no `[D]` clause; 13.2-20.1 next for events. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause" |
+| SCALE-06 | Phase 3 | Pending; phase 13.2: 13.2-20.1 merged 2026-10-17, a change made to an event during a push is kept and sent, adding no `[D]` clause. Until 13.2-20.1 "Pending; phase 13.2: 13.2-20 merged 2026-10-17, a change made to a task or a note during a push is kept and sent, adding no `[D]` clause; 13.2-20.1 next for events". Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause" |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Complete |
 | WRITE-03 | Phase 4 | Complete |

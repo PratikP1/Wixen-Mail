@@ -56,7 +56,9 @@
 
 use crate::application::calendar::CalendarSyncResult;
 use crate::common::Result;
-use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::data::message_cache::{
+    CalendarContainer, CalendarEventEntry, MessageCache, TheProvidersVersion, WhatTheProviderHolds,
+};
 use crate::service::caldav::{
     CalDavClient, CalDavEvent, build_ical_vevent, ical_with_the_event_changed,
     ical_with_the_occurrence_changed, the_occurrence_as_the_document_holds_it,
@@ -519,10 +521,15 @@ fn settled_here_for_an_occurrence(
     event: &CalendarEventEntry,
     tag: Option<String>,
 ) -> Result<()> {
-    let mut settled = event.clone();
-    settled.etag = tag;
-    settled.pending = false;
-    cache.save_calendar_event(&settled)
+    cache.the_provider_holds_the_event(
+        event,
+        WhatTheProviderHolds {
+            filed_under: event.calendar_id.as_deref(),
+            known_as: None,
+            address: None,
+            version: TheProvidersVersion::Tag(tag.as_deref()),
+        },
+    )
 }
 
 /// Write down that the calendar server now holds this event.
@@ -532,6 +539,8 @@ fn settled_here_for_an_occurrence(
 /// Outlook passes give: a server that answers sparsely would blank it. The
 /// address matters most: without it the next change would add a second copy
 /// under a fresh identity, and the next deletion would have nowhere to go.
+/// Anything done to the event here while it was being sent is kept, as
+/// [`MessageCache::the_provider_holds_the_event`] says.
 fn settled_here(
     cache: &MessageCache,
     event: &CalendarEventEntry,
@@ -539,12 +548,15 @@ fn settled_here(
     at: &str,
     tag: Option<String>,
 ) -> Result<()> {
-    let mut settled = event.clone();
-    settled.provider_event_id = Some(uid.to_string());
-    settled.web_link = Some(at.to_string());
-    settled.etag = tag;
-    settled.pending = false;
-    cache.save_calendar_event(&settled)
+    cache.the_provider_holds_the_event(
+        event,
+        WhatTheProviderHolds {
+            filed_under: event.calendar_id.as_deref(),
+            known_as: Some(uid),
+            address: Some(at),
+            version: TheProvidersVersion::Tag(tag.as_deref()),
+        },
+    )
 }
 
 /// Everything waiting to go to this calendar, days cut out of a series first.
@@ -1705,6 +1717,245 @@ mod tests {
             cut_from_event_id: None,
             provider_recurrence_id: None,
         }
+    }
+
+    // ── What a push writes down once the calendar server has answered ────
+
+    /// Where the server put the event, and the version it gave it.
+    const AT_THE_SERVER: &str = "https://dav.example.com/calendars/work/uid-1.ics";
+    const THE_SERVERS_TAG: &str = "\"tag-2\"";
+
+    /// The window's own connection to the same file, which writes while a
+    /// sync is pushing.
+    fn the_window_on(cache: &TempHome<MessageCache>) -> MessageCache {
+        MessageCache::new(cache.path().to_path_buf(), None).expect("the window's connection")
+    }
+
+    /// An event waiting to be sent, stored and read back the way a push reads
+    /// it, so the stamp it carries is the one the store gave it.
+    fn waiting_as_the_push_read_it(
+        cache: &MessageCache,
+        waiting: CalendarEventEntry,
+    ) -> CalendarEventEntry {
+        let waiting = CalendarEventEntry {
+            pending: true,
+            ..waiting
+        };
+        cache
+            .save_calendar_event(&waiting)
+            .expect("the event waiting to be sent");
+        cache
+            .get_event_by_id(&waiting.id)
+            .expect("the calendar to be readable")
+            .expect("the event to be there")
+    }
+
+    /// An event made here in a calendar on a server, never sent.
+    fn made_here_in(calendar_id: &str) -> CalendarEventEntry {
+        CalendarEventEntry {
+            provider_event_id: None,
+            ..held_event("local-1", "unused", calendar_id, "acct")
+        }
+    }
+
+    /// One day a server split out of a series, stored under its compound name.
+    fn a_day_the_server_split_out() -> CalendarEventEntry {
+        CalendarEventEntry {
+            provider_recurrence_id: Some("20260310T090000Z".to_string()),
+            web_link: Some(AT_THE_SERVER.to_string()),
+            etag: Some("\"tag-1\"".to_string()),
+            ..held_event("day-1", "uid-1:20260310T090000Z", "cal-1", "acct")
+        }
+    }
+
+    #[test]
+    fn test_an_event_edited_while_its_create_was_at_the_server_keeps_the_edit_and_waits() {
+        let cache = temp_cache("settled_here_edited");
+        let as_read = waiting_as_the_push_read_it(&cache, made_here_in("cal-1"));
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                summary: "Held over to Thursday".to_string(),
+                ..as_read.clone()
+            })
+            .expect("the edit made while the create was out");
+
+        settled_here(
+            &cache,
+            &as_read,
+            "uid-1",
+            AT_THE_SERVER,
+            Some(THE_SERVERS_TAG.to_string()),
+        )
+        .expect("the server's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.summary, "Held over to Thursday");
+        assert!(stored.pending, "the edit has not reached the server yet");
+        assert_eq!(stored.provider_event_id.as_deref(), Some("uid-1"));
+        assert_eq!(stored.web_link.as_deref(), Some(AT_THE_SERVER));
+        assert_eq!(stored.etag.as_deref(), Some(THE_SERVERS_TAG));
+    }
+
+    #[test]
+    fn test_a_day_edited_while_its_change_was_at_the_server_keeps_the_edit_and_waits() {
+        let cache = temp_cache("settled_day_edited");
+        let as_read = waiting_as_the_push_read_it(&cache, a_day_the_server_split_out());
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                summary: "Only this Tuesday, upstairs".to_string(),
+                ..as_read.clone()
+            })
+            .expect("the edit made while the change was out");
+
+        settled_here_for_an_occurrence(&cache, &as_read, Some(THE_SERVERS_TAG.to_string()))
+            .expect("the server's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the day to still be there");
+        assert_eq!(stored.summary, "Only this Tuesday, upstairs");
+        assert!(stored.pending, "the edit has not reached the server yet");
+        assert_eq!(stored.etag.as_deref(), Some(THE_SERVERS_TAG));
+        assert_eq!(
+            stored.provider_event_id.as_deref(),
+            Some("uid-1:20260310T090000Z"),
+            "the day's compound name is not the server's to replace"
+        );
+    }
+
+    #[test]
+    fn test_an_event_nobody_touched_while_it_was_at_the_server_stops_waiting() {
+        let cache = temp_cache("settled_here_untouched");
+        let as_read = waiting_as_the_push_read_it(&cache, made_here_in("cal-1"));
+
+        settled_here(
+            &cache,
+            &as_read,
+            "uid-1",
+            AT_THE_SERVER,
+            Some(THE_SERVERS_TAG.to_string()),
+        )
+        .expect("the server's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(
+            stored,
+            CalendarEventEntry {
+                provider_event_id: Some("uid-1".to_string()),
+                web_link: Some(AT_THE_SERVER.to_string()),
+                etag: Some(THE_SERVERS_TAG.to_string()),
+                pending: false,
+                updated_at: stored.updated_at.clone(),
+                ..as_read
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_day_nobody_touched_while_it_was_at_the_server_stops_waiting() {
+        let cache = temp_cache("settled_day_untouched");
+        let as_read = waiting_as_the_push_read_it(&cache, a_day_the_server_split_out());
+
+        settled_here_for_an_occurrence(&cache, &as_read, Some(THE_SERVERS_TAG.to_string()))
+            .expect("the server's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the day to still be there");
+        assert_eq!(
+            stored,
+            CalendarEventEntry {
+                etag: Some(THE_SERVERS_TAG.to_string()),
+                pending: false,
+                updated_at: stored.updated_at.clone(),
+                ..as_read
+            }
+        );
+    }
+
+    #[test]
+    fn test_an_event_deleted_while_its_create_was_at_the_server_is_deleted_there_next() {
+        let cache = temp_cache("settled_here_deleted");
+        let as_read = waiting_as_the_push_read_it(&cache, made_here_in("cal-1"));
+        the_window_on(&cache)
+            .delete_calendar_event(&as_read.id)
+            .expect("the deletion made while the create was out");
+
+        settled_here(
+            &cache,
+            &as_read,
+            "uid-1",
+            AT_THE_SERVER,
+            Some(THE_SERVERS_TAG.to_string()),
+        )
+        .expect("the server's answer to be written down");
+
+        assert!(
+            cache
+                .get_event_by_id(&as_read.id)
+                .expect("the calendar to be readable")
+                .is_none(),
+            "an event somebody deleted came back"
+        );
+        let mut result = CalendarSyncResult::default();
+        let owed = deletions_waiting(&cache, &container("cal-1", "acct"), "acct", &mut result);
+        assert_eq!(
+            owed.iter()
+                .map(|note| (note.provider_event_id.as_deref(), note.event_url.as_deref()))
+                .collect::<Vec<_>>(),
+            [(Some("uid-1"), Some(AT_THE_SERVER))],
+            "the next push has to delete what the server made, at its address"
+        );
+    }
+
+    #[test]
+    fn test_an_event_moved_while_its_create_was_at_the_server_stays_where_it_was_put() {
+        let cache = temp_cache("settled_here_moved");
+        let as_read = waiting_as_the_push_read_it(&cache, made_here_in("cal-1"));
+        the_window_on(&cache)
+            .save_calendar_event(&CalendarEventEntry {
+                calendar_id: Some("cal-2".to_string()),
+                ..as_read.clone()
+            })
+            .expect("the move made while the create was out");
+
+        settled_here(
+            &cache,
+            &as_read,
+            "uid-1",
+            AT_THE_SERVER,
+            Some(THE_SERVERS_TAG.to_string()),
+        )
+        .expect("the server's answer to be written down");
+
+        let stored = cache
+            .get_event_by_id(&as_read.id)
+            .expect("the calendar to be readable")
+            .expect("the event to still be there");
+        assert_eq!(stored.calendar_id.as_deref(), Some("cal-2"));
+        assert_eq!(
+            (stored.provider_event_id, stored.web_link),
+            (None, None),
+            "the event the server made is in the calendar it left, not this one"
+        );
+        assert!(stored.pending);
+        let mut result = CalendarSyncResult::default();
+        let owed = deletions_waiting(&cache, &container("cal-1", "acct"), "acct", &mut result);
+        assert_eq!(
+            owed.iter()
+                .map(|note| (note.provider_event_id.as_deref(), note.event_url.as_deref()))
+                .collect::<Vec<_>>(),
+            [(Some("uid-1"), Some(AT_THE_SERVER))],
+            "the copy in the calendar it left is owed a deletion"
+        );
     }
 
     #[test]
@@ -4129,6 +4380,12 @@ mod tests {
         cache
             .save_calendar_event(&edited)
             .expect("the edit to be stored");
+        // Read back, the way the push reads what is waiting, so the stamp it
+        // carries is the one the store gave the edit.
+        let edited = cache
+            .get_event_by_id(&edited.id)
+            .expect("the cache to be readable")
+            .expect("the edit to be there");
 
         let sent = send_one_change(
             &cache,
