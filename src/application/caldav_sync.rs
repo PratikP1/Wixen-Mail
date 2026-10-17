@@ -1020,7 +1020,23 @@ fn one_caldav_day_kept_out_of_its_series(
 
     // Asked about the series as well as about the day. A series somebody
     // deleted here would otherwise come back one changed day at a time.
-    if deleted_here.holds(&compound_id) || deleted_here.holds(&changed.uid) {
+    if deleted_here.holds(&changed.uid) {
+        return Ok(());
+    }
+    // A changed day deleted here stays deleted, and so does the day it
+    // replaced. Its row is not written back, and the day is kept off the
+    // series the read has just written down again, or the series draws the
+    // occurrence at its old time: the meeting somebody deleted, back on the
+    // diary in another shape. A feed is never told of the deletion and names
+    // the day for as long as its publisher does.
+    if deleted_here.holds(&compound_id) {
+        if let Some(series) = cache.get_event_by_provider_id(account_id, &changed.uid)? {
+            let called_off =
+                crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
+            let (after, _) =
+                crate::application::calendar::with_one_more_day_called_off(&series, &called_off);
+            cache.save_calendar_event(&after)?;
+        }
         return Ok(());
     }
 
@@ -1158,12 +1174,27 @@ pub async fn refresh_subscription(
     let deleted_here =
         crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
 
+    // Whole events first, the days the feed changed out of a series after. A
+    // feed writes a series and its moved or cancelled days the way a calendar
+    // server does, under the series' own UID and told apart by RECURRENCE-ID.
+    // Saved each under that UID, they landed on one row and whichever the feed
+    // listed last won: the series became its one moved day, or the moved or
+    // cancelled day was lost. Told apart here and folded the way the
+    // calendar-server read folds them, through the same function.
+    let (whole_events, changed_days): (Vec<&CalDavEvent>, Vec<&CalDavEvent>) = remote_events
+        .iter()
+        .partition(|event| event.recurrence_id.is_none());
+
     // Everything the feed carries is written down before anything is removed.
     // There is no transaction to reach for here, so the order is what stops a
     // feed that fails halfway through from leaving an empty calendar behind.
-    let mut in_feed = std::collections::HashSet::new();
-    for remote in &remote_events {
-        in_feed.insert(remote.uid.as_str());
+    //
+    // Owned strings, because a changed day is stored under an identity built
+    // here rather than borrowed from the feed, and it has to be in this set or
+    // the pass below removes the day the fold has just stored.
+    let mut in_feed: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for remote in whole_events {
+        in_feed.insert(remote.uid.clone());
 
         // An event somebody deleted on this computer. The feed goes on
         // carrying it for as long as its publisher does, and writing it back
@@ -1199,6 +1230,24 @@ pub async fn refresh_subscription(
                 result.created += 1;
             }
         }
+    }
+    // After every whole event is stored, so a series is held by the time its
+    // changed day is folded into it, whichever the feed listed first. The
+    // provider itself took the day out, so the series is not left waiting to
+    // send anything to a feed that is never written to.
+    for changed in changed_days {
+        let Some(the_day_it_was) = changed.recurrence_id.as_deref() else {
+            continue;
+        };
+        one_caldav_day_kept_out_of_its_series(
+            cache,
+            (account_id, &calendar.id),
+            changed,
+            the_day_it_was,
+            &deleted_here,
+            &mut in_feed,
+            &mut result,
+        )?;
     }
     // Only what the feed has stopped carrying goes. An event filed here by
     // hand has no identity from the feed and is left alone. Silently, for the
@@ -5150,11 +5199,18 @@ mod tests {
                     .is_none(),
                 "the moved day deleted here came back on refresh {pass}"
             );
+            // Nothing at all, not the moved day and not the series at the
+            // time the day used to be: deleting the moved assembly is not
+            // asking for the nine o'clock one back.
             assert!(
-                !everything_drawn_on(&cache, the_changed_tuesday())
-                    .iter()
-                    .any(|start| start.starts_with("2026-03-10T14:00")),
-                "the moved day deleted here is still drawn after refresh {pass}"
+                everything_drawn_on(&cache, the_changed_tuesday()).is_empty(),
+                "the moved day deleted here still shows after refresh {pass}: {:?}",
+                everything_drawn_on(&cache, the_changed_tuesday())
+            );
+            assert_eq!(
+                everything_drawn_on(&cache, the_tuesday_after()).len(),
+                1,
+                "the series stopped repeating after refresh {pass}"
             );
         }
     }
