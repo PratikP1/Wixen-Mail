@@ -1427,6 +1427,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A change made to a task or a note while it syncs is kept and sent (2026-10-17).** Ticking
+  a task, finishing it from the due window, moving it, editing a note or pinning it while a
+  sync was sending that same task or note used to be lost: the sync marked it as sent when the
+  answer came back, so the change never left this computer. A task or note made here and
+  then moved or deleted while it was first being created was worse: a deleted task came back,
+  a deleted note stayed at the backend, and a moved one stayed in its old list or folder at
+  the other end. Now the change waits and goes up at the next
+  sync. A deleted one is deleted at Google, Outlook or the notes backend at the next sync, and
+  a moved one is made in its new list or folder before the copy in the old one is deleted.
+- **An edit made in the notes editor is sent (2026-10-17).** Saving a note in the notes editor
+  changed it on this computer and never marked it as waiting to be sent. So an edit to a note
+  the backend already held never reached it, and a later change at the other end could write
+  over the edit. Saving now marks the note as waiting, the way pinning or moving it already
+  did, and keeps its folder, its pin and its place at the backend.
+
+  Known limitation: neither fix has been tried against a real Google, Outlook or notes account.
 - **A subscribed calendar keeps its repeating events when the feed moves or cancels one day
   (2026-10-16).** A published calendar, such as a school's or a team's, writes a repeating
   event and each day of it that was moved or called off as separate entries sharing one

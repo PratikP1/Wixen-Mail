@@ -1313,6 +1313,38 @@ fn ids_in_lists_used_with_contains(text: &str) -> Vec<String> {
 /// hears about it. `application::contact_groups::belongs` is where that
 /// decision is made and tested on its own; this only says a selection
 /// handler exists to call it from.
+/// The notes editor's Save goes through the write that marks the note waiting.
+///
+/// It used to read the note, change its title and body and save the whole row
+/// back with the waiting flag as it was read, so an edit to a note a backend
+/// already held was never sent. The store write it calls now is tested in
+/// `data::message_cache::notes`; this says the Save reaches it and no longer
+/// writes the whole row itself.
+///
+/// What this cannot see: whether the Save button is reached at all, or what is
+/// said when it is pressed.
+#[test]
+fn test_the_notes_editor_saves_through_the_write_that_marks_the_note_waiting() {
+    let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
+    let start = app
+        .find("notes_cp.btn_save.on_click")
+        .expect("the notes editor's Save is no longer wired, so this guard measures nothing");
+    let end = app[start..]
+        .find("notes_sb.btn_new_folder.on_click")
+        .map(|at| start + at)
+        .expect("the handler that follows the notes editor's Save is gone");
+    let handler = &app[start..end];
+
+    assert!(
+        handler.contains("the_person_changed_the_note"),
+        "the notes editor's Save does not go through the write that marks the note waiting"
+    );
+    assert!(
+        !handler.contains("save_note("),
+        "the notes editor's Save writes the whole row back with the flag as it was read"
+    );
+}
+
 #[test]
 fn test_choosing_a_row_in_the_contacts_sidebar_changes_what_the_list_shows() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");

@@ -664,6 +664,15 @@ write path added by this milestone passes through that gate.
     move or a note edit made while a sync pushes, and 13.2-20.1 an event edit, instead of
     marking the row sent and wiping or never sending the change (finding #1). They add no
     `[D]` clause and the box stays open.
+  - 13.2-20 on 2026-10-17: a change made here to a task or a note during a push is no longer
+    replaced by the copy that was sent. The push records the provider's name and stamp always
+    and clears the waiting flag only when the row's `updated_at` still matches what it read,
+    so a tick, a due-window completion, a pin or a note edit made meanwhile goes up at the next
+    sync. A task or note made here and moved during its create stays moved, with the copy the
+    provider made owed a deletion that waits for the moved one; one deleted during its create
+    is deleted at the provider at the next sync. Held by cases that make the change on a
+    second connection inside the stand-in services' answers, and twelve guard records; events
+    are 13.2-20.1's. No `[D]` clause; the box stays open.
 
 ### Writing and reading a message
 
@@ -1232,6 +1241,12 @@ write path added by this milestone passes through that gate.
     editor's Save mark the note waiting, so an edit to a note a backend holds is sent, and
     keeps a note edit made while a sync pushes (finding #1). It adds no `[D]` clause and the
     box stays open.
+  - 13.2-20 on 2026-10-17: the notes editor's Save now goes through
+    `the_person_changed_the_note`, which writes the title, the body and the stamp and marks the
+    note waiting in one statement, so an edit to a note a backend holds is sent; before, the
+    Save wrote the whole row back with the flag as it was read, and such an edit never left.
+    An edit typed while the note is at the backend is kept and sent under the name the
+    backend gave it. No `[D]` clause; the box stays open.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
   - Evidence: rewritten 2026-09-10 by `05.1-03`, which made most of the old wording false.
@@ -7837,7 +7852,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-03 | Phase 3 | Pending |
 | SCALE-04 | Phase 3 | Complete |
 | SCALE-05 | Phase 3 | Complete |
-| SCALE-06 | Phase 3 | Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause |
+| SCALE-06 | Phase 3 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, a change made to a task or a note during a push is kept and sent, adding no `[D]` clause; 13.2-20.1 next for events. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause" |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Complete |
 | WRITE-03 | Phase 4 | Complete |
@@ -7848,7 +7863,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
 | PIM-03 | Phase 5 | Pending; phase 13.2: 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause. Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
-| PIM-04 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause |
+| PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
 | PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |

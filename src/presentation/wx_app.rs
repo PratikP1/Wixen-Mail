@@ -3022,7 +3022,7 @@ impl WxMailApp {
                         let s = lock_state(&state);
                         (s.selected_note_id.clone(), s.active_account_id.clone())
                     };
-                    let (Some(note_id), Some(account_id)) = (note_id, account_id) else {
+                    let (Some(note_id), Some(_)) = (note_id, account_id) else {
                         let _ = a11y.announce(
                             "Select a note before saving",
                             crate::presentation::accessibility::announcements::Priority::High,
@@ -3030,26 +3030,26 @@ impl WxMailApp {
                         return;
                     };
 
-                    // Re-read first so fields this editor does not show, such
-                    // as the folder and the pin, survive the write.
-                    let existing = cache.get_note(&note_id).ok().flatten();
-                    let Some(mut note) = existing else {
-                        let _ = a11y.announce(
-                            &crate::application::pim_command::no_longer_there(
-                                crate::application::new_item::ItemKind::Note,
-                                "",
-                            ),
-                            crate::presentation::accessibility::announcements::Priority::High,
-                        );
-                        return;
-                    };
-                    note.account_id = account_id;
-                    note.title = title_input.get_value();
-                    note.body = body_input.get_value();
-                    note.updated_at = chrono::Local::now().to_rfc3339();
-
-                    match cache.save_note(&note) {
-                        Ok(()) => {
+                    // Through the write that changes the title and body and
+                    // marks the note waiting to be sent, leaving the folder,
+                    // the pin and the backend's name as they are. Saving the
+                    // whole row back kept the waiting flag as it was read, so
+                    // an edit to a note a backend held was never sent.
+                    match cache.the_person_changed_the_note(
+                        &note_id,
+                        &title_input.get_value(),
+                        &body_input.get_value(),
+                    ) {
+                        Ok(false) => {
+                            let _ = a11y.announce(
+                                &crate::application::pim_command::no_longer_there(
+                                    crate::application::new_item::ItemKind::Note,
+                                    "",
+                                ),
+                                crate::presentation::accessibility::announcements::Priority::High,
+                            );
+                        }
+                        Ok(true) => {
                             let _ = a11y.announce(
                                 "Note saved",
                                 crate::presentation::accessibility::announcements::Priority::Normal,
@@ -3065,7 +3065,7 @@ impl WxMailApp {
                             );
                         }
                         Err(e) => {
-                            tracing::error!("Failed to save note {}: {}", note.id, e);
+                            tracing::error!("Failed to save note {}: {}", note_id, e);
                             let _ = a11y.announce(
                                 &format!("Could not save the note: {}", e),
                                 crate::presentation::accessibility::announcements::Priority::Urgent,

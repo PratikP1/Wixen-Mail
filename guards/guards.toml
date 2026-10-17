@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 769 records have arrived since and have not been through it.
+# 781 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -505,7 +505,7 @@ red = [
     "application::tasks_sync::tests::test_what_stays_here_is_said_without_being_called_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -520,7 +520,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_counts_what_went_up",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -533,7 +533,7 @@ red = [
     "application::tasks_sync::tests::test_the_summary_says_how_many_were_left_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -546,9 +546,15 @@ red = [
     "application::tasks_sync::tests::test_every_clause_at_once_is_still_read_as_sentences",
     "application::tasks_sync::tests::test_one_of_each_is_not_read_as_a_plural",
     "application::tasks_sync::tests::test_the_summary_says_what_happened_in_words",
+    # Added 2026-10-17 by 13.2-20's re-measure: the calendar holder's two
+    # summary cases read the tasks sentence through this branch, and the
+    # record had never named them.
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
+    "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_alone_when_nobody_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
 [[guard]]
@@ -565,7 +571,7 @@ red = [
     "application::tasks_sync::tests::test_several_failures_are_counted_not_listed",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -733,11 +739,11 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/every_google_calendar.rs", tests = 12 },
     { file = "src/application/mail_sync.rs", tests = 155 },
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
@@ -914,7 +920,7 @@ tests_last_seen = [
     { file = "src/application/allowed.rs", tests = 28 },
     { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -1620,6 +1626,238 @@ tests_last_seen = [
     { file = "src/service/carddav.rs", tests = 35 },
 ]
 
+# A task's push clearing the waiting flag whatever the row now says, so a tick
+# or a due-window completion made while the update was at the provider stops
+# waiting and never leaves (audit #1, T-13.2-17-01). Written 2026-10-17 by
+# 13.2-20, taken by hand against the whole library, 9,239 tests, with nothing
+# else red.
+[[guard]]
+name = "a task changed while its update was at the provider stays waiting"
+file = "src/data/message_cache/tasks.rs"
+before = '''                    pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END'''
+after = '''                    pending = CASE WHEN ?4 = ?4 THEN 0 ELSE pending END'''
+red = [
+    "application::tasks_sync::tests::test_a_task_completed_from_the_due_window_while_google_takes_its_update_stays_waiting",
+    "application::tasks_sync::tests::test_a_task_ticked_while_google_takes_its_update_is_sent_by_the_next_sync",
+    "data::message_cache::tasks::tests::test_a_task_completed_from_the_due_window_while_its_push_was_in_flight_stays_waiting",
+    "data::message_cache::tasks::tests::test_a_task_ticked_while_its_push_was_in_flight_stays_waiting_and_keeps_the_tick",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task made here and ticked while its create was at the provider renamed
+# with the provider's copy, so the tick is written over (audit #1,
+# T-13.2-17-02). Written 2026-10-17 by 13.2-20, taken by hand against the
+# whole library, 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task ticked while its create was at the provider keeps the tick under the provider's name"
+file = "src/data/message_cache/tasks.rs"
+before = '''            Some(here) if here.updated_at != read_at => self.put_under_the_providers_name('''
+after = '''            Some(here) if false && here.updated_at != read_at => self.put_under_the_providers_name('''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_ticked_while_google_creates_it_keeps_the_tick_and_is_sent_again",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_ticked_during_its_create_keeps_the_tick_under_the_providers_id",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task deleted here while its create was at the provider written back down
+# as the provider's copy, so it returns, and the provider keeps a task nobody
+# has. Written 2026-10-17 by 13.2-20, taken by hand against the whole library,
+# 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task deleted while its create was at the provider is owed to the provider"
+file = "src/data/message_cache/tasks.rs"
+before = '''            None => self.owe_the_provider_a_deletion(task, None)?,'''
+after = '''            None => self.put_under_the_providers_name(old_id, task)?,'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_deleted_while_google_creates_it_is_deleted_there_next",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_deleted_during_its_create_is_owed_to_the_provider",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# A task moved into another list while its create was at the provider renamed
+# in the list it moved to, so the next update asks the provider for a task in
+# a list it never put it in, and the copy in the old list is never deleted.
+# Written 2026-10-17 by 13.2-20, taken by hand against the whole library,
+# 9,239 tests, with nothing else red.
+[[guard]]
+name = "a task moved while its create was at the provider stays moved and the first copy is owed"
+file = "src/data/message_cache/tasks.rs"
+before = '''            Some(here) if here.task_list_id != task.task_list_id => {'''
+after = '''            Some(here) if false && here.task_list_id != task.task_list_id => {'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_moved_while_google_creates_it_stays_moved",
+    "data::message_cache::tasks::tests::test_a_task_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
+]
+
+# The Move command leaving a task's stamp where it was, so a push that read the
+# task before the move cannot tell it changed. Only the stamp's own assertion
+# goes red: the settle compares lists as well, so the move itself is still
+# kept. Written 2026-10-17 by 13.2-20, taken by hand against the whole
+# library, 9,239 tests, with nothing else red.
+[[guard]]
+name = "moving a task stamps it"
+file = "src/presentation/managers.rs"
+before = '''            task.updated_at = chrono::Utc::now().to_rfc3339();'''
+after = '''            let _ = chrono::Utc::now().to_rfc3339();'''
+red = [
+    "application::tasks_sync::tests::test_a_task_made_here_and_moved_while_google_creates_it_stays_moved",
+]
+tests_last_seen = [
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# A note's push clearing the waiting flag whatever the row now says, so an edit
+# typed while the note was at the backend stops waiting and never leaves
+# (audit #1, T-13.2-17-01). Written 2026-10-17 by 13.2-20, taken by hand
+# against the whole library, 9,248 tests, with nothing else red.
+[[guard]]
+name = "a note edited while it was at the backend stays waiting"
+file = "src/data/message_cache/notes.rs"
+before = '''                             pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END'''
+after = '''                             pending = CASE WHEN ?4 = ?4 THEN 0 ELSE pending END'''
+red = [
+    "application::notes_sync::tests::test_a_note_edited_while_the_backend_keeps_a_different_copy_is_not_written_over",
+    "application::notes_sync::tests::test_a_note_edited_while_the_backend_makes_it_is_sent_again_under_the_name_it_was_given",
+    "data::message_cache::notes::tests::test_a_note_edited_while_its_push_was_in_flight_keeps_the_edit_and_stays_waiting",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
+]
+
+# A note deleted here while its create was at the backend leaving a deletion
+# that names nothing, so the backend keeps the note it made. Written
+# 2026-10-17 by 13.2-20, taken by hand against the whole library, 9,248
+# tests, with nothing else red.
+[[guard]]
+name = "a note deleted while its create was at the backend is owed to the backend"
+file = "src/data/message_cache/notes.rs"
+before = '''            None => self.name_the_deletion_of(&as_sent.id, named)?,'''
+after = '''            None => {}'''
+red = [
+    "application::notes_sync::tests::test_a_note_made_here_and_deleted_while_the_backend_makes_it_is_removed_there_next",
+    "data::message_cache::notes::tests::test_a_note_made_here_and_deleted_during_its_create_is_owed_to_the_backend",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
+]
+
+# A note moved into another folder while its create was at the backend given
+# the name of the copy in the old folder's container, so the next push asks
+# the wrong container and the old copy is never removed. Written 2026-10-17
+# by 13.2-20, taken by hand against the whole library, 9,248 tests, with
+# nothing else red.
+[[guard]]
+name = "a note moved while its create was at the backend stays moved and the first copy is owed"
+file = "src/data/message_cache/notes.rs"
+before = '''            Some(here) if here.folder_id != as_sent.folder_id => {'''
+after = '''            Some(here) if false && here.folder_id != as_sent.folder_id => {'''
+red = [
+    "application::notes_sync::tests::test_a_note_made_here_and_moved_while_the_backend_makes_it_stays_moved",
+    "data::message_cache::notes::tests::test_a_note_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
+]
+
+# The notes editor's write leaving the waiting flag as it was, so an edit to a
+# note a backend holds is never sent. Written 2026-10-17 by 13.2-20, taken by
+# hand against the whole library, 9,248 tests, with nothing else red; the push
+# cases edit notes already waiting, so only the store's own case sees it.
+[[guard]]
+name = "a note saved from the editor is waiting to be sent"
+file = "src/data/message_cache/notes.rs"
+before = '''                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = 1'''
+after = '''                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = pending'''
+red = [
+    "data::message_cache::notes::tests::test_a_note_saved_from_the_editor_is_waiting_and_keeps_its_folder_pin_and_name",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
+]
+
+# What a backend kept of a note written over an edit typed while the note was
+# at the backend. Written 2026-10-17 by 13.2-20, taken by hand against the
+# whole library, 9,248 tests, with nothing else red.
+[[guard]]
+name = "what a backend kept is not written over an edit made during the push"
+file = "src/application/notes_sync.rs"
+before = '''    if now.updated_at != note.updated_at {
+        return;
+    }'''
+after = '''    if false && now.updated_at != note.updated_at {
+        return;
+    }'''
+red = [
+    "application::notes_sync::tests::test_a_note_edited_while_the_backend_keeps_a_different_copy_is_not_written_over",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 27 },
+]
+
+# The Move command leaving a note's stamp where it was. Only the stamp's own
+# assertion goes red: the settle compares folders as well, so the move itself
+# is still kept. Written 2026-10-17 by 13.2-20, taken by hand against the
+# whole library, 9,248 tests, with nothing else red.
+[[guard]]
+name = "moving a note stamps it"
+file = "src/presentation/managers.rs"
+before = '''            note.updated_at = chrono::Utc::now().to_rfc3339();'''
+after = '''            let _ = chrono::Utc::now().to_rfc3339();'''
+red = [
+    "application::notes_sync::tests::test_a_note_made_here_and_moved_while_the_backend_makes_it_stays_moved",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/presentation/managers.rs", tests = 137 },
+]
+
+# The notes editor's Save writing the whole row back again, with the waiting
+# flag as it was read. Written 2026-10-17 by 13.2-20, taken by hand against
+# the wired target, 78 tests, with nothing else red.
+[[guard]]
+name = "the notes editor saves through the write that marks the note waiting"
+file = "src/presentation/wx_app.rs"
+suite = "wired"
+before = '''                    match cache.the_person_changed_the_note(
+                        &note_id,
+                        &title_input.get_value(),
+                        &body_input.get_value(),
+                    ) {'''
+after = '''                    match cache.get_note(&note_id).and_then(|found| match found {
+                        Some(note) => cache
+                            .save_note(&crate::data::message_cache::NoteEntry {
+                                title: title_input.get_value(),
+                                body: body_input.get_value(),
+                                ..note
+                            })
+                            .map(|()| true),
+                        None => Ok(false),
+                    }) {'''
+red = [
+    "test_the_notes_editor_saves_through_the_write_that_marks_the_note_waiting",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/wired.rs", tests = 78 },
+]
+
 [[guard]]
 name = "the tasks read does not write back a task deleted here"
 file = "src/application/tasks_sync.rs"
@@ -1637,7 +1875,7 @@ red = [
     "application::tasks_sync::tests::test_a_task_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── What the clearing itself refuses ───────────────────────────────────────
@@ -1717,8 +1955,8 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -1732,8 +1970,8 @@ red = [
     "data::message_cache::tasks::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 # The other half of keeping that note: it now outlives the list it names, and a
@@ -1750,7 +1988,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_for_a_list_that_has_gone_is_not_sent_again_and_is_not_a_problem",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── What lets a deletion go ────────────────────────────────────────────────
@@ -1823,6 +2061,11 @@ red = [
     "application::notes_sync::tests::test_a_deletion_the_backend_has_taken_is_still_remembered",
     "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
     "application::notes_sync::tests::test_a_note_deleted_here_is_offered_to_the_backend_for_deletion",
+    # Added 2026-10-17 by 13.2-20: a note deleted or moved while its create
+    # was at the backend leaves a removal owed, which the break sweeps before
+    # the next sync can send it.
+    "application::notes_sync::tests::test_a_note_made_here_and_deleted_while_the_backend_makes_it_is_removed_there_next",
+    "application::notes_sync::tests::test_a_note_made_here_and_moved_while_the_backend_makes_it_stays_moved",
     "application::notes_sync::tests::test_a_removal_is_only_offered_to_the_container_the_note_was_in",
     "application::notes_sync::tests::test_a_removal_waits_for_the_copy_a_move_is_making",
 ]
@@ -1831,8 +2074,8 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 204 },
     { file = "src/application/carddav_sync.rs", tests = 14 },
     { file = "src/application/contacts_sync.rs", tests = 287 },
-    { file = "src/application/notes_sync.rs", tests = 23 },
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -3375,7 +3618,7 @@ red = [
     "application::tasks_sync::tests::test_a_deletion_held_by_allow_changes_waits_rather_than_failing",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3398,7 +3641,7 @@ red = [
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3411,7 +3654,7 @@ red = [
     "application::tasks_sync::tests::test_folding_two_providers_together_keeps_every_count",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -3434,7 +3677,7 @@ red = [
     "application::tasks_sync::tests::test_two_syncs_with_the_setting_off_both_say_waiting_and_never_error",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # ── The days a series calls off, crossing time zones whole ──────────────────
@@ -4800,7 +5043,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # Rewritten 2026-09-19 by 11-07 onto the batch's shape, where the branch
@@ -4830,7 +5073,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # ── A read the mail server refused, reported as a folder with nothing in it ──
@@ -6687,9 +6930,15 @@ red = [
     "service::tasks_api::tests::test_a_microsoft_task_read_asks_for_the_list_under_the_name_graph_gave_it",
     "service::tasks_api::tests::test_a_new_google_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
     "service::tasks_api::tests::test_a_new_microsoft_task_is_posted_to_the_list_it_belongs_in_and_claims_no_identifier",
+    # Added 2026-10-17 by 13.2-20's re-measure: the request log's two task
+    # cases build their address through this function, and the record had
+    # never named them.
+    "service::asked_and_answered::tests::test_a_refused_task_change_writes_its_reason_and_keeps_no_body",
+    "service::asked_and_answered::tests::test_a_task_delete_answered_not_found_writes_the_status_it_was",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
+    { file = "src/service/asked_and_answered.rs", tests = 15 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -6714,7 +6963,7 @@ red = [
     "application::tasks_sync::tests::test_the_trait_the_sync_talks_through_still_asks_the_read_only_client",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -7341,7 +7590,7 @@ red = [
     "service::tasks_api::tests::test_the_only_words_that_can_leave_here_as_an_importance_are_the_three_microsoft_takes",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -11377,7 +11626,7 @@ after = """fn forget_the_deletions_remembered_long_enough(cache: &MessageCache, 
 }"""
 red = ["application::tasks_sync::tests::test_a_tasks_sync_lets_go_of_a_deletion_it_has_remembered_long_enough"]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 [[guard]]
@@ -11387,7 +11636,7 @@ before = """        Ok(removed > 0)"""
 after = """        Ok(removed >= 0)"""
 red = ["data::message_cache::tasks::tests::test_forgetting_a_deletion_that_has_no_note_reports_that_nothing_was_there"]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 [[guard]]
@@ -12865,7 +13114,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -12881,7 +13130,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -12911,7 +13160,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/main.rs", tests = 0 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -12925,7 +13174,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -15204,7 +15453,7 @@ red = [
     "test_the_reading_of_the_main_window_reaches_past_its_first_test_module",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # ── The claim that a test cannot build a window ─────────────────────────────
@@ -15733,7 +15982,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -18204,7 +18453,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # ── The armour was never offered to the key on this computer ────────────────
@@ -18247,7 +18496,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # ── The four reasons a PGP message did not open collapsed into one ──────────
@@ -18318,7 +18567,7 @@ after = """        .queue_outbox_message_to_go(
 red = ["test_the_composers_send_passes_the_hold_to_the_queue"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -18345,7 +18594,7 @@ after = """                        if held_mail_is_due {
 red = ["test_the_clock_lets_held_mail_go"]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -18851,7 +19100,7 @@ red = [
     "test_the_shortcuts_document_names_no_key_the_code_has_never_heard_of",
 ]
 tests_last_seen = [
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -19106,7 +19355,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 [[guard]]
@@ -20110,7 +20359,7 @@ red = [
     "application::tasks_sync::tests::test_a_move_whose_delete_is_refused_is_finished_by_the_sync_after_it",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
 ]
 
 # Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`
@@ -20159,7 +20408,7 @@ red = [
     "application::tasks_sync::tests::test_a_task_microsoft_holds_moves_list_the_same_way",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -20258,7 +20507,7 @@ red = [
     "test_a_move_of_a_task_that_is_no_longer_here_writes_neither_half",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
     { file = "tests/a_half_finished_task_move.rs", tests = 8 },
 ]
 
@@ -20295,7 +20544,7 @@ red = [
     "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 32 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
 ]
 
 # ── The word beside a note saying what its body is written in ───────────────
@@ -20328,7 +20577,7 @@ red = [
     "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 32 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
 ]
 
 # The other half. The word is still read correctly and is thrown away on the
@@ -20345,7 +20594,7 @@ red = [
     "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 32 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
 ]
 
 # ── A menu offering a sync that cannot happen, or hiding one that can ───────
@@ -20564,7 +20813,7 @@ red = [
     "data::message_cache::notes::tests::test_pinning_a_note_leaves_it_waiting_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 32 },
+    { file = "src/data/message_cache/notes.rs", tests = 37 },
 ]
 
 # A copy of a note makes a second note at the backend rather than writing over
@@ -20631,7 +20880,7 @@ red = [
     "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
 ]
 
 # The losing copy of a note is held for somebody rather than written over.
@@ -20675,6 +20924,11 @@ tests_last_seen = [
 # one is the load-bearing half of the pair: it says the note is still waiting and
 # still says what was typed here after the first sync, which is what stops "it
 # was not offered again" passing against a sync that gave the change up.
+#
+# The break's call rewritten 2026-10-17 by 13.2-20, which gave
+# a_backend_took_the_note the note as the push read it in place of its id: the
+# old call no longer built, so the run could not measure the record. The break
+# is the same act, the note marked as taken.
 [[guard]]
 name = "a note that moved in two places is held rather than written over"
 file = "src/application/notes_sync.rs"
@@ -20684,7 +20938,7 @@ before = '''            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => 
 after = '''            Ok(WhatTheBackendSaid::ItMovedFirst { version_now }) => {
                 let _ = version_now;
                 let _ = cache.a_backend_took_the_note(
-                    &note.id,
+                    &note,
                     note.known_as.as_deref().unwrap_or_default(),
                     None,
                 );
@@ -20694,7 +20948,7 @@ red = [
     "application::notes_sync::tests::test_a_note_that_moved_in_both_places_is_held_rather_than_written_over",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
 ]
 
 # A note's body comes back the bytes it went out as.
@@ -20862,7 +21116,7 @@ red = [
     "test_the_setting_and_a_page_that_moved_do_not_lose_the_change",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -20886,7 +21140,7 @@ red = [
     "test_a_page_the_backend_no_longer_holds_is_made_again",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -20921,7 +21175,7 @@ red = [
     "test_a_three_part_section_arrives_as_it_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -20962,7 +21216,7 @@ red = [
     "test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21622,7 +21876,7 @@ red = [
     "test_a_page_changed_to_what_onenote_already_says_is_not_a_question",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21656,7 +21910,7 @@ red = [
     "test_a_page_renamed_at_both_ends_is_still_a_question",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 23 },
+    { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -22942,7 +23196,7 @@ red = [
     "data::message_cache::tasks::tests::test_completing_a_task_sets_done_once_and_never_toggles_it_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tasks.rs", tests = 22 },
+    { file = "src/data/message_cache/tasks.rs", tests = 27 },
 ]
 
 # ── 06-09 task 3: one window, every due thing a row ─────────────────────────
@@ -25466,7 +25720,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # Mail out of an Outlook data file goes through the one place that files an
@@ -25596,7 +25850,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # The import worker hands an Outlook data file to the module that reads
@@ -25625,7 +25879,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # The folder import's picker answers with a folder and the handler hands it
@@ -25658,7 +25912,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # The wait before asking a mail server again grows with each failure. The
@@ -31177,7 +31431,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/help.rs", tests = 9 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # ── Every Help page has a menu id of its own (found by 12-10) ───────────────
@@ -31411,7 +31665,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 15 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # Two items in the reader window claiming Ctrl+W, so the second looks bound and
@@ -31429,7 +31683,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_reader.rs", tests = 15 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # A message opened in the reader with nothing composed for paper, so Print in
@@ -38311,7 +38565,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 51 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # An export item renamed on the File menu and not in the guide, so the page
@@ -38811,7 +39065,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -38843,7 +39097,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_tasks_summary_says_the_reason_after_the_counts_when_a_provider_was_asked",
 ]
 tests_last_seen = [
-    { file = "src/application/tasks_sync.rs", tests = 119 },
+    { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
 ]
 
@@ -40020,7 +40274,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/wired.rs", tests = 77 },
+    { file = "tests/wired.rs", tests = 78 },
 ]
 
 # A save that empties where an account sits and resets the day it was added,

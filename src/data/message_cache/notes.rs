@@ -781,28 +781,131 @@ impl MessageCache {
         Ok(notes)
     }
 
-    /// The backend has taken this note, and calls it this.
+    /// The backend has taken this note, as the push read it, and calls it this.
     ///
-    /// Written as one statement rather than by reading the note, changing three
-    /// fields and saving it again. The read-change-save shape would carry the
-    /// title and body that were in hand when the push started back over
-    /// whatever somebody typed while it was in flight, which is a change made
-    /// and lost with nothing said.
+    /// The name and the marker are written rather than the whole row, because
+    /// the read-change-save shape would carry the title and body that were in
+    /// hand when the push started back over whatever somebody typed while it
+    /// was in flight. The window writes on a connection of its own while a sync
+    /// pushes, so the note may have changed since `as_sent` was read, and each
+    /// change is kept:
+    ///
+    /// - edited or pinned: the name and marker are recorded and the note stays
+    ///   waiting, so the next push sends the change to the note just made
+    ///   rather than making a second;
+    /// - moved into another folder: the backend made it in the old folder's
+    ///   container, so the row keeps the move and no name, and that copy is
+    ///   owed a removal that waits for the moved note to be made, the state
+    ///   [`Self::move_a_note_the_backend_holds`] leaves;
+    /// - deleted: the deletion written while the note had no name gains the
+    ///   backend's, so the push asks the backend to remove what it made.
+    ///
+    /// The read and the write are one immediate transaction, so nothing the
+    /// window does can land between them.
     pub fn a_backend_took_the_note(
         &self,
-        note_id: &str,
+        as_sent: &NoteEntry,
         named: &str,
         version: Option<&str>,
     ) -> Result<()> {
+        let settling = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|e| Error::Other(format!("Failed to start recording a note as sent: {}", e)))?;
+        match self.get_note(&as_sent.id)? {
+            None => self.name_the_deletion_of(&as_sent.id, named)?,
+            Some(here) if here.folder_id != as_sent.folder_id => {
+                self.owe_a_removal_from_the_folder_it_left(as_sent, named, &here.id)?
+            }
+            Some(_) => {
+                self.conn
+                    .execute(
+                        "UPDATE notes
+                         SET provider_note_id = ?2, provider_version = ?3,
+                             pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END
+                         WHERE id = ?1",
+                        rusqlite::params![as_sent.id, named, version, as_sent.updated_at],
+                    )
+                    .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))?;
+            }
+        }
+        settling
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))
+    }
+
+    /// Give a deletion written before the note had a name the name the
+    /// backend gave it. One that already names a copy is left as it is.
+    fn name_the_deletion_of(&self, note_id: &str, named: &str) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE notes
-                 SET pending = 0, provider_note_id = ?2, provider_version = ?3
-                 WHERE id = ?1",
-                rusqlite::params![note_id, named, version],
+                "UPDATE deleted_notes SET provider_note_id = ?2
+                 WHERE id = ?1 AND provider_note_id IS NULL",
+                rusqlite::params![note_id, named],
             )
-            .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to name a deleted note: {}", e)))?;
         Ok(())
+    }
+
+    /// Leave the backend a removal of the copy it made in the folder the note
+    /// was in when it was sent, waiting for the note named `waiting_for`.
+    ///
+    /// Under an identifier of its own rather than the note's: the note is still
+    /// here, and a deletion of it later would write its own record under its
+    /// id and replace this one, leaving the copy in the old container named by
+    /// nothing.
+    fn owe_a_removal_from_the_folder_it_left(
+        &self,
+        as_sent: &NoteEntry,
+        named: &str,
+        waiting_for: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO deleted_notes
+                    (id, account_id, folder_id, provider_note_id, deleted_at,
+                     waiting_for_note_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    format!("note-{}", uuid::Uuid::new_v4()),
+                    as_sent.account_id,
+                    as_sent.folder_id,
+                    named,
+                    chrono::Utc::now().to_rfc3339(),
+                    waiting_for,
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the backend is owed for a moved note: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
+    /// The person saved the notes editor: this note now says this.
+    ///
+    /// One statement for the title, the body, the stamp and the waiting flag,
+    /// leaving every other column as it is, so the folder, the pin and the
+    /// backend's name survive the save without the row being read and written
+    /// back whole. Answers whether the note was still there to change.
+    pub fn the_person_changed_the_note(
+        &self,
+        note_id: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<bool> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = 1
+                 WHERE id = ?1",
+                rusqlite::params![note_id, title, body, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save note: {}", e)))?;
+        Ok(changed > 0)
     }
 }
 
@@ -1358,14 +1461,186 @@ line two
             })
             .unwrap();
 
+        let as_sent = cache.get_note("n1").unwrap().expect("the note");
         cache
-            .a_backend_took_the_note("n1", "there-1", Some("v1"))
+            .a_backend_took_the_note(&as_sent, "there-1", Some("v1"))
             .unwrap();
 
         let after = cache.get_note("n1").unwrap().expect("the note");
         assert!(!after.pending);
         assert_eq!(after.known_as.as_deref(), Some("there-1"));
         assert_eq!(after.known_version.as_deref(), Some("v1"));
+    }
+
+    /// The window's own connection to the same folder, which is what holds a
+    /// person's edit while a sync on its worker thread is pushing.
+    fn the_window(cache: &TempHome<MessageCache>) -> MessageCache {
+        MessageCache::new(cache.path().to_path_buf(), None).expect("the window's connection")
+    }
+
+    /// A note in `folder`, waiting to be sent or not, under the name given.
+    fn a_note_in(
+        cache: &MessageCache,
+        folder: &str,
+        pending: bool,
+        known_as: Option<&str>,
+    ) -> NoteEntry {
+        let note = NoteEntry {
+            id: "n1".to_string(),
+            account_id: "acct-1".to_string(),
+            folder_id: Some(folder.to_string()),
+            title: "Wiring colours".to_string(),
+            body: "Brown is live".to_string(),
+            format: NoteBody::AsTyped,
+            pinned: true,
+            created_at: "2026-01-01".to_string(),
+            updated_at: "2026-01-01".to_string(),
+            pending,
+            known_as: known_as.map(str::to_string),
+            known_version: known_as.map(|_| "v1".to_string()),
+        };
+        cache.save_note(&note).unwrap();
+        note
+    }
+
+    #[test]
+    fn test_a_note_saved_from_the_editor_is_waiting_and_keeps_its_folder_pin_and_name() {
+        // The editor's Save wrote the whole row back with the flag as it was
+        // read, so an edit to a note a backend already holds was never sent,
+        // and the next read whose marker moved wrote the backend's copy over it.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let before = a_note_in(&cache, &folder.id, false, Some("there-1"));
+
+        let was_there = cache
+            .the_person_changed_the_note("n1", "Wiring colours, UK", "Brown is live, blue neutral")
+            .unwrap();
+
+        assert!(was_there, "a note that is there was reported gone");
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert_eq!(after.title, "Wiring colours, UK");
+        assert_eq!(after.body, "Brown is live, blue neutral");
+        assert!(
+            after.pending,
+            "an edit to a note the backend holds is not waiting, so it is never sent"
+        );
+        assert_ne!(
+            after.updated_at, before.updated_at,
+            "the edit was not stamped"
+        );
+        assert_eq!(after.folder_id, before.folder_id);
+        assert!(after.pinned, "saving the editor unpinned the note");
+        assert_eq!(after.known_as.as_deref(), Some("there-1"));
+        assert_eq!(after.known_version.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn test_the_editor_saving_a_note_that_has_gone_says_so_and_makes_nothing() {
+        let cache = test_cache();
+
+        let was_there = cache
+            .the_person_changed_the_note("n1", "Wiring colours", "Brown is live")
+            .unwrap();
+
+        assert!(!was_there, "a note that is not there was reported saved");
+        assert!(cache.get_note("n1").unwrap().is_none());
+    }
+
+    #[test]
+    fn test_a_note_edited_while_its_push_was_in_flight_keeps_the_edit_and_stays_waiting() {
+        // Finding #1 of the 2026-10-14 audit, the notes half. The backend's
+        // name is recorded either way, or the next push makes a second note.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let as_sent = a_note_in(&cache, &folder.id, true, None);
+
+        the_window(&cache)
+            .the_person_changed_the_note("n1", "Wiring colours, UK", "Typed meanwhile")
+            .unwrap();
+        cache
+            .a_backend_took_the_note(&as_sent, "there-1", Some("v2"))
+            .unwrap();
+
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert_eq!(after.title, "Wiring colours, UK", "the edit was lost");
+        assert_eq!(after.body, "Typed meanwhile");
+        assert!(
+            after.pending,
+            "an edit typed while the note was being sent stopped waiting, so it never leaves"
+        );
+        assert_eq!(after.known_as.as_deref(), Some("there-1"));
+        assert_eq!(after.known_version.as_deref(), Some("v2"));
+    }
+
+    #[test]
+    fn test_a_note_made_here_and_deleted_during_its_create_is_owed_to_the_backend() {
+        // The deletion was written while the note had no name anywhere, so it
+        // named nothing to remove, and the backend kept the note it had just
+        // made for somebody who had deleted it.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let as_sent = a_note_in(&cache, &folder.id, true, None);
+
+        the_window(&cache).delete_note("n1").unwrap();
+        cache
+            .a_backend_took_the_note(&as_sent, "there-1", Some("v1"))
+            .unwrap();
+
+        assert!(cache.get_note("n1").unwrap().is_none());
+        let owed = cache.deleted_notes("acct-1").unwrap();
+        assert_eq!(owed.len(), 1, "{owed:?}");
+        assert_eq!(
+            owed[0].known_as.as_deref(),
+            Some("there-1"),
+            "the deletion does not name the note the backend made, so it is never sent"
+        );
+        assert!(owed[0].so_far.still_owed());
+    }
+
+    #[test]
+    fn test_a_note_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed() {
+        // The backend made the note in the container of the folder the push
+        // read, and the person had moved it since. The row keeps the move and
+        // carries no name from the old container; that container's copy is
+        // owed a removal that waits for the moved note to be made, the state a
+        // move of a note a backend holds leaves.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-2".to_string(),
+                account_id: "acct-1".to_string(),
+                container: Some("https://example.test/dav/journals/home/".to_string()),
+                name: "Home".to_string(),
+                display_order: 1,
+                created_at: "2026-01-01".to_string(),
+            })
+            .unwrap();
+        let as_sent = a_note_in(&cache, &folder.id, true, None);
+        the_window(&cache)
+            .save_note(&NoteEntry {
+                folder_id: Some("folder-2".to_string()),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                ..as_sent.clone()
+            })
+            .unwrap();
+
+        cache
+            .a_backend_took_the_note(&as_sent, "there-1", Some("v1"))
+            .unwrap();
+
+        let moved = cache.get_note("n1").unwrap().expect("the moved note");
+        assert_eq!(moved.folder_id.as_deref(), Some("folder-2"));
+        assert!(moved.pending, "the moved note is not waiting to be made");
+        assert_eq!(
+            moved.known_as, None,
+            "the moved note carries the name of a copy in a container it is not in"
+        );
+        let owed = cache.deleted_notes("acct-1").unwrap();
+        assert_eq!(owed.len(), 1, "{owed:?}");
+        assert_eq!(owed[0].known_as.as_deref(), Some("there-1"));
+        assert_eq!(owed[0].folder_id.as_deref(), Some(folder.id.as_str()));
+        assert_eq!(owed[0].waiting_for_note_id.as_deref(), Some("n1"));
     }
 
     /// Pinning a note marks it as waiting to be sent.

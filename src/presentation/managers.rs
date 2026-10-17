@@ -8080,6 +8080,10 @@ pub fn file_under(
             }
             task.task_list_id = Some(into.to_string());
             task.pending = true;
+            // Stamped, as every write that leaves a task waiting is: a push
+            // reading the task before this tells a change made since by the
+            // stamp, and a move that kept the old one would read as unchanged.
+            task.updated_at = chrono::Utc::now().to_rfc3339();
             if filing.makes_a_new_row() {
                 // A task carries the provider's identity in the identifier
                 // itself, which `tasks_sync::a_provider_holds` reads, so
@@ -8135,6 +8139,8 @@ pub fn file_under(
             }
             note.folder_id = Some(into.to_string());
             note.pending = true;
+            // Stamped for the reason the task arm gives.
+            note.updated_at = chrono::Utc::now().to_rfc3339();
             if filing.makes_a_new_row() {
                 // A note keeps what its backend calls it in columns of its
                 // own, the way an event does, so a new identifier is not
