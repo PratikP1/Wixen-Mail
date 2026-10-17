@@ -553,6 +553,7 @@ impl MessageCache {
         task_id: &str,
         remote_updated: Option<&str>,
         remote_status: Option<&str>,
+        _read_at: &str,
     ) -> Result<()> {
         self.conn
             .execute(
@@ -566,7 +567,7 @@ impl MessageCache {
     /// A task the provider has given a new id, because it was made here.
     ///
     /// The row is rewritten rather than updated, because the id is the key.
-    pub fn rename_task(&self, old_id: &str, task: &TaskEntry) -> Result<()> {
+    pub fn rename_task(&self, old_id: &str, task: &TaskEntry, _read_at: &str) -> Result<()> {
         self.save_task(task)?;
         if old_id != task.id {
             self.drop_synced_task(old_id)?;
@@ -1204,9 +1205,15 @@ mod tests {
         let list = cache.ensure_default_task_list("acct-1").unwrap();
         synced_task(&cache, "google:t1", &list.id);
         cache.toggle_task_complete("google:t1").unwrap();
+        let as_sent = cache.find_task("google:t1").unwrap().expect("still there");
 
         cache
-            .mark_task_sent("google:t1", Some("2026-07-29T10:00:00Z"), None)
+            .mark_task_sent(
+                "google:t1",
+                Some("2026-07-29T10:00:00Z"),
+                None,
+                &as_sent.updated_at,
+            )
             .unwrap();
 
         assert!(cache.pending_tasks("acct-1").unwrap().is_empty());
@@ -1223,11 +1230,12 @@ mod tests {
         let list = cache.ensure_default_task_list("acct-1").unwrap();
         let local = synced_task(&cache, "local-1", &list.id);
 
+        let read_at = local.updated_at.clone();
         let named = TaskEntry {
             id: "google:real".to_string(),
             ..local
         };
-        cache.rename_task("local-1", &named).unwrap();
+        cache.rename_task("local-1", &named, &read_at).unwrap();
 
         let tasks = cache.get_tasks_for_list(&list.id).unwrap();
         assert_eq!(tasks.len(), 1);
@@ -1261,12 +1269,13 @@ mod tests {
         let list = cache.ensure_default_task_list("acct-1").unwrap();
         let local = a_task_waiting_to_be_sent(&cache, "local-1", &list.id);
 
+        let read_at = local.updated_at.clone();
         let named = TaskEntry {
             id: "google:real".to_string(),
             pending: false,
             ..local
         };
-        cache.rename_task("local-1", &named).unwrap();
+        cache.rename_task("local-1", &named, &read_at).unwrap();
 
         let tasks = cache.get_tasks_for_list(&list.id).unwrap();
         assert_eq!(
@@ -1296,6 +1305,215 @@ mod tests {
              waiting on it"
         );
         assert_eq!(cache.deleted_tasks("acct-1").unwrap().len(), 1);
+    }
+
+    /// The window's own connection to the same folder.
+    ///
+    /// A sync pushes on a connection of its own on a worker thread while the
+    /// window goes on writing through this one, so a change made during a push
+    /// lands between the push's read and its settle. Two connections are that
+    /// race itself rather than a call order staged on one.
+    fn the_window(cache: &TempHome<MessageCache>) -> MessageCache {
+        MessageCache::new(cache.path().to_path_buf(), None).expect("the window's connection")
+    }
+
+    /// The stamp and progress word a provider answers a push with.
+    const THE_PROVIDERS_STAMP: &str = "2026-10-14T09:00:00Z";
+    const THE_PROVIDERS_WORD: &str = "notStarted";
+
+    /// What a provider hands back for a task made here and created there.
+    fn the_providers_copy(as_sent: &TaskEntry) -> TaskEntry {
+        TaskEntry {
+            id: "google:real".to_string(),
+            remote_updated: Some(THE_PROVIDERS_STAMP.to_string()),
+            remote_status: Some(THE_PROVIDERS_WORD.to_string()),
+            pending: false,
+            ..as_sent.clone()
+        }
+    }
+
+    #[test]
+    fn test_a_task_ticked_while_its_push_was_in_flight_stays_waiting_and_keeps_the_tick() {
+        // Finding #1 of the 2026-10-14 audit. The push read the task, the
+        // person ticked it in the window, and the settle cleared the flag on a
+        // row that was no longer the one sent, so the tick never left.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let as_sent = a_task_waiting_to_be_sent(&cache, "google:t1", &list.id);
+
+        the_window(&cache)
+            .toggle_task_complete("google:t1")
+            .unwrap();
+        cache
+            .mark_task_sent(
+                "google:t1",
+                Some(THE_PROVIDERS_STAMP),
+                Some(THE_PROVIDERS_WORD),
+                &as_sent.updated_at,
+            )
+            .unwrap();
+
+        let after = cache.find_task("google:t1").unwrap().expect("still there");
+        assert!(
+            after.pending,
+            "a tick made while the task was being sent stopped waiting, so it never leaves"
+        );
+        assert!(after.is_completed, "the tick was lost");
+        assert_eq!(
+            after.remote_updated.as_deref(),
+            Some(THE_PROVIDERS_STAMP),
+            "the provider's stamp was not recorded, so the next read takes its copy over the tick"
+        );
+        assert_eq!(after.remote_status.as_deref(), Some(THE_PROVIDERS_WORD));
+    }
+
+    #[test]
+    fn test_a_task_completed_from_the_due_window_while_its_push_was_in_flight_stays_waiting() {
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let as_sent = a_task_waiting_to_be_sent(&cache, "google:t1", &list.id);
+
+        the_window(&cache)
+            .complete_task("google:t1", "2026-10-14T08:59:00+00:00")
+            .unwrap();
+        cache
+            .mark_task_sent(
+                "google:t1",
+                Some(THE_PROVIDERS_STAMP),
+                Some(THE_PROVIDERS_WORD),
+                &as_sent.updated_at,
+            )
+            .unwrap();
+
+        let after = cache.find_task("google:t1").unwrap().expect("still there");
+        assert!(
+            after.pending,
+            "a task finished from the due window during its push is never sent as finished"
+        );
+        assert!(after.is_completed);
+        assert_eq!(after.remote_updated.as_deref(), Some(THE_PROVIDERS_STAMP));
+    }
+
+    #[test]
+    fn test_a_task_made_here_and_ticked_during_its_create_keeps_the_tick_under_the_providers_id() {
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let as_sent = a_task_waiting_to_be_sent(&cache, "task-local-1", &list.id);
+
+        the_window(&cache)
+            .toggle_task_complete("task-local-1")
+            .unwrap();
+        cache
+            .rename_task(
+                "task-local-1",
+                &the_providers_copy(&as_sent),
+                &as_sent.updated_at,
+            )
+            .unwrap();
+
+        let tasks = cache.get_tasks_for_list(&list.id).unwrap();
+        assert_eq!(tasks.len(), 1, "one task became {tasks:?}");
+        let named = &tasks[0];
+        assert_eq!(named.id, "google:real");
+        assert!(
+            named.is_completed,
+            "the provider's copy was written over the tick"
+        );
+        assert!(
+            named.pending,
+            "the tick is not waiting, so the provider never learns of it"
+        );
+        assert_eq!(named.remote_updated.as_deref(), Some(THE_PROVIDERS_STAMP));
+        assert_eq!(named.remote_status.as_deref(), Some(THE_PROVIDERS_WORD));
+    }
+
+    #[test]
+    fn test_a_task_made_here_and_deleted_during_its_create_is_owed_to_the_provider() {
+        // The create landed after the person deleted the task. Writing the
+        // provider's copy down brought it back, and nothing ever asked the
+        // provider to delete the task it had just made.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        let as_sent = a_task_waiting_to_be_sent(&cache, "task-local-1", &list.id);
+
+        the_window(&cache).delete_task("task-local-1").unwrap();
+        cache
+            .rename_task(
+                "task-local-1",
+                &the_providers_copy(&as_sent),
+                &as_sent.updated_at,
+            )
+            .unwrap();
+
+        assert!(
+            cache.get_tasks_for_list(&list.id).unwrap().is_empty(),
+            "a task somebody deleted came back when its create landed"
+        );
+        let owed = cache
+            .deleted_tasks("acct-1")
+            .unwrap()
+            .into_iter()
+            .find(|gone| gone.id == "google:real")
+            .expect("nothing asks the provider to delete the task it made");
+        assert!(owed.so_far.still_owed());
+        assert_eq!(owed.task_list_id.as_deref(), Some(list.id.as_str()));
+        assert_eq!(owed.waiting_for_task_id, None);
+    }
+
+    #[test]
+    fn test_a_task_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed() {
+        // The create put the task in the list it was in when the push read it,
+        // and the person had moved it since. The row keeps the move and is
+        // still to be made in its new list; the copy the provider made in the
+        // old one is owed a deletion that waits for the new one, which is the
+        // state a move of a task the provider holds leaves.
+        let cache = test_cache();
+        let list = cache.ensure_default_task_list("acct-1").unwrap();
+        cache
+            .save_task_list(&TaskListEntry {
+                id: "google:other".to_string(),
+                account_id: "acct-1".to_string(),
+                name: "Household".to_string(),
+                color: String::new(),
+                display_order: 1,
+                created_at: String::new(),
+            })
+            .unwrap();
+        let as_sent = a_task_waiting_to_be_sent(&cache, "task-local-1", &list.id);
+        the_window(&cache)
+            .save_task(&TaskEntry {
+                task_list_id: Some("google:other".to_string()),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+                ..as_sent.clone()
+            })
+            .unwrap();
+
+        cache
+            .rename_task(
+                "task-local-1",
+                &the_providers_copy(&as_sent),
+                &as_sent.updated_at,
+            )
+            .unwrap();
+
+        let moved = cache
+            .find_task("task-local-1")
+            .unwrap()
+            .expect("the task the person moved is gone");
+        assert_eq!(moved.task_list_id.as_deref(), Some("google:other"));
+        assert!(moved.pending, "the moved task is not waiting to be made");
+        assert!(
+            cache.find_task("google:real").unwrap().is_none(),
+            "the copy the provider made in the old list is shown as well"
+        );
+        let owed = cache
+            .deleted_tasks("acct-1")
+            .unwrap()
+            .into_iter()
+            .find(|gone| gone.id == "google:real")
+            .expect("nothing asks the provider to delete the copy in the old list");
+        assert_eq!(owed.task_list_id.as_deref(), Some(list.id.as_str()));
+        assert_eq!(owed.waiting_for_task_id.as_deref(), Some("task-local-1"));
     }
 
     #[test]

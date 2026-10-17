@@ -898,13 +898,14 @@ async fn push_one<S: TaskService>(
 /// would show it twice. Everything else keeps its id and just stops waiting.
 fn settle(cache: &MessageCache, was: &TaskEntry, stored: TaskEntry, new_here: bool) -> Result<()> {
     if new_here {
-        cache.rename_task(&was.id, &stored)?;
+        cache.rename_task(&was.id, &stored, &was.updated_at)?;
         return Ok(());
     }
     cache.mark_task_sent(
         &was.id,
         stored.remote_updated.as_deref(),
         stored.remote_status.as_deref(),
+        &was.updated_at,
     )
 }
 
@@ -1490,6 +1491,27 @@ mod tests {
         /// A `Mutex` rather than a `RefCell` because these methods take
         /// `&self` inside futures the sync holds across its own awaits.
         deleted: std::sync::Mutex<Vec<String>>,
+        /// What the person does in the window while the first write is at the
+        /// provider, run once before this service answers it.
+        ///
+        /// Run on a second connection to the same folder, so a test of a
+        /// change made during a push is the real race between the two writers
+        /// rather than a call order staged on one.
+        meanwhile: Meanwhile,
+    }
+
+    /// Something done once, between a push reading a task and the provider's
+    /// answer arriving.
+    type Meanwhile = std::sync::Mutex<Option<Box<dyn FnOnce() + Send>>>;
+
+    /// The person doing `work` in the window while the push is in flight.
+    fn while_it_is_at_the_provider(work: impl FnOnce() + Send + 'static) -> Meanwhile {
+        std::sync::Mutex::new(Some(Box::new(work)))
+    }
+
+    /// The window's own connection to the folder a test's cache lives in.
+    fn the_window_on(folder: &std::path::Path) -> MessageCache {
+        MessageCache::new(folder.to_path_buf(), None).expect("the window's connection")
     }
 
     /// What a provider does with a change this computer sends it.
@@ -1572,6 +1594,14 @@ mod tests {
         /// scripts a refusal does not have to name a task the provider never
         /// made.
         fn answer<T>(&self, stored: impl FnOnce() -> T) -> Result<T> {
+            let meanwhile = self
+                .meanwhile
+                .lock()
+                .expect("what the person does meanwhile")
+                .take();
+            if let Some(work) = meanwhile {
+                work();
+            }
             match self.writes {
                 Writes::NothingIsSent => Self::nothing_is_sent(),
                 Writes::Accepted => Ok(stored()),
@@ -3259,6 +3289,225 @@ mod tests {
         );
     }
 
+    /// A task Google holds, with a change on it waiting to be sent.
+    fn a_change_waiting_on_a_task_google_holds(name: &str) -> TempHome<MessageCache> {
+        let cache = a_task_google_holds(name);
+        let held = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the task");
+        cache
+            .save_task(&TaskEntry {
+                pending: true,
+                ..held
+            })
+            .expect("a change waiting");
+        cache
+    }
+
+    /// A task made here, in a list Google holds, waiting to be created there.
+    fn a_task_made_here_in_a_list_google_holds(name: &str) -> TempHome<MessageCache> {
+        let cache = a_cache(name);
+        a_list_named(&cache, "google:from", "Work");
+        a_list_named(&cache, "google:to", "Home");
+        cache
+            .save_task(&TaskEntry {
+                id: "task-local-1".to_string(),
+                task_list_id: Some("google:from".to_string()),
+                pending: true,
+                ..task("x")
+            })
+            .expect("a task made here");
+        cache
+    }
+
+    /// A Google service that takes what it is sent while the person does
+    /// `work` in the window.
+    fn google_takes_it_while(work: impl FnOnce() + Send + 'static) -> Scripted {
+        Scripted {
+            meanwhile: while_it_is_at_the_provider(work),
+            ..a_google_service_that_accepts()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_task_ticked_while_google_takes_its_update_is_sent_by_the_next_sync() {
+        // Finding #1 of the 2026-10-14 audit, on the two connections the
+        // program really has: the push reads the task, the window ticks it,
+        // and the settle used to clear the flag on a row that was no longer
+        // the one sent.
+        let cache = a_change_waiting_on_a_task_google_holds("ticked_during_its_update");
+        let folder = cache.path().to_path_buf();
+        let service = google_takes_it_while(move || {
+            the_window_on(&folder)
+                .toggle_task_complete("google:t1")
+                .expect("the tick");
+        });
+
+        let first = push_against(&cache, &service).await;
+
+        assert_eq!(first.sent, 1, "{:?}", first.errors);
+        let after = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the task");
+        assert!(after.is_completed, "the tick was lost");
+        assert!(
+            after.pending,
+            "the tick stopped waiting, so it never reaches Google"
+        );
+        assert_eq!(after.remote_updated.as_deref(), Some(PROVIDER_STAMP));
+
+        let second = push_against(&cache, &service).await;
+
+        assert_eq!(
+            second.sent, 1,
+            "the next sync did not send the tick: {:?}",
+            second.errors
+        );
+        let sent = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the task");
+        assert!(!sent.pending, "the tick is still waiting after it was sent");
+        assert!(sent.is_completed);
+    }
+
+    #[tokio::test]
+    async fn test_a_task_completed_from_the_due_window_while_google_takes_its_update_stays_waiting()
+    {
+        let cache = a_change_waiting_on_a_task_google_holds("completed_during_its_update");
+        let folder = cache.path().to_path_buf();
+        let service = google_takes_it_while(move || {
+            the_window_on(&folder)
+                .complete_task("google:t1", "2026-10-14T08:59:00+00:00")
+                .expect("the due window's answer");
+        });
+
+        push_against(&cache, &service).await;
+
+        let after = cache
+            .find_task("google:t1")
+            .expect("a lookup")
+            .expect("the task");
+        assert!(after.is_completed);
+        assert!(
+            after.pending,
+            "a task finished from the due window during its push is never sent as finished"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_made_here_and_ticked_while_google_creates_it_keeps_the_tick_and_is_sent_again()
+     {
+        let cache = a_task_made_here_in_a_list_google_holds("ticked_during_its_create");
+        let folder = cache.path().to_path_buf();
+        let service = google_takes_it_while(move || {
+            the_window_on(&folder)
+                .toggle_task_complete("task-local-1")
+                .expect("the tick");
+        });
+
+        let first = push_against(&cache, &service).await;
+
+        assert_eq!(first.sent, 1, "{:?}", first.errors);
+        assert!(
+            cache.find_task("task-local-1").expect("a lookup").is_none(),
+            "the task is still under the identifier this computer gave it"
+        );
+        let named = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the task under the identifier Google gave it");
+        assert!(
+            named.is_completed,
+            "Google's copy was written over the tick"
+        );
+        assert!(named.pending, "the tick is not waiting to be sent");
+
+        let second = push_against(&cache, &service).await;
+
+        assert_eq!(second.sent, 1, "{:?}", second.errors);
+        let sent = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the task");
+        assert!(!sent.pending, "the tick is still waiting after it was sent");
+    }
+
+    #[tokio::test]
+    async fn test_a_task_made_here_and_deleted_while_google_creates_it_is_deleted_there_next() {
+        let cache = a_task_made_here_in_a_list_google_holds("deleted_during_its_create");
+        let folder = cache.path().to_path_buf();
+        let service = google_takes_it_while(move || {
+            the_window_on(&folder)
+                .delete_task("task-local-1")
+                .expect("the deletion");
+        });
+
+        push_against(&cache, &service).await;
+
+        assert!(
+            cache
+                .get_all_tasks_for_account("acc-1")
+                .expect("the tasks")
+                .is_empty(),
+            "a task somebody deleted came back when its create landed"
+        );
+
+        push_against(&cache, &service).await;
+
+        assert_eq!(
+            service.what_it_was_asked_to_delete(),
+            vec!["google:new".to_string()],
+            "the task Google made is still there, for a task somebody deleted"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_task_made_here_and_moved_while_google_creates_it_stays_moved() {
+        // Moved through the Move command, which is the write whose stamp the
+        // settle reads. The fake names every create "new", so the test stops
+        // at the second push: a third would find the old copy's deletion and
+        // the new copy under one identifier, which no real provider gives.
+        let cache = a_task_made_here_in_a_list_google_holds("moved_during_its_create");
+        let folder = cache.path().to_path_buf();
+        let service = google_takes_it_while(move || {
+            move_it(&the_window_on(&folder), "task-local-1", "google:to");
+        });
+
+        let first = push_against(&cache, &service).await;
+
+        assert_eq!(first.sent, 1, "{:?}", first.errors);
+        let moved = cache
+            .find_task("task-local-1")
+            .expect("a lookup")
+            .expect("the task the person moved is gone");
+        assert_eq!(moved.task_list_id.as_deref(), Some("google:to"));
+        assert!(moved.pending, "the moved task is not waiting to be made");
+        assert_ne!(
+            moved.updated_at, "",
+            "the move did not stamp the task, so nothing can tell it changed during the push"
+        );
+        let owed = the_note(&cache);
+        assert_eq!(owed.id, "google:new");
+        assert_eq!(owed.task_list_id.as_deref(), Some("google:from"));
+        assert_eq!(owed.waiting_for_task_id.as_deref(), Some("task-local-1"));
+
+        let second = push_against(&cache, &service).await;
+
+        assert!(
+            service.what_it_was_asked_to_delete().is_empty(),
+            "the copy in the old list was deleted before the moved one existed"
+        );
+        assert_eq!(second.waiting_on_the_new_copy, 1);
+        let named = cache
+            .find_task("google:new")
+            .expect("a lookup")
+            .expect("the moved task under the identifier Google gave it");
+        assert_eq!(named.task_list_id.as_deref(), Some("google:to"));
+    }
+
     /// A service that refuses everything it is sent, for the reason given.
     fn a_google_service_that_refuses(how: Writes) -> Scripted {
         Scripted {
@@ -3645,8 +3894,17 @@ mod tests {
         // Passed on arrival: without the guard every deletion is sent, so this
         // is the drift guard for the guard rather than a red.
         let cache = a_move_of_a_task_google_holds("copy_has_gone");
+        let copy = cache
+            .find_task("task-new")
+            .expect("a lookup")
+            .expect("the copy");
         cache
-            .mark_task_sent("task-new", Some("2026-07-01T10:00:00Z"), None)
+            .mark_task_sent(
+                "task-new",
+                Some("2026-07-01T10:00:00Z"),
+                None,
+                &copy.updated_at,
+            )
             .expect("the copy reaching the provider");
         let service = a_google_service_that_accepts();
 
