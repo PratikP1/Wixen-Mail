@@ -875,7 +875,11 @@ const GOOGLES_WORDS_FOR_AN_EXPIRED_MARKER: [&str; 2] =
 /// Nothing else counts. A network blip, a server fault or any other refusal
 /// must not, or a sync that could not connect would turn into a full download
 /// of everything somebody has.
-fn is_expired_sync_token(error: &Error) -> bool {
+///
+/// The Google calendar read asks the same question and calls this rather than
+/// a copy: Google's Calendar API answers an expired marker with 410, and never
+/// with the People API's 400, so sharing the one answer costs nothing.
+pub(crate) fn is_expired_sync_token(error: &Error) -> bool {
     match error {
         Error::Api {
             status: SYNC_TOKEN_EXPIRED,

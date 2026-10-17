@@ -695,13 +695,16 @@ fn a_change_here_is_still_waiting(held: Option<&CalendarEventEntry>) -> bool {
 ///
 /// A change that cannot be sent keeps its flag and is tried again next time.
 /// Failing once is not a reason to drop somebody's edit.
+///
+/// Hands back Google's identities for what it took, which a whole read counts
+/// as named, the rule [`push_to_microsoft`] gives the Outlook read.
 async fn push_to_google(
     cache: &MessageCache,
     google: &GoogleApiClient,
     token: &str,
     account_id: &str,
     result: &mut CalendarSyncResult,
-) {
+) -> std::collections::HashSet<String> {
     let the_main_one = crate::service::google_api::THE_MAIN_CALENDAR;
 
     // Deletions first. An event deleted here that was also changed here would
@@ -723,12 +726,16 @@ async fn push_to_google(
         record(sent, "Deleting an event from Google Calendar", result);
     }
 
+    let mut taken = std::collections::HashSet::new();
     for (event, _at_google) in waiting_for(cache, account_id, GOOGLE, the_main_one, result) {
         let sent = if event.provider_event_id.is_some() {
             update_google_event(cache, google, token, &event).await
         } else {
             create_google_event(cache, google, token, &event).await
         };
+        if let Ok(at_google) = &sent {
+            taken.extend(at_google.provider_event_id.clone());
+        }
         // The event's own identity here, never its title. These go to a log
         // file, and a title is the person's own words in the same way a message
         // body is.
@@ -738,6 +745,7 @@ async fn push_to_google(
             result,
         );
     }
+    taken
 }
 
 /// Send Microsoft Graph everything changed here that it has not been told about.
@@ -854,13 +862,14 @@ pub async fn sync_google_calendar(
 ) -> Result<CalendarSyncResult> {
     let mut result = CalendarSyncResult::default();
     forget_the_deletions_remembered_long_enough(cache, &mut result);
-    push_to_google(cache, google, token, account_id, &mut result).await;
+    let just_sent = push_to_google(cache, google, token, account_id, &mut result).await;
     let deleted_here = events_deleted_here(cache, account_id, &mut result);
     let reading = TheGoogleRead {
         cache,
         google,
         token,
         account_id,
+        just_sent: &just_sent,
     };
 
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
@@ -926,6 +935,16 @@ struct TheGoogleRead<'a> {
     google: &'a GoogleApiClient,
     token: &'a str,
     account_id: &'a str,
+    /// Google's identities for what this sync's push just made or changed.
+    just_sent: &'a std::collections::HashSet<String>,
+}
+
+/// Whether a read of one Google calendar named everything in its window, or
+/// only what changed since a marker.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HowGoogleWasRead {
+    Whole,
+    FromAMarker,
 }
 
 /// Read one Google calendar into the row it is filed under, and hand back the
@@ -942,6 +961,7 @@ async fn read_one_google_calendar(
         google,
         token,
         account_id,
+        just_sent,
     } = *reading;
     // The rows this calendar's read owns, so one meeting in two calendars is
     // two rows and a cancellation in one leaves the other (14-04).
@@ -951,42 +971,37 @@ async fn read_one_google_calendar(
         provider: GOOGLE,
     };
 
-    // If no sync token, default time range: 6 months back, 12 months forward
-    let (time_min, time_max) = if sync_token.is_none() {
-        let now = chrono::Utc::now();
-        let min = (now - chrono::Duration::days(180)).to_rfc3339();
-        let max = (now + chrono::Duration::days(365)).to_rfc3339();
-        (Some(min), Some(max))
-    } else {
-        (None, None)
-    };
-
+    // One window, worked out once: what a whole read asks for is what the
+    // pass after it speaks for, so the two cannot drift apart.
+    let (from, to) = the_stretch_a_read_asks_about(chrono::Utc::now());
+    let (from_written, to_written) = (from.to_rfc3339(), to.to_rfc3339());
     let at_google = calendar_at_google(cache, &filed_under.id)?;
-
-    let (remote_events, new_sync_token) = match google
-        .list_events(
+    let read_whole = || {
+        google.list_events(
             token,
-            time_min.as_deref(),
-            time_max.as_deref(),
-            sync_token,
+            Some(&from_written),
+            Some(&to_written),
+            None,
             &at_google,
         )
-        .await
-    {
-        Ok(r) => r,
-        Err(e) => {
-            if sync_token.is_some() {
+    };
+
+    // Only Google saying the marker has expired earns a whole read, which its
+    // guide answers with 410. Anything else is said and the marker kept, or a
+    // passing fault would cost a download of the whole calendar.
+    let ((remote_events, new_sync_token), how) = match sync_token {
+        None => (read_whole().await?, HowGoogleWasRead::Whole),
+        Some(marker) => match google
+            .list_events(token, None, None, Some(marker), &at_google)
+            .await
+        {
+            Ok(answer) => (answer, HowGoogleWasRead::FromAMarker),
+            Err(e) if crate::application::contacts_sync::is_expired_sync_token(&e) => {
                 tracing::warn!("Calendar sync token expired, performing full sync: {}", e);
-                let now = chrono::Utc::now();
-                let min = (now - chrono::Duration::days(180)).to_rfc3339();
-                let max = (now + chrono::Duration::days(365)).to_rfc3339();
-                google
-                    .list_events(token, Some(&min), Some(&max), None, &at_google)
-                    .await?
-            } else {
-                return Err(e);
+                (read_whole().await?, HowGoogleWasRead::Whole)
             }
-        }
+            Err(e) => return Err(e),
+        },
     };
 
     // Whole series and single meetings first, their changed days afterwards.
@@ -1073,6 +1088,23 @@ async fn read_one_google_calendar(
             &filed_under.id,
             event,
             at_google,
+            deleted_here,
+            result,
+        )?;
+    }
+
+    // A whole read names everything Google holds in the window it asked for,
+    // so it is the one answer whose silence says something: a meeting
+    // cancelled while the marker was stale is simply not in it (audit #29). A
+    // read from a marker names only what changed.
+    if how == HowGoogleWasRead::Whole {
+        let mut named = everything_google_named(&remote_events);
+        named.extend(just_sent.iter().cloned());
+        take_off_what_the_provider_no_longer_holds(
+            cache,
+            &filed_under.id,
+            &named,
+            &WhatTheAnswerCovers::OnlyBetween(from, to),
             deleted_here,
             result,
         )?;
@@ -1357,11 +1389,12 @@ fn the_round_still_running(
     .then_some(began)
 }
 
-/// The stretch of time a round that began at this moment asks Outlook about.
+/// The stretch of time a read that began at this moment asks about: an Outlook
+/// round, or a whole read of a Google calendar.
 ///
-/// The calendar server's own two distances, so the two reads cannot come to
+/// The calendar server's own two distances, so the three reads cannot come to
 /// disagree about what "six months back and a year ahead" means.
-fn the_stretch_a_round_reads(
+fn the_stretch_a_read_asks_about(
     began: chrono::DateTime<chrono::Utc>,
 ) -> (chrono::DateTime<chrono::Utc>, chrono::DateTime<chrono::Utc>) {
     (
@@ -1400,7 +1433,7 @@ pub async fn sync_microsoft_calendar(
     // link, and the read after an expired link needs it: Graph refuses a
     // calendar view that names no window, so asking with none stopped the
     // Outlook calendar for good on its first 410.
-    let (asked_from, asked_to) = the_stretch_a_round_reads(now);
+    let (asked_from, asked_to) = the_stretch_a_read_asks_about(now);
     let (start, end) = (asked_from.to_rfc3339(), asked_to.to_rfc3339());
 
     let at_microsoft = calendar_at_microsoft(cache, &filed_under.id)?;
@@ -1432,7 +1465,7 @@ pub async fn sync_microsoft_calendar(
         Some(began) if !this_run_read_a_window => began,
         _ => now,
     };
-    let (round_from, round_to) = the_stretch_a_round_reads(round_began);
+    let (round_from, round_to) = the_stretch_a_read_asks_about(round_began);
     let the_round_covers = WhatTheAnswerCovers::OnlyBetween(round_from, round_to);
 
     // Whole events first, the changed days of a series afterwards. A calendar
@@ -1525,7 +1558,7 @@ pub async fn sync_microsoft_calendar(
     if this_run_read_a_window {
         let mut named = everything_outlook_named(&remote_events);
         named.extend(just_sent);
-        take_off_what_outlook_no_longer_holds(
+        take_off_what_the_provider_no_longer_holds(
             cache,
             &filed_under.id,
             &named,
@@ -1568,15 +1601,32 @@ fn everything_outlook_named(answer: &[MsGraphEvent]) -> std::collections::HashSe
         .collect()
 }
 
-/// Take off this computer the Outlook rows a read of a window did not name.
+/// Every identity a whole Google answer speaks for: each event it carries that
+/// is not cancelled, and the series each changed day belongs to.
 ///
-/// Silently, as the calendar server's own pass does: Outlook is the one that
-/// deleted them. Missing from the answer is not the same as deleted, which
-/// [`may_be_taken_off_this_computer`] decides, so a change waiting here and a
-/// row outside the round's window both stay. So does a row somebody deleted
+/// A whole read names a cancelled day only for a series Google still holds,
+/// its guide says, so even a called-off day speaks for its series.
+fn everything_google_named(answer: &[GoogleEvent]) -> std::collections::HashSet<String> {
+    let mut named = std::collections::HashSet::new();
+    for event in answer {
+        if !event.id.is_empty() && event.status.as_deref() != Some("cancelled") {
+            named.insert(event.id.clone());
+        }
+        named.extend(event.the_series_it_is_one_day_of().map(str::to_string));
+    }
+    named
+}
+
+/// Take off this computer the rows of one Google or Outlook calendar that a
+/// read of a window did not name.
+///
+/// Silently, as the calendar server's own pass does: the provider is the one
+/// that deleted them. Missing from the answer is not the same as deleted,
+/// which [`may_be_taken_off_this_computer`] decides, so a change waiting here
+/// and a row outside the window both stay. So does a row somebody deleted
 /// here, whose note is what keeps it from coming back, and a day kept out of
 /// a series the answer named, which is still that series' day.
-fn take_off_what_outlook_no_longer_holds(
+fn take_off_what_the_provider_no_longer_holds(
     cache: &MessageCache,
     filed_under: &str,
     named: &std::collections::HashSet<String>,
@@ -1588,7 +1638,7 @@ fn take_off_what_outlook_no_longer_holds(
     let is_named = |row: &CalendarEventEntry| {
         row.provider_event_id
             .as_deref()
-            .is_some_and(|at_outlook| named.contains(at_outlook))
+            .is_some_and(|at_the_provider| named.contains(at_the_provider))
     };
     let the_rows_it_named: std::collections::HashSet<&str> = held
         .iter()
@@ -1597,7 +1647,7 @@ fn take_off_what_outlook_no_longer_holds(
         .collect();
 
     for row in &held {
-        let Some(at_outlook) = row.provider_event_id.as_deref() else {
+        let Some(at_the_provider) = row.provider_event_id.as_deref() else {
             continue;
         };
         let its_series_is_named = row
@@ -1606,7 +1656,7 @@ fn take_off_what_outlook_no_longer_holds(
             .is_some_and(|series| the_rows_it_named.contains(series));
         if is_named(row)
             || its_series_is_named
-            || deleted_here.holds(at_outlook)
+            || deleted_here.holds(at_the_provider)
             || !may_be_taken_off_this_computer(row, covered)
         {
             continue;
