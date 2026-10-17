@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 757
+open_count: 759
 waived_count: 0
 fixed_count: 126
-total_count: 883
-last_updated: 2026-10-17T12:00:00.000Z
+total_count: 885
+last_updated: 2026-10-17T22:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -898,6 +898,8 @@ last_updated: 2026-10-17T12:00:00.000Z
 | 881 | 13.2 | todo | src/application/tasks_sync.rs |  | Found by 13.2-20: a task made here loses its created and changed times the moment its create lands, because push_one builds the provider's copy through google_task_to_entry and ms_task_to_entry, which leave created_at and updated_at empty, and rename_task writes that copy whole. So a new task's row carries no time it was made or changed, and anything that orders by those columns, such as pending_tasks, reads it as the earliest. Older than 13.2-20, which keeps the local times only when the task changed during its create. Recommended: carry created_at and updated_at from the task as sent onto the provider's copy in settle, the way carry_over_local_only carries the priority; for a later plan | open |  | 2026-10-17T12:00:00.000Z |  |
 | 882 | 13.2 | unrun-verify | src/data/message_cache/calendar.rs |  | 13.2-20.1, finding #1 of the audit of 2026-10-14, events, for phase 14 on a build holding 13.2-20.1's merge: a Gmail or Outlook account with an event changed here and a sync started, the event's title changed in the calendar window while the sync's status says it is sending, the new title still shown after the sync and found at Google Calendar or Outlook after the next sync; the same for an event made here and deleted while its first sync runs, found gone at the provider after the next sync. Held by the cases that make the change on a second connection between the push's read and its settle, and three guard records; nobody has raced a real sync | open |  | 2026-10-17T12:00:00.000Z |  |
 | 883 | 13.2 | todo | src/data/message_cache/calendar.rs |  | Found by 13.2-20.1: delete_calendar_event writes the deletion note and then removes the row in two statements with no transaction around them. A sync settling that event's create between the two writes the provider's name onto the row, which is then removed, while the note keeps no name, so the provider keeps a copy nobody is owed the deletion of. The window is two statements wide on the window's thread and has not been seen. delete_task and delete_note were not read for the same shape. Recommended: run the two statements in one immediate transaction, as the settles now do; for a later plan | open |  | 2026-10-17T12:00:00.000Z |  |
+| 884 | 13.2 | unrun-verify | src/application/contacts_sync.rs |  | 13.2-21, findings #29 and #30 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-21's merge: a Gmail account whose calendar and contacts last synced more than seven days before, with a meeting cancelled in Google Calendar and a contact deleted in Google Contacts meanwhile, both gone here after the next sync and the log saying the marker was too old and the whole calendar and address book read again; a meeting a year and a half ahead kept; and the same for an Outlook contact deleted while the delta link aged out. Held by the stand-in servers and scripted address books, which answer as Google's guide "Synchronize resources efficiently" says (last updated 2026-09-11, read 2026-10-17: an incremental request with an invalid sync token is answered 410, which "should trigger a full wipe of the client's store and a new full sync"); nobody has seen Google or Graph do it from a live account, and no CardDAV server has been met | open |  | 2026-10-17T22:00:00.000Z |  |
+| 885 | 13.2 | todo | src/data/message_cache/taking_back.rs |  | Found by 13.2-21: the_contact, which Undo reads before a delete, finds one contact by reading every contact of her account and keeping one, the read per person 13.2-21 took out of the three syncs. MessageCache::get_contact now reads one contact with the address books that know her. Recommended: have the_contact call get_contact; one line, for a later plan | open |  | 2026-10-17T22:00:00.000Z |  |
 
 ````json
 [
@@ -11495,6 +11497,30 @@ last_updated: 2026-10-17T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-17T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 884,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/contacts_sync.rs",
+    "line": null,
+    "description": "13.2-21, findings #29 and #30 of the audit of 2026-10-14, for phase 14 on a build holding 13.2-21's merge: a Gmail account whose calendar and contacts last synced more than seven days before, with a meeting cancelled in Google Calendar and a contact deleted in Google Contacts meanwhile, both gone here after the next sync and the log saying the marker was too old and the whole calendar and address book read again; a meeting a year and a half ahead kept; and the same for an Outlook contact deleted while the delta link aged out. Held by the stand-in servers and scripted address books, which answer as Google's guide \"Synchronize resources efficiently\" says (last updated 2026-09-11, read 2026-10-17: an incremental request with an invalid sync token is answered 410, which \"should trigger a full wipe of the client's store and a new full sync\"); nobody has seen Google or Graph do it from a live account, and no CardDAV server has been met",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 885,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/data/message_cache/taking_back.rs",
+    "line": null,
+    "description": "Found by 13.2-21: the_contact, which Undo reads before a delete, finds one contact by reading every contact of her account and keeping one, the read per person 13.2-21 took out of the three syncs. MessageCache::get_contact now reads one contact with the address books that know her. Recommended: have the_contact call get_contact; one line, for a later plan",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-17T22:00:00.000Z",
     "resolved_at": null
   }
 ]

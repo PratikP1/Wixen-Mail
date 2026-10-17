@@ -1427,6 +1427,35 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A meeting or a contact deleted while this computer was away leaves at the next full read
+  (2026-10-17).** Google Calendar, Google Contacts and Outlook contacts hand this program a
+  marker so each sync asks only for what changed. When the marker is too old, or the first
+  time an account syncs, the sync reads everything instead, and it used to keep everything it
+  already had: a meeting cancelled at Google while a laptop was shut for two weeks stayed on
+  the calendar and kept its reminder, and a contact deleted on the phone never left. Now a
+  sync that read everything takes off what the answer no longer names. A meeting is taken off
+  only inside the stretch the read asked about, six months back and a year ahead. Nothing is
+  taken off that has a change waiting to be sent, that is waiting for you to choose between
+  two copies, or that this sync has just sent. A contact another address book still holds
+  keeps that address book.
+- **A card deleted from a CardDAV address book is taken off here (2026-10-17).** The CardDAV
+  sync reads the whole address book whenever it has changed, and never took off a card the
+  server no longer had, so a contact deleted at the server stayed here for good. Now it goes
+  at the next sync. When some cards could not be read, nobody is taken off, since a missing
+  card may only be one of those.
+- **A Google calendar sync that fails is said rather than downloaded again (2026-10-17).** Any
+  failure to read what changed in a Google calendar, an answer that would not read or a
+  server fault that outlasted the retries, made the sync download the whole calendar again.
+  Now only Google saying the marker has expired does that, and anything else is said with the
+  marker kept for the next sync.
+- **Contact syncs read the address book once (2026-10-17).** The Google, Outlook and CardDAV
+  contact syncs read every contact on this computer again for each person the address book
+  sent, so a first sync of 3,000 contacts read about 4.5 million rows. Each sync now reads
+  them once, and reads one contact again just before deciding what to do with her, so an edit
+  made while the sync runs is still kept.
+
+  Known limitation: none of these has been tried against a real Google, Outlook or CardDAV
+  account.
 - **A change made to a task or a note while it syncs is kept and sent (2026-10-17).** Ticking
   a task, finishing it from the due window, moving it, editing a note or pinning it while a
   sync was sending that same task or note used to be lost: the sync marked it as sent when the
