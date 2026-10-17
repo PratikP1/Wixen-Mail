@@ -204,6 +204,9 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
         ));
     }
 
+    // Read once for every card rather than once per card, and kept in step
+    // with every write, as the other two syncs do (audit #30).
+    let mut here = contacts_sync::TheContactsHere::read(cache, account_id)?;
     for card in &arrived.cards {
         if card.url.is_empty() {
             continue;
@@ -219,6 +222,21 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
             card,
             &filed_under,
             &still_built_on_an_old_copy,
+            &mut here,
+            &mut result,
+        )?;
+    }
+
+    // Every card is in every read, so a card the server no longer holds was
+    // deleted there, and nothing took it off here on any read. Not when some
+    // cards could not be read: one missing may only be one of those.
+    if arrived.could_not_be_read == 0 {
+        let named = arrived.cards.iter().map(|card| card.url.as_str()).collect();
+        contacts_sync::take_off_who_a_whole_answer_left_out(
+            cache,
+            &mut here,
+            &filed_under,
+            &named,
             &mut result,
         )?;
     }
@@ -379,20 +397,19 @@ fn take_in_one_card(
     card: &CardOnAServer,
     filed_under: &AddressBook,
     still_built_on_an_old_copy: &Contacts,
+    here: &mut contacts_sync::TheContactsHere,
     result: &mut SyncResult,
 ) -> Result<()> {
-    let locals = cache.get_contacts_for_account(&card.contact.account_id)?;
-    let Some(local) =
-        contacts_sync::the_stored_contact_this_is(&locals, filed_under, &card.url, &card.contact)
-    else {
-        cache.save_contact(&card.contact.also_known_to(
-            filed_under.clone(),
-            &card.url,
-            card.version.as_deref(),
-        ))?;
+    let Some(local) = here.the_one_this_is(cache, filed_under, &card.url, &card.contact)? else {
+        let made =
+            card.contact
+                .also_known_to(filed_under.clone(), &card.url, card.version.as_deref());
+        cache.save_contact(&made)?;
         result.created_local.note(&card.contact.id);
+        here.written(made);
         return Ok(());
     };
+    let local = &local;
 
     // A contact waiting on somebody's choice is left exactly as it is. Without
     // this the sync after the one that raised the question answers it, and
@@ -440,14 +457,10 @@ fn take_in_one_card(
         &card.url,
         card.version.as_deref(),
     );
-    cache.save_contact(&contacts_sync::a_change_here_that_lost(
-        merged,
-        local,
-        filed_under,
-        answer,
-        result,
-    ))?;
+    let saved = contacts_sync::a_change_here_that_lost(merged, local, filed_under, answer, result);
+    cache.save_contact(&saved)?;
     result.updated_local.note(&local.id);
+    here.written(saved);
     Ok(())
 }
 
