@@ -781,46 +781,131 @@ impl MessageCache {
         Ok(notes)
     }
 
-    /// The backend has taken this note, and calls it this.
+    /// The backend has taken this note, as the push read it, and calls it this.
     ///
-    /// Written as one statement rather than by reading the note, changing three
-    /// fields and saving it again. The read-change-save shape would carry the
-    /// title and body that were in hand when the push started back over
-    /// whatever somebody typed while it was in flight, which is a change made
-    /// and lost with nothing said.
+    /// The name and the marker are written rather than the whole row, because
+    /// the read-change-save shape would carry the title and body that were in
+    /// hand when the push started back over whatever somebody typed while it
+    /// was in flight. The window writes on a connection of its own while a sync
+    /// pushes, so the note may have changed since `as_sent` was read, and each
+    /// change is kept:
+    ///
+    /// - edited or pinned: the name and marker are recorded and the note stays
+    ///   waiting, so the next push sends the change to the note just made
+    ///   rather than making a second;
+    /// - moved into another folder: the backend made it in the old folder's
+    ///   container, so the row keeps the move and no name, and that copy is
+    ///   owed a removal that waits for the moved note to be made, the state
+    ///   [`Self::move_a_note_the_backend_holds`] leaves;
+    /// - deleted: the deletion written while the note had no name gains the
+    ///   backend's, so the push asks the backend to remove what it made.
+    ///
+    /// The read and the write are one immediate transaction, so nothing the
+    /// window does can land between them.
     pub fn a_backend_took_the_note(
         &self,
         as_sent: &NoteEntry,
         named: &str,
         version: Option<&str>,
     ) -> Result<()> {
+        let settling = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|e| Error::Other(format!("Failed to start recording a note as sent: {}", e)))?;
+        match self.get_note(&as_sent.id)? {
+            None => self.name_the_deletion_of(&as_sent.id, named)?,
+            Some(here) if here.folder_id != as_sent.folder_id => {
+                self.owe_a_removal_from_the_folder_it_left(as_sent, named, &here.id)?
+            }
+            Some(_) => {
+                self.conn
+                    .execute(
+                        "UPDATE notes
+                         SET provider_note_id = ?2, provider_version = ?3,
+                             pending = CASE WHEN updated_at = ?4 THEN 0 ELSE pending END
+                         WHERE id = ?1",
+                        rusqlite::params![as_sent.id, named, version, as_sent.updated_at],
+                    )
+                    .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))?;
+            }
+        }
+        settling
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))
+    }
+
+    /// Give a deletion written before the note had a name the name the
+    /// backend gave it. One that already names a copy is left as it is.
+    fn name_the_deletion_of(&self, note_id: &str, named: &str) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE notes
-                 SET pending = 0, provider_note_id = ?2, provider_version = ?3
-                 WHERE id = ?1",
-                rusqlite::params![as_sent.id, named, version],
+                "UPDATE deleted_notes SET provider_note_id = ?2
+                 WHERE id = ?1 AND provider_note_id IS NULL",
+                rusqlite::params![note_id, named],
             )
-            .map_err(|e| Error::Other(format!("Failed to record a note as sent: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Failed to name a deleted note: {}", e)))?;
         Ok(())
     }
 
-    /// The person saved the notes editor: this note now has this title and
-    /// this body. Answers whether the note was still there to change.
+    /// Leave the backend a removal of the copy it made in the folder the note
+    /// was in when it was sent, waiting for the note named `waiting_for`.
+    ///
+    /// Under an identifier of its own rather than the note's: the note is still
+    /// here, and a deletion of it later would write its own record under its
+    /// id and replace this one, leaving the copy in the old container named by
+    /// nothing.
+    fn owe_a_removal_from_the_folder_it_left(
+        &self,
+        as_sent: &NoteEntry,
+        named: &str,
+        waiting_for: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                "INSERT INTO deleted_notes
+                    (id, account_id, folder_id, provider_note_id, deleted_at,
+                     waiting_for_note_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    format!("note-{}", uuid::Uuid::new_v4()),
+                    as_sent.account_id,
+                    as_sent.folder_id,
+                    named,
+                    chrono::Utc::now().to_rfc3339(),
+                    waiting_for,
+                ],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to record what the backend is owed for a moved note: {}",
+                    e
+                ))
+            })?;
+        Ok(())
+    }
+
+    /// The person saved the notes editor: this note now says this.
+    ///
+    /// One statement for the title, the body, the stamp and the waiting flag,
+    /// leaving every other column as it is, so the folder, the pin and the
+    /// backend's name survive the save without the row being read and written
+    /// back whole. Answers whether the note was still there to change.
     pub fn the_person_changed_the_note(
         &self,
         note_id: &str,
         title: &str,
         body: &str,
     ) -> Result<bool> {
-        let Some(mut note) = self.get_note(note_id)? else {
-            return Ok(false);
-        };
-        note.title = title.to_string();
-        note.body = body.to_string();
-        note.updated_at = chrono::Local::now().to_rfc3339();
-        self.save_note(&note)?;
-        Ok(true)
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = 1
+                 WHERE id = ?1",
+                rusqlite::params![note_id, title, body, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|e| Error::Other(format!("Failed to save note: {}", e)))?;
+        Ok(changed > 0)
     }
 }
 

@@ -8139,6 +8139,8 @@ pub fn file_under(
             }
             note.folder_id = Some(into.to_string());
             note.pending = true;
+            // Stamped for the reason the task arm gives.
+            note.updated_at = chrono::Utc::now().to_rfc3339();
             if filing.makes_a_new_row() {
                 // A note keeps what its backend calls it in columns of its
                 // own, the way an event does, so a new identifier is not

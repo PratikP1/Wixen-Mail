@@ -483,6 +483,21 @@ fn keep_what_the_backend_could(
     let Some(kept) = what_it_could_keep else {
         return;
     };
+    let now = match cache.get_note(&note.id) {
+        Ok(Some(now)) => now,
+        Ok(None) => return,
+        Err(e) => {
+            result.errors.push(format!("Note {}: {e}", note.id));
+            return;
+        }
+    };
+    // Changed here since the push read it, an edit typed while it was in
+    // flight. That is the person's newer copy and still waiting to be sent, so
+    // the backend's copy of what went before is not written over it; the next
+    // push sends the edit and the backend says again what it kept of that.
+    if now.updated_at != note.updated_at {
+        return;
+    }
     let changed = NoteEntry {
         title: kept.title,
         body: kept.body,
@@ -493,14 +508,7 @@ fn keep_what_the_backend_could(
         // the push.
         pending: false,
         updated_at: chrono::Utc::now().to_rfc3339(),
-        ..match cache.get_note(&note.id) {
-            Ok(Some(now)) => now,
-            Ok(None) => return,
-            Err(e) => {
-                result.errors.push(format!("Note {}: {e}", note.id));
-                return;
-            }
-        }
+        ..now
     };
     match cache.save_note(&changed) {
         Ok(()) => result.not_kept_exactly += 1,

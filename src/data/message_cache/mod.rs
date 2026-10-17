@@ -1224,7 +1224,9 @@ pub struct DeletedTask {
     /// The copy on this computer that has to reach the provider before this
     /// deletion may be sent, or nothing for an ordinary deletion.
     ///
-    /// Set only by [`MessageCache::move_a_task_the_provider_holds`]. A move of
+    /// Set by [`MessageCache::move_a_task_the_provider_holds`], and by
+    /// [`MessageCache::rename_task`] for a task moved while its create was at
+    /// the provider, which leaves the same state. A move of
     /// a task the provider holds is a deletion in the old list and a creation
     /// in the new one, and the failure the whole thing is about lands between
     /// them. Sending the deletion first would ask the provider to destroy the
@@ -1339,13 +1341,18 @@ pub struct DeletedNote {
     /// `None` for a note that never left this computer. There is nothing to
     /// ask a backend to remove, and nothing a read could name it by either, so
     /// such a record is a memory of a deletion and never work the push owes.
+    /// Unless the note was being made at a backend when it was deleted: the
+    /// backend's answer then names the record, through
+    /// [`MessageCache::a_backend_took_the_note`], and the removal is owed.
     pub known_as: Option<String>,
     pub deleted_at: String,
     /// Whether the backend has taken it yet.
     pub so_far: TheDeletionSoFar,
     /// The copy that has to reach the backend before this deletion may go.
     ///
-    /// Set only by [`MessageCache::move_a_note_the_backend_holds`], and the
+    /// Set by [`MessageCache::move_a_note_the_backend_holds`], and by
+    /// [`MessageCache::a_backend_took_the_note`] for a note moved while its
+    /// create was at the backend, which leaves the same state; the
     /// exact twin of [`DeletedTask::waiting_for_task_id`]. A move between two
     /// backed folders is a create in the new container and a removal from the
     /// old one, and this is what stops the removal being sent first: asked in
