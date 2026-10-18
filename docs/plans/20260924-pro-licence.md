@@ -53,8 +53,10 @@ That alias and its field `entitle` carry the page window's title from the browse
 the window. The plan for this document placed them at `wx_app.rs:12920-12971` on 2026-09-20;
 they have moved about 230 lines since.
 
-**Several mail accounts work today and cost nothing.** `application::accounts` holds any number
-of them, and nothing counts them against a limit:
+**Several mail accounts work today and cost nothing.** An account is `data::account::Account`,
+stored by `data::message_cache::accounts`, which holds any number of them. (Until 2026-10-18
+this sentence named an account manager nothing in the program built, deleted that day by plan
+13.2-29.) Nothing counts them against a limit:
 
 ```
 $ grep -rliE 'max_accounts|account_limit' src; echo "exit $?"

@@ -260,7 +260,7 @@ are `async-imap` for IMAP, `lettre` for SMTP, `mail-parser` for reading
 messages, `ammonia` for sanitizing HTML, `keyring` for the credential store,
 `pgp` for OpenPGP, `tracing` for logging and `windows` for the Windows calls
 the toolkit does not make. Why OpenPGP is done with that crate is in
-[the PGP implementation choice](development/pgp-implementation-choice.md).
+`docs/development/pgp-implementation-choice.md`.
 
 ## Data models
 
@@ -381,7 +381,7 @@ tells the person so (`installer/Wixen-Mail-Setup.iss`).
 ### Measurements
 
 Timings and counts, each with its date and the command that took it, are on
-[the measurements page](development/measurements.md).
+`docs/development/measurements.md`.
 
 ## Build and distribution
 

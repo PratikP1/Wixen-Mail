@@ -69,8 +69,8 @@
 **Layering (four top-level modules under `src/`):**
 - `src/common/` holds cross-cutting types shared by every layer: `error.rs` (Error/Result), `types.rs`, `moment.rs`, `paths.rs`, `logging.rs`, `answering.rs`, `version.rs`, `temp_home.rs`, `what_ships.rs`.
 - `src/data/` holds persistence, including `src/data/message_cache/` (SQLite-backed cache/storage).
-- `src/service/` holds protocol and transport clients: `src/service/protocols/`, `src/service/oauth.rs`, `src/service/safebrowsing/`, `src/service/spellcheck/`, `src/service/cache.rs`, `src/service/security.rs`.
-- `src/application/` holds business logic orchestrating data and service: `accounts.rs`, `filters.rs`, `mail_sync.rs`, `mail_controller.rs`, `contact_groups.rs`, `messages.rs`, `search.rs`, `allowed.rs`, `attaching.rs`.
+- `src/service/` holds protocol and transport clients: `src/service/protocols/`, `src/service/oauth.rs`, `src/service/safebrowsing/`, `src/service/spellcheck/`, `src/service/security.rs`.
+- `src/application/` holds business logic orchestrating data and service: `filters.rs`, `mail_sync.rs`, `mail_controller.rs`, `contact_groups.rs`, `saved_searches.rs`, `allowed.rs`, `attaching.rs`. (`accounts.rs`, `search.rs` and `service/cache.rs` were a starting skeleton nothing built, deleted 2026-10-18 by 13.2-29.)
 - `src/presentation/` is the UI layer built on wxdragon, including `src/presentation/accessibility/` for screen-reader-facing code (`presentation::accessibility::screen_reader` is the required path for announcing dynamic changes per `CLAUDE.md`).
 - `src/vendor/paperback/` is vendored third-party code, kept separate from the project's own layers.
 
