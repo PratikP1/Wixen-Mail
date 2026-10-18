@@ -48,6 +48,16 @@ jobs:
     name: Release Quality Gate
     runs-on: windows-latest
 
+    # This job only reads. Clippy and the tests compile and run every
+    # dependency's build script and test code, so it holds a read-only token
+    # and its checkout does not keep that token in its git settings. It held
+    # the workflow's write token until 2026-10-18 (audit finding #42).
+    # build-release-assets below still holds the write token while it builds,
+    # because it tags; moving the build into a read-only job changes when a
+    # tag exists, which ledger 327 leaves to Pratik.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
         # The whole history, because the share-of-history test runs
@@ -57,6 +67,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.98.1
