@@ -105,13 +105,18 @@ rows through `sample_mailbox`, the generator on the Help menu, and runs the
 real functions with no window. Its header says what each kind of row means;
 the short form is here so the rows can be read without it.
 
-**Listing** is `MessageCache::get_messages_for_folder`, the read the list
-takes when a folder opens and the one that precedes any scroll. The rows
-were written into a cache in a `tempfile` directory through
-`upsert_messages`, the call the sync uses, because the Help menu's sample
-never enters SQLite. Cold is the first read on a connection opened after the
-rows were written; the file was warm in the operating system's cache either
-way, because the same process had just written it.
+**Listing** is `MessageCache::get_messages_for_folder`, an unsorted read of
+one folder. Until 2026-10-18 this paragraph called it the read the list
+takes when a folder opens and the one that precedes any scroll. It was not:
+no user path called it, plan 13.2-31 deleted it on 2026-10-18, and the
+harness no longer prints the two listing rows. The rows below stay as they
+were taken, with their date; the read a folder opening really takes is
+timed by the list's own read path, described further down. The rows were
+written into a cache in a `tempfile` directory through `upsert_messages`,
+the call the sync uses, because the Help menu's sample never enters SQLite.
+Cold is the first read on a connection opened after the rows were written;
+the file was warm in the operating system's cache either way, because the
+same process had just written it.
 
 **Filter** is `MessageCache::search_messages`, the query the search box
 runs, at the limit the box passes, under All Folders and under the
@@ -134,8 +139,8 @@ list once would cost the callback, which no scroll does.
 
 **The list's own read path**, rows added 2026-09-17 by the same harness for
 10-02, is a different quantity from the listing above, and the difference
-is the reason the rows exist. The window never calls
-`get_messages_for_folder`. When a folder opens, `load_folder_messages` in
+is the reason the rows exist. The window never called
+`get_messages_for_folder`, which was deleted on 2026-10-18. When a folder opens, `load_folder_messages` in
 `src/presentation/wx_app.rs` runs three steps on the interface thread, where
 no key is answered until they end: `get_message_list_sorted`, with the sort
 inside the query and, until 10-02, a `LIMIT` of 500 that the listing row
