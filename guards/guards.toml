@@ -40956,7 +40956,7 @@ tests_last_seen = [
     { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
     { file = "src/data/message_cache/bodies.rs", tests = 52 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
-    { file = "src/vendor/paperback/mod.rs", tests = 14 },
+    { file = "src/vendor/paperback/mod.rs", tests = 15 },
 ]
 
 # The text reader says why a message is read as its words alone, before the

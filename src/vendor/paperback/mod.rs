@@ -140,6 +140,26 @@ mod tests {
     }
 
     #[test]
+    fn test_a_picture_and_a_figure_are_each_labelled_with_their_own_word() {
+        // Audit finding #48: the two words are said before a description, and
+        // nothing held the figure's until this case, so swapping them passed.
+        let picture =
+            convert("<html><body><p><img src=\"x.png\" alt=\"Revenue chart\"></p></body></html>");
+        let figure = convert(
+            "<html><body><figure><img src=\"c.png\">\
+             <figcaption>A cat sleeping</figcaption></figure></body></html>",
+        );
+        let (picture, figure) = (picture.get_text(), figure.get_text());
+        assert!(picture.contains("[Image: Revenue chart]"), "{picture}");
+        assert!(figure.contains("[Figure: A cat sleeping]"), "{figure}");
+        assert!(!figure.contains("[Image: A cat sleeping]"), "{figure}");
+        for text in [&picture, &figure] {
+            assert!(!text.contains("document.image"), "{text}");
+            assert!(!text.contains("document.figure"), "{text}");
+        }
+    }
+
+    #[test]
     fn test_script_and_style_contents_are_not_read_out() {
         // Otherwise a message body reads its own stylesheet aloud.
         let converter = convert(
