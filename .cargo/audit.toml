@@ -74,6 +74,34 @@ ignore = [
     # starts compiling it.
     "RUSTSEC-2023-0089",
 
+    # zip 7.2.0, three advisories published 2026-10-09 and 2026-10-10, all
+    # patched in 9.0.0. Accepted on 2026-10-18, as Pratik approved on
+    # 2026-10-17, until the move to 9.0.4.
+    #
+    # All three are about extraction, where the crate writes an archive's
+    # entries to disk itself. RUSTSEC-2026-0367: `ZipArchive::extract` and the
+    # stream extraction API keep the setuid, setgid and sticky bits an entry
+    # carries. RUSTSEC-2026-0368: `ZipArchive::extract` creates a symbolic link
+    # whose target points outside the destination. RUSTSEC-2026-0369:
+    # `ZipArchive::extract` and `ZipStreamReader::extract` apply permissions
+    # through such a link.
+    #
+    # Nothing here extracts. Searched over src/ and tests/ on 2026-10-18 for
+    # `.extract(`, `extract_unwrapped_root_dir`, `set_permissions`,
+    # `ZipStreamReader`, `read_zipfile_from_stream` and `unix_mode`, and none
+    # of them appears. The crate is used through `ZipArchive::new` and
+    # `ZipWriter` in src/service/mailbox_archive.rs and
+    # src/presentation/accessibility/sound_scheme_import.rs, which read an
+    # entry's bytes and decide for themselves where they go. The day either
+    # calls an extraction function, this argument expires.
+    #
+    # Exit condition: plan 13.2-31.7 moves zip to 9.0.4, and these three ids
+    # leave in the same commit. scripts/audit.sh refuses an accepted id that
+    # is no longer reported, so they cannot outstay the move.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+
     # RUSTSEC-2023-0071. rsa 0.9.10, reached through pgp 0.20.0, which is how
     # this program reads OpenPGP mail. Decided on 2026-09-13 after being held
     # open, undecided, since the local audit gate was written three days before.
