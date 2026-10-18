@@ -1426,4 +1426,103 @@ expect_fixture_says "test died::one that holds ... ok" \
 expect_fixture_silent_about "every case in this suite ran" \
     "a suite that dies does not say it reached its end" "$died_said"
 
+# ── A commit is judged on the files it holds ─────────────────────────────────
+# Added 2026-10-18 by 13.2-25, audit finding #40. The hook decides what to run
+# from the staged files and then builds and tests the files on disk, so a commit
+# could pass while its own snapshot did not build, the parent's `mod b;` staged
+# and `b.rs` left untracked, and be refused over work it did not hold. So a run
+# the hook started refuses, before its first stage, when a file the build or the
+# tests read differs on disk from what the commit stages, or sits untracked.
+# Planning, documents, the guard register and the root's Markdown are left out
+# of that question on purpose, and the cases below hold both halves.
+#
+# Each repository is its own, built the way the staged move above was, with a
+# change to `src/lib.rs` staged. A run that is not refused goes on to its first
+# stage and stops at rustfmt, since the repository holds no `Cargo.toml`, so a
+# case costs a fork and one failed cargo call rather than a build.
+a_commit_being_made() {
+    local repo="$1" kept
+    a_repository_of_its_own "$repo"
+    mkdir -p "$repo/src" "$repo/tests" "$repo/locales" "$repo/docs" "$repo/.planning" "$repo/guards"
+    for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
+        printf 'the start\n' > "$repo/$kept"
+    done
+    git -C "$repo" add --all
+    git -C "$repo" commit --quiet -m "the start"
+    git -C "$repo" checkout --quiet -b a-branch
+    printf 'the staged change\n' >> "$repo/src/lib.rs"
+    git -C "$repo" add src/lib.rs
+}
+
+the_message="$work/the-message"
+printf 'a change\n' > "$the_message"
+
+# What the gate says when a commit is made from the repository, the way the hook
+# asks it. The timeout is the backstop if the refusal is ever lost and something
+# starts building.
+commit_from() {
+    ( cd "$1" && timeout 60 bash "$subject" --message-file="$the_message" 2>&1 )
+}
+
+expect_refused() {
+    local desc="$1" repo="$2" said status
+    said="$(commit_from "$repo")"
+    status=$?
+    if [ "$status" -ne 1 ]; then
+        suite_case_failed "$desc" "exited $status rather than 1" "$said"
+    elif ! printf '%s\n' "$said" | grep -qF 'git stash --keep-index -u'; then
+        suite_case_failed "$desc" "no refusal naming the way forward in:" "$said"
+    elif printf '%s\n' "$said" | grep -qxF '== rustfmt =='; then
+        suite_case_failed "$desc" "the run reached rustfmt before refusing:" "$said"
+    else
+        suite_case_passed "$desc"
+    fi
+}
+
+expect_not_refused() {
+    local desc="$1" said="$2"
+    if printf '%s\n' "$said" | grep -qF 'git stash --keep-index -u'; then
+        suite_case_failed "$desc" "refused:" "$said"
+    elif ! printf '%s\n' "$said" | grep -qxF '== rustfmt =='; then
+        suite_case_failed "$desc" "never reached its first stage:" "$said"
+    else
+        suite_case_passed "$desc"
+    fi
+}
+
+left_changed="$work/left-changed"
+a_commit_being_made "$left_changed"
+printf 'a change not staged\n' >> "$left_changed/src/other.rs"
+expect_refused "a commit leaving a tracked source file changed on disk is refused before any stage" \
+    "$left_changed"
+
+said="$(commit_from "$left_changed")"
+if printf '%s\n' "$said" | grep -qF 'src/other.rs' &&
+    printf '%s\n' "$said" | grep -qF 'git add'; then
+    suite_case_passed "the refusal names the file left on disk and both ways forward"
+else
+    suite_case_failed "the refusal names the file left on disk and both ways forward" "$said"
+fi
+
+for where in src/b.rs tests/b.rs locales/b.ftl src/notes.md; do
+    left_untracked="$work/untracked-${where//\//-}"
+    a_commit_being_made "$left_untracked"
+    printf 'never added\n' > "$left_untracked/$where"
+    expect_refused "a commit leaving $where untracked is refused" "$left_untracked"
+done
+
+for where in docs/page.md .planning/STATE.md guards/guards.toml README.md; do
+    left_outside="$work/outside-${where//\//-}"
+    a_commit_being_made "$left_outside"
+    printf 'a change not staged\n' >> "$left_outside/$where"
+    expect_not_refused "a change to $where left on disk does not stop a commit" \
+        "$(commit_from "$left_outside")"
+done
+
+by_hand="$work/by-hand"
+a_commit_being_made "$by_hand"
+printf 'a change not staged\n' >> "$by_hand/src/other.rs"
+expect_not_refused "a run by hand is not refused over a tree unlike its index" \
+    "$( cd "$by_hand" && timeout 60 bash "$subject" 2>&1 )"
+
 suite_verdict
