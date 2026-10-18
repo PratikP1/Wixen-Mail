@@ -577,6 +577,162 @@ expect_a_library_run application::sent_copy:: \
     "a Rust file another module compiles in reaches that module's tests" \
     src/application/mail_controller.rs
 
+# ── A guard's library tests run wherever they live ──────────────────────────
+# Added 2026-10-18 by 13.2-26 (audit finding #38). A record with no `suite`
+# reddens library tests, and the scoped run used to reach only the changed
+# file's own module, so a record breaking `src/x/y.rs` whose red tests live in
+# `a::b` ran on every commit except the ones that could break it. The scoped run
+# now adds a library run per module a coupled record's red tests live in, read
+# from both ways a record writes its list.
+#
+# The library runs a made-up registry answers for a change, one per line, and
+# how many lines name exactly one filter.
+library_runs_from() {
+    local reg="$1"
+    shift
+    ask_from_the_tree --scoped-runs-for "$reg" "$@" 2>/dev/null | grep -- '^--lib ' || true
+}
+
+times_run() {
+    printf '%s\n' "$2" | grep -cxF -- "--lib $1 -- --test-threads=4"
+}
+
+elsewhere="$work/red-tests-elsewhere.toml"
+cat > "$elsewhere" <<'TOML'
+[[guard]]
+name = "a break whose red test lives in another module"
+file = "src/x/y.rs"
+before = """a"""
+after = """b"""
+red = [
+    "a::b::tests::test_one",
+]
+tests_last_seen = [
+    { file = "src/a/b.rs", tests = 1 },
+]
+
+[[guard]]
+name = "a break whose red list is written on one line"
+file = "src/x/z.rs"
+before = """c"""
+after = """d"""
+red = ["a::b::tests::test_one", "a::b::tests::test_two", "c::d::tests::test_three"]
+
+[[guard]]
+name = "a break whose red test lives beside it"
+file = "src/x/w.rs"
+before = """e"""
+after = """f"""
+red = [
+    "x::w::tests::test_four",
+]
+
+[[guard]]
+name = "a break with a suite of its own"
+file = "src/x/v.rs"
+suite = "alpha"
+before = """g"""
+after = """h"""
+red = [
+    "s::t::tests::test_five",
+]
+
+[[guard]]
+name = "a break whose red name has no module"
+file = "src/x/u.rs"
+before = """i"""
+after = """j"""
+red = ["test_bare"]
+
+[[guard]]
+name = "a break whose text holds what looks like a red list"
+file = "src/x/t.rs"
+before = """
+red = ["p::q::tests::test_ghost"]
+red = [
+    "r::s::tests::test_ghost",
+]
+"""
+after = '''
+red = [
+    "m::n::tests::test_ghost",
+]
+'''
+red = [
+    "k::l::tests::test_six",
+]
+TOML
+
+runs="$(library_runs_from "$elsewhere" src/x/y.rs)"
+if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
+    suite_case_passed "a guard's red test in another module reaches its library run"
+else
+    suite_case_failed "a guard's red test in another module reaches its library run" \
+        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+fi
+
+runs="$(library_runs_from "$elsewhere" src/x/z.rs)"
+if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ] &&
+    [ "$(times_run c::d::tests:: "$runs")" -eq 1 ]; then
+    suite_case_passed "a red list on one line reaches every module it names once each"
+else
+    suite_case_failed "a red list on one line reaches every module it names once each" \
+        "wanted a::b::tests:: and c::d::tests:: once each in: $runs"
+fi
+
+runs="$(library_runs_from "$elsewhere" src/x/w.rs)"
+if [ "$runs" = "--lib x::w:: -- --test-threads=4" ]; then
+    suite_case_passed "a red test in the changed file's own module adds no library run"
+else
+    suite_case_failed "a red test in the changed file's own module adds no library run" \
+        "answered: $runs"
+fi
+
+runs="$(library_runs_from "$elsewhere" src/x/v.rs)"
+if [ "$runs" = "--lib x::v:: -- --test-threads=4" ]; then
+    suite_case_passed "a record with a suite adds no library run for its red tests"
+else
+    suite_case_failed "a record with a suite adds no library run for its red tests" \
+        "answered: $runs"
+fi
+
+runs="$(library_runs_from "$elsewhere" src/x/u.rs)"
+if [ "$runs" = "--lib x::u:: -- --test-threads=4" ]; then
+    suite_case_passed "a red name with no module adds no library run"
+else
+    suite_case_failed "a red name with no module adds no library run" "answered: $runs"
+fi
+
+# Asserting the real list as well, so the case cannot be green on a scan that
+# reads no list at all.
+runs="$(library_runs_from "$elsewhere" src/x/t.rs)"
+if [ "$(times_run k::l::tests:: "$runs")" -eq 1 ] &&
+    ! printf '%s\n' "$runs" | grep -q ghost &&
+    ! printf '%s\n' "$runs" | grep -qE -- '--lib (p::q|r::s|m::n)::'; then
+    suite_case_passed "a red list inside a record's break text is not read"
+else
+    suite_case_failed "a red list inside a record's break text is not read" \
+        "wanted k::l::tests:: and nothing from the break text in: $runs"
+fi
+
+runs="$(ask_from_the_tree --scoped-runs-for --merge "$elsewhere" src/x/y.rs 2>/dev/null)"
+if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
+    suite_case_passed "a merge reaches the library runs of its guards' red tests"
+else
+    suite_case_failed "a merge reaches the library runs of its guards' red tests" \
+        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+fi
+
+# Against the real registry, the acceptance line of 13.2-26: two records break
+# the sent copy's flag and name tests in the controller's module.
+runs="$(scoped_runs src/application/sent_copy.rs)"
+if printf '%s\n' "$runs" | grep -q -- '^--lib application::mail_controller::'; then
+    suite_case_passed "a change to the sent copy runs the controller's tests that guard it"
+else
+    suite_case_failed "a change to the sent copy runs the controller's tests that guard it" \
+        "no '--lib application::mail_controller::' line in: $runs"
+fi
+
 # Read out of `check.sh`: no line that is not a comment hands cargo one
 # integration target named by a variable, which is the shape the separate calls
 # had. The companion plants the near miss, a coupled target run on its own with
