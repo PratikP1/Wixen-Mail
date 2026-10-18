@@ -20,8 +20,7 @@
 │  └────────────────────────────────────────────────────────┘ │
 │  ┌────────────────────────────────────────────────────────┐ │
 │  │            Accessibility Layer                          │ │
-│  │  - Screen Reader Bridge  - Keyboard Handler            │ │
-│  │  - Focus Manager         - Announcement Queue          │ │
+│  │  - Screen Reader Bridge  - Announcement Queue          │ │
 │  └────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
                             ↕
@@ -75,17 +74,6 @@
   - Interfaces with Windows UI Automation (UIA)
   - Provides descriptive labels and roles for all UI elements
   - Manages live regions for dynamic content
-  
-- **Keyboard Handler**:
-  - Centralized keyboard shortcut management
-  - Shortcuts are fixed. `register_shortcut` is called once at startup and
-    nothing in Settings reaches it, so there is no way to rebind a key.
-  - Focus traversal management
-  
-- **Focus Manager**:
-  - Tracks current focus location
-  - Manages focus order
-  - Handles focus trapping in dialogs
   
 - **Announcement Queue**:
   - Queues screen reader announcements
