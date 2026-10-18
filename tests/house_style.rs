@@ -4887,6 +4887,104 @@ fn test_the_token_reading_can_see_a_check_that_could_push() {
     );
 }
 
+/// Whether the `env:` key at `indent` spaces sets `WIXEN_NO_AUDIO`.
+fn its_env_turns_the_sound_off(text: &str, indent: usize) -> bool {
+    let indent_of = |line: &str| line.len() - line.trim_start().len();
+    text.lines()
+        .skip_while(|line| indent_of(line) != indent || line.trim() != "env:")
+        .skip(1)
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > indent)
+        .any(|line| line.trim().starts_with("WIXEN_NO_AUDIO:"))
+}
+
+/// Which jobs run `cargo test` on a Windows runner with the sound on, one
+/// line each, empty when none does.
+///
+/// GitHub's Windows runners have no audio driver, and rodio faults on the
+/// first write there and kills the test binary, so every test after it never
+/// runs (ci.yml's comment on `WIXEN_NO_AUDIO`). The setting counts when the
+/// workflow's own `env:` or the job's sets it. The release gate ran with the
+/// sound on until 2026-10-18 (ledger 616).
+fn jobs_that_test_on_windows_with_the_sound_on(workflow: &str) -> Vec<String> {
+    let the_workflow_turns_it_off =
+        its_env_turns_the_sound_off(&what_it_does_not_what_it_says(workflow), 0);
+    the_jobs_of(workflow)
+        .into_iter()
+        .filter(|(_, text)| text.contains("cargo test"))
+        .filter(|(_, text)| {
+            text.lines()
+                .any(|line| line.trim().starts_with("runs-on:") && line.contains("windows"))
+        })
+        .filter(|(_, text)| !the_workflow_turns_it_off && !its_env_turns_the_sound_off(text, 4))
+        .map(|(name, _)| {
+            format!(
+                "the {name} job runs cargo test on a Windows runner with the sound on, so the \
+                 first sound a test plays crashes the run and every test after it never runs; \
+                 set WIXEN_NO_AUDIO in the workflow's env"
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_job_that_tests_on_windows_turns_the_sound_off() {
+    // The workflow files are the artefact. What this cannot see is whether a
+    // runner's sound really faults, only whether each job is told not to try.
+    let wrong: Vec<String> = every_workflow_with_its_name()
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_test_on_windows_with_the_sound_on(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "A job tests on Windows with the sound on:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_sound_reading_can_see_a_workflow_missing_the_setting() {
+    // The companion. A Windows job running the tests is named when nothing
+    // turns the sound off, and not when the workflow or the job does; a job
+    // on another runner, or one that runs no tests, is left alone.
+    let missing = "env:\n  CARGO_TERM_COLOR: always\n\njobs:\n  gate:\n    runs-on: windows-latest\n    steps:\n    - run: cargo test --quiet\n  lint:\n    runs-on: windows-latest\n    steps:\n    - run: cargo clippy\n  linux:\n    runs-on: ubuntu-latest\n    steps:\n    - run: cargo test\n";
+    let wrong = jobs_that_test_on_windows_with_the_sound_on(missing);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the gate job"),
+        "a Windows job testing with the sound on was not named, or another job was: {wrong:?}"
+    );
+
+    let the_workflow_sets_it = missing.replace(
+        "  CARGO_TERM_COLOR: always\n",
+        "  CARGO_TERM_COLOR: always\n  WIXEN_NO_AUDIO: \"1\"\n",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&the_workflow_sets_it).is_empty(),
+        "a job under a workflow that turns the sound off was named"
+    );
+
+    let the_job_sets_it = missing.replace(
+        "    runs-on: windows-latest\n    steps:\n    - run: cargo test",
+        "    runs-on: windows-latest\n    env:\n      WIXEN_NO_AUDIO: \"1\"\n    steps:\n    - run: cargo test",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&the_job_sets_it).is_empty(),
+        "a job that turns the sound off itself was named"
+    );
+
+    let only_a_comment = missing.replace(
+        "  CARGO_TERM_COLOR: always\n",
+        "  CARGO_TERM_COLOR: always\n  # WIXEN_NO_AUDIO: \"1\"\n",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&only_a_comment).len() == 1,
+        "a setting written only in a comment was read as in force"
+    );
+}
+
 #[test]
 fn test_only_one_place_reads_stored_message_text() {
     // Message text is stored two ways, as text when it is short and packed
