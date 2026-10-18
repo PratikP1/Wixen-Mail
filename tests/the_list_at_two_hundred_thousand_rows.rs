@@ -11,12 +11,12 @@
 //!
 //! # What is timed, and what is not
 //!
-//! **The listing** is `MessageCache::get_messages_for_folder`, the read the
-//! list takes when a folder opens and the one that precedes any scroll, over
-//! a cache holding 200,000 rows in one folder of one account. Cold is the
-//! first read on a connection opened after the rows were written; warm is the
-//! reads after it. The file itself was warm in the operating system's cache
-//! either way, because this process had just written it.
+//! **The listing** is no longer timed, since 2026-10-18 (13.2-31). Its two
+//! rows timed `MessageCache::get_messages_for_folder`, unsorted, and this
+//! header called it the read the list takes when a folder opens. No user path
+//! called it, and 13.2-31 deleted it on that date. The read the window does
+//! take is timed by the list's own read path below. The listing rows already
+//! on `docs/development/measurements.md` stay, as measurements with their date.
 //!
 //! **The filter** is `MessageCache::search_messages`, the query the search
 //! box runs, at the limit the search box passes. The sample mailbox never
@@ -44,9 +44,10 @@
 //! limit, cold and then warm; `threading::thread_messages` over every row
 //! read, which is what the window's private `apply_threading` wraps, so the
 //! harness calls the function it wraps; and the labels read the window makes
-//! over those rows. None of the rows above times any of the three: the
-//! listing above is `get_messages_for_folder`, unsorted, and the window never
-//! calls it. Where a step refuses rather than answers, its row says `refused`
+//! over those rows. None of the rows above times any of the three. Until
+//! 2026-10-18 the listing rows timed `get_messages_for_folder`, unsorted,
+//! which the window never called; those rows are no longer printed, and these
+//! are the ones that time a folder opening. Where a step refuses rather than answers, its row says `refused`
 //! for a value and carries the error's text in its conditions, because a
 //! query whose parameter count is the row count is expected to hit SQLite's
 //! variable limit somewhere between the tester's folder and 200,000 rows, and
@@ -263,41 +264,6 @@ fn measure(count: usize, into: &Path) -> Result<Vec<Measured>, String> {
     // read on its connection.
     let folder_id = a_cache_of(count, into)?;
     let cache = MessageCache::new(into.to_path_buf(), None).map_err(|e| e.to_string())?;
-
-    let started = Instant::now();
-    let listed = cache
-        .get_messages_for_folder(folder_id, THE_ACCOUNT)
-        .map_err(|e| e.to_string())?;
-    let cold = started.elapsed();
-    if listed.len() != count {
-        return Err(format!(
-            "the listing read back {} rows of the {count} written",
-            listed.len()
-        ));
-    }
-    measured.push(Measured::timed(
-        format!("Listing {count} rows from the cache, cold"),
-        vec![cold],
-        format!(
-            "One take: the first `get_messages_for_folder` on a connection opened after the rows \
-             were written, {} rows returned. The file was warm in the operating system's cache \
-             because this process had just written it.",
-            listed.len()
-        ),
-    ));
-    let (takes, listed) = taken(|| {
-        cache
-            .get_messages_for_folder(folder_id, THE_ACCOUNT)
-            .map(|rows| rows.len())
-    });
-    let rows_listed = listed.map_err(|e| e.to_string())?;
-    measured.push(Measured::timed(
-        format!("Listing {count} rows from the cache, warm"),
-        takes,
-        format!(
-            "The `get_messages_for_folder` reads after the cold one on the same connection, {rows_listed} rows returned each time."
-        ),
-    ));
 
     // The filter, at the search box's own limit, under every folder and
     // under the narrowest answer the In list offers for that kind of word.
@@ -918,8 +884,7 @@ fn test_the_lists_own_read_path_at_the_testers_size() {
 
 /// What kind of thing each row times; a row naming none of these is a row
 /// the page cannot be read from.
-const WHAT_A_ROW_TIMES: [&str; 6] = [
-    "Listing",
+const WHAT_A_ROW_TIMES: [&str; 5] = [
     "Filter",
     "Sort",
     "Page paint",
@@ -934,7 +899,7 @@ fn test_two_thousand_rows_written_read_back_two_thousand() {
     let folder_id = a_cache_of(A_FEW, into.path()).expect("the rows written");
     let cache = MessageCache::new(into.path().to_path_buf(), None).expect("the cache reopened");
     let listed = cache
-        .get_messages_for_folder(folder_id, THE_ACCOUNT)
+        .get_message_list(folder_id, THE_ACCOUNT)
         .expect("the listing");
 
     assert_eq!(listed.len(), A_FEW);
@@ -948,8 +913,8 @@ fn test_every_row_the_measurement_prints_has_the_pages_shape_and_names_what_it_t
 
     assert!(
         rows.len() >= 11,
-        "{} rows printed and the page wants at least eleven: the listing cold and warm, the \
-         filters, the seven sort orders, the page paint and the full pass",
+        "{} rows printed and the page wants at least eleven: the filters, the seven sort \
+         orders, the page paint and the full pass",
         rows.len()
     );
     for row in &rows {

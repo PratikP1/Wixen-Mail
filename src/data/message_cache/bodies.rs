@@ -1518,23 +1518,6 @@ mod tests {
     }
 
     #[test]
-    fn test_listing_messages_does_not_carry_bodies() {
-        // The whole point: a folder listing must not pull body text through.
-        let cache = body_test_cache();
-        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
-        cache
-            .save_message_body(id, Some("a very long body"), None)
-            .unwrap();
-
-        let listed = cache.get_messages_for_folder(1, "a1").unwrap();
-        assert_eq!(listed.len(), 1);
-        assert!(
-            listed[0].body_plain.is_none() && listed[0].body_html.is_none(),
-            "a listing carried body text"
-        );
-    }
-
-    #[test]
     fn test_missing_body_reads_as_absent_not_as_an_error() {
         let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "No body yet")).unwrap();

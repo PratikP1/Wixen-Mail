@@ -931,7 +931,7 @@ fn a_second_connection(
     std::thread::sleep(LET_IT_BEGIN);
     let read = attempt(let_go, || {
         other
-            .get_messages_for_folder(inbox, THE_IMAP_ACCOUNT)
+            .get_message_list(inbox, THE_IMAP_ACCOUNT)
             .map(|rows| format!("{} messages read", with_commas(rows.len())))
     });
     let write = attempt(let_go, || {
