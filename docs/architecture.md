@@ -375,7 +375,11 @@ question, and data protection below gives the answer.
 There is no master key any more. It encrypted exactly one thing, a password
 that can be typed again, and the key itself was one more thing to lose.
 Uninstalling clears the credential store entries by running the application
-once as the user, because an uninstaller cannot reach them.
+once with `--erase-all-data`, because an uninstaller cannot reach them. It runs
+as the account the uninstaller runs as: the person for a per-user install, and
+for an all-users install the account that approved the elevation prompt, so
+other accounts keep their entries and their data folder, and the uninstaller
+tells the person so (`installer/Wixen-Mail-Setup.iss`).
 
 ### Network Security
 - Mandatory TLS for all connections
@@ -387,9 +391,10 @@ once as the user, because an uninstaller cannot reach them.
 - The cached mail is not encrypted at rest. Encrypting it means encrypting the
   whole database, which is a decision with a build cost rather than something
   to imply in a feature list.
-- Uninstalling removes the data folder and the credential store entries, and
-  writes what it could not remove to the temporary folder rather than claiming
-  success.
+- Uninstalling removes the data folder and the credential store entries of the
+  account it runs as, and writes what it could not remove to the temporary
+  folder rather than claiming success. An all-users uninstall names that
+  account and tells the person that other accounts keep theirs.
 - Nothing logs a token, a password, or a message body.
 
 ## Testing Strategy

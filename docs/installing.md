@@ -183,6 +183,17 @@ anything it could not remove, so a leftover is something you are told about rath
 something you find. Two cases are the exception, and Checking what an uninstall did, below,
 says which.
 
+**It removes them for one Windows account.** The uninstaller clears the data of the account
+it runs as. Installed for you alone, that is you. Installed for all users, it is the account
+that approved the administrator prompt, and any other account that used Wixen Mail on this
+computer keeps its own mail folder and its saved sign-ins. The uninstaller says so when it
+finishes, names the account it cleared, and says how to remove the rest: sign in to Windows
+as that account and follow the last paragraph of Checking what an uninstall did, below.
+
+**A copy installed before 2026-10-18 cannot uninstall itself.** Its uninstaller stops at an
+error before removing anything. Install a new build over it first, without uninstalling, and
+then uninstall: the new build replaces the uninstaller with one that works.
+
 Your mail itself is not affected. It is still on your mail service's server, at Google or
 wherever your account lives, and Wixen Mail only ever held a copy. Signing in from a new installation, or from any other mail application, brings
 it all back.

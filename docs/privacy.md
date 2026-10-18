@@ -972,6 +972,14 @@ cases leave no note, and [Installing and uninstalling](installing.md) says which
 check by hand. Your mail itself is untouched, because it is on your provider's server and
 Wixen Mail only ever held a copy.
 
+It removes them for one Windows account, the one the uninstaller runs as. Uninstalling a copy
+installed for all users runs as the account that approved the administrator prompt, so any
+other account that used Wixen Mail on this computer keeps its mail folder, which is not
+encrypted, and its saved passwords and sign-in tokens. The uninstaller says so when it
+finishes, and [Installing and uninstalling](installing.md) says how that account removes them.
+A copy installed before 2026-10-18 stops at an error before uninstalling anything; installing
+a new build over it first lets it uninstall.
+
 ### One thing uninstalling cannot take back
 
 If you said yes when the installer asked whether Windows Search could index your mail, the
