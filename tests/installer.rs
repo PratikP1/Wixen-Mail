@@ -1969,12 +1969,21 @@ fn uncommented(code: &str) -> String {
     kept
 }
 
-/// Uncommented Pascal with every string emptied, so a name inside a message
+/// Uncommented Pascal with every string blanked, so a name inside a message
 /// is not read as a call.
+///
+/// Blanked with spaces rather than emptied, so a place found in this text is
+/// the same place in the text it came from.
 fn unquoted(code: &str) -> String {
     code.split('\'')
         .enumerate()
-        .map(|(at, piece)| if at % 2 == 0 { piece } else { "" })
+        .map(|(at, piece)| {
+            if at % 2 == 0 {
+                piece.to_string()
+            } else {
+                " ".repeat(piece.len())
+            }
+        })
         .collect::<Vec<_>>()
         .join("'")
 }
@@ -2167,5 +2176,316 @@ Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"
         vec!["CurUninstallStepChanged".to_string()],
         "the reading stops at the end of [Code] and does not reach a routine \
          nothing in an uninstall calls"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// What an uninstall for everybody says it leaves
+// ---------------------------------------------------------------------------
+//
+// The erase step in [UninstallRun] carries runascurrentuser, which Inno's help
+// for the [Run] section defines as "the spawned process will inherit
+// Setup/Uninstall's user credentials" (6.7.3, read 2026-10-18). Uninstalling
+// for everybody runs elevated, so the erase clears the data of the account the
+// uninstaller runs as and of nobody else. Audit finding #43: any other account
+// that used Wixen Mail on the computer keeps its unencrypted mail folder and
+// its Credential Manager entries, and until 13.2-27 nobody was told.
+
+/// What the message after an uninstall for everybody has to say, as phrases its
+/// text holds, compared ignoring case and line breaks.
+const WHAT_THE_ALL_USERS_MESSAGE_SAYS: [&str; 5] = [
+    r"%LOCALAPPDATA%\wixen-mail",
+    "not encrypted",
+    "Credential Manager",
+    "begin with wixen-mail",
+    "sign in to Windows as that account",
+];
+
+/// When it is shown: uninstalling for everybody, with the program still there,
+/// so the erase step really runs. A per-user uninstall runs as the person and
+/// has nothing to add, and the program being gone has a message of its own.
+const SHOWN_WHEN: [&str; 2] = ["IsAdminInstallMode()", "not TheProgramIsAlreadyGone()"];
+
+/// One `MsgBox` call: the condition of the `if` it is the statement of, if it
+/// is one, the text of its string literals joined, and its arguments with the
+/// strings blanked.
+#[derive(Debug)]
+struct MessageBox {
+    condition: Option<String>,
+    text: String,
+    arguments: String,
+}
+
+/// The contents of every string literal in some Pascal, joined, with `''`
+/// read as the one quotation mark it stands for.
+fn the_strings(code: &str) -> String {
+    let mut text = String::new();
+    let mut inside = false;
+    let mut chars = code.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, inside) {
+            ('\'', true) if chars.peek() == Some(&'\'') => {
+                chars.next();
+                text.push('\'');
+            }
+            ('\'', _) => inside = !inside,
+            (c, true) => text.push(c),
+            _ => {}
+        }
+    }
+    text
+}
+
+/// The words of some Pascal with the byte each one starts at.
+fn words_at(text: &str) -> Vec<(usize, &str)> {
+    let mut found = Vec::new();
+    let mut start = None;
+    for (at, c) in text
+        .char_indices()
+        .chain(std::iter::once((text.len(), ' ')))
+    {
+        let in_a_word = c.is_ascii_alphanumeric() || c == '_';
+        match (in_a_word, start) {
+            (true, None) => start = Some(at),
+            (false, Some(from)) => {
+                found.push((from, &text[from..at]));
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// The condition of the `if` whose statement starts at `at`, or `None` when
+/// the statement there is not an `if`'s.
+///
+/// `blank` is the routine with its strings blanked, so a word inside a message
+/// is never taken for an `if` or a `then`.
+fn the_condition_of_the_statement_at(blank: &str, at: usize) -> Option<String> {
+    let words = words_at(&blank[..at]);
+    let mut back = words.iter().rev().peekable();
+    back.next_if(|(_, word)| word.eq_ignore_ascii_case("begin"));
+    let (then_at, then) = back.next()?;
+    let between = blank[then_at + 4..at].trim();
+    if !then.eq_ignore_ascii_case("then")
+        || !(between.is_empty() || between.eq_ignore_ascii_case("begin"))
+    {
+        return None;
+    }
+    let (if_at, _) = back.find(|(_, word)| word.eq_ignore_ascii_case("if"))?;
+    Some(
+        blank[if_at + 2..*then_at]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
+}
+
+/// Every `MsgBox` call in an uncommented routine.
+fn the_message_boxes(routine: &str) -> Vec<MessageBox> {
+    let blank = unquoted(routine);
+    words_at(&blank)
+        .into_iter()
+        .filter(|(at, word)| {
+            word.eq_ignore_ascii_case("MsgBox")
+                && blank[at + word.len()..].trim_start().starts_with('(')
+        })
+        .map(|(at, word)| {
+            let open = at + word.len() + blank[at + word.len()..].find('(').unwrap_or_default();
+            let mut depth = 0;
+            let close = blank[open..]
+                .char_indices()
+                .find_map(|(offset, c)| {
+                    depth += match c {
+                        '(' => 1,
+                        ')' => -1,
+                        _ => 0,
+                    };
+                    (depth == 0).then_some(open + offset)
+                })
+                .unwrap_or(blank.len());
+            MessageBox {
+                condition: the_condition_of_the_statement_at(&blank, at),
+                text: the_strings(&routine[open..close]),
+                arguments: blank[open..close].to_string(),
+            }
+        })
+        .collect()
+}
+
+/// A condition's terms, joined by `and`, with outer brackets and spacing that
+/// Pascal ignores taken away, so two spellings of one condition compare equal.
+fn the_terms(condition: &str) -> Vec<String> {
+    let spaced = condition
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase();
+    let mut terms: Vec<String> = without_brackets(&spaced)
+        .split(" and ")
+        .map(|term| without_brackets(term).replace(" (", "("))
+        .collect();
+    terms.sort();
+    terms
+}
+
+/// Some Pascal without the brackets around the whole of it, where the first
+/// bracket really closes at the end rather than earlier.
+fn without_brackets(text: &str) -> &str {
+    let mut text = text.trim();
+    while text.starts_with('(') && text.ends_with(')') {
+        let mut depth = 0;
+        let closes_at_the_end = text.char_indices().all(|(at, c)| {
+            depth += match c {
+                '(' => 1,
+                ')' => -1,
+                _ => 0,
+            };
+            depth > 0 || at == text.len() - 1
+        });
+        if !closes_at_the_end {
+            break;
+        }
+        text = text[1..text.len() - 1].trim();
+    }
+    text
+}
+
+/// The text of what an uninstall for everybody says it leaves, or why there is
+/// no such message where there should be one.
+///
+/// The message is the one in `CurUninstallStepChanged` that names the account
+/// the uninstall runs as, which is what `GetUserNameString` returns there.
+fn what_an_all_users_uninstall_says(script: &str) -> Result<String, String> {
+    let code = uncommented(&the_code(script));
+    let step = the_routines(&code)
+        .into_iter()
+        .find(|routine| routine.name.eq_ignore_ascii_case("CurUninstallStepChanged"))
+        .ok_or("the script has no CurUninstallStepChanged to show a message from")?;
+    let message = the_message_boxes(&step.text)
+        .into_iter()
+        .find(|message| {
+            identifiers(&message.arguments)
+                .any(|word| word.eq_ignore_ascii_case("GetUserNameString"))
+        })
+        .ok_or("no message in CurUninstallStepChanged names the account the uninstall ran as")?;
+
+    let said = message
+        .text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+    let missing: Vec<&str> = WHAT_THE_ALL_USERS_MESSAGE_SAYS
+        .into_iter()
+        .filter(|phrase| !said.contains(&phrase.to_lowercase()))
+        .collect();
+    if !missing.is_empty() {
+        return Err(format!(
+            "the message does not say {missing:?}: {}",
+            message.text
+        ));
+    }
+
+    let wanted = the_terms(&SHOWN_WHEN.join(" and "));
+    match message.condition {
+        Some(condition) if the_terms(&condition) == wanted => Ok(message.text),
+        other => Err(format!(
+            "the message is shown when {other:?}, and it belongs only to an uninstall \
+             for everybody with the program still there: {SHOWN_WHEN:?}"
+        )),
+    }
+}
+
+#[test]
+fn test_an_uninstall_for_everybody_says_whose_data_it_cleared_and_what_may_remain() {
+    let said = what_an_all_users_uninstall_says(&the_installer_script());
+    println!("{said:?}");
+    assert!(said.is_ok(), "{}", said.unwrap_err());
+}
+
+#[test]
+fn test_the_reading_can_see_the_message_missing_or_shown_at_the_wrong_time() {
+    let a_script = |condition: &str, sentence: &str| {
+        format!(
+            r#"
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep <> usUninstall then
+    Exit;
+
+  if TheProgramIsAlreadyGone() then
+    MsgBox('Your mail is still in %LOCALAPPDATA%\wixen-mail. Open Credential '
+           + 'Manager and remove the entries whose names begin with wixen-mail.',
+           mbInformation, MB_OK);
+
+  {condition}
+    MsgBox('This clears the data of ' + GetUserNameString + '. If anyone used '
+           + 'Wixen Mail under another account, that account''s mail is in '
+           + '%LOCALAPPDATA%\wixen-mail, which is {sentence}, and its entries in '
+           + 'Credential Manager begin with wixen-mail. To remove them, sign in '
+           + 'to Windows as that account.',
+           mbInformation, MB_OK);
+end;
+
+[UninstallRun]
+Filename: "{{app}}\wixen-mail.exe"; Parameters: "--erase-all-data"
+"#
+        )
+    };
+
+    let right = a_script(
+        "if IsAdminInstallMode() and not TheProgramIsAlreadyGone() then",
+        "not encrypted",
+    );
+    let said = what_an_all_users_uninstall_says(&right);
+    assert!(said.is_ok(), "{said:?}");
+    assert!(
+        said.unwrap_or_default().contains("account's mail"),
+        "a doubled quotation mark is one apostrophe in the text"
+    );
+    let respelled = what_an_all_users_uninstall_says(&a_script(
+        "if ((not TheProgramIsAlreadyGone ()) and (IsAdminInstallMode())) then begin",
+        "not encrypted",
+    ));
+    assert!(
+        respelled.is_ok(),
+        "brackets, spacing, the order of the terms and a begin after the then \
+         change nothing Pascal reads: {respelled:?}"
+    );
+
+    for wrong in [
+        "if not IsAdminInstallMode() and not TheProgramIsAlreadyGone() then",
+        "if IsAdminInstallMode() then",
+        "if IsAdminInstallMode() and TheProgramIsAlreadyGone() then",
+        "",
+    ] {
+        let said = what_an_all_users_uninstall_says(&a_script(wrong, "not encrypted"));
+        assert!(
+            said.as_ref()
+                .is_err_and(|why| why.contains("is shown when")),
+            "shown under {wrong:?}, which is not an uninstall for everybody with the \
+             program there: {said:?}"
+        );
+    }
+
+    let said = what_an_all_users_uninstall_says(&a_script(
+        "if IsAdminInstallMode() and not TheProgramIsAlreadyGone() then",
+        "kept",
+    ));
+    assert!(
+        said.as_ref()
+            .is_err_and(|why| why.contains("not encrypted")),
+        "a message that leaves out that the folder is unencrypted: {said:?}"
+    );
+
+    let without = a_script("", "not encrypted").replace("GetUserNameString", "'you'");
+    let said = what_an_all_users_uninstall_says(&without);
+    assert!(
+        said.as_ref()
+            .is_err_and(|why| why.contains("names the account")),
+        "only the message for a program already gone, which names nobody: {said:?}"
     );
 }
