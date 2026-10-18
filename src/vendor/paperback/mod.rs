@@ -15,9 +15,10 @@
 //! CHM, Word and PowerPoint, plus a PDF engine, for one HTML converter.
 //!
 //! What was changed is recorded at the top of each file. The short version:
-//! import paths, the three translatable strings now route through this
-//! application's own i18n registry, and the markdown and roman-numeral
-//! dependencies were replaced or dropped.
+//! import paths, the words "Image", "Figure" and "[Table]" are English
+//! literals where upstream calls its translation crate, and the markdown and
+//! roman-numeral dependencies were replaced or dropped. Translating them waits
+//! for version 2 and the Fluent catalogue in `common::catalogue`.
 
 pub mod html_to_text;
 pub mod table_text;
@@ -125,8 +126,8 @@ mod tests {
 
     #[test]
     fn test_image_alt_text_is_kept_and_labelled_in_our_language() {
-        // The label is one of the three strings routed through our own i18n
-        // registry rather than upstream's translation crate.
+        // The label is an English literal where upstream calls its
+        // translation crate, so no lookup key may reach the text.
         let converter =
             convert("<html><body><p><img src=\"x.png\" alt=\"Revenue chart\"></p></body></html>");
         let text = converter.get_text();

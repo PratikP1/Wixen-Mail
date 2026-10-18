@@ -23,8 +23,8 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the translated strings route through Wixen Mail's own i18n registry; the
-// markdown and roman-numeral helpers were dropped or replaced; parsers and
+// the two picture labels, "Image" and "Figure", are English literals where
+// upstream calls its translation crate; the markdown and roman-numeral helpers were dropped or replaced; parsers and
 // types this application does not use were left behind; and `convert` asks how
 // deep the parsed markup nests before walking it, reading markup past
 // `DEEPEST_MARKUP_WALKED` as its words alone, with `read_the_words_alone` to
@@ -49,16 +49,6 @@ use super::types::{
 use crate::common::how_deep_markup_nests::{
     DEEPEST_MARKUP_WALKED, nests_deeper_than, the_words_alone,
 };
-
-/// The three strings this converter puts into the text it produces.
-///
-/// Local change. Upstream routes these through its own translation crate; here
-/// they go through Wixen Mail's i18n registry, because they are read aloud and
-/// a screen reader user working in French should not hear "Image" in English.
-/// Keeping them as calls rather than literals is what keeps them translatable.
-fn t(key: &str) -> String {
-    crate::service::spellcheck::translate_document_term(key)
-}
 
 bitflags! {
     #[derive(Default, Clone, Copy)]
@@ -403,12 +393,10 @@ impl HtmlToText {
 
                     if !description.is_empty() {
                         let is_figure = tag_name == "figure";
-                        // TRANSLATORS: Label inserted before a figure or image's description, e.g. "[Figure: a cat sleeping]"
-                        let label = if is_figure {
-                            t("document.figure")
-                        } else {
-                            t("document.image")
-                        };
+                        // Said before a picture's description, e.g. "[Figure: a cat
+                        // sleeping]". English literals until version 2 moves them
+                        // into the Fluent catalogue in `common::catalogue`.
+                        let label = if is_figure { "Figure" } else { "Image" };
                         let image_text = format!("[{label}: {description}]");
                         let offset = self.get_current_text_position();
                         self.current_line.push_str(&image_text);

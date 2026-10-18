@@ -1,16 +1,14 @@
-//! Spell checking and internationalization foundation
+//! The spell checker for the compose editor.
 //!
-//! Provides a multi-language spell checker for the compose editor, backed by:
+//! Spelling is checked in several languages, backed by:
 //! - **spellbook** (Hunspell-compatible, pure Rust) when `.aff` + `.dic` files
 //!   are available for the active language
 //! - A built-in English word list as fallback when no Hunspell data is present
 //!
-//! This module is also the foundation for future UI translation / i18n support.
-//! The `Locale` struct and `I18n` registry provide the plumbing for localizing
-//! UI strings, date/number formatting, and message templates.
+//! Nothing here translates the program's own words. That is the Fluent
+//! catalogue in `common::catalogue`, the one translation system.
 
 use crate::common::{Error, Result};
-use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -682,7 +680,7 @@ enum Backend {
 
 // ── SpellChecker ─────────────────────────────────────────────────────────────
 
-/// Spell checker with Hunspell support and i18n-aware configuration.
+/// Spell checker with Hunspell support, set to one language at a time.
 pub struct SpellChecker {
     backend: Backend,
     /// Custom words added by the user (per session)
@@ -1049,214 +1047,6 @@ fn generate_edits(word: &str, alphabet: &str) -> Vec<String> {
 /// dictionary is installed.
 const CORE_ENGLISH_WORDS: &str = include_str!("../../../data/dictionary_en.txt");
 
-// ── I18n / Localization Infrastructure ──────────────────────────────────────
-
-/// Locale descriptor for UI string localization.
-#[derive(Debug, Clone)]
-pub struct Locale {
-    pub language_code: String,
-    pub country_code: Option<String>,
-    pub display_name: String,
-    pub direction: TextDirection,
-}
-
-/// Text direction for layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TextDirection {
-    LeftToRight,
-    RightToLeft,
-}
-
-impl Locale {
-    pub fn from_code(code: &str) -> Self {
-        let parts: Vec<&str> = code.split('-').collect();
-        let lang = parts[0].to_lowercase();
-        let country = parts.get(1).map(|c| c.to_uppercase());
-        let direction = match lang.as_str() {
-            "ar" | "he" | "fa" | "ur" => TextDirection::RightToLeft,
-            _ => TextDirection::LeftToRight,
-        };
-        let display = match (lang.as_str(), country.as_deref()) {
-            ("en", Some("US")) => "English (US)".to_string(),
-            ("en", Some("GB")) => "English (UK)".to_string(),
-            ("en", _) => "English".to_string(),
-            ("es", _) => "Spanish".to_string(),
-            ("fr", _) => "French".to_string(),
-            ("de", _) => "German".to_string(),
-            ("pt", Some("BR")) => "Portuguese (Brazil)".to_string(),
-            ("pt", _) => "Portuguese".to_string(),
-            ("it", _) => "Italian".to_string(),
-            _ => code.to_string(),
-        };
-        Self {
-            language_code: lang,
-            country_code: country,
-            display_name: display,
-            direction,
-        }
-    }
-}
-
-/// The active registry, for code that has no `I18n` to hand.
-///
-/// The document converter runs deep inside a rendering pass and threading a
-/// registry down to it would mean a parameter on every function between here
-/// and there for three strings. It reads the locale that was last set and
-/// falls back to English, which is what the registry does anyway.
-static DOCUMENT_LOCALE: std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
-
-/// Set the locale used for text inside rendered documents.
-pub fn set_document_locale(code: &str) {
-    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
-        *locale = Some(code.to_string());
-    }
-}
-
-/// Translate one of the terms the document converter puts into its output.
-///
-/// Falls back to the key's English default rather than to the key itself, so a
-/// missing translation reads as "Image" and never as "document.image".
-pub fn translate_document_term(key: &str) -> String {
-    let code = DOCUMENT_LOCALE
-        .read()
-        .ok()
-        .and_then(|locale| locale.clone())
-        .unwrap_or_else(|| "en".to_string());
-    I18n::with_locale(&code).t(key)
-}
-
-/// Internationalization (i18n) registry for UI string translations.
-pub struct I18n {
-    active_locale: Locale,
-    translations: HashMap<String, HashMap<String, String>>,
-}
-
-impl I18n {
-    pub fn new() -> Self {
-        let mut i18n = Self {
-            active_locale: Locale::from_code("en"),
-            translations: HashMap::new(),
-        };
-        i18n.register_english_defaults();
-        i18n
-    }
-
-    pub fn with_locale(code: &str) -> Self {
-        let mut i18n = Self {
-            active_locale: Locale::from_code(code),
-            translations: HashMap::new(),
-        };
-        i18n.register_english_defaults();
-        i18n
-    }
-
-    fn register_english_defaults(&mut self) {
-        let mut en = HashMap::new();
-        for (k, v) in [
-            // Read aloud inside a rendered message body. Keyed rather than
-            // written as literals so a screen reader user working in another
-            // language does not hear these three words in English.
-            ("document.image", "Image"),
-            ("document.figure", "Figure"),
-            ("document.table_marker", "Table marker"),
-            ("menu.file", "File"),
-            ("menu.edit", "Edit"),
-            ("menu.view", "View"),
-            ("menu.message", "Message"),
-            ("menu.tools", "Tools"),
-            ("menu.help", "Help"),
-            ("action.send", "Send"),
-            ("action.save_draft", "Save Draft"),
-            ("action.cancel", "Cancel"),
-            ("action.ok", "OK"),
-            ("action.delete", "Delete"),
-            ("action.reply", "Reply"),
-            ("action.reply_all", "Reply All"),
-            ("action.forward", "Forward"),
-            ("action.search", "Search"),
-            ("status.ready", "Ready"),
-            ("status.checking_mail", "Checking for new mail..."),
-            ("status.sending", "Sending..."),
-            ("status.offline", "Offline mode"),
-            ("status.online", "Online"),
-            ("status.connected", "Connected"),
-            ("status.disconnected", "Disconnected"),
-            ("compose.to", "To:"),
-            ("compose.cc", "CC:"),
-            ("compose.bcc", "BCC:"),
-            ("compose.subject", "Subject:"),
-            ("compose.from", "From:"),
-            ("spellcheck.no_errors", "No spelling errors found"),
-            ("spellcheck.errors_found", "Spelling errors found"),
-            ("spellcheck.add_to_dictionary", "Add to Dictionary"),
-            ("spellcheck.ignore", "Ignore"),
-            ("spellcheck.ignore_all", "Ignore All"),
-            ("settings.title", "Settings"),
-            ("settings.general", "General"),
-            ("settings.compose", "Compose"),
-            ("settings.reading", "Reading"),
-            ("settings.language", "Language"),
-            ("settings.advanced", "Advanced"),
-        ] {
-            en.insert(k.into(), v.into());
-        }
-        self.translations.insert("en".into(), en);
-    }
-
-    pub fn load_translations(&mut self, lang_code: &str, strings: HashMap<String, String>) {
-        self.translations.insert(lang_code.to_string(), strings);
-    }
-
-    pub fn load_translations_file(
-        &mut self,
-        lang_code: &str,
-        path: &Path,
-    ) -> std::io::Result<usize> {
-        let content = std::fs::read_to_string(path)?;
-        let map: HashMap<String, String> = serde_json::from_str(&content)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-        let count = map.len();
-        self.translations.insert(lang_code.to_string(), map);
-        Ok(count)
-    }
-
-    pub fn set_locale(&mut self, code: &str) {
-        self.active_locale = Locale::from_code(code);
-    }
-    pub fn locale(&self) -> &Locale {
-        &self.active_locale
-    }
-
-    pub fn t(&self, string_id: &str) -> String {
-        if let Some(table) = self.translations.get(&self.active_locale.language_code)
-            && let Some(s) = table.get(string_id)
-        {
-            return s.clone();
-        }
-        if let Some(en) = self.translations.get("en")
-            && let Some(s) = en.get(string_id)
-        {
-            return s.clone();
-        }
-        string_id.to_string()
-    }
-
-    pub fn tf(&self, string_id: &str, args: &[&str]) -> String {
-        let template = self.t(string_id);
-        let mut result = template;
-        for (i, arg) in args.iter().enumerate() {
-            result = result.replace(&format!("{{{}}}", i), arg);
-        }
-        result
-    }
-}
-
-impl Default for I18n {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1486,23 +1276,6 @@ mod tests {
     }
 
     #[test]
-    fn test_i18n_english_defaults() {
-        let i18n = I18n::new();
-        assert_eq!(i18n.t("action.send"), "Send");
-        assert_eq!(i18n.t("nonexistent.key"), "nonexistent.key");
-    }
-
-    #[test]
-    fn test_i18n_fallback() {
-        let mut i18n = I18n::with_locale("es");
-        let mut es = HashMap::new();
-        es.insert("action.send".to_string(), "Enviar".to_string());
-        i18n.load_translations("es", es);
-        assert_eq!(i18n.t("action.send"), "Enviar");
-        assert_eq!(i18n.t("action.cancel"), "Cancel");
-    }
-
-    #[test]
     fn test_a_misspelling_is_reported_where_it_actually_is() {
         // The offset is where the editor underlines, and where somebody
         // working by ear is sent when they ask for the next mistake. One
@@ -1552,29 +1325,6 @@ mod tests {
     }
 
     #[test]
-    fn test_every_language_is_named_the_way_somebody_would_say_it() {
-        // This is the name read out in the settings list. Without it the row
-        // says "pt-BR", which is not something somebody chooses from by ear.
-        // Nine of these were one arm each and none of them had a test.
-        for (code, expected) in [
-            ("en-US", "English (US)"),
-            ("en-GB", "English (UK)"),
-            ("en", "English"),
-            ("en-AU", "English"),
-            ("es-ES", "Spanish"),
-            ("fr-FR", "French"),
-            ("de-DE", "German"),
-            ("pt-BR", "Portuguese (Brazil)"),
-            ("pt-PT", "Portuguese"),
-            ("it-IT", "Italian"),
-            // Nothing known about it, so the code itself is the honest answer.
-            ("nl-NL", "nl-NL"),
-        ] {
-            assert_eq!(Locale::from_code(code).display_name, expected, "for {code}");
-        }
-    }
-
-    #[test]
     fn test_what_is_not_a_word_worth_checking() {
         // Marking any of these turns a message full of ordinary content into a
         // message full of mistakes, and a spell checker that cries wolf on
@@ -1598,14 +1348,6 @@ mod tests {
 
         // And something that really is one is still found.
         assert!(!checker.is_correct("wrrld"));
-    }
-
-    #[test]
-    fn test_locale_rtl_detection() {
-        let en = Locale::from_code("en-US");
-        assert_eq!(en.direction, TextDirection::LeftToRight);
-        let ar = Locale::from_code("ar");
-        assert_eq!(ar.direction, TextDirection::RightToLeft);
     }
 
     // ── Source::describe ─────────────────────────────────────────────────
@@ -2060,73 +1802,5 @@ mod tests {
         // shows up in ordinary abbreviations, and marking every one of them
         // unworthy of checking would hide a real misspelling next to it.
         assert!(!is_number_or_special("wixen.mail"));
-    }
-
-    // ── Document locale and i18n ─────────────────────────────────────────
-
-    /// Puts `DOCUMENT_LOCALE` back to what it was, even if the test that
-    /// borrowed it panics first. It is shared with every other test in this
-    /// binary.
-    struct RestoreDocumentLocale(Option<String>);
-
-    impl Drop for RestoreDocumentLocale {
-        fn drop(&mut self) {
-            if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
-                *locale = self.0.take();
-            }
-        }
-    }
-
-    #[test]
-    fn test_set_document_locale_writes_the_code_for_reading_back() {
-        let _restore = RestoreDocumentLocale(DOCUMENT_LOCALE.read().ok().and_then(|g| g.clone()));
-
-        set_document_locale("fr");
-
-        let after = DOCUMENT_LOCALE.read().ok().and_then(|g| g.clone());
-        assert_eq!(after.as_deref(), Some("fr"));
-    }
-
-    #[test]
-    fn test_load_translations_file_reads_every_entry_in_the_table() {
-        let dir = tempfile::tempdir().expect("a temporary folder");
-        let path = dir.path().join("fr.json");
-        std::fs::write(
-            &path,
-            r#"{"action.send": "Envoyer", "action.cancel": "Annuler"}"#,
-        )
-        .expect("write translations");
-
-        let mut i18n = I18n::with_locale("fr");
-        let count = i18n
-            .load_translations_file("fr", &path)
-            .expect("a well-formed translations file");
-
-        assert_eq!(count, 2, "did not read every entry");
-        assert_eq!(i18n.t("action.send"), "Envoyer");
-        assert_eq!(i18n.t("action.cancel"), "Annuler");
-    }
-
-    #[test]
-    fn test_set_locale_changes_which_language_is_read_back() {
-        let mut i18n = I18n::new();
-        assert_eq!(i18n.locale().language_code, "en");
-
-        i18n.set_locale("fr");
-
-        assert_eq!(i18n.locale().language_code, "fr");
-    }
-
-    #[test]
-    fn test_tf_fills_in_its_placeholders() {
-        let mut i18n = I18n::new();
-        i18n.load_translations(
-            "en",
-            HashMap::from([("greeting.hello".to_string(), "Hello, {0}!".to_string())]),
-        );
-
-        let said = i18n.tf("greeting.hello", &["Pratik"]);
-
-        assert_eq!(said, "Hello, Pratik!");
     }
 }

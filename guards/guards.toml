@@ -80,8 +80,12 @@
 #
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
-# 791 records were swept that day.
+# 787 records were swept that day.
 # 817 records have arrived since and have not been through it.
+#
+# 787 rather than 791 since 2026-10-18: the four swept records on the second
+# translation registry in `service::spellcheck` were retired by 13.2-30 with
+# the code they measured, and the comment where they stood says why.
 #
 # 791 rather than 797 since 2026-10-18: the six swept records on the shadow
 # accessibility tree were retired by 13.2-28 with the code they measured, and
@@ -12420,7 +12424,7 @@ before = """    let wanted = system_language()?.to_ascii_lowercase();
 after = """    None"""
 red = ["service::spellcheck::tests::test_the_machines_language_is_exactly_the_best_match_for_its_real_locale"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12441,7 +12445,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12456,7 +12460,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12484,7 +12488,7 @@ red = [
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12514,7 +12518,7 @@ red = [
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12544,7 +12548,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12554,7 +12558,7 @@ before = """            available: language.code == "en","""
 after = """            available: language.code != "en","""
 red = ["service::spellcheck::tests::test_only_english_is_offered_as_available_in_the_built_in_fallback"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # Until 2026-09-16 this record was "the first regional variant Windows offers
@@ -12581,7 +12585,7 @@ red = [
     "service::spellcheck::tests::test_the_machines_own_region_wins_only_when_it_is_available",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12591,7 +12595,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written + 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12601,7 +12605,7 @@ before = """    Some(String::from_utf16_lossy(&buffer[..(written - 1) as usize])
 after = """    Some(String::from_utf16_lossy(&buffer[..(written * 1) as usize]))"""
 red = ["service::spellcheck::tests::test_system_language_reports_something_real_on_this_machine"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # ── spellcheck: how a source and a spelling summary describe themselves ────
@@ -12620,7 +12624,7 @@ before = """        match self {
 after = """        "xyzzy""""
 red = ["service::spellcheck::tests::test_every_source_describes_itself_honestly"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12630,7 +12634,7 @@ before = """        count if count <= NAMED => format!("""
 after = """        count if count < NAMED => format!("""
 red = ["service::spellcheck::tests::test_exactly_three_words_are_all_named_without_an_and_zero_others"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # ── spellcheck: the Speller trait, reached through a trait object ──────────
@@ -12647,7 +12651,7 @@ after = """    fn suggest(&self, word: &str, max: usize) -> Vec<String> {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12661,7 +12665,7 @@ before = """        Err(Error::Other(
 after = """        Ok(())"""
 red = ["service::spellcheck::tests::test_the_builtin_checker_refuses_to_learn_a_word_through_the_trait"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12675,7 +12679,7 @@ after = """    fn language(&self) -> &str {
     }"""
 red = ["service::spellcheck::tests::test_the_speller_trait_object_reports_its_real_language"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # ── spellcheck: SpellChecker's own methods ──────────────────────────────────
@@ -12688,7 +12692,7 @@ after = """        let _ = &self.backend;
         false"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_checks_against_the_data_it_was_given"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # Two red since 2026-09-17: `source_for_language` names the source without
@@ -12707,7 +12711,7 @@ red = [
     "service::spellcheck::tests::test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12721,7 +12725,7 @@ after = """        let alphabet = supported_languages()
             .find(|l| l.code != lang_code)"""
 red = ["service::spellcheck::tests::test_from_hunspell_data_picks_the_alphabet_for_the_language_asked_for"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12739,7 +12743,7 @@ after = """                let w = line.trim().to_lowercase();
                 }"""
 red = ["service::spellcheck::tests::test_load_dictionary_file_adds_every_nonblank_line"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12752,7 +12756,7 @@ red = [
     "service::spellcheck::tests::test_the_speller_trait_object_suggests_the_same_as_the_inherent_method",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12762,7 +12766,7 @@ before = """        base + self.custom_words.len()"""
 after = """        base - self.custom_words.len()"""
 red = ["service::spellcheck::tests::test_word_count_includes_words_added_this_session"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12776,7 +12780,7 @@ before = """    } else if cfg!(target_os = "windows")
 after = """    }"""
 red = ["service::spellcheck::tests::test_default_dict_search_paths_includes_the_windows_location"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12790,7 +12794,7 @@ after = """    pub fn dict_search_paths(&self) -> &[PathBuf] {
     }"""
 red = ["service::spellcheck::tests::test_dict_search_paths_reports_what_this_checker_actually_searched"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # The break moved with the code on 2026-09-17, when 09-09 took the search for
@@ -12821,7 +12825,7 @@ after = """    let _ = (hunspell_name, search_paths);
     None"""
 red = ["service::spellcheck::tests::test_try_load_spellbook_finds_a_dictionary_on_one_of_its_paths"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12831,7 +12835,7 @@ before = """    if s.is_empty() || s.len() <= 1 {"""
 after = """    if s.is_empty() {"""
 red = ["service::spellcheck::tests::test_a_single_letter_is_too_short_to_be_worth_checking"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 [[guard]]
@@ -12841,57 +12845,15 @@ before = """    if lower.contains('@') && lower.contains('.') {"""
 after = """    if lower.contains('@') || lower.contains('.') {"""
 red = ["service::spellcheck::tests::test_a_dot_alone_is_not_treated_as_an_email"]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
-# ── spellcheck: document locale and i18n ────────────────────────────────────
-
-[[guard]]
-name = "set_document_locale really writes the code for reading back, not a no-op"
-file = "src/service/spellcheck/mod.rs"
-before = """    if let Ok(mut locale) = DOCUMENT_LOCALE.write() {
-        *locale = Some(code.to_string());
-    }"""
-after = """    let _ = code;"""
-red = ["service::spellcheck::tests::test_set_document_locale_writes_the_code_for_reading_back"]
-tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
-]
-
-[[guard]]
-name = "loading a translations file counts every entry in the table, not zero"
-file = "src/service/spellcheck/mod.rs"
-before = """        let count = map.len();"""
-after = """        let count = 0;"""
-red = ["service::spellcheck::tests::test_load_translations_file_reads_every_entry_in_the_table"]
-tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
-]
-
-[[guard]]
-name = "set_locale really changes which language is read back, not a no-op"
-file = "src/service/spellcheck/mod.rs"
-before = """        self.active_locale = Locale::from_code(code);"""
-after = """        let _ = code;"""
-red = ["service::spellcheck::tests::test_set_locale_changes_which_language_is_read_back"]
-tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
-]
-
-[[guard]]
-name = "tf really fills in its placeholders, not a stub returning the template unfilled"
-file = "src/service/spellcheck/mod.rs"
-before = """        let mut result = template;
-        for (i, arg) in args.iter().enumerate() {
-            result = result.replace(&format!("{{{}}}", i), arg);
-        }
-        result"""
-after = """        let _ = args;
-        template"""
-red = ["service::spellcheck::tests::test_tf_fills_in_its_placeholders"]
-tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
-]
+# ── spellcheck: document locale and i18n, retired ───────────────────────────
+#
+# Four records stood here, on `set_document_locale`, `load_translations_file`,
+# `set_locale` and `tf`. They were retired on 2026-10-18 by 13.2-30 with the
+# registry they measured, which translated nothing (audit #48): the Fluent
+# catalogue in `common::catalogue` is the one translation system.
 
 # ── spellcheck: windows_speller.rs, the parts that are not COM ─────────────
 
@@ -23786,7 +23748,7 @@ red = [
     "service::spellcheck::tests::test_the_source_named_without_a_checker_is_the_one_a_checker_built_would_report",
 ]
 tests_last_seen = [
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # The same sentence, at the screen: the break puts the checker back, which is
@@ -24933,7 +24895,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/which_language_row.rs", tests = 6 },
-    { file = "src/service/spellcheck/mod.rs", tests = 64 },
+    { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
 # The settings screen's language row, put back the way it was before
