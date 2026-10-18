@@ -135,6 +135,14 @@ const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
 /// written out separately agree until the first time somebody changes one of
 /// them. They cannot drift now, because there is nothing to drift from.
 ///
+/// Corrected 2026-10-18 (13.2-31.1): the two now share [`the_scope_over`]
+/// narrowed to the named conversations, which is the scope the narrowed
+/// listing reads too; this function is the whole listing's, the same text
+/// with nothing narrowed. D-07's agreement is held by the row-and-action
+/// reading over every conversation fixture in this module, which compares
+/// the narrowed row with the whole listing's as well as the action with the
+/// row's count.
+///
 /// `?1` is the account, `?2` the folder being stood in, and `?3` is 1 when the
 /// count reaches the whole account and 0 when it reaches this folder alone.
 ///
@@ -224,7 +232,12 @@ struct AScope {
     /// one on the row's account and rescanned the messages per row, which
     /// on 16,000 rows over two accounts took 198 s against 27 ms for the
     /// message listing, measured 2026-09-20 on a release build.
-    listed: &'static str,
+    ///
+    /// A function of the listing and of where it binds its conversations
+    /// since 2026-10-18 (13.2-31.1), so a narrowed listing builds that set
+    /// from the named conversations alone rather than from the whole
+    /// folder, and still one text per scope.
+    listed: fn(Listing, &str) -> String,
     /// Where a narrowed listing binds the conversations it names, after the
     /// scope's own parameters (13.2-02).
     named_at: &'static str,
@@ -237,12 +250,21 @@ const ONE_FOLDER: AScope = AScope {
     named_at: "?4",
     reached: "account_id = ?1 AND (?3 = 1 OR id = ?2)",
     read_in_folder: "?2",
-    listed: "m.thread_id IN (
-                   SELECT thread_id FROM messages
-                   WHERE folder_id = ?2 AND deleted = 0
-                     AND thread_id IS NOT NULL AND thread_id <> ''
-               )",
+    listed: listed_in_one_folder,
 };
+
+/// The conversations one folder lists: those the folder `?2` holds a message of.
+fn listed_in_one_folder(listing: Listing, named_at: &str) -> String {
+    let off_the_index = listing.off_the_folder_index();
+    let named = listing.narrowed_to_the_named_threads("thread_id", named_at);
+    format!(
+        "m.thread_id IN (
+                   SELECT thread_id FROM messages
+                   WHERE {off_the_index}folder_id = ?2 AND deleted = 0
+                     AND thread_id IS NOT NULL AND thread_id <> ''{named}
+               )"
+    )
+}
 
 /// Every inbox: `?1` whether the reach is the whole account, applied per
 /// account, and `?2` the conversations a narrowed listing names.
@@ -273,13 +295,23 @@ const EVERY_INBOX: AScope = AScope {
     reached: "(?1 = 1 AND account_id IN (SELECT account_id FROM inboxes))
                OR id IN (SELECT id FROM inboxes)",
     read_in_folder: "(SELECT MIN(i.id) FROM inboxes i WHERE i.account_id = mf.account_id)",
-    listed: "mf.account_id || ':' || m.thread_id IN (
-                   SELECT ib.account_id || ':' || i.thread_id FROM messages i
-                   INNER JOIN inboxes ib ON i.folder_id = ib.id
-                   WHERE i.deleted = 0
-                     AND i.thread_id IS NOT NULL AND i.thread_id <> ''
-               )",
+    listed: listed_in_every_inbox,
 };
+
+/// The conversations every inbox lists: per account, those its inbox holds a
+/// message of.
+fn listed_in_every_inbox(listing: Listing, named_at: &str) -> String {
+    let off_the_index = listing.off_the_folder_index();
+    let named = listing.narrowed_to_the_named_threads("i.thread_id", named_at);
+    format!(
+        "mf.account_id || ':' || m.thread_id IN (
+                   SELECT ib.account_id || ':' || i.thread_id FROM messages i
+                   INNER JOIN inboxes ib ON {off_the_index}i.folder_id = ib.id
+                   WHERE i.deleted = 0
+                     AND i.thread_id IS NOT NULL AND i.thread_id <> ''{named}
+               )"
+    )
+}
 
 /// The scope's text, with one scope's four parts in it.
 ///
@@ -290,6 +322,10 @@ const EVERY_INBOX: AScope = AScope {
 /// after the scope alone left the read of one conversation at 620 ms. A copy
 /// carries its conversation the way the message it copies does, so narrowing
 /// `elsewhere` to the same conversations drops the same copies.
+///
+/// Since 2026-10-18 (13.2-31.1) a narrowed scope narrows `listed` too, and
+/// keeps every read of `messages` off the folder index, so all of them go
+/// through the thread index; see [`Listing::off_the_folder_index`].
 fn the_scope_over(scope: &AScope, listing: Listing) -> String {
     let AScope {
         before_reach,
@@ -300,6 +336,8 @@ fn the_scope_over(scope: &AScope, listing: Listing) -> String {
     } = scope;
     let named_elsewhere = listing.narrowed_by("f", named_at);
     let named_here = listing.narrowed_by("mf", named_at);
+    let listed = listed(listing, named_at);
+    let off_the_index = listing.off_the_folder_index();
     format!(
         "WITH {before_reach}
          reach AS (
@@ -310,7 +348,7 @@ fn the_scope_over(scope: &AScope, listing: Listing) -> String {
              SELECT DISTINCT f.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS} AS message
              FROM messages m
              INNER JOIN folders f ON m.folder_id = f.id
-             WHERE m.folder_id IN (SELECT id FROM reach)
+             WHERE {off_the_index}m.folder_id IN (SELECT id FROM reach)
                AND m.deleted = 0
                AND f.holds_all_mail = 0{named_elsewhere}
          ),
@@ -322,7 +360,7 @@ fn the_scope_over(scope: &AScope, listing: Listing) -> String {
                     COALESCE(m.internaldate, m.date) AS received_at
              FROM messages m
              INNER JOIN folders mf ON m.folder_id = mf.id
-             WHERE m.folder_id IN (SELECT id FROM reach)
+             WHERE {off_the_index}m.folder_id IN (SELECT id FROM reach)
                AND m.deleted = 0
                AND (mf.holds_all_mail = 0
                     OR mf.account_id || ':' || {WHICH_MESSAGE_THIS_ROW_IS}
@@ -335,10 +373,18 @@ fn the_scope_over(scope: &AScope, listing: Listing) -> String {
 
 /// The messages of one conversation, under the reach its row is counted with.
 ///
-/// [`conversation_scope`] and then one narrowing, so the rows this walks are the
-/// rows the row's own count counted. `?4` is the conversation. Nothing else
-/// differs from the listing, and nothing can, because the part that decides
-/// which messages exist is the same text in both.
+/// The scope narrowed to the one conversation, so the rows this walks are the
+/// rows the row's own count counted. `?4` is the conversation, as one
+/// `[account, conversation]` pair in the array [`Listing::OnlyNamed`] binds.
+/// Nothing else differs from the listing, and nothing can, because the part
+/// that decides which messages exist is the same text in both.
+///
+/// Until 2026-10-18 this read [`conversation_scope`], the whole listing's, and
+/// narrowed after it, which built every message of the account outside All
+/// Mail and every conversation of the folder before looking at the one
+/// asked about: 138 to 146 ms at the size of Pratik's Inbox, measured that
+/// day on a release build, on every press of M or Delete (13.2-31.1). It now
+/// reads the narrowed scope the catch-up reads.
 ///
 /// A conversation named by the empty string matches nothing, because `here`
 /// leaves out a row with no conversation.
@@ -347,9 +393,8 @@ pub(super) fn messages_in_one_conversation() -> String {
         "{scope}
          SELECT m.id
          FROM here m
-         WHERE m.thread_id = ?4
          ORDER BY m.received_at ASC, m.id ASC",
-        scope = conversation_scope()
+        scope = the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
     )
 }
 
@@ -438,15 +483,65 @@ impl Listing {
         match self {
             Self::Whole => String::new(),
             Self::OnlyNamed => format!(
-                "
-               AND m.thread_id IN (
-                   SELECT json_extract(value, '$[1]') FROM json_each({placeholder})
-               )
+                "{threads}
                AND ({folder}.account_id, m.thread_id) IN (
                    SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]')
                    FROM json_each({placeholder})
+               )",
+                threads = self.narrowed_to_the_named_threads("m.thread_id", placeholder)
+            ),
+        }
+    }
+
+    /// The line that narrows `thread` to the named conversations by their
+    /// identifier alone, the condition `idx_messages_thread` serves; nothing
+    /// for the whole listing.
+    ///
+    /// Alone where a part's account is already fixed or is matched again
+    /// outside it: one folder's `listed` is one account's, and every
+    /// inbox's `listed` is a set of account and conversation the row's own
+    /// pair is looked up in.
+    fn narrowed_to_the_named_threads(self, thread: &str, placeholder: &str) -> String {
+        match self {
+            Self::Whole => String::new(),
+            Self::OnlyNamed => format!(
+                "
+               AND {thread} IN (
+                   SELECT json_extract(value, '$[1]') FROM json_each({placeholder})
                )"
             ),
+        }
+    }
+
+    /// What stands before each folder term of a narrowed scope: SQLite's
+    /// unary plus, which keeps a term off every index without naming one;
+    /// nothing for the whole listing, which reads a whole folder and should
+    /// read it through the folder index.
+    ///
+    /// A narrowed read wants one conversation's rows, and only the thread
+    /// index finds them without reading the folder. The planner chooses
+    /// between the two indexes by the store's statistics, and a store may
+    /// hold none (a fresh one, or one the program wrote in the same
+    /// connection), a sample, or misleading ones; Pratik's could not be read
+    /// to know. Without statistics it searched `messages` by folder, so the
+    /// choice is taken from it here. The plus rather than `INDEXED BY`,
+    /// because SQLite's own page on `INDEXED BY` says it "is not intended for
+    /// use in tuning the performance of a query" and that "careful placement
+    /// of unary + operators is a better method"
+    /// (sqlite.org/lang_indexedby.html, read 2026-10-15). The plus drops type
+    /// affinity; both sides of each term are integer folder ids.
+    ///
+    /// Measured 2026-10-15 at the size of Pratik's Inbox on a release build,
+    /// with the named reads narrowed: the catch-up read 0.36 to 0.53 ms with
+    /// the plus, 272 to 296 ms without it on a store with no statistics. On
+    /// 2026-10-18 the whole store work of M on a conversation went from 465
+    /// to 484 ms to 15 to 21 ms, the catch-up read from about 300 ms to
+    /// under half a millisecond (13.2-31.1, ledger 837; the rows are on
+    /// `docs/development/measurements.md`).
+    fn off_the_folder_index(self) -> &'static str {
+        match self {
+            Self::Whole => "",
+            Self::OnlyNamed => "+",
         }
     }
 }
@@ -2715,13 +2810,17 @@ impl MessageCache {
             .prepare_cached(&query)
             .map_err(|e| Error::Other(format!("Failed to prepare the conversation read: {e}")))?;
         let counts_the_account = matches!(reach, AConversationReaches::TheWholeAccount);
+        let this_one = [WhoseConversation {
+            account_id: account_id.to_string(),
+            thread_id: thread_id.to_string(),
+        }];
         let rows = stmt
             .query_map(
                 params![
                     account_id,
                     folder_id,
                     i64::from(counts_the_account),
-                    thread_id
+                    as_bound_pairs(&this_one)?
                 ],
                 |row| row.get::<_, i64>(0),
             )
@@ -7114,14 +7213,25 @@ mod tests {
         // before a deletion to be the number of messages that go, and the only
         // way to be sure is for both to decide which messages exist with the
         // same text.
-        let scope = super::conversation_scope();
+        //
+        // Since 2026-10-18 (13.2-31.1) the shared text is the scope narrowed
+        // to the named conversations: the narrowed listing a change made
+        // here reads and the action's read both begin with it, and the
+        // whole listing with the same scope with nothing narrowed.
+        let scope = super::the_scope_over(&super::ONE_FOLDER, super::Listing::OnlyNamed);
         let listing =
-            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::Whole);
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::OnlyNamed);
         let of_one = super::messages_in_one_conversation();
         assert!(
             built_on_the_same_scope(&scope, [listing.as_str(), of_one.as_str()]),
             "one of the two conversation queries no longer begins with the shared scope.\n\
              scope:\n{scope}\n\nlisting:\n{listing}\n\nof one:\n{of_one}"
+        );
+        let whole =
+            super::conversations_query(super::NEWEST_CONVERSATION_FIRST, super::Listing::Whole);
+        assert!(
+            whole.starts_with(&super::conversation_scope()),
+            "the whole listing no longer begins with the whole scope:\n{whole}"
         );
     }
 

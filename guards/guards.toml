@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 817 records have arrived since and have not been through it.
+# 820 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -2096,7 +2096,7 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -3055,7 +3055,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -3082,7 +3082,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -3100,7 +3100,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # The coupling rather than the rule. The importer and the sync both have to ask
@@ -11671,7 +11671,7 @@ after = """                        !held.name.trim().is_empty()
                             || held.address.trim().eq_ignore_ascii_case(looking_for)"""
 red = ["data::message_cache::tests::test_the_recorded_name_carried_over_has_to_match_the_address_and_have_one"]
 tests_last_seen = [
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -14101,7 +14101,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -14129,7 +14129,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 61 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -15225,7 +15225,7 @@ red = [
     "data::message_cache::searching::finding_things::test_the_backfill_and_the_live_writer_agree_about_a_body_row_holding_no_text",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -15782,7 +15782,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -15852,7 +15852,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -16382,7 +16382,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 51 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # ── Nothing remembers that the migration has been done ─────────────────────
@@ -16588,6 +16588,16 @@ tests_last_seen = [
 # failed. The reading, the agreement, and a delete on the archived-mail fixture,
 # which is the one that says what a disagreement costs somebody: the question
 # names two messages and the deletion takes three.
+#
+# Rewritten 2026-10-18 by 13.2-31.1, when the action's read moved onto the
+# scope narrowed to its one conversation and `?4` came to hold that
+# conversation as one bound `[account, conversation]` pair. The break is the
+# same mistake in the new shape, the hand-written query narrowing by the
+# pair's conversation. Measured by hand the same day: the whole library 9,266
+# passed and 4 failed, the three above and the plan reading in
+# `storage_shape`, since the hand-written query searches by folder; the two
+# targets that read conversations, `a_change_made_here_reaches_the_conversation_rows`
+# and `a_conversation_is_gmails_own_and_a_late_parent_joins_it`, passed.
 
 [[guard]]
 name = "the two conversation queries decide which messages exist with one text"
@@ -16597,9 +16607,8 @@ before = """pub(super) fn messages_in_one_conversation() -> String {
         "{scope}
          SELECT m.id
          FROM here m
-         WHERE m.thread_id = ?4
          ORDER BY m.received_at ASC, m.id ASC",
-        scope = conversation_scope()
+        scope = the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
     )
 }"""
 after = """pub(super) fn messages_in_one_conversation() -> String {
@@ -16612,7 +16621,7 @@ after = """pub(super) fn messages_in_one_conversation() -> String {
          FROM messages m
          WHERE m.folder_id IN (SELECT id FROM reach)
            AND m.deleted = 0
-           AND m.thread_id = ?4
+           AND m.thread_id IN (SELECT json_extract(value, '$[1]') FROM json_each(?4))
          ORDER BY COALESCE(m.internaldate, m.date) ASC, m.id ASC"
         .to_string()
 }"""
@@ -16620,9 +16629,11 @@ red = [
     "data::message_cache::messages::tests::test_a_delete_reaches_the_message_archived_with_no_label",
     "data::message_cache::messages::tests::test_both_conversation_queries_are_built_on_one_scope",
     "data::message_cache::messages::tests::test_the_row_and_the_action_agree_over_every_conversation_fixture_here",
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # ── A message with no identity of its own is only ever itself ───────────────
@@ -23079,7 +23090,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/held_alerts.rs", tests = 5 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # The due window answers "done", not "the other way". A writer that set done
@@ -37314,7 +37325,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # Due turned round, so what went in recently is emptied and what has been
@@ -38693,7 +38704,7 @@ red = [
     "data::message_cache::taken_off_this_computer::tests::test_every_connection_to_the_store_overwrites_what_a_write_frees",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/mod.rs", tests = 23 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
     { file = "src/data/message_cache/taken_off_this_computer.rs", tests = 15 },
 ]
 
@@ -39831,6 +39842,18 @@ tests_last_seen = [
 # narrowing moved into the scope, to narrow `elsewhere` and `here` as well,
 # because the read of one conversation took 620 ms at the size of Pratik's
 # inbox; measured again.
+#
+# Measured again by hand on 2026-10-18 by 13.2-31.1, after the action's read
+# moved onto the same narrowed scope: this target reddens the same nine. The
+# break now reddens six cases in the library as well, which this record does
+# not name because it runs one target: the widened row-and-action reading,
+# `test_the_row_and_the_action_agree_over_every_conversation_fixture_here`,
+# and five more in `data::message_cache::messages::tests` that read the
+# action's set (a delete of archived mail, a conversation coming back whole,
+# a message already deleted, the action reaching what its row counted, and
+# the two reaches). That half is held by those cases on every commit that
+# touches `messages.rs`; the whole library under the break: 9,264 passed and
+# 6 failed.
 [[guard]]
 name = "a change made here reads only the conversations it touched"
 file = "src/data/message_cache/messages.rs"
@@ -39851,6 +39874,82 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 20 },
+]
+
+# The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
+# With no statistics, which is how a fresh store and a store read in the
+# connection that wrote it stand, SQLite then searches `messages` by folder
+# for one conversation's rows, and at the size of Pratik's Inbox the press of
+# M took 465 to 484 ms where it now takes 15 to 21 ms. The rows are the same
+# either way, so only the plan reading sees it.
+#
+# Measured by hand on 2026-10-18: the whole library 9,269 passed and 1
+# failed, the reading; the two targets that read conversations,
+# `a_change_made_here_reaches_the_conversation_rows` and
+# `a_conversation_is_gmails_own_and_a_late_parent_joins_it`, passed.
+[[guard]]
+name = "a narrowed read of one conversation keeps off the folder index"
+file = "src/data/message_cache/messages.rs"
+before = '''            Self::OnlyNamed => "+",'''
+after = '''            Self::OnlyNamed => "",'''
+red = [
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
+]
+
+# One folder's `listed` built from the whole folder again while its folder
+# term keeps the plus (13.2-31.1): with neither the folder index nor a
+# condition on the conversation, SQLite reads the set with `SCAN messages`,
+# every row of the account's mail, on every catch-up. The rows are the same,
+# so only the plan reading sees it.
+#
+# Measured by hand on 2026-10-18: the whole library 9,269 passed and 1
+# failed, the reading, whose plan then held `SCAN messages`; the two targets
+# that read conversations passed.
+[[guard]]
+name = "a narrowed listing asks the folder for the named conversations only"
+file = "src/data/message_cache/messages.rs"
+before = '''    let named = listing.narrowed_to_the_named_threads("thread_id", named_at);'''
+after = '''    let named = Listing::Whole.narrowed_to_the_named_threads("thread_id", named_at);'''
+red = [
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
+]
+
+# The action's read of one conversation taken back to the whole scope and
+# narrowed after it, as it stood until 13.2-31.1: the same messages, built
+# from every message of the account and every conversation of the folder
+# first, 138 to 146 ms of every press of M or Delete at the size of Pratik's
+# Inbox on 2026-10-18.
+#
+# Measured by hand on 2026-10-18: the whole library 9,268 passed and 2
+# failed, the reading and the scope reading; the two targets that read
+# conversations passed.
+[[guard]]
+name = "the action's read of one conversation reads the narrowed scope"
+file = "src/data/message_cache/messages.rs"
+before = '''         FROM here m
+         ORDER BY m.received_at ASC, m.id ASC",
+        scope = the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)'''
+after = '''         FROM here m
+         WHERE m.thread_id IN (
+             SELECT json_extract(value, '$[1]') FROM json_each(?4)
+         )
+         ORDER BY m.received_at ASC, m.id ASC",
+        scope = conversation_scope()'''
+red = [
+    "data::message_cache::messages::tests::test_both_conversation_queries_are_built_on_one_scope",
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # The catch-up taken out of Mark as Read's do-half: the mark lands in the
