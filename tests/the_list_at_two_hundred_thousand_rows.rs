@@ -12,11 +12,12 @@
 //! # What is timed, and what is not
 //!
 //! **The listing** is no longer timed, since 2026-10-18 (13.2-31). Its two
-//! rows timed `MessageCache::get_messages_for_folder`, unsorted, and this
-//! header called it the read the list takes when a folder opens. No user path
+//! rows timed an unsorted folder read on `MessageCache`, and this header
+//! called that the read the list takes when a folder opens. No user path
 //! called it, and 13.2-31 deleted it on that date. The read the window does
 //! take is timed by the list's own read path below. The listing rows already
-//! on `docs/development/measurements.md` stay, as measurements with their date.
+//! on `docs/development/measurements.md` stay, as measurements with their
+//! date, and name the read they timed.
 //!
 //! **The filter** is `MessageCache::search_messages`, the query the search
 //! box runs, at the limit the search box passes. The sample mailbox never
@@ -45,11 +46,11 @@
 //! read, which is what the window's private `apply_threading` wraps, so the
 //! harness calls the function it wraps; and the labels read the window makes
 //! over those rows. None of the rows above times any of the three. Until
-//! 2026-10-18 the listing rows timed `get_messages_for_folder`, unsorted,
-//! which the window never called; those rows are no longer printed, and these
-//! are the ones that time a folder opening. Where a step refuses rather than answers, its row says `refused`
-//! for a value and carries the error's text in its conditions, because a
-//! query whose parameter count is the row count is expected to hit SQLite's
+//! 2026-10-18 the listing rows timed the unsorted read, which the window never
+//! called; those rows are no longer printed, and these are the ones that time
+//! a folder opening. Where a step refuses rather than answers, its row says
+//! `refused` for a value and carries the error's text in its conditions,
+//! because a query whose parameter count is the row count is expected to hit SQLite's
 //! variable limit somewhere between the tester's folder and 200,000 rows, and
 //! a prediction is not a measurement. The same steps are taken at the tester's
 //! size, 12,872, as a second series with the same shape.
