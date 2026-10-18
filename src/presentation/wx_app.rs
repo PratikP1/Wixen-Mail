@@ -14691,7 +14691,11 @@ fn the_folders_in_the_tree(
 /// What that costs, said plainly because it is a real trade: every one of the
 /// eleven places that redraw the tree now pays it, and some of them are on a
 /// timer.
-fn folder_tree_updates(
+///
+/// Public since 13.2-31.2 (2026-10-18), so that
+/// `tests/the_folder_tree_counts_follow_a_change_made_here.rs` can time the
+/// rewording that reads it after every change made here.
+pub fn folder_tree_updates(
     cache: &MessageCache,
     account_id: &str,
 ) -> crate::common::Result<Vec<UIUpdate>> {
