@@ -1424,6 +1424,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   signature, which Wixen Mail cannot check, so nothing here says whether it is genuine." was
   said above every PGP-signed message. The signature is checked now, and one of four verdicts
   takes its place (see Added).
+- **"Focus moved to Folders" at start-up (2026-10-18).** The first thing a session said was
+  "Wixen Mail is ready. Focus moved to Folders". The second sentence came from a name the
+  program had stored, not from where Windows had put focus, so it could be wrong and nothing
+  would notice. Start-up now says "Wixen Mail is ready" alone, and your screen reader says
+  where focus is, as it does for any window. The code behind the line was a model of the window
+  that no screen reader could see, and it has gone with it.
+- **The copy of everything the program said aloud (2026-10-18).** Every line handed to your
+  screen reader was also kept in memory until the program closed, including the text of every
+  message read aloud. Only the program's tests ever read that copy. Now the program keeps the
+  last line alone, and before its window opens, the few lines waiting for it.
 
 ### Fixed
 

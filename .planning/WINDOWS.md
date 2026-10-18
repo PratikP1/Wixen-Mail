@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 764
+open_count: 765
 waived_count: 0
 fixed_count: 132
-total_count: 896
-last_updated: 2026-10-18T13:00:00.000Z
+total_count: 897
+last_updated: 2026-10-18T16:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -911,6 +911,7 @@ last_updated: 2026-10-18T13:00:00.000Z
 | 894 | 13.2 | todo | scripts/check.sh |  | Audit finding #45 of 2026-10-14: a documents-only commit forced a rebuild and ran clippy, about 30 seconds of the 83 and 86 two documents commits took in 12-04 and 12-05, though it changes no Rust. Clippy could only find Rust left unstaged, which 13.2-25 refuses before any stage, or a lint a new compiler brought, which CI's Clippy job and the phase's full gate catch. CLAUDE.md recorded the rule as Pratik's, so 13.2-26.1 asked him first | fixed | Closed on 2026-10-18 by 13.2-26.1 (fe517abb), on Pratik's answer of 2026-10-14, "yes to both": in the docs_only mode check.sh skips the touch of src/lib.rs and the clippy stage, and keeps rustfmt, the refusal and the targets that read documents. Held by four cases in scripts/check.test.sh against a stand-in cargo; CLAUDE.md's three sentences naming clippy for a documents commit or merge are dated | 2026-10-18T10:55:00.000Z | 2026-10-18T10:55:00.000Z |
 | 895 | 13.2 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | Audit finding #43, closed on the tree's side by 13.2-27: an uninstall for all users now names the account it cleared through GetUserNameString and tells the person that any other account keeps its unencrypted mail folder and its Credential Manager entries, and how to remove them. Read only as text and compiled with ISCC 6.7.3; never run. For the tester: install for all users, use Wixen Mail from a second Windows account, uninstall from the first, hear the message under NVDA, then sign in as the second account and check %LOCALAPPDATA%\wixen-mail and Credential Manager's wixen-mail entries are there as the message says | open |  | 2026-10-18T13:00:00.000Z |  |
 | 896 | 13.2 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | 13.2-27 replaced the uninstall-time ExecAsOriginalUser, which Inno refuses while uninstalling and which stopped every uninstall since 2026-08-27, with Exec, so remove-scope and unregister-classes now run as the uninstaller. Shown on a throwaway setup built with ISCC 6.7.3, never on a real Wixen Mail install. For the tester, on a per-user install and on an all-users install with the Windows Search task chosen: uninstall, confirm it finishes, and confirm Indexing Options no longer lists the Wixen Mail location for the account that uninstalled | open |  | 2026-10-18T13:00:00.000Z |  |
+| 897 | 13.2 | unrun-verify | src/presentation/accessibility.rs |  | Audit findings #37 and #47, fixed on the tree's side by 13.2-28: the model of the window that reached neither UI Automation nor MSAA is gone, and with it the start-up line "Focus moved to Folders", said from a stored name. Start-up now releases "Wixen Mail is ready" alone, held for the window and handed over when it exists. Held by the start-up case reading the held lines; nobody has heard it. For the tester, on a build holding 13.2-28's merge: start Wixen Mail under NVDA and hear that it says Wixen Mail is ready, with no line about focus beyond what NVDA itself says when the window takes focus | open |  | 2026-10-18T16:00:00.000Z |  |
 
 ````json
 [
@@ -11664,6 +11665,18 @@ last_updated: 2026-10-18T13:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-18T13:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 897,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/presentation/accessibility.rs",
+    "line": null,
+    "description": "Audit findings #37 and #47, fixed on the tree's side by 13.2-28: the model of the window that reached neither UI Automation nor MSAA is gone, and with it the start-up line \"Focus moved to Folders\", said from a stored name. Start-up now releases \"Wixen Mail is ready\" alone, held for the window and handed over when it exists. Held by the start-up case reading the held lines; nobody has heard it. For the tester, on a build holding 13.2-28's merge: start Wixen Mail under NVDA and hear that it says Wixen Mail is ready, with no line about focus beyond what NVDA itself says when the window takes focus",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-18T16:00:00.000Z",
     "resolved_at": null
   }
 ]

@@ -10,14 +10,12 @@
 //! foreground window. That is a last resort, not a way to announce: it cannot
 //! carry text we chose.
 //!
-//! On non-Windows platforms the bridge is a no-op stub and only stores events
-//! for diagnostic / test use.
+//! On non-Windows platforms the bridge is a no-op stub: it keeps the last line
+//! released and the lines waiting for a window, and says nothing.
 
 use crate::common::Result;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
-
-use super::automation::AutomationEvent;
 
 /// How much the screen reader should protect an announcement from being
 /// dropped, mirroring the announcement queue's own priorities.
@@ -530,7 +528,11 @@ pub(crate) fn handed_over_together(lines: &[Line]) -> Option<Line> {
 /// Bridge to Windows UI Automation for screen readers
 pub struct ScreenReaderBridge {
     last_announcement: Mutex<Option<String>>,
-    event_log: Mutex<Vec<AutomationEvent>>,
+    /// Every line released, oldest first, in a test build alone. A shipped
+    /// build keeps no such list: it would hold every message read aloud for
+    /// as long as the program runs.
+    #[cfg(test)]
+    released: Mutex<Vec<String>>,
     /// Native handle of the control used to carry announcements, or zero.
     live_region: AtomicIsize,
     /// Whether a window has been offered at all, which zero cannot say.
@@ -711,35 +713,33 @@ impl ScreenReaderBridge {
             })?;
             *last = Some(text.to_string());
         }
-        // Logged as asked for whether or not it can go anywhere yet, so the
-        // record of what the code tried to say stays complete.
-        self.push_event(AutomationEvent::LiveRegion(
-            "global".to_string(),
-            text.to_string(),
-        ))?;
+        // Kept for the tests whether or not it can go anywhere yet. A shipped
+        // build keeps nothing beyond the last line; the log's "Speaking"
+        // lines, message text by its length, are its record of what was said.
+        #[cfg(test)]
+        self.remember_released(text)?;
 
         self.deliver(text, urgency, topic)
     }
 
-    /// Notify native bridge of automation event.
-    pub fn notify_event(&self, event: AutomationEvent) -> Result<()> {
-        self.push_event(event)
-    }
-
-    fn push_event(&self, event: AutomationEvent) -> Result<()> {
-        let mut log = self.event_log.lock().map_err(|_| {
-            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
+    #[cfg(test)]
+    fn remember_released(&self, text: &str) -> Result<()> {
+        let mut released = self.released.lock().map_err(|_| {
+            crate::common::Error::Other("Screen reader released lines lock poisoned".to_string())
         })?;
-        log.push(event);
+        released.push(text.to_string());
         Ok(())
     }
 
-    /// Return event log (for diagnostics/testing).
-    pub fn events(&self) -> Result<Vec<AutomationEvent>> {
-        let log = self.event_log.lock().map_err(|_| {
-            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
-        })?;
-        Ok(log.clone())
+    /// Every line released, oldest first, for the tests of this layer and the
+    /// one above, which have no other way to see what was said. Says what the
+    /// code asked for, not that anybody heard it.
+    #[cfg(test)]
+    pub(crate) fn released(&self) -> Vec<String> {
+        match self.released.lock() {
+            Ok(released) => released.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Return last announced text (for diagnostics/testing)
@@ -756,7 +756,8 @@ impl Default for ScreenReaderBridge {
     fn default() -> Self {
         Self {
             last_announcement: Mutex::new(None),
-            event_log: Mutex::new(Vec::new()),
+            #[cfg(test)]
+            released: Mutex::new(Vec::new()),
             live_region: AtomicIsize::new(0),
             registered: AtomicBool::new(false),
             held: Mutex::new(Vec::new()),
@@ -958,7 +959,91 @@ pub(crate) mod tests {
             bridge.last_announcement().unwrap().as_deref(),
             Some("Hello")
         );
-        assert!(!bridge.events().unwrap().is_empty());
+        assert_eq!(bridge.released(), vec!["Hello"]);
+    }
+
+    /// The text of one item in `ships`, from `signature` to the first line
+    /// closing at `indent`, which is how every item in this file is written.
+    fn the_body_of(ships: &str, signature: &str, indent: &str) -> String {
+        let from = ships
+            .find(signature)
+            .unwrap_or_else(|| panic!("this file should define {signature}"));
+        let rest = &ships[from..];
+        let closing = format!("\n{indent}}}");
+        let to = rest
+            .find(&closing)
+            .map(|at| at + closing.len())
+            .unwrap_or(rest.len());
+        rest[..to].to_string()
+    }
+
+    /// What a release build of `source` keeps of what was said: the bridge's
+    /// fields holding lines of text, and the statements in `announce_with`
+    /// that hand the text to anything but the last announcement and delivery.
+    fn copies_of_what_was_said(source: &str) -> Vec<String> {
+        let ships = crate::common::what_ships::what_ships(source);
+        let fields = the_body_of(&ships, "pub struct ScreenReaderBridge {", "");
+        let announcing = the_body_of(&ships, "pub fn announce_with(", "    ");
+        let stored_fields = fields
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.contains("Vec<String>"));
+        let copying_statements = announcing
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.contains("text"))
+            .filter(|line| {
+                !line.starts_with("*last = Some(text.to_string());")
+                    && !line.starts_with("self.deliver(text,")
+            });
+        stored_fields
+            .chain(copying_statements)
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_release_build_keeps_no_copy_of_what_it_said() {
+        // Every line released was kept for the life of the process, message
+        // bodies read aloud included, and only tests read the list (audit
+        // #47). A shipped build keeps the last line and hands it on; the list
+        // exists in a test build alone. Read from the half a release build
+        // compiles, so this test's own mention of the list cannot satisfy it.
+        let copies = copies_of_what_was_said(include_str!("screen_reader.rs"));
+        assert!(
+            copies.is_empty(),
+            "a release build keeps a copy of every line it said: {copies:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_of_what_ships_sees_a_copy_kept_and_not_one_a_test_build_keeps() {
+        // The reading above, shown that it can see the thing it forbids, and
+        // that it leaves alone a copy only a test build makes.
+        let struct_and_method = |push: &str| {
+            format!(
+                "pub struct ScreenReaderBridge {{\n    held: Mutex<Vec<Line>>,\n}}\n\
+                 impl ScreenReaderBridge {{\n    \
+                 pub fn announce_with(&self, text: &str, urgency: Urgency, topic: &str) -> Result<()> {{\n\
+                 {push}        self.deliver(text, urgency, topic)\n    }}\n}}\n"
+            )
+        };
+        let shipped = struct_and_method("        self.said.push(text.to_string());\n");
+        assert_eq!(
+            copies_of_what_was_said(&shipped),
+            vec!["self.said.push(text.to_string());"]
+        );
+        let tested_only =
+            struct_and_method("        #[cfg(test)]\n        self.said.push(text.to_string());\n");
+        assert_eq!(copies_of_what_was_said(&tested_only), Vec::<String>::new());
+        let a_field = "pub struct ScreenReaderBridge {\n    said: Mutex<Vec<String>>,\n}\n\
+                       pub fn announce_with(&self, text: &str) -> Result<()> {\n        \
+                       self.deliver(text, Urgency::Routine, \"\")\n    }\n";
+        assert_eq!(
+            copies_of_what_was_said(a_field),
+            vec!["said: Mutex<Vec<String>>,"]
+        );
     }
 
     /// Registering the window is the one wiring step everything else depends

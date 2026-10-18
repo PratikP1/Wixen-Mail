@@ -1,13 +1,13 @@
-//! Accessibility layer for screen reader support
+//! What the program says, shows and sounds for somebody who cannot see it.
 //!
-//! Provides interfaces for screen readers (NVDA, JAWS, Narrator) and
-//! keyboard navigation support.
+//! Announcements are queued, ranked and released to the screen reader bridge,
+//! events reach speech, braille, sound and the status line by the person's
+//! settings, and accessible names are given to controls. The accessibility
+//! tree itself is the one Windows and wxWidgets build from the real controls;
+//! nothing here keeps a model of it.
 
 pub mod announcements;
-pub mod automation;
 pub mod feedback;
-pub mod focus;
-pub mod keyboard;
 pub mod names;
 pub mod platform_bridge;
 pub mod screen_reader;
@@ -19,10 +19,7 @@ use crate::common::Result;
 /// Main accessibility manager
 pub struct Accessibility {
     screen_reader: screen_reader::ScreenReaderBridge,
-    keyboard: keyboard::KeyboardHandler,
-    focus: focus::FocusManager,
     announcements: announcements::AnnouncementQueue,
-    automation: automation::AutomationStore,
     /// Which channels each event reaches, and the thing that plays the tones.
     feedback: std::sync::Mutex<feedback::FeedbackSettings>,
     earcons: feedback::EarconPlayer,
@@ -149,10 +146,7 @@ impl Accessibility {
     pub fn new() -> Result<Self> {
         Ok(Self {
             screen_reader: screen_reader::ScreenReaderBridge::new()?,
-            keyboard: keyboard::KeyboardHandler::new()?,
-            focus: focus::FocusManager::new()?,
             announcements: announcements::AnnouncementQueue::new()?,
-            automation: automation::AutomationStore::new()?,
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
@@ -164,75 +158,12 @@ impl Accessibility {
         })
     }
 
-    /// Initialize accessibility features
+    /// Say that the program is ready, the first line of a session.
+    ///
+    /// Held by the bridge until the main window exists to carry it. Nothing
+    /// is said here about where focus is: only Windows knows that, and the
+    /// screen reader already says it when the window takes focus.
     pub fn initialize(&self) -> Result<()> {
-        self.keyboard
-            .register_shortcut("Ctrl+N", "compose_new_message")?;
-        // Not "search_messages" any more: Find searches whichever module is
-        // showing. Corrected rather than left, even though nothing reads this
-        // map back today, because a wrong fact sitting in the tree is what
-        // somebody wiring it up later would believe.
-        self.keyboard
-            .register_shortcut("Ctrl+F", "search_whatever_is_showing")?;
-        self.keyboard.register_shortcut("F1", "open_help")?;
-        // Module navigation shortcuts
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+1", "switch_to_mail")?;
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+2", "switch_to_contacts")?;
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+3", "switch_to_calendar")?;
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+4", "switch_to_reminders")?;
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+5", "switch_to_tasks")?;
-        self.keyboard
-            .register_shortcut("Ctrl+Shift+6", "switch_to_notes")?;
-        self.register_node(automation::AutomationNode {
-            id: "main_window".to_string(),
-            parent_id: None,
-            role: automation::AutomationRole::Window,
-            name: "Wixen Mail".to_string(),
-            description: Some("Primary application window".to_string()),
-            state: automation::AutomationState {
-                enabled: true,
-                ..automation::AutomationState::default()
-            },
-        })?;
-        self.register_node(automation::AutomationNode {
-            id: "folder_tree".to_string(),
-            parent_id: Some("main_window".to_string()),
-            role: automation::AutomationRole::List,
-            name: "Folders".to_string(),
-            description: Some("Folder navigation".to_string()),
-            state: automation::AutomationState {
-                enabled: true,
-                ..automation::AutomationState::default()
-            },
-        })?;
-        // Register module panel nodes
-        let modules = [
-            ("module_mail", "Mail"),
-            ("module_contacts", "Contacts"),
-            ("module_calendar", "Calendar"),
-            ("module_reminders", "Reminders"),
-            ("module_tasks", "Tasks"),
-            ("module_notes", "Notes"),
-        ];
-        for (id, name) in modules {
-            self.register_node(automation::AutomationNode {
-                id: id.to_string(),
-                parent_id: Some("main_window".to_string()),
-                role: automation::AutomationRole::Pane,
-                name: name.to_string(),
-                description: Some(format!("{} module panel", name)),
-                state: automation::AutomationState {
-                    enabled: true,
-                    ..automation::AutomationState::default()
-                },
-            })?;
-        }
-        self.set_focus("folder_tree")?;
         // Said out loud, so it is a sentence somebody would say. "Accessibility
         // initialized" told the person hearing it nothing about their mail.
         self.announcements
@@ -241,53 +172,6 @@ impl Accessibility {
                 announcements::Priority::Normal,
             ))?;
         self.flush_announcements()?;
-        Ok(())
-    }
-
-    /// Register or update automation node.
-    fn register_node(&self, node: automation::AutomationNode) -> Result<()> {
-        let node_id = node.id.clone();
-        self.automation.upsert_node(node)?;
-        self.screen_reader
-            .notify_event(automation::AutomationEvent::NodeAdded(node_id))?;
-        Ok(())
-    }
-
-    /// Update focus in automation framework and bridge.
-    pub fn set_focus(&self, element_id: &str) -> Result<()> {
-        self.focus.set_focus(element_id)?;
-        self.screen_reader
-            .notify_event(automation::AutomationEvent::FocusChanged(
-                element_id.to_string(),
-            ))?;
-        let focus_label = self
-            .automation
-            .get_node(element_id)?
-            .map(|node| node.name)
-            .unwrap_or_else(|| element_id.to_string());
-        // Focus moves constantly while navigating, so they share a topic:
-        // the latest one supersedes the rest instead of queueing behind them.
-        self.announcements.push(
-            announcements::Announcement::interface(
-                format!("Focus moved to {}", focus_label),
-                announcements::Priority::Low,
-            )
-            .with_topic("focus"),
-        )?;
-        Ok(())
-    }
-
-    /// Update state of existing node.
-    pub fn update_node_state(
-        &self,
-        node_id: &str,
-        state: automation::AutomationState,
-    ) -> Result<()> {
-        self.automation.update_state(node_id, state)?;
-        self.screen_reader
-            .notify_event(automation::AutomationEvent::NodeUpdated(
-                node_id.to_string(),
-            ))?;
         Ok(())
     }
 
@@ -540,16 +424,6 @@ impl Accessibility {
         self.announcements.is_muted()
     }
 
-    /// Emit live region update.
-    pub fn live_region_update(&self, region_id: &str, text: &str) -> Result<()> {
-        self.screen_reader
-            .notify_event(automation::AutomationEvent::LiveRegion(
-                region_id.to_string(),
-                text.to_string(),
-            ))?;
-        self.screen_reader.announce(text)
-    }
-
     /// Speak whatever the queue will release now as one line, most important
     /// first.
     ///
@@ -606,11 +480,6 @@ impl Accessibility {
         answer
     }
 
-    /// Diagnostic snapshot of automation tree.
-    pub fn automation_snapshot(&self) -> Result<Vec<automation::AutomationNode>> {
-        self.automation.snapshot()
-    }
-
     /// The last sentence released to the screen reader bridge, for a test in
     /// another module that has no other way to see what was said.
     ///
@@ -625,10 +494,7 @@ impl Default for Accessibility {
     fn default() -> Self {
         Self::new().unwrap_or(Self {
             screen_reader: screen_reader::ScreenReaderBridge::default(),
-            keyboard: keyboard::KeyboardHandler::default(),
-            focus: focus::FocusManager::default(),
             announcements: announcements::AnnouncementQueue::default(),
-            automation: automation::AutomationStore::default(),
             feedback: std::sync::Mutex::new(feedback::FeedbackSettings::default()),
             earcons: feedback::EarconPlayer::new(),
             scheme: std::sync::Mutex::new(sound_scheme::SoundScheme::generated()),
@@ -651,15 +517,7 @@ mod tests {
     /// anything: only a run with a real screen reader is that, and no
     /// assertion below should be read as claiming otherwise.
     fn lines_released(a11y: &Accessibility) -> Vec<String> {
-        a11y.screen_reader
-            .events()
-            .expect("events")
-            .into_iter()
-            .filter_map(|event| match event {
-                automation::AutomationEvent::LiveRegion(_, text) => Some(text),
-                _ => None,
-            })
-            .collect()
+        a11y.screen_reader.released()
     }
 
     #[test]
@@ -914,22 +772,22 @@ mod tests {
         let a11y = Accessibility::new().expect("accessibility");
         a11y.initialize().expect("initialize");
 
-        // One line since 13.2-22: the two are released by one flush, and so
-        // joined there rather than at the handover.
+        // Read sentence by sentence, because lines released by one flush are
+        // joined there into one (13.2-22).
         let waiting = a11y.screen_reader.held();
-        let says = |sentence: &str| {
-            waiting
-                .iter()
-                .any(|line| line.split(". ").any(|said| said == sentence))
-        };
+        let sentences = || waiting.iter().flat_map(|line| line.split(". "));
         assert!(
-            says("Wixen Mail is ready"),
+            sentences().any(|said| said == "Wixen Mail is ready"),
             "the startup line was not waiting for a window: {:?}",
             waiting
         );
+        // Start-up used to say "Focus moved to Folders" here. That line came
+        // from a name stored in a model of the window that reached neither UI
+        // Automation nor MSAA, not from where Windows put focus, so it could
+        // say something untrue and nothing would notice (audit #37 and #47).
         assert!(
-            says("Focus moved to Folders"),
-            "where the cursor landed was not waiting for a window: {:?}",
+            !sentences().any(|said| said.starts_with("Focus moved to")),
+            "start-up said where focus went from a stored name, not from Windows: {:?}",
             waiting
         );
 
@@ -1086,120 +944,13 @@ mod tests {
     }
 
     #[test]
-    fn test_live_region_update_notifies_the_tree_and_announces_the_text() {
-        let a11y = Accessibility::new().expect("accessibility");
-        a11y.live_region_update("message-count", "12 unread")
-            .expect("live_region_update");
-
-        assert_eq!(
-            a11y.screen_reader.last_announcement().unwrap().as_deref(),
-            Some("12 unread")
-        );
-        assert!(
-            a11y.screen_reader
-                .events()
-                .unwrap()
-                .iter()
-                .any(|event| matches!(
-                    event,
-                    automation::AutomationEvent::LiveRegion(region, text)
-                        if region == "message-count" && text == "12 unread"
-                )),
-            "no LiveRegion automation event was raised"
-        );
-    }
-
-    #[test]
     fn test_accessibility_creation() {
         let a11y = Accessibility::new();
         assert!(a11y.is_ok());
     }
 
     #[test]
-    fn test_every_node_registered_at_startup_is_enabled() {
-        // The main window, the folder tree and every module panel exist for as
-        // long as the application runs, so a screen reader asking whether one
-        // can be interacted with should always hear yes. `AutomationState`
-        // defaults every field to false, `enabled` included, so leaving the
-        // field out of any one of the three registrations here would silently
-        // report that node as disabled.
-        let a11y = Accessibility::new().unwrap();
-        a11y.initialize().unwrap();
-        let snapshot = a11y.automation_snapshot().unwrap();
-        assert!(
-            !snapshot.is_empty(),
-            "initialize registered no nodes at all"
-        );
-        for node in &snapshot {
-            assert!(node.state.enabled, "{} was registered as disabled", node.id);
-        }
-    }
-
-    #[test]
-    fn test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge() {
-        // `update_node_state` promises two things: the automation tree carries
-        // the new state, and the screen reader bridge hears about the change.
-        // Stubbing the function to a bare `Ok(())` would satisfy neither.
-        let a11y = Accessibility::new().unwrap();
-        a11y.initialize().unwrap();
-
-        let ticked = automation::AutomationState {
-            checked: Some(true),
-            ..automation::AutomationState::default()
-        };
-        a11y.update_node_state("folder_tree", ticked.clone())
-            .expect("update_node_state");
-
-        let snapshot = a11y.automation_snapshot().unwrap();
-        let folder_tree = snapshot
-            .iter()
-            .find(|n| n.id == "folder_tree")
-            .expect("folder_tree was registered by initialize");
-        assert_eq!(
-            folder_tree.state, ticked,
-            "the new state never reached the automation tree"
-        );
-
-        assert!(
-            a11y.screen_reader
-                .events()
-                .unwrap()
-                .iter()
-                .any(|event| matches!(
-                    event,
-                    automation::AutomationEvent::NodeUpdated(id) if id == "folder_tree"
-                )),
-            "no NodeUpdated event reached the screen reader bridge"
-        );
-    }
-
-    #[test]
-    fn test_accessibility_initialize() {
-        let a11y = Accessibility::new().unwrap();
-        assert!(a11y.initialize().is_ok());
-        let snapshot = a11y.automation_snapshot().unwrap();
-        assert!(snapshot.iter().any(|n| n.id == "main_window"));
-        assert!(snapshot.iter().any(|n| n.id == "folder_tree"));
-        let compose_shortcut = a11y.keyboard.action_for_key("Ctrl+N").unwrap();
-        assert_eq!(compose_shortcut.as_deref(), Some("compose_new_message"));
-    }
-
-    #[test]
-    fn test_focus_event_and_announce() {
-        let a11y = Accessibility::new().unwrap();
-        a11y.set_focus("message_list").unwrap();
-        a11y.flush_announcements().unwrap();
-        assert!(a11y.screen_reader.events().unwrap().iter().any(|event| {
-            matches!(
-                event,
-                automation::AutomationEvent::FocusChanged(id) if id == "message_list"
-            )
-        }));
-    }
-
-    #[test]
     fn test_flush_announcements_priority_order() {
-        const GLOBAL_REGION_ID: &str = "global";
         let a11y = Accessibility::new().unwrap();
         a11y.announcements
             .push(announcements::Announcement::interface(
@@ -1222,20 +973,7 @@ mod tests {
 
         a11y.flush_announcements().unwrap();
 
-        let spoken: Vec<String> = a11y
-            .screen_reader
-            .events()
-            .unwrap()
-            .into_iter()
-            .filter_map(|event| match event {
-                automation::AutomationEvent::LiveRegion(region, text)
-                    if region == GLOBAL_REGION_ID =>
-                {
-                    Some(text)
-                }
-                _ => None,
-            })
-            .collect();
+        let spoken = lines_released(&a11y);
         // One line, most urgent first. Three lines handed over one after
         // another would each be written to the one control the screen reader
         // reads, so only "normal", the least urgent, would still be there to
