@@ -48,7 +48,8 @@
 - `oauth2` `4` (default features off) - OAuth 2.0 + PKCE flows; project's own `reqwest` client is used instead of the crate's bundled HTTP stack (see `src/service/oauth.rs`)
 - `tiny_http` `0.12` - local HTTP server that captures the OAuth redirect on `localhost`
 - `keyring` `4` - OS credential store (Windows Credential Manager) for tokens and passwords, see `src/service/secret_store.rs`
-- `icalendar` `0.17`, `quick-xml` `0.41` - CalDAV/iCalendar parsing, see `src/service/caldav.rs`, `src/service/ical_subscription.rs`
+- No crate parses CalDAV or iCalendar: both are parsed by hand, see `src/service/caldav.rs`, `src/service/ical_subscription.rs`
+  - Corrected 2026-10-18 (13.2-30, audit #50): this line named `icalendar` `0.17` and `quick-xml` `0.41` as the parsers. Neither was ever called; `icalendar` left the manifest that day, and `quick-xml` stays in `Cargo.lock` only through `phonenumber`
 - `ldap3` `0.12.1` (`tls-rustls-ring`, default features off) - organizational directory lookups, see `src/service/directory.rs`
 - `x509-parser` `0.18`, `ring` `0.17` - S/MIME certificate parsing and signature verification, see `src/service/signed_mail.rs`
 - `outlook-pst` `1.2.0` - reading Outlook `.pst` data files (Microsoft's own crate, read-only), see `src/service/outlook_data_file.rs`

@@ -51,4 +51,4 @@ pub use microsoft_graph::MsGraphClient;
 pub use oauth::{AuthManager, OAuthProvider, OAuthService, OAuthTokenSet};
 pub use protocols::{imap, pop3, smtp};
 pub use security::SecurityService;
-pub use spellcheck::{I18n, Locale, SpellChecker};
+pub use spellcheck::SpellChecker;

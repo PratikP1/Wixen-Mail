@@ -23,8 +23,7 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the translated strings route through Wixen Mail's own i18n registry; the
-// markdown and roman-numeral helpers were dropped or replaced; and parsers and
+// nothing in this file is translated; the markdown and roman-numeral helpers were dropped or replaced; and parsers and
 // types this application does not use were left behind. The code itself is
 // otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 

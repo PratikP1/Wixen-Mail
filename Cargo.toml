@@ -90,7 +90,6 @@ ammonia = "4.0"
 regex = "1.11"
 html-escape = "0.2"
 aes-gcm = "0.11"
-rand = "0.10"
 
 # Spell checking (Hunspell-compatible, pure Rust)
 spellbook = "0.4"
@@ -117,9 +116,10 @@ keyring = "4"
 # URL parsing
 url = "2"
 
-# CalDAV / iCalendar support
-icalendar = "0.17"
-quick-xml = "0.41"
+# The vendored HTML converter's parser and tree, IMAP and its TLS, reading
+# PDFs, hashing and markdown. Until 2026-10-18 this heading said "CalDAV /
+# iCalendar support", over `icalendar` and `quick-xml`, which nothing called:
+# CalDAV and iCalendar are parsed by hand in `service::caldav` (audit #50).
 scraper = "0.27.0"
 ego-tree = "0.11.0"
 bitflags = "2.13.1"
@@ -335,14 +335,14 @@ ring = "0.17"
 pgp = "0.20"
 # The random source rPGP's message builder takes when it signs or encrypts.
 # Its bounds are `rand` 0.8's `CryptoRng` and `Rng`, which the `rand` 0.10
-# named above does not satisfy, and a newtype bridging the two would be more
+# the tests use does not satisfy, and a newtype bridging the two would be more
 # code than this line. It names the 0.8 already built into this program through
 # `pgp` itself, locked at 0.8.7 with these same default features, so it adds no
 # package: `Cargo.lock` changes only in this package's own list. MIT OR
 # Apache-2.0, both texts in the published crate; the rust-random project cut
 # 0.8.8 on 2026-08-25, a no-std build fix this program does not need.
 # Confirmed by Pratik on 2026-09-24. Renamed so a reader never mistakes it for
-# the `rand` everything else here calls.
+# the `rand` the tests call.
 rand08 = { package = "rand", version = "0.8" }
 
 # Translation catalogues, Project Fluent. The first piece of version 2, which
@@ -488,6 +488,11 @@ winresource = "0.1"
 boa_engine = "0.20"
 tokio-test = "0.4"
 tempfile = "3.14"
+# Random keys and nonces for the tests of `service::security`. Here rather than
+# under [dependencies] since 2026-10-18 (audit #50), because nothing a release
+# build compiles calls it; it stays in the shipped program's lock through rodio,
+# quinn-proto and others.
+rand = "0.10"
 
 # This package, on itself, so `what-ships` is on for every dev target and for
 # nothing else. Not a third-party crate and not a second copy of the library:

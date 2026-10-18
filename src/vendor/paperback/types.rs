@@ -23,8 +23,11 @@
 // SOFTWARE.
 //
 // Local changes: import paths point at this module rather than paperback-core;
-// the `t!` translation macro routes through Wixen Mail's own i18n registry;
-// parsers and types this application does not //! The positional metadata the converter records alongside its text.
+// the `t!` translation macro is not used, and nothing in this file is
+// translated; parsers and types this application does not use were left
+// behind.
+
+//! The positional metadata the converter records alongside its text.
 //!
 //! This is what makes a plain text body navigable: every heading, link, list
 //! and table comes back with the offset it sits at, so a reader can jump by

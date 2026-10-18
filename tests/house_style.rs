@@ -2151,10 +2151,13 @@ fn test_the_machinery_check_can_tell_the_two_apart() {
     assert!(fires("- HTML sanitization (ammonia)"));
     // The operating system, which two pages have to be able to name.
     assert!(!fires("- Windows 10 or later"));
-    // The calendar format, correctly named. Only a version beside it would
-    // make this the crate.
+    // A dependency's name used as the ordinary word it also is, on neither
+    // list. Only a version beside it would make this the crate. Until
+    // 2026-10-18 this was a line naming iCalendar, which stopped reaching the
+    // reader when that crate left the manifest.
+    assert!(names.iter().any(|dependency| dependency == "image"));
     assert!(!fires(
-        "Fixed iCalendar property lookup matching on a prefix"
+        "- **An image attachment now previews. It is described, and it is shown.**"
     ));
     // A machine name inside a code span is a machine name doing a machine's
     // job, which is the convention the rest of this file already keeps.
