@@ -1709,12 +1709,26 @@ mod completeness {
     /// read rather than listed: a written copy of a fact goes stale and stops
     /// being about anything.
     fn every_dependency() -> Vec<String> {
+        dependencies_under(|table| table.ends_with("dependencies]"))
+    }
+
+    /// Every dependency a release build carries: `[dependencies]` and each
+    /// platform's own table, never a dev or a build dependency.
+    fn every_dependency_a_release_build_carries() -> Vec<String> {
+        dependencies_under(|table| {
+            table == "[dependencies]"
+                || (table.starts_with("[target.") && table.ends_with(".dependencies]"))
+        })
+    }
+
+    /// The names under every table of the manifest `wanted` says yes to.
+    fn dependencies_under(wanted: impl Fn(&str) -> bool) -> Vec<String> {
         let manifest = std::fs::read_to_string("Cargo.toml").expect("Cargo.toml");
         let mut names = Vec::new();
         let mut inside = false;
         for line in manifest.lines().map(str::trim) {
             if line.starts_with('[') {
-                inside = line.ends_with("dependencies]");
+                inside = wanted(line);
                 continue;
             }
             let Some((name, _)) = line.split_once(" =") else {
@@ -1789,6 +1803,53 @@ mod completeness {
                  so a module using it is invisible"
             );
         }
+    }
+
+    #[test]
+    fn test_every_dependency_a_release_build_carries_is_named_by_code_it_compiles() {
+        // Audit finding #50: two crates were declared for every build and
+        // called by nothing, and a third was called only by tests. A crate on
+        // the shipped tables is code a supply-chain change can reach, so one
+        // nothing uses fails here the day it arrives.
+        //
+        // What this reads: the half of every file under `src` a release build
+        // compiles, comment lines left out, for the crate's name as a path
+        // root (`name::`, which covers `#[name::`), a macro (`name!`) or
+        // `use name`, with `-` read as `_` and a renamed key by its key. What
+        // it cannot see: a crate reached only through a derive or a build
+        // script, of which there are none here today.
+        let shipped: Vec<String> = every_source_file()
+            .iter()
+            .map(|file| {
+                let source = std::fs::read_to_string(file)
+                    .unwrap_or_else(|e| panic!("{}: {e}", file.display()));
+                what_ships(&source)
+                    .lines()
+                    .filter(|line| !line.trim_start().starts_with("//"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .collect();
+        let named = |crate_name: &str| {
+            let root = crate_name.replace('-', "_");
+            let ways = [
+                format!("{root}::"),
+                format!("{root}!"),
+                format!("use {root}"),
+            ];
+            shipped
+                .iter()
+                .any(|code| ways.iter().any(|way| names_it_as_a_whole_word(code, way)))
+        };
+        let unused: Vec<String> = every_dependency_a_release_build_carries()
+            .into_iter()
+            .filter(|crate_name| !named(crate_name))
+            .collect();
+        assert!(
+            unused.is_empty(),
+            "carried into every build and used by none of it: {}",
+            unused.join(", ")
+        );
     }
 
     #[test]
