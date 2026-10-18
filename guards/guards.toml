@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 816 records have arrived since and have not been through it.
+# 817 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -21998,7 +21998,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -22293,7 +22293,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -22322,7 +22322,7 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # ── 07-08 ─────────────────────────────────────────────────────────────────
@@ -22364,7 +22364,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # The break is the half-fix, not the deletion. Taking the publisher comparison
@@ -24907,7 +24907,7 @@ red = [
     "test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # ── The build counter reaches the file version ───────────────────────────────
@@ -24935,7 +24935,7 @@ red = [
     "test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # ── A clone that cannot count is refused ─────────────────────────────────────
@@ -24986,7 +24986,7 @@ red = [
     "test_the_release_workflow_can_publish_the_version_the_tree_already_carries",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
 ]
 
 # The middle arm of `language_to_use`, which is the whole of the fix for #21:
@@ -42161,5 +42161,27 @@ red = [
     "test_no_uninstall_step_calls_what_inno_refuses_while_uninstalling",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 26 },
+    { file = "tests/installer.rs", tests = 28 },
+]
+
+# The message after an uninstall for everybody, about what other accounts
+# still have, shown to every uninstall with the program present by taking the
+# admin condition away. A per-user uninstall would then tell the person that
+# other accounts keep their data, which is not what an uninstall for one user
+# leaves (audit finding #43). Anchored on the last line of the comment above
+# the `if` and the `if` itself. Added 2026-10-18 by 13.2-27, measured by hand
+# with `cargo test --test installer`: 27 passed and exactly this one failed.
+[[guard]]
+name = "only an uninstall for everybody says what other accounts still have"
+file = "installer/Wixen-Mail-Setup.iss"
+suite = "installer"
+before = '''    above says so instead. }
+  if IsAdminInstallMode() and not TheProgramIsAlreadyGone() then'''
+after = '''    above says so instead. }
+  if not TheProgramIsAlreadyGone() then'''
+red = [
+    "test_an_uninstall_for_everybody_says_whose_data_it_cleared_and_what_may_remain",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 28 },
 ]

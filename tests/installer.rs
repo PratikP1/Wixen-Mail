@@ -1929,15 +1929,17 @@ struct Routine {
 /// Not [`section`], which drops lines opening with a semicolon and trims the
 /// rest: right for the entry sections, wrong for Pascal, whose strings and
 /// statements the readings below need whole.
+///
+/// The section ends where [`section`] says one does, at any line opening with
+/// a bracket, because that is ISCC's rule too: a Pascal comment line opening
+/// `[UninstallRun] runs as` failed the compile on 2026-10-18 with "Invalid
+/// section tag".
 fn the_code(script: &str) -> String {
     script
         .lines()
         .skip_while(|line| line.trim() != "[Code]")
         .skip(1)
-        .take_while(|line| {
-            let line = line.trim();
-            !(line.starts_with('[') && line.ends_with(']'))
-        })
+        .take_while(|line| !line.trim_start().starts_with('['))
         .collect::<Vec<_>>()
         .join("\n")
 }

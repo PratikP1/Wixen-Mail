@@ -440,12 +440,17 @@ end;
 //
 // Skipped, the only thing left aiming at the data folder is the
 // [UninstallDelete] line at the end of this file, and it knows one location:
-// WIXEN_MAIL_DATA moves the folder somewhere that line cannot name. Whether
-// {localappdata} there resolves to the person whose mail it is or to the
-// account an elevated uninstall is running as has not been measured, and
-// guessing at it here would be the mistake ForgetTheOtherCopy above already
-// records making. Nothing writes the note in the temporary folder either,
-// because the note is written by the program that never ran.
+// WIXEN_MAIL_DATA moves the folder somewhere that line cannot name. Which
+// account's folder {localappdata} names there is settled by Inno's help, read
+// 2026-10-18 in 6.7.3: {localappdata} is "The path to the current user's local
+// (non-roaming) Application Data folder", and "The "user" constants refer to
+// the profile of the user running Setup. This user is often not the same as
+// the currently logged-in user". So it is the folder of the account the
+// uninstaller runs as: the person, uninstalling for one user, and the account
+// that approved the elevation prompt, uninstalling for everybody. This comment
+// said until that day that it had not been measured. Nothing writes the note
+// in the temporary folder either, because the note is written by the program
+// that never ran.
 //
 // So the mail cache can stay on the disk, unencrypted, with nobody told. An
 // uninstall has been seen to end that way, and this is the one branch where no
@@ -458,6 +463,34 @@ end;
 function TheProgramIsAlreadyGone(): Boolean;
 begin
   Result := not FileExists(ExpandConstant('{app}\wixen-mail.exe'));
+end;
+
+// The sentence about Windows Search for the message that tells an uninstall
+// for everybody what other accounts still have, or '' when it does not apply.
+//
+// remove-scope below runs as the uninstaller, so it takes away that account's
+// crawl scope rule and nobody else's. Another account that ticked the search
+// box during its own setup still has Windows Search pointed at its mail.
+//
+// Whether the box was ticked is read from the uninstall key, where Inno writes
+// the tasks an install chose as "Inno Setup: Selected Tasks"
+// (Projects/Src/Setup.Install.pas at is-6_7_3). The key is still there at
+// usUninstall, which runs before the uninstall removes it. It records the last
+// install's choice, which Inno carries forward to the next install unless
+// somebody unticks it, so a box ticked once and unticked later is not seen.
+function WhatWindowsSearchMayStillHave(): String;
+var
+  Tasks: String;
+begin
+  Result := '';
+  if RegQueryStringValue(HKEY_LOCAL_MACHINE, UninstallEntry,
+                         'Inno Setup: Selected Tasks', Tasks)
+     and (Pos('searchindex', Lowercase(Tasks)) > 0) then
+    Result := #13#10#13#10
+            + 'Windows Search may also still be set to read that account''s '
+            + 'mail. While signed in as that account, press the Windows key, '
+            + 'type Indexing Options, choose Modify, and untick the Wixen Mail '
+            + 'location.';
 end;
 
 // Take the Windows Search setup out before the files go.
@@ -482,10 +515,10 @@ begin
 
   { Before the early exit below, because that one is about the search handler
     and this is about somebody's mail. The folder is named as %LOCALAPPDATA%
-    rather than expanded here on purpose: expanded, it would print whatever
-    account the uninstaller is running as, which is the question above that has
-    not been measured. Unexpanded, the person reading it pastes it into File
-    Explorer and lands in their own. }
+    rather than expanded here on purpose: expanded, it would print the folder
+    of the account the uninstaller runs as, which uninstalling for everybody
+    can be an administrator rather than the person. Unexpanded, the person
+    reading it pastes it into File Explorer and lands in their own. }
   if TheProgramIsAlreadyGone() then
     MsgBox('Wixen Mail could not clear its own data, because the program was '
            + 'already gone from this computer before the uninstall ran.' + #13#10#13#10
@@ -499,6 +532,36 @@ begin
            + 'credential store. Open Credential Manager, choose Windows '
            + 'Credentials, and remove the entries whose names begin with '
            + 'wixen-mail.',
+           mbInformation, MB_OK);
+
+  { Uninstalling for everybody runs elevated, and the erase step in the
+    UninstallRun section runs as the uninstaller, so it clears the data of one
+    account: the one that approved the elevation prompt, which
+    GetUserNameString returns here. Any other account that used Wixen Mail
+    keeps its mail folder, which is not encrypted, and its saved passwords and
+    tokens, and an uninstaller cannot reach either. So it says so (audit
+    finding #43).
+
+    Only uninstalling for everybody, because uninstalling for one user runs as
+    that user, and the erase clears that user's data. Only with the program
+    still there, because when it is gone the erase does not run and the message
+    above says so instead. }
+  if IsAdminInstallMode() and not TheProgramIsAlreadyGone() then
+    MsgBox('This uninstall clears the mail, settings and saved sign-ins that '
+           + 'Wixen Mail kept for the Windows account ' + GetUserNameString
+           + ', the account it is running as.' + #13#10#13#10
+           + 'If Wixen Mail was used under any other Windows account on this '
+           + 'computer, that account still has its own copy:' + #13#10#13#10
+           + 'Its mail and settings are in %LOCALAPPDATA%\wixen-mail, or in the '
+           + 'folder that account told Wixen Mail to use. The downloaded mail '
+           + 'in that folder is not encrypted.' + #13#10#13#10
+           + 'Its saved passwords and sign-in tokens are in Credential Manager, '
+           + 'under Windows Credentials, in entries whose names begin with '
+           + 'wixen-mail.' + #13#10#13#10
+           + 'To remove them, sign in to Windows as that account. Paste '
+           + '%LOCALAPPDATA%\wixen-mail into File Explorer and delete that '
+           + 'folder, then open Credential Manager and remove those entries.'
+           + WhatWindowsSearchMayStillHave(),
            mbInformation, MB_OK);
 
   Tool := ExpandConstant('{app}\wixen-mail-search-setup.exe');
@@ -599,10 +662,23 @@ end;
 ; credential store, and the data folder moves when WIXEN_MAIL_DATA says so. The
 ; program knows where both are, so it clears them before the files go.
 ;
-; runascurrentuser is the part that matters, and it is the flag this section
-; takes rather than the runasoriginaluser that [Run] takes. Elevated, this would
-; clear the administrator's credential store and leave the tokens belonging to
-; the person whose mail it is exactly where they were.
+; runascurrentuser runs this as the uninstaller, whoever that is. Until
+; 2026-10-18 this comment said the flag kept the erase away from an
+; administrator's data, which is the opposite of what it does. Inno's help for
+; the [Run] section, 6.7.3, read that day: the flag means "the spawned process
+; will inherit Setup/Uninstall's user credentials (typically, full
+; administrative privileges). This is the default behavior when the
+; postinstall flag is not used." Its sibling runasoriginaluser, which would run
+; this as the person, is "Valid only in a [Run] section", and the compiler
+; refused it here on 2026-07-28 (d6fe9361).
+;
+; So uninstalling for one user clears that user's data, and uninstalling for
+; everybody clears the data of the account that approved the elevation prompt
+; and of nobody else. A person who typed an administrator's password at that
+; prompt keeps their own mail folder and Credential Manager entries, and so
+; does any other account that used the program. CurUninstallStepChanged tells
+; the person that, and where to find them. The flag is written although it is
+; the default, so the next reader sees which account this runs as.
 ;
 ; skipifdoesntexist, because an uninstall must not depend on the program it is
 ; removing still being there. Without it, a copy whose executable had already
@@ -613,5 +689,8 @@ Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"; RunOnceId: "Er
 
 [UninstallDelete]
 ; Belt and braces for the default location, for the case where the step above
-; could not run at all.
+; could not run at all. {localappdata} is "the current user's" folder in Inno's
+; help, and the current user is the account the uninstaller runs as, so this
+; reaches the same one account the step above does and no other (6.7.3, read
+; 2026-10-18).
 Type: filesandordirs; Name: "{localappdata}\wixen-mail"
