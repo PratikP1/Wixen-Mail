@@ -1887,3 +1887,285 @@ Source: "..\target\release\wixen-mail.exe"; DestDir: "{app}"; Flags: ignoreversi
          file or an uninstaller"
     );
 }
+
+// ---------------------------------------------------------------------------
+// What an uninstall is allowed to call
+// ---------------------------------------------------------------------------
+//
+// Inno Setup 6.7.3's help, topic "Pascal Scripting: ExecAsOriginalUser", read
+// 2026-10-18: "This function is not supported at uninstall time." Its source
+// at tag is-6_7_3, Projects/Src/Setup.ScriptFunc.pas, raises for it and for
+// ShellExecAsOriginalUser ("if IsUninstaller and RunAsOriginalUser then
+// NoUninstallFuncError(OrgName)"), and Setup.Uninstall.pas calls
+// CurUninstallStepChanged(usUninstall) with HandleException False, so the
+// exception is fatal there: the uninstall stops before it removes anything.
+// A throwaway setup built with ISCC 6.7.3 the same day showed exactly that:
+// its log read "Internal error: Cannot call "ExecAsOriginalUser" function
+// during Uninstall" and every installed file was still on the disk.
+
+/// The event functions Inno calls while uninstalling, from the help's
+/// "Uninstall event functions".
+const UNINSTALL_EVENTS: [&str; 5] = [
+    "InitializeUninstall",
+    "InitializeUninstallProgressForm",
+    "DeinitializeUninstall",
+    "CurUninstallStepChanged",
+    "UninstallNeedRestart",
+];
+
+/// The support functions Inno refuses while uninstalling.
+const REFUSED_WHILE_UNINSTALLING: [&str; 2] = ["ExecAsOriginalUser", "ShellExecAsOriginalUser"];
+
+/// One procedure or function of the `[Code]` section: its name and its whole
+/// text, header included.
+#[derive(Debug)]
+struct Routine {
+    name: String,
+    text: String,
+}
+
+/// The `[Code]` section as it stands, every line kept.
+///
+/// Not [`section`], which drops lines opening with a semicolon and trims the
+/// rest: right for the entry sections, wrong for Pascal, whose strings and
+/// statements the readings below need whole.
+fn the_code(script: &str) -> String {
+    script
+        .lines()
+        .skip_while(|line| line.trim() != "[Code]")
+        .skip(1)
+        .take_while(|line| {
+            let line = line.trim();
+            !(line.starts_with('[') && line.ends_with(']'))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Pascal with its comments taken out and its strings left in.
+///
+/// Comments are `//` to the end of the line, `{ ... }` and `(* ... *)`. A
+/// string is read through rather than scanned, so the `{app}` inside
+/// `ExpandConstant('{app}\...')` is not taken for the start of a comment.
+fn uncommented(code: &str) -> String {
+    let mut kept = String::with_capacity(code.len());
+    let mut rest = code;
+    while let Some(next) = rest.chars().next() {
+        let (taken, skipped) = if rest.starts_with("//") {
+            ("", rest.find('\n').unwrap_or(rest.len()))
+        } else if next == '{' {
+            ("", rest.find('}').map_or(rest.len(), |end| end + 1))
+        } else if rest.starts_with("(*") {
+            ("", rest.find("*)").map_or(rest.len(), |end| end + 2))
+        } else if next == '\'' {
+            let end = rest[1..].find('\'').map_or(rest.len(), |end| end + 2);
+            (&rest[..end], end)
+        } else {
+            (&rest[..next.len_utf8()], next.len_utf8())
+        };
+        kept.push_str(taken);
+        rest = &rest[skipped..];
+    }
+    kept
+}
+
+/// Uncommented Pascal with every string emptied, so a name inside a message
+/// is not read as a call.
+fn unquoted(code: &str) -> String {
+    code.split('\'')
+        .enumerate()
+        .map(|(at, piece)| if at % 2 == 0 { piece } else { "" })
+        .collect::<Vec<_>>()
+        .join("'")
+}
+
+/// Every procedure and function, in the order the script defines them.
+///
+/// A routine runs from its header to the next header. That holds for this
+/// script, which has no nested routines and no forward declarations; one that
+/// grew either would need a reading that counts `begin` and `end`.
+fn the_routines(code: &str) -> Vec<Routine> {
+    let mut routines: Vec<Routine> = Vec::new();
+    for line in code.lines() {
+        let lower = line.trim_start().to_ascii_lowercase();
+        let header = ["procedure ", "function "]
+            .iter()
+            .find_map(|keyword| lower.strip_prefix(keyword));
+        match (header, routines.last_mut()) {
+            (Some(after), _) => {
+                let start = line.len() - after.len();
+                routines.push(Routine {
+                    name: identifiers(&line[start..])
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                    text: line.to_string(),
+                });
+            }
+            (None, Some(routine)) => {
+                routine.text.push('\n');
+                routine.text.push_str(line);
+            }
+            (None, None) => {}
+        }
+    }
+    routines
+}
+
+/// The words of some Pascal, in order.
+fn identifiers(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .filter(|word| !word.is_empty())
+}
+
+/// Whether a routine's text names `callee`, the way Pascal compares names,
+/// which ignores case.
+fn names(routine: &Routine, callee: &str) -> bool {
+    identifiers(&routine.text).any(|word| word.eq_ignore_ascii_case(callee))
+}
+
+/// The routines an uninstall runs: the uninstall event functions the script
+/// defines, and every routine of the script's own they call, however deep.
+fn reached_while_uninstalling(script: &str) -> Vec<Routine> {
+    let mut routines = the_routines(&unquoted(&uncommented(&the_code(script))));
+    let mut reached: Vec<Routine> = Vec::new();
+    let mut waiting: Vec<String> = UNINSTALL_EVENTS.iter().map(|e| e.to_string()).collect();
+    while let Some(name) = waiting.pop() {
+        let Some(at) = routines
+            .iter()
+            .position(|r| r.name.eq_ignore_ascii_case(&name))
+        else {
+            continue;
+        };
+        let routine = routines.remove(at);
+        waiting.extend(
+            routines
+                .iter()
+                .filter(|other| names(&routine, &other.name))
+                .map(|other| other.name.clone()),
+        );
+        reached.push(routine);
+    }
+    reached
+}
+
+/// The routines an uninstall runs that call something Inno refuses while
+/// uninstalling, by name.
+fn what_an_uninstall_calls_that_inno_refuses(script: &str) -> Vec<String> {
+    reached_while_uninstalling(script)
+        .into_iter()
+        .filter(|routine| {
+            REFUSED_WHILE_UNINSTALLING
+                .iter()
+                .any(|refused| names(routine, refused))
+        })
+        .map(|routine| routine.name)
+        .collect()
+}
+
+#[test]
+fn test_no_uninstall_step_calls_what_inno_refuses_while_uninstalling() {
+    let script = the_installer_script();
+
+    // A reading that found no [Code] section would pass the assertion below
+    // whatever the script said, so first prove it reached the routines an
+    // uninstall really runs, one of them only through a call.
+    let reached: Vec<String> = reached_while_uninstalling(&script)
+        .into_iter()
+        .map(|routine| routine.name)
+        .collect();
+    for expected in ["CurUninstallStepChanged", "TheProgramIsAlreadyGone"] {
+        assert!(
+            reached.iter().any(|name| name == expected),
+            "the reading should reach {expected} from the uninstall events, \
+             and reached only {reached:?}"
+        );
+    }
+
+    let offenders = what_an_uninstall_calls_that_inno_refuses(&script);
+    assert!(
+        offenders.is_empty(),
+        "Inno refuses ExecAsOriginalUser and ShellExecAsOriginalUser while \
+         uninstalling, and a refusal in CurUninstallStepChanged stops the \
+         uninstall before it removes anything. Called from: {offenders:?}"
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_a_refused_call_wherever_an_uninstall_reaches_it() {
+    const DIRECT: &str = r#"
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Outcome: Integer;
+begin
+  ExecAsOriginalUser('{app}\tool.exe', 'remove-scope', '', SW_HIDE, ewWaitUntilTerminated, Outcome);
+end;
+"#;
+
+    const THROUGH_A_HELPER: &str = r#"
+[Code]
+function TidyUp(): Boolean;
+var
+  Outcome: Integer;
+begin
+  Result := shellexecasoriginaluser('open', 'tool.exe', '', '', SW_HIDE, ewNoWait, Outcome);
+end;
+
+procedure DeinitializeUninstall();
+begin
+  TidyUp();
+end;
+"#;
+
+    const ONLY_AT_INSTALL: &str = r#"
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Outcome: Integer;
+begin
+  ExecAsOriginalUser('reg.exe', 'query', '', SW_HIDE, ewWaitUntilTerminated, Outcome);
+  Result := '';
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Outcome: Integer;
+begin
+  { ExecAsOriginalUser is refused here, so Exec. }
+  // Not ExecAsOriginalUser(Tool, ...), which stops the uninstall.
+  MsgBox('Do not call ExecAsOriginalUser here.', mbInformation, MB_OK);
+  Exec(ExpandConstant('{app}\tool.exe'), 'remove-scope', '', SW_HIDE, ewWaitUntilTerminated, Outcome);
+end;
+
+[UninstallRun]
+Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"
+"#;
+
+    assert_eq!(
+        what_an_uninstall_calls_that_inno_refuses(DIRECT),
+        vec!["CurUninstallStepChanged".to_string()],
+        "a refused call in the step event itself"
+    );
+    assert_eq!(
+        what_an_uninstall_calls_that_inno_refuses(THROUGH_A_HELPER),
+        vec!["TidyUp".to_string()],
+        "a refused call one routine away, spelled in another case, which \
+         Pascal does not tell apart"
+    );
+    assert_eq!(
+        what_an_uninstall_calls_that_inno_refuses(ONLY_AT_INSTALL),
+        Vec::<String>::new(),
+        "an install-time call is allowed, and a name in a comment or a \
+         message is not a call"
+    );
+    assert_eq!(
+        reached_while_uninstalling(ONLY_AT_INSTALL)
+            .into_iter()
+            .map(|routine| routine.name)
+            .collect::<Vec<_>>(),
+        vec!["CurUninstallStepChanged".to_string()],
+        "the reading stops at the end of [Code] and does not reach a routine \
+         nothing in an uninstall calls"
+    );
+}
