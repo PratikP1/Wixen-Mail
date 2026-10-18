@@ -829,23 +829,27 @@ done
 # past the mode and stops at `touch src/lib.rs`, before its first stage. The
 # hooks-path note prints above the mode line there, so the mode is looked for as
 # a line of the output rather than as its first line.
-docs_only_output="$(ask_check_sh_for_a_mode docs_only)"
-if printf '%s\n' "$docs_only_output" | grep -qxF 'check.sh: mode docs_only'; then
+#
+# Asked of `affected` since 2026-10-18 (13.2-26.1). These asked `docs_only`
+# until then, and that mode no longer touches `src/lib.rs`, so it would go on
+# to rustfmt and stop there instead of before its first stage.
+affected_output="$(ask_check_sh_for_a_mode affected)"
+if printf '%s\n' "$affected_output" | grep -qxF 'check.sh: mode affected'; then
     suite_case_passed "a run names the mode it was given before it starts"
 else
     suite_case_failed "a run names the mode it was given before it starts" \
-        "no line 'check.sh: mode docs_only' in: $docs_only_output"
+        "no line 'check.sh: mode affected' in: $affected_output"
 fi
 
 # The run above stops before rustfmt, so the one stage it spent anything in is
 # the start, and the line says that and that it did not pass.
-if printf '%s\n' "$docs_only_output" |
-    grep -qE '^check\.sh: docs_only stopped in start after [0-9]+ s: start [0-9]+ s$'; then
+if printf '%s\n' "$affected_output" |
+    grep -qE '^check\.sh: affected stopped in start after [0-9]+ s: start [0-9]+ s$'; then
     suite_case_passed "a run that stops before its first stage still says how long it ran"
 else
     suite_case_failed "a run that stops before its first stage still says how long it ran" \
-        "no line 'check.sh: docs_only stopped in start after N s: start N s' in:" \
-        "$docs_only_output"
+        "no line 'check.sh: affected stopped in start after N s: start N s' in:" \
+        "$affected_output"
 fi
 
 # The other half. A question answered before the run is only its answer: a mode
@@ -1680,5 +1684,81 @@ a_commit_being_made "$by_hand"
 printf 'a change not staged\n' >> "$by_hand/src/other.rs"
 expect_not_refused "a run by hand is not refused over a tree unlike its index" \
     "$( cd "$by_hand" && timeout 60 bash "$subject" 2>&1 )"
+
+# ── A documents-only commit does not lint ────────────────────────────────────
+# Added 2026-10-18 by 13.2-26.1, audit finding #45, on Pratik's "yes to both" of
+# 2026-10-14. Clippy reads Rust, and a commit in the `docs_only` mode changes
+# none, so it could only find Rust somebody left unstaged, which the refusal
+# above now stops before any stage, or a lint a new compiler brought, which CI's
+# Clippy job and the phase's full gate catch. So that mode skips the forced
+# rebuild and clippy, and keeps rustfmt and the targets that read documents.
+#
+# Each run is a commit made the way the hook makes one, with the mode named so
+# no branch decides it, against a stand-in `cargo` first on the path that writes
+# down every call and does nothing, so a case costs a fork rather than a build.
+# `src/lib.rs` is dated in the past first, and a run that touches it moves it
+# past the reference file.
+stand_in_bin="$work/stand-in-cargo"
+mkdir -p "$stand_in_bin"
+cat > "$stand_in_bin/cargo" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$CARGO_CALLS"
+SH
+chmod +x "$stand_in_bin/cargo"
+long_ago="$work/long-ago"
+touch -d '2002-01-01 00:00:00' "$long_ago"
+
+# Prints the calls the stand-in saw, one a line, after the gate's own output.
+commit_with_the_stand_in() {
+    local repo="$1" mode="$2" calls="$1.cargo-calls"
+    : > "$calls"
+    touch -d '2001-01-01 00:00:00' "$repo/src/lib.rs"
+    ( cd "$repo" && CARGO_CALLS="$calls" PATH="$stand_in_bin:$PATH" \
+        timeout 60 bash "$subject" --message-file="$the_message" "$mode" > /dev/null 2>&1 )
+    cat "$calls"
+}
+
+documents_commit="$work/documents-commit"
+a_commit_being_made "$documents_commit"
+documents_calls="$(commit_with_the_stand_in "$documents_commit" docs_only)"
+if printf '%s\n' "$documents_calls" | grep -q clippy; then
+    suite_case_failed "a documents-only run calls no clippy" "the stand-in saw:" "$documents_calls"
+elif ! printf '%s\n' "$documents_calls" | grep -qxF 'fmt --all -- --check'; then
+    suite_case_failed "a documents-only run calls no clippy" \
+        "and no rustfmt either, so the run never reached its stages:" "$documents_calls"
+else
+    suite_case_passed "a documents-only run calls no clippy"
+fi
+if [ "$documents_commit/src/lib.rs" -nt "$long_ago" ]; then
+    suite_case_failed "a documents-only run touches no source file" \
+        "src/lib.rs was touched, which forces a rebuild nothing in the run reads"
+else
+    suite_case_passed "a documents-only run touches no source file"
+fi
+
+# The other half, so the two cases above cannot pass on a stand-in that never
+# runs: the same commit in the mode for changed code still lints and touches.
+code_commit="$work/code-commit"
+a_commit_being_made "$code_commit"
+code_calls="$(commit_with_the_stand_in "$code_commit" affected)"
+if printf '%s\n' "$code_calls" | grep -qxF 'clippy --all-targets --all-features -- -D warnings' &&
+    [ "$code_commit/src/lib.rs" -nt "$long_ago" ]; then
+    suite_case_passed "a run for changed code still touches and calls clippy"
+else
+    suite_case_failed "a run for changed code still touches and calls clippy" \
+        "the stand-in saw:" "$code_calls"
+fi
+
+# And the refusal still comes before any of it in the documents-only mode.
+documents_left_out="$work/documents-left-out"
+a_commit_being_made "$documents_left_out"
+printf 'a change not staged\n' >> "$documents_left_out/src/other.rs"
+left_out_calls="$(commit_with_the_stand_in "$documents_left_out" docs_only)"
+if [ -z "$left_out_calls" ]; then
+    suite_case_passed "a documents-only commit leaving source on disk is refused before cargo"
+else
+    suite_case_failed "a documents-only commit leaving source on disk is refused before cargo" \
+        "the stand-in saw:" "$left_out_calls"
+fi
 
 suite_verdict
