@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 797 records were swept that day.
-# 811 records have arrived since and have not been through it.
+# 813 records have arrived since and have not been through it.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -42043,4 +42043,53 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 73 },
+]
+
+# The release gate's checkout back to the one commit the action fetches by
+# default. The depth reading read `ci.yml` alone until 2026-10-17, so this
+# job ran the tests on one commit with nothing saying so (audit finding #39).
+# Anchored on the comment line above the checkout, because `release.yml`
+# holds two `fetch-depth: 0` lines and a bare one names two places. Added
+# 2026-10-18 by 13.2-24, measured through `--remeasure`.
+[[guard]]
+name = "the release gate checks out the whole history"
+file = ".github/workflows/release.yml"
+suite = "house_style"
+before = '''        # ran on one commit until 2026-10-18 (audit finding #39).
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0'''
+after = '''        # ran on one commit until 2026-10-18 (audit finding #39).
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1'''
+red = [
+    "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
+]
+
+# The Linux job's checkout back to one commit, the other file the depth
+# reading did not read until 2026-10-17. The macOS job's checkout is held by
+# the same reading and has no record of its own: its break would be the same
+# edit in the same file and redden the same test. Added 2026-10-18 by
+# 13.2-24, measured through `--remeasure`.
+[[guard]]
+name = "the Linux job checks out the whole history"
+file = ".github/workflows/other-platforms.yml"
+suite = "house_style"
+before = '''      # one commit until 2026-10-18 (audit finding #39).
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0'''
+after = '''      # one commit until 2026-10-18 (audit finding #39).
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 1'''
+red = [
+    "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 74 },
 ]

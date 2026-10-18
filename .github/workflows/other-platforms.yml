@@ -84,7 +84,13 @@ jobs:
         uname -a
 
     - name: Checkout code
+      # The whole history, because the share-of-history test runs
+      # `git merge-base` against 18a02454 and a checkout of one commit does
+      # not hold it; ci.yml's Test Suite says the rest. The Linux job ran on
+      # one commit until 2026-10-18 (audit finding #39).
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup Rust
       # 1.98.1, which is what rust-toolchain.toml pins and what every other
@@ -162,7 +168,11 @@ jobs:
         sw_vers
 
     - name: Checkout code
+      # The whole history, for the reason the Linux job's checkout gives. The
+      # macOS job ran on one commit until 2026-10-18 (audit finding #39).
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.98.1
