@@ -1592,7 +1592,7 @@ mod completeness {
 
     /// Every other dependency. Written down rather than left implicit, so that
     /// adding one has to be a decision and cannot be an omission.
-    const A_CRATE_THAT_CANNOT: [&str; 56] = [
+    const A_CRATE_THAT_CANNOT: [&str; 54] = [
         "uuid",
         "chrono",
         "chrono-tz",
@@ -1619,8 +1619,6 @@ mod completeness {
         "open",
         "keyring",
         "url",
-        "icalendar",
-        "quick-xml",
         "scraper",
         "ego-tree",
         "bitflags",
@@ -1638,10 +1636,11 @@ mod completeness {
         // Packs and unpacks cached message text in memory. A compressor takes
         // bytes and gives bytes back; it has no notion of a destination.
         "flate2",
-        // Decodes this application's own icon, which is compiled into the
-        // binary by `include_bytes!`, so the bytes it reads never came from
-        // anywhere. Built with the codecs off apart from ico, png and bmp, and
-        // a decoder has no notion of a destination either.
+        // Decodes this application's own icon, compiled into the binary by
+        // `include_bytes!`, and the picture attachments people are sent, in
+        // `service::picture`. Built with ico, png, bmp and jpeg on and every
+        // other codec off. A decoder takes bytes already here and has no
+        // notion of a destination.
         "image",
         // Reads an Outlook data file off this computer. It opens a file and
         // nothing else: no address in it names anywhere to go.

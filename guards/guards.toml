@@ -5755,7 +5755,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/pop3.rs", tests = 10 },
 ]
 
@@ -5821,7 +5821,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -7162,7 +7162,7 @@ red = [
     "service::outward::completeness::test_the_census_sees_a_client_built_by_its_short_name",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
 ]
 
 # The prose rule runs against the house style suite rather than the library,
@@ -7452,7 +7452,7 @@ red = [
     "service::outward::completeness::test_the_census_sees_a_socket_brought_in_beside_something_else",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
 ]
 
 # The sweep written at the top of this file says how many records went through
@@ -8814,7 +8814,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -8840,7 +8840,7 @@ red = [
     "service::outward::completeness::test_every_mailbox_write_called_measured_had_its_command_read_off_a_socket",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
 ]
 
 # Measured by hand on 2026-08-13. `reading_with` used to take any
@@ -8872,7 +8872,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav.rs", tests = 176 },
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
 ]
 
 # ── The category and status choice at a calendar merge's call site ──────────
@@ -13377,7 +13377,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_the_two_ways_of_being_refused_a_folder_can_be_told_apart",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -13770,7 +13770,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_every_mailbox_write_says_nothing_to_the_server_with_the_gate_closed",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -14756,7 +14756,7 @@ red = [
     "service::protocols::imap::against_a_server_that_answers::test_a_session_not_allowed_to_read_will_not_fetch_a_message",
 ]
 tests_last_seen = [
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -27027,7 +27027,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/logging.rs", tests = 12 },
-    { file = "src/service/outward.rs", tests = 38 },
+    { file = "src/service/outward.rs", tests = 39 },
 ]
 
 # ── Each folder of a check is written to the log ────────────────────────────

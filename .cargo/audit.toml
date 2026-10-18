@@ -40,9 +40,12 @@ ignore = [
 
     # quick-xml denial of service, reached only through wxdragon-macros.
     # That is a proc macro: it runs at compile time and never sees network
-    # data, so neither issue is reachable in a shipped binary. The quick-xml
-    # that parses CalDAV responses is a separate, fixed 0.41, and both are in
-    # Cargo.lock: 0.38.4 for the macro crate and 0.41.0 for the rest.
+    # data, so neither issue is reachable in a shipped binary. The other
+    # quick-xml in Cargo.lock is a separate, fixed 0.41.0, and it arrives with
+    # phonenumber 0.3.10, which names it as both a dependency and a build
+    # dependency; nothing in this program calls it. Corrected on 2026-10-18
+    # (13.2-30, audit #50): until then this said the 0.41 read CalDAV
+    # responses, and it never did. CalDAV is parsed by hand in `service::caldav`.
     # Clears when wxdragon updates its macro crate. Accepted on 2026-07-26,
     # the day this file was written; on 2026-09-14 Cargo.lock still resolves
     # wxdragon-macros 0.9.17 over quick-xml 0.38.4, so the condition has not
