@@ -7067,6 +7067,27 @@ mod tests {
                              the row for {thread} says {says} and the action would take {}",
                             reaching.len()
                         );
+
+                        // And the narrowed listing a change made here reads
+                        // (13.2-31.1) is the whole listing's row for it, or
+                        // nothing where the whole listing has none.
+                        let named = [WhoseConversation {
+                            account_id: "acc".to_string(),
+                            thread_id: thread.to_string(),
+                        }];
+                        let narrowed = cache
+                            .conversations_named_in(standing_in, "acc", reach, None, &named)
+                            .unwrap();
+                        let whole_row: Vec<_> = listed
+                            .iter()
+                            .filter(|row| row.thread_id == *thread)
+                            .cloned()
+                            .collect();
+                        assert_eq!(
+                            narrowed, whole_row,
+                            "{what}: standing in folder {standing_in} with {reach:?}, the \
+                             narrowed row for {thread} is not the whole listing's"
+                        );
                     }
                 }
             }

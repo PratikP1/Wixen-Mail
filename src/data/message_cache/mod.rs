@@ -5107,6 +5107,141 @@ mod storage_shape {
             plan.join("\n  ")
         );
     }
+
+    /// The one way a read of one conversation may reach `messages`: equality
+    /// on the conversation, through the index that begins with it.
+    const BY_THE_CONVERSATION: &str = "USING INDEX idx_messages_thread (thread_id=?)";
+
+    /// Whether a plan reads `messages` at all, and every time only through
+    /// [`BY_THE_CONVERSATION`].
+    ///
+    /// A read of `messages` is a `SEARCH` or `SCAN` step on `m`, `messages`
+    /// or `i`, the names the conversation texts give the table. Equality and
+    /// nothing else, because a walk of the thread index (`thread_id>?`) names
+    /// the right index and reads every row; and a plan with no read of
+    /// `messages` is no answer, since a reading that found nothing to object
+    /// to would pass whatever the query became.
+    fn reads_messages_only_by_conversation(plan: &[String]) -> bool {
+        let reads: Vec<&str> = plan
+            .iter()
+            .map(|step| step.trim())
+            .filter(|step| is_a_read_of_messages(step))
+            .collect();
+        !reads.is_empty() && reads.iter().all(|step| step.ends_with(BY_THE_CONVERSATION))
+    }
+
+    /// Whether one plan step searches or scans `messages`, by any name the
+    /// conversation texts give it.
+    fn is_a_read_of_messages(step: &str) -> bool {
+        let Some(table) = step
+            .strip_prefix("SEARCH ")
+            .or_else(|| step.strip_prefix("SCAN "))
+            .and_then(|rest| rest.split(' ').next())
+        else {
+            return false;
+        };
+        ["m", "messages", "i"].contains(&table)
+    }
+
+    #[test]
+    fn test_a_change_made_here_reads_only_its_conversations_through_the_thread_index() {
+        // M and Delete on a conversation row run two reads of one
+        // conversation on the interface thread: the chosen read and the
+        // catch-up. Measured 2026-10-15 at the size of Pratik's Inbox, they
+        // built a set the size of the folder or the account before looking at
+        // the one conversation, eight times over for the catch-up, and the
+        // press took 350 to 570 ms (13.2-31.1, ledger 837). Kept off the
+        // folder index they took under a millisecond together. A fresh store
+        // holds no statistics, which is the case the planner gets wrong, so
+        // this asks about one.
+        let cache = fresh("a_change_made_here_reads_by_conversation");
+        let one = r#"[["acc","root@example.com"]]"#;
+        let order = super::messages::NEWEST_CONVERSATION_FIRST;
+        let named = super::messages::Listing::OnlyNamed;
+
+        for (what, plan) in [
+            (
+                "the folder's narrowed listing",
+                how_it_will_be_answered(
+                    &cache.conn,
+                    &super::messages::conversations_query(order, named),
+                    rusqlite::params!["acc", 1i64, 1i64, one],
+                ),
+            ),
+            (
+                "every inbox's narrowed listing",
+                how_it_will_be_answered(
+                    &cache.conn,
+                    &super::messages::conversations_in_every_inbox_query(order, named),
+                    rusqlite::params![1i64, one],
+                ),
+            ),
+            (
+                "the messages of one conversation",
+                how_it_will_be_answered(
+                    &cache.conn,
+                    &super::messages::messages_in_one_conversation(),
+                    rusqlite::params!["acc", 1i64, 1i64, one],
+                ),
+            ),
+        ] {
+            assert!(
+                reads_messages_only_by_conversation(&plan),
+                "{what} reads messages other than by its conversation:\n  {}",
+                plan.join("\n  ")
+            );
+        }
+
+        // Opening a folder reads the whole folder, and its folder index is
+        // the right way to: neither the narrowing nor the plus that keeps a
+        // read off that index may reach the whole listing.
+        let whole = how_it_will_be_answered(
+            &cache.conn,
+            &super::messages::conversations_query(order, super::messages::Listing::Whole),
+            rusqlite::params!["acc", 1i64, 1i64],
+        );
+        let by_folder = "SEARCH m USING INDEX idx_messages_folder_id (folder_id=?)";
+        assert!(
+            whole.iter().any(|step| step.trim() == by_folder),
+            "the whole listing no longer reads its folder through the folder index:\n  {}",
+            whole.join("\n  ")
+        );
+        let scope = super::messages::conversation_scope();
+        for kept_out in ["json_each", "+m.folder_id"] {
+            assert!(
+                !scope.contains(kept_out),
+                "the whole listing's scope holds {kept_out}:\n{scope}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_conversation_index_reading_sees_a_search_by_folder() {
+        let by_conversation = format!("SEARCH m {BY_THE_CONVERSATION}");
+        for planted in [
+            "SEARCH messages USING INDEX idx_messages_folder_id (folder_id=?)",
+            "SCAN messages",
+            "SEARCH m USING INDEX idx_messages_thread (thread_id>?)",
+        ] {
+            let plan = [by_conversation.clone(), format!("  {planted}")];
+            assert!(
+                !reads_messages_only_by_conversation(&plan),
+                "the reading passed a plan holding {planted}"
+            );
+        }
+        assert!(
+            reads_messages_only_by_conversation(&[by_conversation]),
+            "the reading refused a plan that reads only by conversation"
+        );
+    }
+
+    #[test]
+    fn test_the_conversation_index_reading_sees_a_plan_with_nothing_in_it() {
+        assert!(!reads_messages_only_by_conversation(&[]));
+        assert!(!reads_messages_only_by_conversation(&[
+            "SEARCH f USING INTEGER PRIMARY KEY (rowid=?)".to_string()
+        ]));
+    }
 }
 
 #[cfg(test)]
