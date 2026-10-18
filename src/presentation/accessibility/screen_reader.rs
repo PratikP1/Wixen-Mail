@@ -954,6 +954,90 @@ pub(crate) mod tests {
         assert_eq!(bridge.released(), vec!["Hello"]);
     }
 
+    /// The text of one item in `ships`, from `signature` to the first line
+    /// closing at `indent`, which is how every item in this file is written.
+    fn the_body_of(ships: &str, signature: &str, indent: &str) -> String {
+        let from = ships
+            .find(signature)
+            .unwrap_or_else(|| panic!("this file should define {signature}"));
+        let rest = &ships[from..];
+        let closing = format!("\n{indent}}}");
+        let to = rest
+            .find(&closing)
+            .map(|at| at + closing.len())
+            .unwrap_or(rest.len());
+        rest[..to].to_string()
+    }
+
+    /// What a release build of `source` keeps of what was said: the bridge's
+    /// fields holding lines of text, and the statements in `announce_with`
+    /// that hand the text to anything but the last announcement and delivery.
+    fn copies_of_what_was_said(source: &str) -> Vec<String> {
+        let ships = crate::common::what_ships::what_ships(source);
+        let fields = the_body_of(&ships, "pub struct ScreenReaderBridge {", "");
+        let announcing = the_body_of(&ships, "pub fn announce_with(", "    ");
+        let stored_fields = fields
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.contains("Vec<String>"));
+        let copying_statements = announcing
+            .lines()
+            .skip(1)
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.contains("text"))
+            .filter(|line| {
+                !line.starts_with("*last = Some(text.to_string());")
+                    && !line.starts_with("self.deliver(text,")
+            });
+        stored_fields
+            .chain(copying_statements)
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn test_a_release_build_keeps_no_copy_of_what_it_said() {
+        // Every line released was kept for the life of the process, message
+        // bodies read aloud included, and only tests read the list (audit
+        // #47). A shipped build keeps the last line and hands it on; the list
+        // exists in a test build alone. Read from the half a release build
+        // compiles, so this test's own mention of the list cannot satisfy it.
+        let copies = copies_of_what_was_said(include_str!("screen_reader.rs"));
+        assert!(
+            copies.is_empty(),
+            "a release build keeps a copy of every line it said: {copies:?}"
+        );
+    }
+
+    #[test]
+    fn test_the_reading_of_what_ships_sees_a_copy_kept_and_not_one_a_test_build_keeps() {
+        // The reading above, shown that it can see the thing it forbids, and
+        // that it leaves alone a copy only a test build makes.
+        let struct_and_method = |push: &str| {
+            format!(
+                "pub struct ScreenReaderBridge {{\n    held: Mutex<Vec<Line>>,\n}}\n\
+                 impl ScreenReaderBridge {{\n    \
+                 pub fn announce_with(&self, text: &str, urgency: Urgency, topic: &str) -> Result<()> {{\n\
+                 {push}        self.deliver(text, urgency, topic)\n    }}\n}}\n"
+            )
+        };
+        let shipped = struct_and_method("        self.said.push(text.to_string());\n");
+        assert_eq!(
+            copies_of_what_was_said(&shipped),
+            vec!["self.said.push(text.to_string());"]
+        );
+        let tested_only =
+            struct_and_method("        #[cfg(test)]\n        self.said.push(text.to_string());\n");
+        assert_eq!(copies_of_what_was_said(&tested_only), Vec::<String>::new());
+        let a_field = "pub struct ScreenReaderBridge {\n    said: Mutex<Vec<String>>,\n}\n\
+                       pub fn announce_with(&self, text: &str) -> Result<()> {\n        \
+                       self.deliver(text, Urgency::Routine, \"\")\n    }\n";
+        assert_eq!(
+            copies_of_what_was_said(a_field),
+            vec!["said: Mutex<Vec<String>>,"]
+        );
+    }
+
     /// Registering the window is the one wiring step everything else depends
     /// on: without it there is nowhere to carry an announcement. This proves
     /// the handle is recorded, and nothing at all about anything being spoken
