@@ -133,9 +133,11 @@ verdict() {
     done
 
     declare -A outcome=()
-    local line name
+    local line name started=0 finished=0
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
+            "     Running "*) started=$((started + 1)) ;;
+            "test result: "*) finished=$((finished + 1)) ;;
             # Anchored at both ends. `test result: FAILED. ...` also begins
             # with the word, and counting that as a test called `result:`
             # would put a failure in the set that no name can match.
@@ -174,6 +176,28 @@ verdict() {
             echo "  A filter matching nothing exits zero and reads as success." >&2
         fi
         exit 1
+    fi
+
+    # A test binary that died part way. Red mode throws cargo's exit status
+    # away, because a red run is meant to fail, and a crash leaves no `FAILED`
+    # line, so the tests after it said nothing and the run read as clean, audit
+    # finding #44, fixed 2026-10-18 by 13.2-25. Cargo prints a `     Running `
+    # line for each binary it starts and libtest a `test result: ` line for each
+    # that finishes; a shell suite prints neither, and the scoped run holds no
+    # doc-tests, whose summary would count without a `Running` line.
+    #
+    # Counted in the reading loop above rather than with `grep -c`, which exits
+    # 1 on a count of nought and so stops this script under `set -e` on every
+    # run with no binary in it, a shell case alone among them.
+    local stopped=$((started - finished))
+    if [ "$stopped" -gt 0 ]; then
+        if [ "$stopped" -eq 1 ]; then
+            echo "red-commit: 1 test binary stopped before it reported," >&2
+        else
+            echo "red-commit: $stopped test binaries stopped before they reported," >&2
+        fi
+        echo "  so the tests after the stop said nothing and this run cannot be judged." >&2
+        problems=$((problems + 1))
     fi
 
     while IFS= read -r name || [ -n "$name" ]; do
