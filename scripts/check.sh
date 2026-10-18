@@ -5,10 +5,12 @@
 # seven jobs. The last block in this file names which five a full run here
 # covers and which two it does not, rather than leaving a count to drift again.
 #
-# Touching lib.rs first is not optional. Cargo shares fingerprints between
-# `check`, `build`, `test`, and `clippy`, so a clippy run after a build can be
-# considered fresh and report success without linting anything. That has
-# already put a clippy failure on main once.
+# Touching lib.rs first is not optional wherever clippy runs. Cargo shares
+# fingerprints between `check`, `build`, `test`, and `clippy`, so a clippy run
+# after a build can be considered fresh and report success without linting
+# anything. That has already put a clippy failure on main once. A documents-only
+# run neither touches nor lints, since 2026-10-18 (13.2-26.1); the reason is
+# where the touch is.
 set -euo pipefail
 
 # The targets every scoped run ends with, whatever changed, because they read
@@ -911,13 +913,25 @@ the_run_ends() {
 echo "check.sh: mode $mode${merging:+, a merge into $the_branch}"
 trap the_run_ends EXIT
 
-touch src/lib.rs
+# A documents-only run neither forces the rebuild nor lints, since 2026-10-18
+# (13.2-26.1, audit finding #45, on Pratik's "yes to both" of 2026-10-14).
+# Clippy reads Rust, and such a commit changes none, so it could only find Rust
+# left unstaged, which the refusal above stops, or a lint a new compiler
+# brought, which CI's Clippy job and the phase's full gate catch. It cost about
+# 30 seconds of a documents commit's 83 to 86 in 12-04 and 12-05. Spelled `!=`
+# because `check.test.sh` reads the first test of the mode spelled with `=` as
+# the first mode branch, and the suites must run before that one.
+if [ "$mode" != "docs_only" ]; then
+    touch src/lib.rs
+fi
 
 begin_stage "rustfmt"
 cargo fmt --all -- --check
 
-begin_stage "clippy"
-cargo clippy --all-targets --all-features -- -D warnings
+if [ "$mode" != "docs_only" ]; then
+    begin_stage "clippy"
+    cargo clippy --all-targets --all-features -- -D warnings
+fi
 
 # The scripts that decide what this gate does, checked by the gate itself.
 #
@@ -1044,10 +1058,11 @@ if [ "$mode" = "docs_only" ]; then
     # the same shape, on a line the wider exemption could not see.
     cargo test --no-fail-fast "${document_targets[@]}"
     echo
-    echo "Formatting, clippy and the document-reading tests passed. The rest of"
+    echo "Formatting and the document-reading tests passed. Clippy, the rest of"
     echo "the suite and the release build did not run: nothing outside a document"
-    echo "changed, so they had nothing to say. They run once a phase, by hand in"
-    echo "its closing plan (scripts/check.sh all)."
+    echo "changed, so they had nothing to say. CI's Clippy job lints every push,"
+    echo "and the rest run once a phase, by hand in its closing plan"
+    echo "(scripts/check.sh all)."
     exit 0
 fi
 
