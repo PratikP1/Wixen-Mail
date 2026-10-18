@@ -4,7 +4,6 @@
 
 pub mod asked_and_answered;
 pub mod attachment_name;
-pub mod cache;
 pub mod caldav;
 pub mod caldav_journal;
 pub mod carddav;
@@ -45,7 +44,6 @@ pub mod update_check;
 pub mod update_download;
 pub mod vtimezone;
 
-pub use cache::CacheService;
 pub use caldav::{CalDavClient, CalDavEvent};
 pub use google_api::GoogleApiClient;
 pub use ical_subscription::ICalSubscriptionClient;

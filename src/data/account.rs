@@ -213,25 +213,6 @@ impl Account {
         crate::common::types::Protocol::from_stored(&self.protocol)
     }
 
-    /// Create account from provider preset
-    pub fn from_provider(
-        name: String,
-        email: String,
-        provider: &crate::data::email_providers::EmailProvider,
-    ) -> Self {
-        let mut account = Self::new(name, email.clone());
-        account.imap_server = provider.imap_server.clone();
-        account.imap_port = provider.imap_port.to_string();
-        account.imap_use_tls = provider.imap_tls;
-        account.smtp_server = provider.smtp_server.clone();
-        account.smtp_port = provider.smtp_port.to_string();
-        account.smtp_use_tls = provider.smtp_tls;
-        account.username = email;
-        account.provider = Some(provider.name.clone());
-        // use_oauth is already set by Account::new based on email domain
-        account
-    }
-
     /// Validate account configuration
     pub fn validate(&self) -> Result<(), String> {
         if self.name.trim().is_empty() {
@@ -288,48 +269,6 @@ impl Account {
     /// column every account row carried empty.
     pub fn mark_synced(&mut self) {
         self.last_sync = Some(SystemTime::now());
-    }
-
-    /// Migrate from old AccountConfig to new Account
-    pub fn from_account_config(config: &crate::presentation::ui_types::AccountConfig) -> Self {
-        let email = config.email.clone();
-
-        let provider = if let Some(provider_name) = &config.selected_provider {
-            Some(provider_name.clone())
-        } else {
-            crate::data::email_providers::detect_provider_from_email(&email).map(|p| p.name.clone())
-        };
-
-        Account {
-            id: uuid::Uuid::new_v4().to_string(),
-            name: "Primary Account".to_string(),
-            sender_name: String::new(),
-            email: email.clone(),
-            imap_server: config.imap_server.clone(),
-            imap_port: config.imap_port.clone(),
-            imap_use_tls: config.imap_use_tls,
-            smtp_server: config.smtp_server.clone(),
-            smtp_port: config.smtp_port.clone(),
-            smtp_use_tls: config.smtp_use_tls,
-            username: config.username.clone(),
-            password: config.password.clone(),
-            use_oauth: oauth_is_default(&email),
-            oauth_access_token: String::new(),
-            oauth_refresh_token: String::new(),
-            oauth_token_expires_at: None,
-            enabled: true,
-            check_interval_minutes: 5,
-            provider,
-            last_sync: None,
-            color: "#4A90E2".to_string(),
-            protocol: crate::common::types::Protocol::Imap.as_str().to_string(),
-            pop_server: String::new(),
-            pop_port: "995".to_string(),
-            pop_use_tls: true,
-            pop_leave_on_server: true,
-            pop_remove_after_days: 0,
-            allow_deleting_here: true,
-        }
     }
 }
 
@@ -527,24 +466,6 @@ mod tests {
     }
 
     #[test]
-    fn test_an_account_made_from_a_preset_takes_that_preset_s_servers() {
-        let gmail = crate::data::email_providers::detect_provider_from_email("user@gmail.com")
-            .expect("gmail is a preset");
-
-        let account =
-            Account::from_provider("Work".to_string(), "user@gmail.com".to_string(), &gmail);
-
-        assert_eq!(account.imap_server, "imap.gmail.com");
-        assert_eq!(account.imap_port, "993");
-        assert!(account.imap_use_tls);
-        assert_eq!(account.smtp_server, "smtp.gmail.com");
-        assert_eq!(account.smtp_port, "587");
-        assert!(account.smtp_use_tls);
-        assert_eq!(account.username, "user@gmail.com");
-        assert_eq!(account.provider.as_deref(), Some("gmail"));
-    }
-
-    #[test]
     fn test_an_account_remembers_when_it_last_synced() {
         // The gap since the last sync is how "not syncing" gets noticed at
         // all. Never recording one leaves it looking like it has never run.
@@ -559,32 +480,6 @@ mod tests {
                 < std::time::Duration::from_secs(60),
             "the recorded time is not now"
         );
-    }
-
-    #[test]
-    fn test_migrate_from_account_config() {
-        use crate::presentation::ui_types::AccountConfig;
-
-        let config = AccountConfig {
-            email: "user@gmail.com".to_string(),
-            selected_provider: Some("Gmail".to_string()),
-            imap_server: "imap.gmail.com".to_string(),
-            imap_port: "993".to_string(),
-            imap_use_tls: true,
-            smtp_server: "smtp.gmail.com".to_string(),
-            smtp_port: "465".to_string(),
-            smtp_use_tls: true,
-            username: "user@gmail.com".to_string(),
-            password: "password123".to_string(),
-        };
-
-        let account = Account::from_account_config(&config);
-        assert_eq!(account.email, "user@gmail.com");
-        // A migrated account keeps its password and signs in with it. Turning
-        // OAuth on here would have made an account that already worked stop
-        // working until somebody went and authorised it.
-        assert!(!account.use_oauth);
-        assert_eq!(account.provider, Some("Gmail".to_string()));
     }
 
     // ── Port validation ─────────────────────────────────────────────────

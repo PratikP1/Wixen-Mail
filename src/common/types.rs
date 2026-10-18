@@ -291,49 +291,6 @@ impl PimModule {
     }
 }
 
-/// Server configuration for email protocols
-#[derive(Debug, Clone)]
-pub struct ServerConfig {
-    pub host: String,
-    pub port: u16,
-    pub use_tls: bool,
-    pub use_starttls: bool,
-}
-
-impl ServerConfig {
-    /// Create a new server configuration
-    pub fn new(host: String, port: u16, use_tls: bool) -> Self {
-        Self {
-            host,
-            port,
-            use_tls,
-            use_starttls: false,
-        }
-    }
-}
-
-/// Account credentials (plaintext in memory; encrypted at persistence boundary by MessageCache)
-#[derive(Debug, Clone)]
-pub struct Credentials {
-    pub username: String,
-    pub password: String,
-}
-
-impl Credentials {
-    /// Create new credentials
-    pub fn new(username: String, password: String) -> Self {
-        Self { username, password }
-    }
-}
-
-/// Account-specific settings
-#[derive(Debug, Clone, Default)]
-pub struct AccountSettings {
-    pub check_interval_minutes: u32,
-    pub signature: Option<String>,
-    pub default_folder: Option<String>,
-}
-
 /// Message body types
 ///
 /// Which MIME part a body came from is not recoverable from the string. "if a
@@ -577,22 +534,6 @@ mod tests {
         let addr = EmailAddress::new("bob@example.com".to_string(), Some(name.to_string()));
         let escaped = name.replace('\\', "\\\\");
         assert_eq!(addr.to_string(), format!("\"{escaped}\" <bob@example.com>"));
-    }
-
-    #[test]
-    fn test_server_config() {
-        let config = ServerConfig::new("imap.example.com".to_string(), 993, true);
-        assert_eq!(config.host, "imap.example.com");
-        assert_eq!(config.port, 993);
-        assert!(config.use_tls);
-        assert!(!config.use_starttls);
-    }
-
-    #[test]
-    fn test_credentials() {
-        let creds = Credentials::new("user@example.com".to_string(), "password".to_string());
-        assert_eq!(creds.username, "user@example.com");
-        assert_eq!(creds.password, "password");
     }
 
     #[test]

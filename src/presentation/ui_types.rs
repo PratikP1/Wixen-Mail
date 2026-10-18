@@ -293,21 +293,6 @@ impl ConnectionVoice {
     }
 }
 
-/// Account configuration data
-#[derive(Clone, Debug, Default)]
-pub struct AccountConfig {
-    pub email: String,
-    pub selected_provider: Option<String>,
-    pub imap_server: String,
-    pub imap_port: String,
-    pub imap_use_tls: bool,
-    pub smtp_server: String,
-    pub smtp_port: String,
-    pub smtp_use_tls: bool,
-    pub username: String,
-    pub password: String,
-}
-
 /// Composition data for email drafts
 #[derive(Clone, Debug, Default)]
 pub struct CompositionData {
