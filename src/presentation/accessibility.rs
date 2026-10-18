@@ -914,22 +914,22 @@ mod tests {
         let a11y = Accessibility::new().expect("accessibility");
         a11y.initialize().expect("initialize");
 
-        // One line since 13.2-22: the two are released by one flush, and so
-        // joined there rather than at the handover.
+        // Read sentence by sentence, because lines released by one flush are
+        // joined there into one (13.2-22).
         let waiting = a11y.screen_reader.held();
-        let says = |sentence: &str| {
-            waiting
-                .iter()
-                .any(|line| line.split(". ").any(|said| said == sentence))
-        };
+        let sentences = || waiting.iter().flat_map(|line| line.split(". "));
         assert!(
-            says("Wixen Mail is ready"),
+            sentences().any(|said| said == "Wixen Mail is ready"),
             "the startup line was not waiting for a window: {:?}",
             waiting
         );
+        // Start-up used to say "Focus moved to Folders" here. That line came
+        // from a name stored in a model of the window that reached neither UI
+        // Automation nor MSAA, not from where Windows put focus, so it could
+        // say something untrue and nothing would notice (audit #37 and #47).
         assert!(
-            says("Focus moved to Folders"),
-            "where the cursor landed was not waiting for a window: {:?}",
+            !sentences().any(|said| said.starts_with("Focus moved to")),
+            "start-up said where focus went from a stored name, not from Windows: {:?}",
             waiting
         );
 
