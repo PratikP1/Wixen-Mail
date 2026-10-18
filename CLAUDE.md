@@ -422,6 +422,22 @@ commit message can say that a commit is the red half of red/green, and at
 `pre-commit` time the message does not exist yet. As a `pre-commit` hook this
 gate could not tell a red commit from a broken one and refused both.
 
+**Since 2026-10-18 (13.2-25) the hook refuses a commit whose tree is not what it
+stages.** The hook decides what to run from the staged files and then builds and
+tests the files on disk, so until that day a commit could pass while its own
+snapshot did not build, the parent's `mod b;` staged and `b.rs` left untracked,
+and be refused over work it did not hold. Now, before its first stage, it
+refuses when a tracked file differs on disk from what the commit stages or an
+untracked file is not ignored, and names them. Stage them, or set them aside
+with `git stash --keep-index -u`, commit, and `git stash pop`. Four places are
+left out of the question on purpose, because planning and re-measuring leave
+them unstaged in the same checkout: `.planning`, `docs`, `guards` and the
+Markdown files at the root. An unstaged change there can still reach a test that
+reads documents, which is ledger 325 and stays open. A run by hand is not
+refused. The same plan made a red commit's verdict count the test binaries cargo
+started against those that reported, so a binary that crashed part way is
+refused rather than read as clean.
+
 **Do not reach for `--no-verify`.** The advice used to be that it was for a work
 in progress on a branch nobody builds. That was right about the case and wrong
 about the tool: it skips formatting and clippy as well, which cost fifteen
