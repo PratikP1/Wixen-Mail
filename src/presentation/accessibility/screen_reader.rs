@@ -10,8 +10,8 @@
 //! foreground window. That is a last resort, not a way to announce: it cannot
 //! carry text we chose.
 //!
-//! On non-Windows platforms the bridge is a no-op stub and only stores events
-//! for diagnostic / test use.
+//! On non-Windows platforms the bridge is a no-op stub: it keeps the last line
+//! released and the lines waiting for a window, and says nothing.
 
 use crate::common::Result;
 use std::sync::Mutex;
@@ -528,7 +528,10 @@ pub(crate) fn handed_over_together(lines: &[Line]) -> Option<Line> {
 /// Bridge to Windows UI Automation for screen readers
 pub struct ScreenReaderBridge {
     last_announcement: Mutex<Option<String>>,
-    /// Every line released, oldest first.
+    /// Every line released, oldest first, in a test build alone. A shipped
+    /// build keeps no such list: it would hold every message read aloud for
+    /// as long as the program runs.
+    #[cfg(test)]
     released: Mutex<Vec<String>>,
     /// Native handle of the control used to carry announcements, or zero.
     live_region: AtomicIsize,
@@ -710,13 +713,16 @@ impl ScreenReaderBridge {
             })?;
             *last = Some(text.to_string());
         }
-        // Logged as asked for whether or not it can go anywhere yet, so the
-        // record of what the code tried to say stays complete.
+        // Kept for the tests whether or not it can go anywhere yet. A shipped
+        // build keeps nothing beyond the last line; the log's "Speaking"
+        // lines, message text by its length, are its record of what was said.
+        #[cfg(test)]
         self.remember_released(text)?;
 
         self.deliver(text, urgency, topic)
     }
 
+    #[cfg(test)]
     fn remember_released(&self, text: &str) -> Result<()> {
         let mut released = self.released.lock().map_err(|_| {
             crate::common::Error::Other("Screen reader released lines lock poisoned".to_string())
@@ -728,7 +734,8 @@ impl ScreenReaderBridge {
     /// Every line released, oldest first, for the tests of this layer and the
     /// one above, which have no other way to see what was said. Says what the
     /// code asked for, not that anybody heard it.
-    pub fn released(&self) -> Vec<String> {
+    #[cfg(test)]
+    pub(crate) fn released(&self) -> Vec<String> {
         match self.released.lock() {
             Ok(released) => released.clone(),
             Err(_) => Vec::new(),
@@ -749,6 +756,7 @@ impl Default for ScreenReaderBridge {
     fn default() -> Self {
         Self {
             last_announcement: Mutex::new(None),
+            #[cfg(test)]
             released: Mutex::new(Vec::new()),
             live_region: AtomicIsize::new(0),
             registered: AtomicBool::new(false),

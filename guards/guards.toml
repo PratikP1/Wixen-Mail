@@ -11938,7 +11938,7 @@ before = """        raw != 0"""
 after = """        raw == 0"""
 red = ["presentation::accessibility::screen_reader::native::tests::test_a_nonzero_client_count_means_something_is_listening"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/screen_reader.rs", tests = 22 },
+    { file = "src/presentation/accessibility/screen_reader.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -11951,7 +11951,7 @@ red = [
     "presentation::accessibility::screen_reader::tests::test_a_working_registration_is_logged_as_routine_info_not_a_warning",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/screen_reader.rs", tests = 22 },
+    { file = "src/presentation/accessibility/screen_reader.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -11964,7 +11964,7 @@ red = [
     "presentation::accessibility::screen_reader::tests::test_registering_with_something_waiting_logs_how_many_were_waiting",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility/screen_reader.rs", tests = 22 },
+    { file = "src/presentation/accessibility/screen_reader.rs", tests = 24 },
 ]
 
 # ── Security and safety subsystem, from the 2026-08-22 mutation-sweep round ─
