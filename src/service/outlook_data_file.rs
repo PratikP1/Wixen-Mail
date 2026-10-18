@@ -1930,21 +1930,6 @@ impl OutlookDataFile {
         self.a_password_is_set
     }
 
-    /// What to say about the password, when there is one.
-    ///
-    /// Not a refusal, because the password never locked anything: what somebody
-    /// needs to hear is that the mail Outlook is keeping from them is readable
-    /// here, not that this program has hit the same wall.
-    pub fn what_to_say_about_its_password(&self) -> Option<String> {
-        self.a_password_is_set.then(|| {
-            format!(
-                "{} has a password on it. Outlook asks for that password and nothing in the \
-                 file is locked by it, so your mail can still be imported.",
-                self.opened_at.display()
-            )
-        })
-    }
-
     /// What could not be brought across, for the sentence at the end.
     pub fn what_stayed_behind(&self) -> WhatStayedBehind {
         self.stayed_behind

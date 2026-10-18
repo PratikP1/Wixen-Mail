@@ -825,29 +825,11 @@ pub struct IncomingMessage {
 }
 
 impl MessageCache {
-    /// The POP identifiers already downloaded into a folder.
+    /// Every POP identifier this account has downloaded.
     ///
     /// What decides whether a message on the server is new. Never message
     /// numbers: those are assigned per session and shift as messages are
     /// deleted, so the same number is a different message next time.
-    pub fn pop_uidls(&self, folder_id: i64) -> Result<std::collections::HashSet<String>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT pop_uidl FROM messages
-                 WHERE folder_id = ?1 AND pop_uidl IS NOT NULL",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let found = stmt
-            .query_map(params![folder_id], |row| row.get::<_, String>(0))
-            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))?
-            .collect::<std::result::Result<std::collections::HashSet<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to read the identifiers: {}", e)))?;
-        Ok(found)
-    }
-
-    /// Every POP identifier this account has downloaded.
     ///
     /// The account's scope rather than one folder's, and rows marked as deleted
     /// as well as the rest. A message moved to the trash is out of the inbox,
@@ -883,6 +865,10 @@ impl MessageCache {
     /// matters for a different reason. This is what the removal policy counts
     /// from, so a message that leaves the inbox and loses its time is one that
     /// silently never leaves the server, whatever somebody asked for.
+    ///
+    /// A message with no time recorded is left out, so it is never removed
+    /// from the server: a missing time is a reason to keep mail, not to delete
+    /// it.
     pub fn pop_download_times_for_account(
         &self,
         account_id: &str,
@@ -1104,37 +1090,6 @@ impl MessageCache {
             // answer that cannot collide with a number a server will issue.
             None => WrittenDownAs::FiledHereCountingDownFromTheTop,
         })
-    }
-
-    /// When each POP message in a folder was downloaded.
-    ///
-    /// What the removal policy counts from. A message with no time recorded is
-    /// left out, so it is never removed from the server: a missing time is a
-    /// reason to keep mail, not to delete it.
-    pub fn pop_download_times(
-        &self,
-        folder_id: i64,
-    ) -> Result<std::collections::HashMap<String, chrono::DateTime<chrono::Utc>>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached(
-                "SELECT pop_uidl, downloaded_at FROM messages
-                 WHERE folder_id = ?1 AND pop_uidl IS NOT NULL AND downloaded_at IS NOT NULL",
-            )
-            .map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let found = stmt
-            .query_map(params![folder_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-            })
-            .map_err(|e| Error::Other(format!("Failed to read the download times: {}", e)))?
-            .filter_map(|row| {
-                let (uidl, when) = row.ok()?;
-                let when = chrono::DateTime::parse_from_rfc3339(&when).ok()?;
-                Some((uidl, when.into()))
-            })
-            .collect();
-        Ok(found)
     }
 
     /// The number a message with this identifier already has in a folder.
@@ -2437,51 +2392,6 @@ impl MessageCache {
         Ok(id)
     }
 
-    /// Get messages for a folder scoped to an account
-    pub fn get_messages_for_folder(
-        &self,
-        folder_id: i64,
-        account_id: &str,
-    ) -> Result<Vec<CachedMessage>> {
-        let mut stmt = self.conn.prepare_cached(
-            // NULL in place of the bodies: a listing shows subjects, and
-            // pulling body text through to render one is what made this table
-            // unusable at scale.
-            "SELECT m.id, m.uid, m.folder_id, m.message_id, m.subject, m.from_addr, m.to_addr, m.cc, m.date,
-                    NULL, NULL, m.read, m.starred, m.deleted, m.safety
-             FROM messages m
-             INNER JOIN folders f ON m.folder_id = f.id
-             WHERE m.folder_id = ?1 AND f.account_id = ?2 AND m.deleted = 0
-             ORDER BY m.date DESC"
-        ).map_err(|e| Error::Other(format!("Failed to prepare statement: {}", e)))?;
-
-        let messages = stmt
-            .query_map(params![folder_id, account_id], |row| {
-                Ok(CachedMessage {
-                    id: row.get(0)?,
-                    uid: row.get(1)?,
-                    folder_id: row.get(2)?,
-                    message_id: row.get(3)?,
-                    subject: row.get(4)?,
-                    from_addr: row.get(5)?,
-                    to_addr: row.get(6)?,
-                    cc: row.get(7)?,
-                    date: row.get(8)?,
-                    body_plain: row.get(9)?,
-                    body_html: row.get(10)?,
-                    read: row.get(11)?,
-                    starred: row.get(12)?,
-                    deleted: row.get(13)?,
-                    safety: safety_in(row, 14)?,
-                })
-            })
-            .map_err(|e| Error::Other(format!("Failed to query messages: {}", e)))?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .map_err(|e| Error::Other(format!("Failed to collect messages: {}", e)))?;
-
-        Ok(messages)
-    }
-
     /// List a folder for display.
     ///
     /// Newest first, which is the default sort and what someone opening a
@@ -3504,8 +3414,8 @@ mod tests {
         cache.move_message(row, trash).unwrap();
 
         assert!(
-            !cache.pop_uidls(inbox).unwrap().contains("aaa"),
-            "the folder-scoped read found it, so this proves nothing"
+            cache.get_message_list(inbox, "acc").unwrap().is_empty(),
+            "the message is still in the inbox, so nothing was moved"
         );
         assert!(cache.pop_uidls_for_account("acc").unwrap().contains("aaa"));
     }
@@ -3557,7 +3467,10 @@ mod tests {
         let row = cache.upsert_message(&arrived).unwrap();
         cache.move_message(row, trash).unwrap();
 
-        assert!(!cache.pop_download_times(inbox).unwrap().contains_key("aaa"));
+        assert!(
+            cache.get_message_list(inbox, "acc").unwrap().is_empty(),
+            "the message is still in the inbox, so nothing was moved"
+        );
         assert!(
             cache
                 .pop_download_times_for_account("acc")
@@ -6426,7 +6339,7 @@ mod tests {
         assert!(msg_id > 0);
 
         let messages = cache
-            .get_messages_for_folder(folder_id, "test@example.com")
+            .get_message_list(folder_id, "test@example.com")
             .unwrap();
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].subject, "Test Subject");
@@ -6497,11 +6410,11 @@ mod tests {
         cache.save_message(&msg1).unwrap();
         cache.save_message(&msg2).unwrap();
 
-        let messages1 = cache.get_messages_for_folder(folder1_id, "acc-1").unwrap();
+        let messages1 = cache.get_message_list(folder1_id, "acc-1").unwrap();
         assert_eq!(messages1.len(), 1);
         assert_eq!(messages1[0].subject, "Account 1 Message");
 
-        let messages_cross = cache.get_messages_for_folder(folder1_id, "acc-2").unwrap();
+        let messages_cross = cache.get_message_list(folder1_id, "acc-2").unwrap();
         assert!(messages_cross.is_empty());
     }
 

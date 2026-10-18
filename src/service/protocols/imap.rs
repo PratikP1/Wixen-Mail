@@ -1440,11 +1440,6 @@ impl ImapSession {
         .map_err(protocol_error("Could not change the message"))
     }
 
-    /// Mark a message read.
-    pub async fn mark_as_read(&mut self, uid: u32) -> Result<()> {
-        self.set_flag(uid, flag::SEEN, true).await
-    }
-
     /// Copy a message into another mailbox, leaving the original where it is.
     ///
     /// On Gmail this adds a label rather than making a second message, which is
@@ -1510,33 +1505,20 @@ impl ImapSession {
         Ok(Moved::Moved)
     }
 
-    /// Remove every message in the open mailbox with this `Message-ID`.
+    /// Which messages in the open mailbox carry this `Message-ID`.
     ///
-    /// Used to replace a filed draft with a newer one. Searched rather than
-    /// remembered, because the reply to an APPEND only says where the message
-    /// landed on servers with UIDPLUS, and this has to work on the ones without.
+    /// Asked before a filed draft is replaced, and split from the removal so
+    /// that a newer copy can be filed between the two. Both copies of a draft
+    /// carry the same identifier, so a sweep run after the new copy is filed
+    /// takes the new copy with it; asking first names exactly the copies that
+    /// were there before. Searched rather than remembered, because the reply
+    /// to an APPEND only says where the message landed on servers with
+    /// UIDPLUS, and this has to work on the ones without.
     ///
     /// The identifier is quoted, so a value containing a space or a bracket
     /// cannot end the search key early and turn the criteria into something
     /// else. Nothing found is not an error: a draft saved for the first time
     /// has no previous copy.
-    ///
-    /// The number is what was removed from the server, not what was found.
-    /// Those are different on a server without UIDPLUS, where the old copy can
-    /// only be flagged and left, and the caller writes the new copy as soon as
-    /// this comes back: a count of what was found ends the day with two
-    /// drafts, one flagged for removal and neither obviously the newer.
-    pub async fn remove_by_message_id(&mut self, message_id: &str) -> Result<usize> {
-        let found = self.uids_with_message_id(message_id).await?;
-        self.remove_these(&found).await
-    }
-
-    /// Which messages in the open mailbox carry this `Message-ID`.
-    ///
-    /// Split from the removal so that a newer copy can be filed between the
-    /// two. Both copies of a draft carry the same identifier, so a sweep run
-    /// after the new copy is filed takes the new copy with it; asking first
-    /// names exactly the copies that were there before.
     pub async fn uids_with_message_id(&mut self, message_id: &str) -> Result<Vec<u32>> {
         self.may_i("replace a saved draft")?;
         let quoted = quote_for_search(message_id);
@@ -3048,6 +3030,16 @@ pub(crate) mod against_a_server_that_answers {
             .unwrap_or_else(|_| panic!("the server never answered: {expected} never arrived"))
     }
 
+    /// A filed draft's previous copies taken away the way the program does it:
+    /// asked for first, then exactly those removed.
+    async fn the_copies_asked_for_then_removed(
+        session: &mut ImapSession,
+        message_id: &str,
+    ) -> Result<usize> {
+        let found = session.uids_with_message_id(message_id).await?;
+        session.remove_these(&found).await
+    }
+
     /// What went wrong, in the words the caller is actually given.
     fn the_failure<T: std::fmt::Debug>(outcome: Result<T>) -> String {
         match outcome {
@@ -3327,7 +3319,7 @@ pub(crate) mod against_a_server_that_answers {
         let mut session = with_the_inbox_open(&server).await;
 
         let removed = waiting_for(
-            session.remove_by_message_id("<d@x>"),
+            the_copies_asked_for_then_removed(&mut session, "<d@x>"),
             "the previous draft to go",
         )
         .await
@@ -3360,7 +3352,7 @@ pub(crate) mod against_a_server_that_answers {
         let mut session = with_the_inbox_open(&server).await;
 
         let removed = waiting_for(
-            session.remove_by_message_id("<d@x>"),
+            the_copies_asked_for_then_removed(&mut session, "<d@x>"),
             "the previous draft to go",
         )
         .await
@@ -3386,7 +3378,7 @@ pub(crate) mod against_a_server_that_answers {
         let server = a_server_that_can("UIDPLUS").await;
         let mut session = with_the_inbox_open(&server).await;
 
-        let _ = waiting_for(session.remove_by_message_id("<d one\"x@x>"), "the search").await;
+        let _ = waiting_for(session.uids_with_message_id("<d one\"x@x>"), "the search").await;
 
         assert!(
             server
@@ -3636,10 +3628,9 @@ pub(crate) mod against_a_server_that_answers {
 
         let refusals = vec![
             the_failure(session.set_flag(7, flag::SEEN, true).await),
-            the_failure(session.mark_as_read(7).await),
             the_failure(session.copy_message(7, "Archive").await),
             the_failure(session.move_message(7, "Archive").await),
-            the_failure(session.remove_by_message_id("<d@x>").await),
+            the_failure(session.remove_these(&[4]).await),
             the_failure(session.append_message("Sent", None, None, b"raw").await),
             the_failure(session.delete_message(7, Some("Trash")).await),
             the_failure(session.set_subscribed("Work", true).await),

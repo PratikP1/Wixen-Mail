@@ -86,19 +86,6 @@ pub const THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH: &str = "";
 /// nothing.
 const WHAT_THE_INSTALLER_IS_CALLED: &str = "Wixen-Mail-Setup-";
 
-/// The host a release's own files are served from before any redirect.
-///
-/// Named so `docs/privacy.md` can be tied to it rather than to a phrase
-/// somebody may reword, the way [`crate::service::update_check`] names the host
-/// it asks.
-pub const WHERE_THE_INSTALLER_COMES_FROM: &str = "github.com";
-
-/// The host GitHub redirects a release file to.
-///
-/// A second request to a second company-owned host, and a privacy page that
-/// named only the first would be describing half of what happens.
-pub const AND_THE_HOST_IT_REDIRECTS_TO: &str = "objects.githubusercontent.com";
-
 /// How many redirects are followed before giving up.
 ///
 /// A release file is served from `github.com` and redirected once to the

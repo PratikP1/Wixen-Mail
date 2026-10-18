@@ -1856,7 +1856,7 @@ mod tests {
 
         assert!(cache.get_folder("acc", "Archive").unwrap().is_none());
         assert!(
-            cache.get_messages_for_folder(id, "acc").unwrap().is_empty(),
+            cache.get_message_list(id, "acc").unwrap().is_empty(),
             "the mail in a deleted folder is still on this computer"
         );
     }

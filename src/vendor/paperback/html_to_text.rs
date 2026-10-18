@@ -32,7 +32,7 @@
 // finding #17, 2026-10-14). A re-sync keeps that check. The code itself is
 // otherwise upstream's, so a future re-sync is a diff rather than a rewrite.
 
-use std::{collections::HashMap, fmt::Write, mem};
+use std::{fmt::Write, mem};
 
 use bitflags::bitflags;
 use ego_tree::NodeRef;
@@ -86,7 +86,6 @@ impl Default for ListStyle {
 pub struct HtmlToText {
     lines: Vec<String>,
     current_line: String,
-    id_positions: HashMap<String, usize>,
     headings: Vec<HeadingInfo>,
     links: Vec<LinkInfo>,
     images: Vec<ImageInfo>,
@@ -128,7 +127,6 @@ impl HtmlToText {
         Self {
             lines: Vec::new(),
             current_line: String::new(),
-            id_positions: HashMap::new(),
             headings: Vec::new(),
             links: Vec::new(),
             images: Vec::new(),
@@ -238,11 +236,6 @@ impl HtmlToText {
     }
 
     #[must_use]
-    pub const fn get_id_positions(&self) -> &HashMap<String, usize> {
-        &self.id_positions
-    }
-
-    #[must_use]
     pub fn get_bolds(&self) -> &[FormatInfo] {
         &self.bolds
     }
@@ -260,7 +253,6 @@ impl HtmlToText {
     pub fn clear(&mut self) {
         self.lines.clear();
         self.current_line.clear();
-        self.id_positions.clear();
         self.headings.clear();
         self.links.clear();
         self.images.clear();
@@ -302,12 +294,6 @@ impl HtmlToText {
             Node::Element(element) => {
                 let tag_name = element.name();
                 if tag_name == "table" {
-                    if self.flags.contains(ProcessingFlags::IN_BODY)
-                        && let Some(id) = element.attr("id").or_else(|| element.attr("name"))
-                    {
-                        self.id_positions
-                            .insert(id.to_string(), self.get_current_text_position());
-                    }
                     self.handle_table(node, document);
                     return;
                 }
@@ -366,49 +352,45 @@ impl HtmlToText {
 
     fn handle_element_opening(&mut self, tag_name: &str, node: NodeRef<'_, Node>, document: &Html) {
         if let Node::Element(element) = node.value() {
-            if self.flags.contains(ProcessingFlags::IN_BODY) {
-                if let Some(id) = element.attr("id").or_else(|| element.attr("name")) {
-                    self.id_positions
-                        .insert(id.to_string(), self.get_current_text_position());
-                }
-                if tag_name == "img" || tag_name == "image" || tag_name == "figure" {
-                    let mut description = element
-                        .attr("alt")
-                        .or_else(|| element.attr("aria-label"))
-                        .or_else(|| element.attr("aria-description"))
-                        .or_else(|| element.attr("title"))
-                        .map(collapse_whitespace)
-                        .unwrap_or_default();
+            if self.flags.contains(ProcessingFlags::IN_BODY)
+                && (tag_name == "img" || tag_name == "image" || tag_name == "figure")
+            {
+                let mut description = element
+                    .attr("alt")
+                    .or_else(|| element.attr("aria-label"))
+                    .or_else(|| element.attr("aria-description"))
+                    .or_else(|| element.attr("title"))
+                    .map(collapse_whitespace)
+                    .unwrap_or_default();
 
-                    if description.is_empty() && tag_name == "figure" {
-                        for child in node.children() {
-                            if let Node::Element(child_elem) = child.value()
-                                && child_elem.name() == "figcaption"
-                            {
-                                description = collapse_whitespace(&Self::collect_text(child));
-                                break;
-                            }
+                if description.is_empty() && tag_name == "figure" {
+                    for child in node.children() {
+                        if let Node::Element(child_elem) = child.value()
+                            && child_elem.name() == "figcaption"
+                        {
+                            description = collapse_whitespace(&Self::collect_text(child));
+                            break;
                         }
                     }
+                }
 
-                    if !description.is_empty() {
-                        let is_figure = tag_name == "figure";
-                        // Said before a picture's description, e.g. "[Figure: a cat
-                        // sleeping]". English literals until version 2 moves them
-                        // into the Fluent catalogue in `common::catalogue`.
-                        let label = if is_figure { "Figure" } else { "Image" };
-                        let image_text = format!("[{label}: {description}]");
-                        let offset = self.get_current_text_position();
-                        self.current_line.push_str(&image_text);
-                        let info = ImageInfo {
-                            offset,
-                            alt_text: description,
-                        };
-                        if is_figure {
-                            self.figures.push(info);
-                        } else {
-                            self.images.push(info);
-                        }
+                if !description.is_empty() {
+                    let is_figure = tag_name == "figure";
+                    // Said before a picture's description, e.g. "[Figure: a cat
+                    // sleeping]". English literals until version 2 moves them
+                    // into the Fluent catalogue in `common::catalogue`.
+                    let label = if is_figure { "Figure" } else { "Image" };
+                    let image_text = format!("[{label}: {description}]");
+                    let offset = self.get_current_text_position();
+                    self.current_line.push_str(&image_text);
+                    let info = ImageInfo {
+                        offset,
+                        alt_text: description,
+                    };
+                    if is_figure {
+                        self.figures.push(info);
+                    } else {
+                        self.images.push(info);
                     }
                 }
             }

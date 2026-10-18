@@ -781,7 +781,8 @@ fn a_passphrase_is_held_for(fingerprint: &str) -> bool {
 /// From the credential store rather than from a stored flag, for the reason
 /// [`super::keyring_entries`] gives: deciding from a flag whether a secret
 /// exists is how secrets get left behind.
-pub(super) fn a_key_is_here() -> bool {
+#[cfg(test)]
+fn a_key_is_here() -> bool {
     keys_here().is_ok_and(|keys| !keys.is_empty())
 }
 

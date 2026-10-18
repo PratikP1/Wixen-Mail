@@ -214,21 +214,6 @@ pub fn link_re() -> &'static regex::Regex {
     })
 }
 
-pub fn img_tag_re() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(?is)<img\b").expect("valid image tag regex"))
-}
-
-pub fn anchor_tag_re() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(?is)<a\b").expect("valid anchor tag regex"))
-}
-
-pub fn script_tag_re() -> &'static regex::Regex {
-    static RE: OnceLock<regex::Regex> = OnceLock::new();
-    RE.get_or_init(|| regex::Regex::new(r"(?is)<\s*script\b").expect("valid script tag regex"))
-}
-
 /// The cleaner, told to admit the pictures this application carried in.
 ///
 /// `ammonia::clean` refuses `data:` addresses, which is right for a sender's

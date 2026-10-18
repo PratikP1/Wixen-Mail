@@ -8706,7 +8706,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
@@ -9996,7 +9996,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -14912,7 +14912,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -16301,7 +16301,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -16381,7 +16381,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/data/message_cache/mod.rs", tests = 23 },
 ]
 
@@ -16421,7 +16421,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -24963,7 +24963,7 @@ red = [
     "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_without_ending_the_program",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -24985,7 +24985,7 @@ red = [
     "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -25010,7 +25010,7 @@ red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
 ]
 
 # Undo Send taken off the Edit menu, which is the shape the tester met on
@@ -25951,7 +25951,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
 ]
 
 # A chunk of the text pass stops before the next message when it is asked
@@ -26382,7 +26382,7 @@ red = [
     "data::message_cache::bodies::tests::test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
 ]
 
 # ── The check's worker opens its cache with how much text stays (#23) ───────
@@ -28906,7 +28906,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -28936,7 +28936,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -40916,7 +40916,7 @@ tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
-    { file = "src/data/message_cache/bodies.rs", tests = 52 },
+    { file = "src/data/message_cache/bodies.rs", tests = 51 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/vendor/paperback/mod.rs", tests = 15 },
 ]
