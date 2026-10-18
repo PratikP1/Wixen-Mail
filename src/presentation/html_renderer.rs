@@ -2672,6 +2672,33 @@ mod tests {
         );
     }
 
+    /// RUSTSEC-2026-0373: ammonia before 4.1.8 matched `url(` in a style
+    /// case-sensitively, so `URL(...)` escaped the address filter on a cleaner
+    /// that kept styles. This cleaner keeps no `style` at all, so the case is a
+    /// pin rather than a fix: it holds the page to fetching nothing from a style
+    /// whichever way the sender spells the function.
+    #[test]
+    fn test_a_remote_address_in_a_style_never_reaches_the_page_in_either_case() {
+        let renderer = HtmlRenderer::new();
+        for function in ["url", "URL"] {
+            let html = format!(
+                "<div style='background:{function}(\"https://tracker.example/ping\")'>Hello</div>"
+            );
+            let page = renderer.wrap_body(&MessageBody::Html(html.clone()));
+            let cleaned = renderer.sanitize_html(&html);
+            for (what, out) in [("page", &page), ("sanitize_html", &cleaned)] {
+                assert!(
+                    !out.contains("tracker.example"),
+                    "{function}: the {what} still names the remote address\n{out}"
+                );
+                assert!(
+                    out.contains("Hello"),
+                    "{function}: the {what} lost the words\n{out}"
+                );
+            }
+        }
+    }
+
     // ── Accessibility survives sanitizing ───────────────────────────────
     //
     // Stripping hostile markup must not also strip the structure a screen

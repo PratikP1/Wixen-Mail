@@ -1427,6 +1427,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The library that cleans incoming mail has its published security fix (2026-10-18).** The
+  fix stops a web address in a message's styling, written in capitals, from getting past the
+  check on which addresses a page may load. The preview was not exposed, because it removes all
+  of a message's styling before anything else, so no address in a style ever reached it; a test
+  now holds it to that whichever way the address is written.
+
 - **Settings are saved whole or not at all (2026-10-17).** Saving your settings used to empty
   the settings file first and then write it again. A power cut, a crash of Windows or a forced
   restart in that moment left an empty file, and from then on the program could not read your
