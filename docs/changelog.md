@@ -1437,6 +1437,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **M and Delete on a conversation no longer hold the window in a large mailbox
+  (2026-10-18).** Under conversation view, marking a conversation read or unread with M, or
+  deleting it, held the window for about half a second in a big folder or in All Inboxes, so
+  the next key waited. Each press read the whole folder twice to find one conversation. It now
+  reads only that conversation. On a copy the size of the tester's Inbox, made for the
+  purpose (34,407 messages in 22,503 conversations), the work behind one press went from 465
+  to 484 ms to 15 to 21 ms. Nobody has heard it on that mailbox yet.
+
 - **Uninstalling works again (2026-10-18).** Since 2026-08-27 every uninstall, for one person
   or for all users, stopped at an error before it removed anything. The uninstaller asked
   Windows Search to stop reading your mail through a call that Inno Setup, which builds the

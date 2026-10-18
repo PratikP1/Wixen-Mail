@@ -40,7 +40,14 @@
 //! automatic mark arrive through. Each has a planted companion seen to fail.
 //!
 //! One ignored case times the narrowed read against the whole listing at the
-//! size Pratik's log of 2026-10-06 recorded, for the measurements page.
+//! size Pratik's log of 2026-10-06 recorded, for the measurements page. Since
+//! 13.2-31.1 (2026-10-18) it times every store step of M on a conversation
+//! row as the window takes them, the chosen read, the writes, the catch-up
+//! and the rule, on the store as written and again after a close and an
+//! open, and fails when the press spends more than 100 ms. It runs by hand,
+//! so nothing on a commit checks that figure; what runs on every commit is
+//! the plan reading in `storage_shape`, which holds how the reads search and
+//! not how long they take.
 //!
 //! # Why this lives here rather than beside the code
 //!
@@ -72,7 +79,7 @@ use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCach
 use wixen_mail::presentation::folder_tree::WhichRow;
 use wixen_mail::presentation::message_columns::MessageColumn;
 use wixen_mail::presentation::ui_types::MessageItem;
-use wixen_mail::presentation::view_state::Showing;
+use wixen_mail::presentation::view_state::{Showing, bring_rows_up_to_date};
 use wixen_mail::presentation::virtual_rows;
 use wixen_mail::presentation::wx_app::{
     WxUIState, apply_threading, bring_the_conversation_rows_up_to_date, take_row_out_of_the_list,
@@ -431,6 +438,125 @@ fn the_median_of_three(mut work: impl FnMut() -> usize) -> (Duration, usize) {
     (takes[1], rows)
 }
 
+/// What M on a conversation row may spend in the store, all of it: both reads
+/// of the conversation, the writes, and the rule over the rows on screen.
+/// 13.2-02 set 100 ms for a read on a key press and measured 299 ms for one of
+/// the two reads; Pratik, 2026-10-15: "0.3 secs seems slow" (ledger 837).
+const A_KEY_PRESS_MAY_SPEND: Duration = Duration::from_millis(100);
+
+/// A conversation of two messages, the kind a press most often lands on.
+const THE_PRESSED_CONVERSATION: &str = "c20000@example.com";
+
+/// What one condition of the store measured for a press.
+struct ThePress {
+    /// Every step of the press, summed.
+    the_press: Duration,
+    /// The catch-up's read under All Inboxes, which takes the folder's place
+    /// there, so it stands beside the sum rather than in it.
+    every_inbox: Duration,
+}
+
+/// Each store step of M on [`THE_PRESSED_CONVERSATION`], in the order the
+/// window takes them (`toggle_read_state`, `mark_these_read`,
+/// `bring_the_conversation_rows_up_to_date`), each the median of three and
+/// printed as it is taken. The catch-up's two settings loads are left out: a
+/// test never reads the profile of whoever runs it.
+fn the_press_timed(cache: &MessageCache, inbox: i64, condition: &str) -> ThePress {
+    let reach = AConversationReaches::TheWholeAccount;
+    let (whole, listed) = the_median_of_three(|| {
+        cache
+            .conversations_in(inbox, THE_ACCOUNT, reach, None)
+            .expect("the whole listing")
+            .len()
+    });
+    assert_eq!(listed, (ALONE + OF_TWO) as usize);
+    let on_screen = cache
+        .conversations_in(inbox, THE_ACCOUNT, reach, None)
+        .expect("the rows on screen");
+
+    let the_chosen = || {
+        cache
+            .messages_in_conversation(THE_PRESSED_CONVERSATION, THE_ACCOUNT, inbox, reach)
+            .expect("the chosen read")
+    };
+    let (chosen, _) = the_median_of_three(|| the_chosen().len());
+    let ids = the_chosen();
+    assert_eq!(ids.len(), 2, "the pressed conversation is two messages");
+    let (looked_up, _) = the_median_of_three(|| {
+        ids.iter()
+            .filter_map(|id| cache.get_message(*id).expect("the message"))
+            .count()
+    });
+    let mut marking_read = false;
+    let (written, _) = the_median_of_three(|| {
+        marking_read = !marking_read;
+        for id in &ids {
+            cache
+                .update_message_flags(*id, marking_read, false)
+                .expect("the mark written");
+        }
+        ids.len()
+    });
+    let (folders_named, _) = the_median_of_three(|| {
+        ids.iter()
+            .filter_map(|id| cache.folder_path_for_message(*id).expect("its folder"))
+            .count()
+    });
+    let (holding, _) = the_median_of_three(|| {
+        cache
+            .conversations_holding(&ids)
+            .expect("the conversations")
+            .len()
+    });
+    let touched = cache
+        .conversations_holding(&ids)
+        .expect("the conversations");
+    let (caught_up, named) = the_median_of_three(|| {
+        cache
+            .conversations_named_in(inbox, THE_ACCOUNT, reach, None, &touched)
+            .expect("the catch-up read")
+            .len()
+    });
+    assert_eq!(named, 1);
+    let fresh = cache
+        .conversations_named_in(inbox, THE_ACCOUNT, reach, None, &touched)
+        .expect("the catch-up read");
+    let (ruled, _) = the_median_of_three(|| {
+        bring_rows_up_to_date(&on_screen, &touched, &fresh)
+            .rows
+            .len()
+    });
+    let (every_inbox, of_every_inbox) = the_median_of_three(|| {
+        cache
+            .conversations_named_in_every_inbox(reach, None, &touched)
+            .expect("every inbox's catch-up read")
+            .len()
+    });
+    assert_eq!(of_every_inbox, 1);
+
+    let steps = [
+        ("the chosen read, messages_in_conversation", chosen),
+        ("get_message, both messages", looked_up),
+        ("update_message_flags, both", written),
+        ("folder_path_for_message, both", folders_named),
+        ("conversations_holding", holding),
+        ("the catch-up read, conversations_named_in", caught_up),
+        ("the rule over the rows on screen", ruled),
+    ];
+    println!("{condition}, each step the median of three:");
+    for (step, took) in steps {
+        println!("  {step}: {took:?}");
+    }
+    let the_press = steps.iter().map(|(_, took)| *took).sum();
+    println!("  the press, summed: {the_press:?}");
+    println!("  beside it, every inbox's catch-up read: {every_inbox:?}");
+    println!("  the control, the whole listing of {listed} rows: {whole:?}");
+    ThePress {
+        the_press,
+        every_inbox,
+    }
+}
+
 #[test]
 #[ignore = "a timing, run by hand with --release for docs/development/measurements.md"]
 fn test_what_the_catch_up_costs_at_the_size_of_pratik_s_inbox() {
@@ -438,26 +564,27 @@ fn test_what_the_catch_up_costs_at_the_size_of_pratik_s_inbox() {
     let started = Instant::now();
     let (cache, inbox) = the_large_mailbox(home.path());
     println!("the mailbox written in {:?}", started.elapsed());
-    let reach = AConversationReaches::TheWholeAccount;
+    let as_written = the_press_timed(&cache, inbox, "as written, in the connection that wrote it");
 
-    let (whole, listed) = the_median_of_three(|| {
-        cache
-            .conversations_in(inbox, THE_ACCOUNT, reach, None)
-            .expect("the whole listing")
-            .len()
-    });
-    let one = [whose(THE_ACCOUNT, "c20000@example.com")];
-    let (narrowed, named) = the_median_of_three(|| {
-        cache
-            .conversations_named_in(inbox, THE_ACCOUNT, reach, None, &one)
-            .expect("the narrowed listing")
-            .len()
-    });
+    // The program's own close and open each update the statistics the
+    // planner chooses by, so a store it has used before is planned with them.
+    drop(cache);
+    let cache = MessageCache::new(home.path().to_path_buf(), None).expect("the store again");
+    let reopened = the_press_timed(&cache, inbox, "closed and opened again");
 
-    println!("the whole listing: {listed} rows, median of three {whole:?}");
-    println!("one conversation narrowed: {named} rows, median of three {narrowed:?}");
-    assert_eq!(listed, (ALONE + OF_TWO) as usize);
-    assert_eq!(named, 1);
+    for (condition, press) in [("as written", &as_written), ("reopened", &reopened)] {
+        assert!(
+            press.the_press <= A_KEY_PRESS_MAY_SPEND,
+            "{condition}: the press spent {:?} against {A_KEY_PRESS_MAY_SPEND:?}",
+            press.the_press
+        );
+        assert!(
+            press.every_inbox <= A_KEY_PRESS_MAY_SPEND,
+            "{condition}: every inbox's catch-up read spent {:?} against \
+             {A_KEY_PRESS_MAY_SPEND:?}",
+            press.every_inbox
+        );
+    }
 }
 
 // ── The list's half, on a built list ───────────────────────────────────────
