@@ -35,6 +35,21 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Copied from ci.yml rather than inherited. Workflow-level env belongs to the
+  # file it is written in, so a job here gets none of ci.yml's. The release
+  # gate ran with the sound on until 2026-10-18 (ledger 616); Pratik answered
+  # yes to setting it here, as everywhere else, on 2026-10-14.
+  #
+  # These runners ship no audio driver (actions/runner-images#6983), and
+  # rodio 0.22.2 does not fail cleanly there: it opens something anyway and
+  # faults on the first write, killing the test binary. That is not two
+  # failing tests, it is every test scheduled after the crash never running,
+  # and about 3,500 of ours were lost that way with nothing saying so.
+  #
+  # This does not skip a single sound test. They all still run and all still
+  # assert; the sound goes to a mixer with nothing listening instead of to a
+  # card. src/presentation/accessibility/feedback.rs has the detail.
+  WIXEN_NO_AUDIO: "1"
 
 concurrency:
   group: release-${{ github.ref_name }}
