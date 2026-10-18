@@ -137,6 +137,11 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Count, once, the unread mail of the folders no check counts.
+    pub fn count_the_unread_mail_kept_here_once(&self) -> Result<usize> {
+        Ok(0)
+    }
+
     /// Which folders somebody has chosen to sync, and which they have not.
     ///
     /// Only the folders they have actually answered for. A folder missing from
@@ -1926,6 +1931,279 @@ mod tests {
             read_back(second_id).unread_count,
             0,
             "one folder's counts were written to another"
+        );
+    }
+
+    // ── The count kept in step with the rows here (13.2-31.2) ──────────────
+    // Pratik, 2026-10-15, to ledger 836: the count beside a folder in the tree
+    // changes at once, counted on this computer and corrected by the next
+    // check. Each case gives a folder the server's count first and then makes
+    // the change, so the count read afterwards can only have moved because of
+    // what the change did to the rows here.
+
+    /// The unread count stored for a folder, as the tree reads it.
+    fn unread_of(cache: &MessageCache, folder_id: i64) -> i32 {
+        cache
+            .conn
+            .query_row(
+                "SELECT unread_count FROM folders WHERE id = ?1",
+                [folder_id],
+                |row| row.get(0),
+            )
+            .expect("the folder's count")
+    }
+
+    /// An account's row written with SQL, as the account tests write one,
+    /// rather than through `save_account`, which keeps a credential.
+    fn an_account_row(cache: &MessageCache, id: &str, protocol: &str) {
+        cache
+            .conn
+            .execute(
+                "INSERT INTO accounts
+                 (id, name, email, imap_server, imap_port, imap_use_tls,
+                  smtp_server, smtp_port, smtp_use_tls, username, password,
+                  enabled, check_interval_minutes, color, created_at, updated_at, protocol)
+                 VALUES (?1, ?1, ?1 || '@example.com', 'mail.example.com', '993', 1,
+                         'smtp.example.com', '587', 1, ?1, '',
+                         1, 15, '#000000', '', '', ?2)",
+                rusqlite::params![id, protocol],
+            )
+            .expect("an account row");
+    }
+
+    #[test]
+    fn test_a_message_marked_read_here_lowers_its_folders_unread_count_at_once() {
+        let cache = fresh("count_marked_read");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        cache.set_folder_counts(folder, 3, 10).unwrap();
+
+        cache.update_message_flags(message, true, false).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            2,
+            "a message marked read here left the folder's count where the server put it"
+        );
+    }
+
+    #[test]
+    fn test_a_message_marked_unread_here_raises_its_folders_unread_count() {
+        let cache = fresh("count_marked_unread");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        cache.update_message_flags(message, true, false).unwrap();
+        cache.set_folder_counts(folder, 3, 10).unwrap();
+
+        cache.update_message_flags(message, false, false).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            4,
+            "a message marked unread here left the folder's count where the server put it"
+        );
+    }
+
+    #[test]
+    fn test_a_mark_that_changes_nothing_moves_no_count() {
+        // The server's count was taken before this unread message arrived, so
+        // it reads nought with an unread row here. Starring the row changes
+        // nothing about what is unread, and must leave the server's count.
+        let cache = fresh("count_mark_nothing");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let unread = a_message(&cache, folder, 1);
+        let read = a_message(&cache, folder, 2);
+        cache.update_message_flags(read, true, false).unwrap();
+        cache.set_folder_counts(folder, 0, 10).unwrap();
+
+        cache.update_message_flags(unread, false, true).unwrap();
+        cache.update_message_flags(read, true, true).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            0,
+            "a mark that left the message's read state as it was moved the count"
+        );
+    }
+
+    #[test]
+    fn test_an_unread_message_deleted_here_lowers_its_folders_count() {
+        let cache = fresh("count_deleted");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let soft = a_message(&cache, folder, 1);
+        let taken_off = a_message(&cache, folder, 2);
+        let already_read = a_message(&cache, folder, 3);
+        cache
+            .update_message_flags(already_read, true, false)
+            .unwrap();
+        cache.set_folder_counts(folder, 5, 10).unwrap();
+
+        cache.delete_message(soft).unwrap();
+        assert_eq!(
+            unread_of(&cache, folder),
+            4,
+            "an unread message deleted here left the count where it was"
+        );
+        cache.take_off_this_computer(taken_off).unwrap();
+        assert_eq!(
+            unread_of(&cache, folder),
+            3,
+            "an unread message taken off this computer left the count where it was"
+        );
+        cache.delete_message(already_read).unwrap();
+        assert_eq!(
+            unread_of(&cache, folder),
+            3,
+            "a message already read moved the count when it was deleted"
+        );
+    }
+
+    #[test]
+    fn test_an_unread_message_moved_here_moves_its_count_with_it() {
+        let cache = fresh("count_moved");
+        let left = a_folder(&cache, "acc", "INBOX");
+        let reached = a_folder(&cache, "acc", "Archive");
+        let message = a_message(&cache, left, 1);
+        cache.set_folder_counts(left, 3, 10).unwrap();
+        cache.set_folder_counts(reached, 1, 10).unwrap();
+
+        cache.move_message(message, reached).unwrap();
+
+        assert_eq!(
+            (unread_of(&cache, left), unread_of(&cache, reached)),
+            (2, 2),
+            "an unread message moved here did not take its count with it"
+        );
+    }
+
+    #[test]
+    fn test_a_copy_made_here_raises_the_count_where_it_lands() {
+        let cache = fresh("count_copied");
+        let original = a_folder(&cache, "acc", "INBOX");
+        let reached = a_folder(&cache, "acc", "Archive");
+        let message = a_message(&cache, original, 1);
+        cache.set_folder_counts(original, 3, 10).unwrap();
+        cache.set_folder_counts(reached, 1, 10).unwrap();
+
+        cache.copy_message_here(message, reached).unwrap();
+
+        assert_eq!(
+            (unread_of(&cache, original), unread_of(&cache, reached)),
+            (3, 2),
+            "a copy made here did not raise the count where it landed, or moved the original's"
+        );
+    }
+
+    #[test]
+    fn test_a_folders_count_never_goes_below_nought() {
+        // Below nought and back would read nought again; one that stops at
+        // nought reads one when the message is marked unread again.
+        let cache = fresh("count_nought");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        cache.set_folder_counts(folder, 0, 10).unwrap();
+
+        cache.update_message_flags(message, true, false).unwrap();
+        cache.update_message_flags(message, false, false).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            1,
+            "the count went below nought, or did not move at all"
+        );
+    }
+
+    #[test]
+    fn test_the_next_checks_count_replaces_the_one_kept_here() {
+        let cache = fresh("count_next_check");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        cache.set_folder_counts(folder, 3, 10).unwrap();
+
+        cache.update_message_flags(message, true, false).unwrap();
+        assert_eq!(
+            unread_of(&cache, folder),
+            2,
+            "the mark did not move the count"
+        );
+        cache.set_folder_counts(folder, 7, 12).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            7,
+            "the server's count at the next check did not replace the one kept here"
+        );
+    }
+
+    #[test]
+    fn test_a_pop_inbox_is_counted_from_the_mail_kept_here_once() {
+        // A database from before the count was kept: every count reads
+        // nought, and the pass has never run.
+        let cache = fresh("count_pop_once");
+        an_account_row(&cache, "pop", "pop3");
+        let inbox = a_folder(&cache, "pop", "INBOX");
+        let here = a_folder(
+            &cache,
+            crate::application::local_folders::THIS_COMPUTER,
+            "Local/Kept",
+        );
+        for folder in [inbox, here] {
+            a_message(&cache, folder, 1);
+            a_message(&cache, folder, 2);
+            let read = a_message(&cache, folder, 3);
+            cache.update_message_flags(read, true, false).unwrap();
+            let deleted = a_message(&cache, folder, 4);
+            cache.delete_message(deleted).unwrap();
+        }
+        let as_before_the_count = |cache: &MessageCache| {
+            cache
+                .conn
+                .execute("UPDATE folders SET unread_count = 0", [])
+                .expect("the counts as an older database holds them");
+        };
+        as_before_the_count(&cache);
+        cache
+            .conn
+            .execute("DELETE FROM work_done_once", [])
+            .expect("the pass not yet run");
+
+        cache.count_the_unread_mail_kept_here_once().unwrap();
+        assert_eq!(
+            (unread_of(&cache, inbox), unread_of(&cache, here)),
+            (2, 2),
+            "a POP inbox and a folder on this computer were not counted from their mail"
+        );
+
+        as_before_the_count(&cache);
+        cache.count_the_unread_mail_kept_here_once().unwrap();
+        assert_eq!(
+            (unread_of(&cache, inbox), unread_of(&cache, here)),
+            (0, 0),
+            "the count kept here once ran a second time"
+        );
+    }
+
+    #[test]
+    fn test_a_server_folder_is_never_counted_from_the_rows_here() {
+        // Only part of a large folder is kept here, so counting its rows
+        // would say the inbox holds less unread than it does.
+        let cache = fresh("count_server_folder");
+        an_account_row(&cache, "imap", "imap");
+        let inbox = a_folder(&cache, "imap", "INBOX");
+        a_message(&cache, inbox, 1);
+        a_message(&cache, inbox, 2);
+        cache.set_folder_counts(inbox, 40, 400).unwrap();
+        cache
+            .conn
+            .execute("DELETE FROM work_done_once", [])
+            .expect("the pass not yet run");
+
+        cache.count_the_unread_mail_kept_here_once().unwrap();
+
+        assert_eq!(
+            unread_of(&cache, inbox),
+            40,
+            "a folder a check counts was counted from the rows kept here"
         );
     }
 
