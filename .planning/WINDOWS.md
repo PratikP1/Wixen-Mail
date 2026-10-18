@@ -2,8 +2,8 @@
 schema_version: 1
 open_count: 762
 waived_count: 0
-fixed_count: 131
-total_count: 893
+fixed_count: 132
+total_count: 894
 last_updated: 2026-10-18T12:00:00.000Z
 ---
 
@@ -908,6 +908,7 @@ last_updated: 2026-10-18T12:00:00.000Z
 | 891 | 13.2 | unrun-verify | .github/workflows/release.yml |  | 13.2-24, audit findings #39 and #42 and ledger 616: release.yml's quality-gate now checks out the whole history, holds a contents read token that its checkout does not keep, and runs with WIXEN_NO_AUDIO, and other-platforms.yml's linux and macos jobs check out the whole history. Nothing was dispatched, so none of it has run on a runner. No failure known before a run is left in the release gate, but whether it passes, and whether the Linux and macOS jobs get past the history test to an answer about the platform, is known only from the first dispatch of Release (ledger 326) and of Other platforms, both Pratik's. Open until each has run once after 13.2-24 | open |  | 2026-10-18T09:13:45.000Z |  |
 | 892 | 13.2 | unmet-truth | scripts/check.sh |  | Audit finding #38 of 2026-10-14: a guard record with no suite reddens library tests, and the scoped run reached only the changed file's own module, so a record whose red tests live in another module ran on every commit except the ones that could break it, and since 2026-09-23 not at the merge either. Read 2026-10-18 with Python's TOML reader over guards/guards.toml: 1,160 records name no suite and break a source file, 77 of them name no test in that file's module and 212 more name some outside it | fixed | Closed on 2026-10-18 by 13.2-26 (262c8a22): the scoped run adds a --lib line for each module a changed file's suite-less records name in red, reading the list on its own lines and on one line, and skipping the inside of a multi-line string. The scan agreed with Python's TOML reader on every file, suite and red name of all 1,612 records, and --suites-for answered as before for each of the 302 files the registry names. A change to src/application/sent_copy.rs now runs --lib application::mail_controller::against_a_server_that_answers:: | 2026-10-18T10:30:00.000Z | 2026-10-18T10:30:00.000Z |
 | 893 | 13.2 | unmet-truth | scripts/which-checks.sh |  | Audit finding #41 of 2026-10-14, the build.rs half: a commit changing build.rs answered affected on a branch and at its merge, and the scoped run chose no target for it, so test_the_build_script_stamps_the_same_copyright_on_the_executable, which reads build.rs as data, ran on every commit except the ones that could break it | fixed | Closed on 2026-10-18 by 13.2-26 (10434be0): build.rs joins the installer script's arm and answers all on a branch, beside a version bump and at a merge. rust-toolchain.toml was left out on the verdict's reason: house_style's test_ci_and_this_machine_are_told_to_use_the_same_compiler runs on every scoped commit and refuses a channel bump unless every workflow moves with it, and a workflow already answers all | 2026-10-18T10:30:00.000Z | 2026-10-18T10:30:00.000Z |
+| 894 | 13.2 | todo | scripts/check.sh |  | Audit finding #45 of 2026-10-14: a documents-only commit forced a rebuild and ran clippy, about 30 seconds of the 83 and 86 two documents commits took in 12-04 and 12-05, though it changes no Rust. Clippy could only find Rust left unstaged, which 13.2-25 refuses before any stage, or a lint a new compiler brought, which CI's Clippy job and the phase's full gate catch. CLAUDE.md recorded the rule as Pratik's, so 13.2-26.1 asked him first | fixed | Closed on 2026-10-18 by 13.2-26.1 (fe517abb), on Pratik's answer of 2026-10-14, "yes to both": in the docs_only mode check.sh skips the touch of src/lib.rs and the clippy stage, and keeps rustfmt, the refusal and the targets that read documents. Held by four cases in scripts/check.test.sh against a stand-in cargo; CLAUDE.md's three sentences naming clippy for a documents commit or merge are dated | 2026-10-18T10:55:00.000Z | 2026-10-18T10:55:00.000Z |
 
 ````json
 [
@@ -11626,6 +11627,18 @@ last_updated: 2026-10-18T12:00:00.000Z
     "reason": "Closed on 2026-10-18 by 13.2-26 (10434be0): build.rs joins the installer script's arm and answers all on a branch, beside a version bump and at a merge. rust-toolchain.toml was left out on the verdict's reason: house_style's test_ci_and_this_machine_are_told_to_use_the_same_compiler runs on every scoped commit and refuses a channel bump unless every workflow moves with it, and a workflow already answers all",
     "recorded_at": "2026-10-18T10:30:00.000Z",
     "resolved_at": "2026-10-18T10:30:00.000Z"
+  },
+  {
+    "id": 894,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "Audit finding #45 of 2026-10-14: a documents-only commit forced a rebuild and ran clippy, about 30 seconds of the 83 and 86 two documents commits took in 12-04 and 12-05, though it changes no Rust. Clippy could only find Rust left unstaged, which 13.2-25 refuses before any stage, or a lint a new compiler brought, which CI's Clippy job and the phase's full gate catch. CLAUDE.md recorded the rule as Pratik's, so 13.2-26.1 asked him first",
+    "status": "fixed",
+    "reason": "Closed on 2026-10-18 by 13.2-26.1 (fe517abb), on Pratik's answer of 2026-10-14, \"yes to both\": in the docs_only mode check.sh skips the touch of src/lib.rs and the clippy stage, and keeps rustfmt, the refusal and the targets that read documents. Held by four cases in scripts/check.test.sh against a stand-in cargo; CLAUDE.md's three sentences naming clippy for a documents commit or merge are dated",
+    "recorded_at": "2026-10-18T10:55:00.000Z",
+    "resolved_at": "2026-10-18T10:55:00.000Z"
   }
 ]
 ````

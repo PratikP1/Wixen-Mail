@@ -40,7 +40,8 @@
 #
 #   all           every check: format, clippy, the whole suite, the release build
 #   affected      format, clippy, and the tests that reach what changed
-#   docs_only     format, clippy, and the targets that read documents
+#   docs_only     format and the targets that read documents; no clippy since
+#                 2026-10-18 (13.2-26.1), since such a commit changes no Rust
 #   all_but_slow  format and clippy; nothing said about what changed, so nothing
 #                 can be scoped to it
 #   red           format, clippy, the tests that reach what changed, and the

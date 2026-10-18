@@ -301,16 +301,16 @@ touches code: every commit here lands on it. **Corrected 2026-09-10, found by
 `05.1-05` while running the thing rather than reading about it.** This used to
 say "all four, whatever changed", and the script has not agreed with that
 sentence for some time: on `main`, a commit touching only `.md` and `.txt` files
-answers `docs_only` and runs formatting, clippy and the document-reading targets,
-with the reasoning written into the script at the branch that decides it. The
+answers `docs_only` and runs formatting, clippy (until 2026-10-18) and the
+document-reading targets, with the reasoning written into the script at the branch that decides it. The
 rule the sentence was reaching for is elsewhere in this file and is the true one:
 a document change still runs the document-reading targets, because
 `tests/house_style.rs` reads documents and its em-dash guard has caught two real
 breaks in markdown. On a branch nobody builds, the slow half waits for the merge
 (until 2026-09-23; from then, for the phase's closing plan),
 and what runs is scoped to the change. A commit touching only
-documents runs formatting, clippy and the targets that read documents, which
-are listed in `scripts/check.sh`'s documents-only branch with the reason for
+documents runs formatting, clippy (until 2026-10-18) and the targets that read
+documents, which are listed in `scripts/check.sh`'s documents-only branch with the reason for
 each (three when this sentence was written on 2026-08-31, nine on 2026-09-14);
 a commit touching code runs those plus the tests reaching the modules it changed,
 plus the guards that read the whole tree. Measured 2026-08-31: a four-file
@@ -319,6 +319,18 @@ markdown commit went from about 330 seconds to 36. **Since 2026-09-23, on
 merge earns what the branch's whole diff earns by the branch rules**, with the
 document-reading targets as well when that diff holds a document; `check.sh`
 knows a merge by `MERGE_HEAD` and tells `which-checks.sh` with `--merge`.
+
+**Since 2026-10-18 a documents-only commit runs no clippy and forces no
+rebuild**, on Pratik's "yes to both" of 2026-10-14 (13.2-26.1, audit finding
+#45). Clippy reads Rust and such a commit changes none, so it could only find
+Rust left unstaged on disk, which the gate has refused before any stage since
+13.2-25, or a lint a new compiler brought, which CI's Clippy job and the
+phase's full gate catch. It was about 30 seconds of the 83 and 86 two
+documents commits took in 12-04 and 12-05. Formatting and the targets that read
+documents still run, and so does the merge of a branch that changed only
+documents, since a merge is judged by the branch rules. Until that day the two
+sentences above saying "formatting, clippy" for a documents commit were the
+rule, and they were his.
 
 **A guard living in `tests/` also runs on the commits that could break it, and
 `guards/guards.toml` is what says which those are.** A unit test lives beside
@@ -387,8 +399,9 @@ nowhere before it.
 **Since 2026-09-23 the merge is no longer the full gate; the phase's closing
 plan is.** Pratik decided that day, from the same measurement, that the full
 gate runs once a phase rather than at every merge. A merge made with `git merge
---no-ff` still runs the hook, and the hook runs formatting, clippy and what the
-branch's whole diff earns by the rules a branch commit is judged by, with the
+--no-ff` still runs the hook, and the hook runs formatting, clippy (since
+2026-10-18 not for a diff of documents alone) and what the branch's whole diff
+earns by the rules a branch commit is judged by, with the
 document-reading targets when that diff holds a document. So a branch that
 changed a workflow, the installer script or a dependency still earns everything
 at its merge, and since 2026-10-18 so does one that changed `build.rs`, which
