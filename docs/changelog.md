@@ -1427,6 +1427,30 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Uninstalling works again (2026-10-18).** Since 2026-08-27 every uninstall, for one person
+  or for all users, stopped at an error before it removed anything. The uninstaller asked
+  Windows Search to stop reading your mail through a call that Inno Setup, which builds the
+  uninstaller, does not allow while uninstalling, and that refusal ended the whole uninstall:
+  the program stayed, and so did your downloaded mail, your settings and your saved sign-ins.
+  Now every uninstall reaches its Windows Search clean-up, clears your data, and shows its
+  closing message.
+
+  An older copy needs one extra step. The uninstaller is the one that was installed with the
+  copy, so a copy installed before this fix still carries the old one and still stops. Install
+  a new build over it first, without uninstalling, and then uninstall.
+- **An uninstall for all users says whose data it cleared and what may remain (2026-10-18).**
+  An uninstall for everybody on the computer runs as the Windows account that approved the
+  administrator prompt, and it clears that account's mail, settings and saved sign-ins only.
+  Any other account that used Wixen Mail keeps its own mail folder, which is not encrypted,
+  and its entries in Credential Manager, and nothing said so. Now that uninstall names the
+  account it cleared, says what another account may still have and where, and how to remove
+  it by signing in as that account. When Windows Search was set to read the mail, it also says
+  how to stop it reading that account's. An uninstall for one person is unchanged, because it
+  runs as that person.
+
+  Known limitation: nobody has heard the new message yet, or checked from a second account
+  what it leaves.
+
 - **The library that cleans incoming mail has its published security fix (2026-10-18).** The
   fix stops a web address in a message's styling, written in capitals, from getting past the
   check on which addresses a page may load. The preview was not exposed, because it removes all
