@@ -2,52 +2,14 @@
 //!
 //! Tests that span multiple modules and verify cross-layer interactions.
 
-use wixen_mail::application::accounts::{Account, AccountManager};
 use wixen_mail::application::contact_groups::{Writing, writing_to};
 use wixen_mail::application::filters::{FilterAction, FilterEngine, FilterRule};
 use wixen_mail::application::messages::Message;
-use wixen_mail::application::search::{SearchEngine, SearchQuery};
 use wixen_mail::common::types::*;
 use wixen_mail::data::message_cache::{CachedMessage, ContactEntry, ContactGroup, MessageCache};
-use wixen_mail::service::cache::CacheService;
 use wixen_mail::service::oauth::OAuthService;
 use wixen_mail::service::security::SecurityService;
 use wixen_mail::service::spellcheck::SpellChecker;
-
-// ── Account Management Tests ────────────────────────────────────────────────
-
-#[test]
-fn test_multi_account_workflow() {
-    let mut manager = AccountManager::new().unwrap();
-
-    let imap_account = Account::new_simple(
-        "Work IMAP".to_string(),
-        "work@example.com".to_string(),
-        Protocol::Imap,
-    );
-    let imap_id = imap_account.id.clone();
-
-    let pop3_account = Account::new_simple(
-        "Personal POP3".to_string(),
-        "personal@example.com".to_string(),
-        Protocol::Pop3,
-    );
-    let pop3_id = pop3_account.id.clone();
-
-    manager.add_account(imap_account).unwrap();
-    manager.add_account(pop3_account).unwrap();
-
-    assert_eq!(manager.get_accounts().len(), 2);
-    assert!(manager.get_account(&imap_id).is_some());
-    assert!(manager.get_account(&pop3_id).is_some());
-    assert!(manager.get_account("nonexistent").is_none());
-
-    let work = manager.get_account(&imap_id).unwrap();
-    assert_eq!(work.protocol, Protocol::Imap);
-
-    let personal = manager.get_account(&pop3_id).unwrap();
-    assert_eq!(personal.protocol, Protocol::Pop3);
-}
 
 // ── Contact and Group Tests ─────────────────────────────────────────────────
 
@@ -322,64 +284,6 @@ fn test_filter_regex_match() {
     assert!(engine.evaluate_message(&msg_no_match).is_empty());
 }
 
-// ── Search Engine Tests ─────────────────────────────────────────────────────
-
-#[test]
-fn test_search_across_folders() {
-    let engine = SearchEngine::new().unwrap();
-    engine
-        .index_text(
-            Some("INBOX".to_string()),
-            "Invoice from Acme Corp".to_string(),
-        )
-        .unwrap();
-    engine
-        .index_text(
-            Some("INBOX".to_string()),
-            "Meeting notes for Monday".to_string(),
-        )
-        .unwrap();
-    engine
-        .index_text(
-            Some("Sent".to_string()),
-            "Re: Invoice from Acme Corp".to_string(),
-        )
-        .unwrap();
-    engine
-        .index_text(
-            Some("Drafts".to_string()),
-            "Draft: invoice template".to_string(),
-        )
-        .unwrap();
-
-    // Search all folders
-    let results = engine
-        .search(&SearchQuery {
-            text: "invoice".to_string(),
-            folder: None,
-        })
-        .unwrap();
-    assert_eq!(results.len(), 3);
-
-    // Search specific folder
-    let results = engine
-        .search(&SearchQuery {
-            text: "invoice".to_string(),
-            folder: Some("INBOX".to_string()),
-        })
-        .unwrap();
-    assert_eq!(results.len(), 1);
-
-    // Empty query
-    let results = engine
-        .search(&SearchQuery {
-            text: "".to_string(),
-            folder: None,
-        })
-        .unwrap();
-    assert!(results.is_empty());
-}
-
 // ── Security Service Tests ──────────────────────────────────────────────────
 
 // Encryption at rest is gone: passwords are in the Windows credential store and
@@ -475,22 +379,6 @@ fn test_oauth_token_expiry_check() {
 
     let past = (chrono::Utc::now() - chrono::TimeDelta::hours(1)).to_rfc3339();
     assert!(OAuthService::is_expired(Some(&past)));
-}
-
-// ── Cache Service Tests ─────────────────────────────────────────────────────
-
-#[test]
-fn test_cache_overwrite() {
-    let cache = CacheService::new().unwrap();
-    cache.store("key", b"value1").unwrap();
-    cache.store("key", b"value2").unwrap();
-    assert_eq!(cache.retrieve("key").unwrap(), Some(b"value2".to_vec()));
-}
-
-#[test]
-fn test_cache_missing_key() {
-    let cache = CacheService::new().unwrap();
-    assert_eq!(cache.retrieve("nonexistent").unwrap(), None);
 }
 
 // ── Message Cache (SQLite) Tests ────────────────────────────────────────────

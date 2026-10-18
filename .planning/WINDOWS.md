@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 765
+open_count: 766
 waived_count: 0
 fixed_count: 132
-total_count: 897
-last_updated: 2026-10-18T16:00:00.000Z
+total_count: 898
+last_updated: 2026-10-18T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -912,6 +912,7 @@ last_updated: 2026-10-18T16:00:00.000Z
 | 895 | 13.2 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | Audit finding #43, closed on the tree's side by 13.2-27: an uninstall for all users now names the account it cleared through GetUserNameString and tells the person that any other account keeps its unencrypted mail folder and its Credential Manager entries, and how to remove them. Read only as text and compiled with ISCC 6.7.3; never run. For the tester: install for all users, use Wixen Mail from a second Windows account, uninstall from the first, hear the message under NVDA, then sign in as the second account and check %LOCALAPPDATA%\wixen-mail and Credential Manager's wixen-mail entries are there as the message says | open |  | 2026-10-18T13:00:00.000Z |  |
 | 896 | 13.2 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | 13.2-27 replaced the uninstall-time ExecAsOriginalUser, which Inno refuses while uninstalling and which stopped every uninstall since 2026-08-27, with Exec, so remove-scope and unregister-classes now run as the uninstaller. Shown on a throwaway setup built with ISCC 6.7.3, never on a real Wixen Mail install. For the tester, on a per-user install and on an all-users install with the Windows Search task chosen: uninstall, confirm it finishes, and confirm Indexing Options no longer lists the Wixen Mail location for the account that uninstalled | open |  | 2026-10-18T13:00:00.000Z |  |
 | 897 | 13.2 | unrun-verify | src/presentation/accessibility.rs |  | Audit findings #37 and #47, fixed on the tree's side by 13.2-28: the model of the window that reached neither UI Automation nor MSAA is gone, and with it the start-up line "Focus moved to Folders", said from a stored name. Start-up now releases "Wixen Mail is ready" alone, held for the window and handed over when it exists. Held by the start-up case reading the held lines; nobody has heard it. For the tester, on a build holding 13.2-28's merge: start Wixen Mail under NVDA and hear that it says Wixen Mail is ready, with no line about focus beyond what NVDA itself says when the window takes focus | open |  | 2026-10-18T16:00:00.000Z |  |
+| 898 | 13.2 | todo | src/application/messages.rs |  | Found by 13.2-29 on 2026-10-18 while redrawing docs/architecture.md: application::messages (Message, MessageFlags, Message::new and new_simple) is one more piece of the skeleton audit #49 described, and neither the audit nor the plan named it. Read with git grep that day, nothing under src uses it outside its own tests; its only other caller is test_message_tags_dedup in tests/integration_tests.rs. The program's messages are data::message_cache::CachedMessage, which the filter engine reads. Recommended: delete it and that test in a later plan with the same census, as 13.2-29 did for the account manager; Pratik's to schedule | open |  | 2026-10-18T20:00:00.000Z |  |
 
 ````json
 [
@@ -11677,6 +11678,18 @@ last_updated: 2026-10-18T16:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-18T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 898,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/messages.rs",
+    "line": null,
+    "description": "Found by 13.2-29 on 2026-10-18 while redrawing docs/architecture.md: application::messages (Message, MessageFlags, Message::new and new_simple) is one more piece of the skeleton audit #49 described, and neither the audit nor the plan named it. Read with git grep that day, nothing under src uses it outside its own tests; its only other caller is test_message_tags_dedup in tests/integration_tests.rs. The program's messages are data::message_cache::CachedMessage, which the filter engine reads. Recommended: delete it and that test in a later plan with the same census, as 13.2-29 did for the account manager; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-18T20:00:00.000Z",
     "resolved_at": null
   }
 ]

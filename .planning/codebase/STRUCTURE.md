@@ -44,13 +44,13 @@ Wixen-Mail/
 
 **`src/data/`:**
 - Purpose: persistence layer.
-- Contains: `account.rs` (Account model/storage), `config.rs` (`ConfigManager`), `email_providers.rs` (static provider metadata for autodiscovery), `message_cache/` (the SQLite database module: schema, queries, migrations).
+- Contains: `account.rs` (Account model/storage), `config.rs` (`ConfigManager`), `message_cache/` (the SQLite database module: schema, queries, migrations).
 - Key files: `src/data/message_cache/`, `src/data/account.rs`, `src/data/config.rs`.
 
 **`src/application/`:**
 - Purpose: business logic, one file per concern, named after the behavior it implements (verb/gerund style) rather than a noun-plus-suffix.
-- Contains: mail send/receive orchestration (`mail_controller.rs`, `mail_session.rs`, `mail_sync.rs`, `mail_auth.rs`), sync per PIM domain (`caldav_sync.rs`, `contacts_sync.rs`, `tasks_sync.rs`, `collection_sync.rs`, `pop_sync.rs`), composition (`draft_message.rs`, `attaching.rs`, `sign_off.rs`, `sending_later.rs`), filtering/search (`filters.rs`, `search.rs`, `saved_searches.rs`, `categories.rs`), PIM item lifecycle (`new_item.rs`, `editing.rs`, `deletions.rs`, `occurrences.rs`, `repeating.rs`, `invitations.rs`).
-- Key files: `src/application/mail_controller.rs` (hub for live protocol sessions), `src/application/accounts.rs`.
+- Contains: mail send/receive orchestration (`mail_controller.rs`, `mail_session.rs`, `mail_sync.rs`, `mail_auth.rs`), sync per PIM domain (`caldav_sync.rs`, `contacts_sync.rs`, `tasks_sync.rs`, `collection_sync.rs`, `pop_sync.rs`), composition (`draft_message.rs`, `attaching.rs`, `sign_off.rs`, `sending_later.rs`), filtering/search (`filters.rs`, `saved_searches.rs`, `categories.rs`; the search box itself is `src/data/message_cache/searching.rs`), PIM item lifecycle (`new_item.rs`, `editing.rs`, `deletions.rs`, `occurrences.rs`, `repeating.rs`, `invitations.rs`).
+- Key files: `src/application/mail_controller.rs` (hub for live protocol sessions). Accounts are `src/data/account.rs` and `src/data/message_cache/accounts.rs`; `src/application/accounts.rs` was a skeleton nothing built, deleted 2026-10-18 by 13.2-29.
 
 **`src/service/`:**
 - Purpose: protocol implementations and external/cross-cutting services.

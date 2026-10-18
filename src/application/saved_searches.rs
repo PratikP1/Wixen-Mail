@@ -18,10 +18,11 @@
 //! this build does not know would come to mean one thing in a rule and
 //! something else in a search.
 //!
-//! The other vocabulary in this layer, [`crate::application::search`], is text
-//! and a folder. That cannot say "unread mail from Ann", which is most of what
-//! anybody saves. Its folder is kept here, because where to look is a real
-//! part of the question.
+//! The other vocabulary, the search box answered by
+//! [`crate::data::message_cache::searching`], is words typed and a folder.
+//! That cannot say "unread mail from Ann", which is most of what anybody
+//! saves. Its folder is kept here, because where to look is a real part of
+//! the question.
 //!
 //! # Where it appears
 //!

@@ -91,7 +91,7 @@
 
 **Data (`src/data/`):**
 - Purpose: persistence, covering the one SQLite cache database, account records, app configuration, and static email-provider metadata.
-- Contains: `message_cache/` (the database module, schema is additive-only per `docs/architecture.md`), `account.rs`, `config.rs`, `email_providers.rs`.
+- Contains: `message_cache/` (the database module, schema is additive-only per `docs/architecture.md`), `account.rs`, `config.rs` (`email_providers.rs`, presets nothing reached, deleted 2026-10-18 by 13.2-29).
 - Depends on: `common`.
 - Used by: `application`, `presentation` (reads for display).
 

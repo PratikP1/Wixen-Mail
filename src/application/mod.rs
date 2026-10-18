@@ -4,7 +4,6 @@
 
 pub mod about;
 pub mod account_order;
-pub mod accounts;
 pub mod acting_on_a_set;
 pub mod address_book_source;
 pub mod allowed;
@@ -130,7 +129,6 @@ pub mod running;
 pub mod running_a_rule_now;
 pub mod saved_searches;
 pub mod scrolling;
-pub mod search;
 pub mod sending_later;
 pub mod sent_copy;
 pub mod server_delete;
@@ -166,8 +164,6 @@ pub mod who_is_coming;
 pub mod who_runs_the_mail;
 pub mod words;
 
-pub use accounts::AccountManager;
 pub use caldav_sync::{refresh_subscription, sync_caldav_calendar};
 pub use filters::FilterEngine;
 pub use mail_controller::{MailController, SendEmailRequest};
-pub use search::SearchEngine;

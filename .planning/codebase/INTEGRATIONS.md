@@ -47,7 +47,7 @@
 **Databases:**
 - SQLite (embedded, `rusqlite` with `bundled` build) - single local cache file `message_cache.db`
   - Schema and access split by domain across `src/data/message_cache/`: `accounts.rs`, `attachment_content.rs`, `bodies.rs`, `calendar.rs`, `calendars.rs`, `contacts.rs`, `drafts.rs`, `filters.rs`, `folders.rs`, `messages.rs`, `notes.rs`, `outbox.rs`, `reminders.rs`, `saved_searches.rs`, `searching.rs`, `signatures.rs`, `signed_original.rs`, `tags.rs`, `tasks.rs`
-  - Higher-level cache API/orchestration: `src/service/cache.rs`
+  - No layer above it: `src/service/cache.rs`, an in-memory map nothing built, was deleted on 2026-10-18 by 13.2-29.
   - Message bodies stored deflate-compressed in the cache (`flate2`) for space savings (~4.6:1 on real mail)
   - Custom `LOWER` SQL function registered via `rusqlite`'s `functions` feature for accent-aware case folding in search
 

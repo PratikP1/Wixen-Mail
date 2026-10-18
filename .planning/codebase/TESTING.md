@@ -27,9 +27,9 @@ scripts/guards.sh deletion                       # only guards whose names match
 
 ## Test File Organization
 
-**Unit tests:** co-located, `#[cfg(test)] mod tests { ... }` at the bottom of the file they cover. 203 files across `src/` follow this pattern (e.g. `src/application/accounts.rs:94`, `src/application/allowed.rs:205`, `src/application/answering.rs:795`).
+**Unit tests:** co-located, `#[cfg(test)] mod tests { ... }` at the bottom of the file they cover. 203 files across `src/` follow this pattern (e.g. `src/application/allowed.rs:205`, `src/application/answering.rs:795`).
 
-**Cross-layer / integration tests:** `tests/integration_tests.rs`, importing the crate as a library (`use wixen_mail::application::...`) and exercising real storage via `tempfile::tempdir()` + `MessageCache::new(...)` rather than in-memory doubles. Comment at `tests/integration_tests.rs:56` explicitly documents replacing an in-memory-only test with one that goes through real storage, because the in-memory path "nothing in the application ever reached."
+**Cross-layer / integration tests:** `tests/integration_tests.rs`, importing the crate as a library (`use wixen_mail::application::...`) and exercising real storage via `tempfile::tempdir()` + `MessageCache::new(...)` rather than in-memory doubles. The comment opening `test_a_group_lives_in_storage_and_resolves_to_a_to_line` in `tests/integration_tests.rs` explicitly documents replacing an in-memory-only test with one that goes through real storage, because the in-memory path "nothing in the application ever reached."
 
 **House-rule / structural tests:** a distinct category of test file that reads source text (not runtime state) to enforce conventions and wiring:
 - `tests/house_style.rs`: banned em/en dash characters project-wide; guard-record hygiene (`test_every_guard_record_still_names_one_place_in_the_tree`, `test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it`); "a control no screen writes" phrase checks against documentation over-promising features.
@@ -74,7 +74,7 @@ There is no mocking framework dependency (no `mockall`, no `mockito` found in `C
 
 ## Fixtures and Factories
 
-No dedicated fixtures directory or factory crate. Test data is constructed inline per test using the domain constructors, e.g. `Account::new_simple(name, email, Protocol::Imap)` in `tests/integration_tests.rs`. Prefer this pattern (build via the real constructor, not a raw struct literal) so tests exercise the same validation the running app does.
+No dedicated fixtures directory or factory crate. Test data is constructed inline per test using the domain constructors, e.g. `data::account::Account::new(name, email)`, the constructor the running program uses (until 2026-10-18 this named a constructor of the account manager nothing built, deleted that day by 13.2-29). Prefer this pattern (build via the real constructor, not a raw struct literal) so tests exercise the same validation the running app does.
 
 ## Coverage
 

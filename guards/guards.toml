@@ -7043,7 +7043,7 @@ red = [
     "data::message_cache::folders::tests::test_mail_waiting_to_go_sits_between_the_drafts_and_what_has_gone",
 ]
 tests_last_seen = [
-    { file = "src/common/types.rs", tests = 30 },
+    { file = "src/common/types.rs", tests = 28 },
     { file = "src/data/message_cache/folders.rs", tests = 61 },
 ]
 
@@ -9812,7 +9812,7 @@ tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
     { file = "src/application/message_files.rs", tests = 51 },
     { file = "src/application/reply.rs", tests = 35 },
-    { file = "src/common/types.rs", tests = 30 },
+    { file = "src/common/types.rs", tests = 28 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/mime.rs", tests = 52 },
