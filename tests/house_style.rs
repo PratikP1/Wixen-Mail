@@ -4768,6 +4768,125 @@ fn test_the_history_reading_can_see_a_job_with_one_commit() {
     );
 }
 
+/// What a `permissions:` key at `indent` spaces grants `contents`, or `None`
+/// when there is no such key. A block that names other scopes and leaves
+/// `contents` out grants it `none`, as GitHub reads it; `read-all` and
+/// `write-all` grant `read` and `write`.
+fn the_contents_permission(text: &str, indent: usize) -> Option<String> {
+    let indent_of = |line: &str| line.len() - line.trim_start().len();
+    let mut lines = text
+        .lines()
+        .skip_while(|line| indent_of(line) != indent || !line.trim().starts_with("permissions:"));
+    let key = lines.next()?;
+    let shorthand = key.trim().trim_start_matches("permissions:").trim();
+    if !shorthand.is_empty() {
+        return Some(shorthand.trim_end_matches("-all").to_string());
+    }
+    let granted = lines
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > indent)
+        .find_map(|line| line.trim().strip_prefix("contents:").map(str::trim));
+    Some(granted.unwrap_or("none").to_string())
+}
+
+/// Which jobs run `cargo test` or `cargo clippy` holding a token that may
+/// write, one line each, empty when none does.
+///
+/// Both compile and run code from every dependency, build scripts and test
+/// code included, so a job that only checks has no reason to hold a token
+/// that can push. A job's own `permissions:` block decides when it has one,
+/// else the workflow's does. And where the workflow grants write, a checkout
+/// that keeps its credentials leaves the token in the checkout's git
+/// settings, where any of that code can read it. The release gate held both
+/// until 2026-10-18 (audit finding #42).
+fn jobs_that_check_holding_a_token_that_can_write(workflow: &str) -> Vec<String> {
+    let granted = the_contents_permission(&what_it_does_not_what_it_says(workflow), 0);
+    the_jobs_of(workflow)
+        .into_iter()
+        .filter(|(_, text)| text.contains("cargo test") || text.contains("cargo clippy"))
+        .flat_map(|(name, text)| {
+            let effective = the_contents_permission(&text, 4).or_else(|| granted.clone());
+            let token = (effective.as_deref() != Some("read")).then(|| {
+                format!(
+                    "the {name} job runs the checks with a contents permission of {}, so code \
+                     it compiles could push; give the job permissions: contents: read",
+                    effective
+                        .as_deref()
+                        .unwrap_or("whatever the repository defaults to")
+                )
+            });
+            let keeps_credentials = granted.as_deref() == Some("write")
+                && text.contains("actions/checkout")
+                && !text
+                    .lines()
+                    .any(|line| line.trim() == "persist-credentials: false");
+            let credentials = keeps_credentials.then(|| {
+                format!(
+                    "the {name} job's checkout keeps the token in its git settings while the \
+                     workflow grants write; give it persist-credentials: false"
+                )
+            });
+            token.into_iter().chain(credentials)
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_job_that_checks_holds_a_read_only_token() {
+    // The workflow files are the artefact. What this cannot see is what a
+    // runner's token can really do, only what each job asks for.
+    let wrong: Vec<String> = every_workflow_with_its_name()
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_check_holding_a_token_that_can_write(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "A job that only checks holds a token that can write:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_token_reading_can_see_a_check_that_could_push() {
+    // The companion. A job inherits a write token from the workflow and is
+    // named; the same job with a read block of its own and a checkout that
+    // forgets the token is not; a job that runs no check is left alone.
+    let inherits = "permissions:\n  contents: write\n\njobs:\n  gate:\n    steps:\n    - uses: actions/checkout@v4\n      with:\n        persist-credentials: false\n    - run: cargo test\n  publish:\n    steps:\n    - uses: actions/checkout@v4\n    - run: gh release create\n";
+    let wrong = jobs_that_check_holding_a_token_that_can_write(inherits);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the gate job") && wrong[0].contains("of write"),
+        "a check inheriting the workflow's write token was not named, or the job that \
+         runs no check was: {wrong:?}"
+    );
+
+    let overrides = inherits.replace(
+        "  gate:\n    steps:\n",
+        "  gate:\n    permissions:\n      contents: read\n    steps:\n",
+    );
+    assert!(
+        jobs_that_check_holding_a_token_that_can_write(&overrides).is_empty(),
+        "a job whose own read block overrides the workflow was named"
+    );
+
+    let keeps = overrides.replace("      with:\n        persist-credentials: false\n", "");
+    let wrong = jobs_that_check_holding_a_token_that_can_write(&keeps);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("persist-credentials: false"),
+        "a checkout keeping the token while the workflow grants write was not named: {wrong:?}"
+    );
+
+    let clippy_with_nothing_said =
+        "jobs:\n  lint:\n    steps:\n    - run: cargo clippy -- -D warnings\n";
+    let wrong = jobs_that_check_holding_a_token_that_can_write(clippy_with_nothing_said);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("whatever the repository defaults to"),
+        "a clippy job with no permissions anywhere was not named: {wrong:?}"
+    );
+}
+
 #[test]
 fn test_only_one_place_reads_stored_message_text() {
     // Message text is stored two ways, as text when it is short and packed
