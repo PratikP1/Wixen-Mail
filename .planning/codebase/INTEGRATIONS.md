@@ -35,7 +35,8 @@
 - Supporting modules: `src/service/safebrowsing/database.rs` (local list storage), `src/service/safebrowsing/rice.rs` (Rice/Golomb decoding of Google's compressed hash lists), `src/service/safebrowsing/urls.rs`
 
 **CalDAV / iCalendar:**
-- Generic CalDAV server support - `src/service/caldav.rs` (client: `reqwest` + `quick-xml` for WebDAV/XML, `icalendar` for parsing)
+- Generic CalDAV server support - `src/service/caldav.rs` (client: `reqwest`; the WebDAV answers and the iCalendar inside them are parsed by hand in the same module)
+  - Corrected 2026-10-18 (13.2-30, audit #50): this line said `quick-xml` read the WebDAV answers and `icalendar` parsed the events. Neither was ever called, and both left the manifest that day
 - iCalendar subscription feeds (read-only `.ics` URLs) - `src/service/ical_subscription.rs`
 - Free/busy lookups - `src/service/free_busy.rs`
 

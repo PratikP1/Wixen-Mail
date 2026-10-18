@@ -1571,6 +1571,13 @@ write path added by this milestone passes through that gate.
     translation registry, which translated nothing, and keeps its two picture words as
     literals until the Fluent catalogue of version 2 (finding #48). It adds no `[D]` clause and
     the box stays ticked.
+  - 13.2-30 on 2026-10-18: the second registry is gone, `I18n`, `Locale`, `TextDirection`,
+    `translate_document_term` and their eight tests from `service::spellcheck`, with four guard
+    records. The words said before a picture's description, "Image" and "Figure", are English
+    literals in the vendored converter, pinned by a case taken red by swapping them, and wait for
+    the Fluent catalogue in `common::catalogue` in version 2. The catalogue is the one translation
+    system, as the decision above set out. No comment in the tree says a string is translated
+    when it is not. Nothing a person hears changed.
 
 - [x] **FEEDBACK-03**: Know how much of WCAG the automated scans actually cover.
   - Evidence: re-checked 2026-09-04 and still accurate, every anchor.
@@ -7931,7 +7938,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-08 | Phase 5 | Pending |
 | PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | FEEDBACK-01 | Phase 6 | Pending |
-| FEEDBACK-02 | Phase 6 | Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause |
+| FEEDBACK-02 | Phase 6 | Complete; phase 13.2: 13.2-30 merged 2026-10-18, one translation system and the two picture words as pinned literals, adding no `[D]` clause. Until 13.2-30 "Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause" |
 | FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
 | SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870 |
