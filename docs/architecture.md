@@ -1,179 +1,192 @@
-# Wixen Mail - Architecture Overview
+# Wixen Mail architecture
 
-## Design Principles
+This page is for somebody about to change Wixen Mail. It says what each part of
+the program does and names the module that does it, so you can go straight to
+the code. Every component under "Component Details" names at least one module,
+and `tests/docs_links.rs` checks on every commit that each module it names is
+on disk. A part the page cannot point at in the tree is not on the page.
 
-1. **Accessibility First**: Every component designed with screen reader and keyboard navigation as primary considerations
-2. **Modularity**: Clean separation of concerns with well-defined interfaces
-3. **Performance**: Efficient resource usage and responsive UI
-4. **Security**: Secure handling of credentials and email data
-5. **Testability**: testing at every level
+Module paths are written the way Rust writes them inside the crate:
+`data::message_cache::searching` is `src/data/message_cache/searching.rs`.
 
-## High-Level Architecture
+## Design principles
+
+1. **Accessibility first.** Every control is built for a screen reader and the
+   keyboard before anything else, and the program declares what things are to
+   the platform rather than leaving a screen reader to guess.
+2. **Layers.** The window, the decisions, the network and the storage live in
+   separate layers, and a decision is written where a test can reach it without
+   a window or a server.
+3. **Responsive.** The window never waits on the network or a large read.
+4. **Secrets in one place.** Passwords and tokens go to the Windows credential
+   store and nowhere else.
+5. **Tested at every level.** Unit tests sit beside the code they cover; tests
+   under `tests/` cross layers and read the documents.
+
+## High-level architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Presentation Layer                      │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │          WXDragon UI Components (Windows)              │ │
-│  │  - Main Window  - Message List  - Composition Window   │ │
-│  │  - Folder Tree  - Reading Pane  - Settings Dialog     │ │
-│  └────────────────────────────────────────────────────────┘ │
-│  ┌────────────────────────────────────────────────────────┐ │
-│  │            Accessibility Layer                          │ │
-│  │  - Screen Reader Bridge  - Announcement Queue          │ │
-│  └────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                            ↕
-┌─────────────────────────────────────────────────────────────┐
-│                    Application Layer                         │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │   Account    │ │   Message    │ │   Composition     │  │
-│  │   Manager    │ │   Manager    │ │   Manager         │  │
-│  └──────────────┘ └──────────────┘ └───────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │   Search     │ │   Filter     │ │   Contact         │  │
-│  │   Engine     │ │   Engine     │ │   Manager         │  │
-│  └──────────────┘ └──────────────┘ └───────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                            ↕
-┌─────────────────────────────────────────────────────────────┐
-│                      Service Layer                           │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │     IMAP     │ │     SMTP     │ │      POP3         │  │
-│  │    Client    │ │    Client    │ │     Client        │  │
-│  └──────────────┘ └──────────────┘ └───────────────────┘  │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │   Security   │ │    Cache     │ │   Attachment      │  │
-│  │   Service    │ │   Service    │ │   Handler         │  │
-│  └──────────────┘ └──────────────┘ └───────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                            ↕
-┌─────────────────────────────────────────────────────────────┐
-│                      Data Layer                              │
-│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────┐  │
-│  │ MessageCache │ │  Credential  │ │   Configuration   │  │
-│  │   (SQLite)   │ │    Store     │ │   Manager         │  │
-│  └──────────────┘ └──────────────┘ └───────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│  Presentation          src/presentation/                      │
+│  the main window, dialogs, the folder tree and message list,  │
+│  and what is spoken, shown and sounded                        │
+└──────────────────────────────────────────────────────────────┘
+                              ↕
+┌──────────────────────────────────────────────────────────────┐
+│  Application           src/application/                       │
+│  checking and sending mail, rules, search, drafts, contacts,  │
+│  calendars, tasks and notes                                   │
+└──────────────────────────────────────────────────────────────┘
+                              ↕
+┌──────────────────────────────────────────────────────────────┐
+│  Service               src/service/                           │
+│  IMAP, SMTP and POP3, signing in, reading MIME, PGP and       │
+│  S/MIME, calendar and contact servers, safety checks          │
+└──────────────────────────────────────────────────────────────┘
+                              ↕
+┌──────────────────────────────────────────────────────────────┐
+│  Data                  src/data/                              │
+│  the SQLite database, accounts and settings                   │
+└──────────────────────────────────────────────────────────────┘
+
+   Common, src/common/: errors, paths, logging and shared types,
+   used by every layer.
 ```
 
 ## Component Details
 
-### Presentation Layer
+### Presentation layer
 
-#### WXDragon UI Integration
-- **Purpose**: Native Windows UI using WXDragon library
-- **Responsibilities**:
-  - Render all UI components
-  - Handle user input events
-  - Manage window lifecycle
-  - Provide native Windows look and feel
+#### The main window
 
-#### Accessibility Layer
-- **Screen Reader Bridge**: 
-  - Interfaces with Windows UI Automation (UIA)
-  - Provides descriptive labels and roles for all UI elements
-  - Manages live regions for dynamic content
-  
-- **Announcement Queue**:
-  - Queues screen reader announcements
-  - Prioritizes urgent messages
-  - Prevents announcement conflicts
+`presentation::wx_app` builds the main window with wxDragon, the Rust bindings
+for wxWidgets: the menus, the folder tree, the message list and the reading
+pane. It owns the program's state and its async runtime, starts every piece of
+background work, and applies what that work sends back.
 
-### Application Layer
+#### The folder tree and the message list
 
-#### Account Manager
-- **Responsibilities**:
-  - Manage multiple email accounts
-  - Store account credentials securely
-  - Handle account authentication
-  - Coordinate account synchronization
+What the folder tree shows is worked out in `presentation::folder_tree`
+without a control, and then drawn. The message list runs in virtual mode, and
+`presentation::message_rows` turns a message into the cells the list asks for.
 
-#### Message Manager
-- **Responsibilities**:
-  - CRUD operations for messages
-  - Thread management
-  - Message state (read/unread, flagged, etc.)
-  - Folder organization
+#### Reading and writing a message
 
-#### Composition Manager
-- **Responsibilities**:
-  - Draft creation and editing
-  - Rich text and HTML composition
-  - Recipient management
-  - Attachment handling
-  - Draft auto-save
+A message opens into the window in `presentation::wx_reader`, one message or
+one conversation per tab. HTML mail is sanitized with `ammonia` and rendered
+by `presentation::html_renderer`, which keeps the headings and link text a
+screen reader navigates by. Writing, replying and forwarding happen in
+`presentation::wx_compose`.
 
-#### Search Engine
-- **Responsibilities**:
-  - Full-text message search
-  - Advanced filtering
-  - Virtual folder creation
-  - Search indexing
+#### Settings
 
-#### Filter Engine
-- **Responsibilities**:
-  - Rule-based message filtering
-  - Spam detection
-  - Automatic message organization
-  - Custom filter creation
+`presentation::wx_settings` is the Settings dialog. Every setting a person has
+is offered there, and a test in `data::config` fails when a new one is not.
 
-#### Contact Manager
-- **Responsibilities**:
-  - Address book management
-  - Contact auto-completion
-  - Contact groups
-  - vCard import/export
+#### What the program says, shows and sounds
 
-### Service Layer
+`presentation::accessibility` is the one way the program tells somebody that
+something happened. `presentation::accessibility::announcements` queues and
+ranks what is to be said so a syncing mailbox does not flood the screen reader,
+and `presentation::accessibility::screen_reader` hands it to Windows through
+UI Automation notifications. `presentation::accessibility::feedback` sends the
+same events as sounds and visible signals, and
+`presentation::accessibility::names` gives a name to controls that carry no
+visible label.
 
-#### IMAP Client
-- **Features**:
-  - Full IMAP4rev1 support
-  - IDLE extension for push notifications
-  - Folder synchronization
-  - Message fetching with caching
-  - Search capabilities
+### Application layer
 
-#### SMTP Client
-- **Features**:
-  - Message sending with authentication
-  - TLS/SSL support
-  - Send queue management
-  - Offline send queue
-  - Delivery status tracking
+#### Checking and sending mail
 
-#### POP3 Client
-- **Features**:
-  - Basic POP3 support
-  - Leave messages on server option
-  - Download and delete management
+`application::mail_controller` holds the live sessions with each account's
+servers. `application::mail_sync` brings an IMAP mailbox down into the
+database, and `application::pop_sync` does the same for a POP account into its
+local Inbox. Mail waiting to go sits in the Outbox, stored by
+`data::message_cache::outbox`, and is sent from there.
 
-#### Security Service
-- **Features**:
-  - Credential encryption using Windows Data Protection API (DPAPI)
-  - PGP/GPG integration
-  - S/MIME support
-  - Certificate management
-  - Phishing detection
+#### Drafts, replies and attachments
 
-#### Cache Service
-- **Features**:
-  - Message body caching
-  - Header caching
-  - Attachment caching
-  - Cache invalidation strategy
-  - Size-based eviction
+`application::draft_message` keeps a draft as a message in the Drafts folder,
+and `application::autosave` decides how often it is saved while somebody
+writes. `application::reply` works out who a reply goes to,
+`application::attaching` holds the files chosen to go with a message, and
+`application::sending_later` holds a message back and lets it be taken back.
 
-#### Attachment Handler
-- **Features**:
-  - Attachment download and save
-  - Inline image handling
-  - MIME type detection
-  - Preview generation
-  - Virus scanning integration points
+#### Rules
 
-### Data Layer
+`application::filters` matches messages against the rules somebody wrote and
+carries out their actions as mail arrives.
+
+#### Search and saved searches
+
+The search box is answered from a full text index over the mail, kept level
+with the messages table by `data::message_cache::searching`. A search kept
+under a name is a rule that selects rather than acts, so
+`application::saved_searches` asks its questions in the rule engine's words.
+
+#### Conversations
+
+`application::threading` groups messages into conversations from their
+`References` and `In-Reply-To` headers, and `application::conversations` says
+what a conversation is called.
+
+#### Contacts, calendars, tasks and notes
+
+Contacts and groups are stored by `data::message_cache::contacts`;
+`application::contact_groups` says what writing to a group comes to, and
+`application::contacts_sync` reads Google and Microsoft address books and
+sends new contacts back. Calendars on CalDAV servers are synced by
+`application::caldav_sync`, and Google and Microsoft calendars by
+`application::calendar`. Tasks are synced with Google Tasks and Microsoft To Do
+by `application::tasks_sync`, and notes by `application::notes_sync`.
+
+#### Bringing mail in and writing it out
+
+`application::importing_messages` brings messages in from a file and writes
+them out to one, and `application::exporting_mail` reads a folder's mail out of
+the database for the writer.
+
+### Service layer
+
+#### Mail protocols
+
+`service::protocols::imap`, `service::protocols::smtp` and
+`service::protocols::pop3` are the clients. They keep the transport thin, and
+what they parse is tested without a live server.
+
+#### Signing in
+
+`service::oauth` signs in to Google and Microsoft with OAuth and PKCE through a
+local redirect. `service::credentials` keeps account passwords, and
+`service::secret_store` is the one way in and out of the Windows credential
+store.
+
+#### Reading a fetched message
+
+`service::mime` turns a fetched message into the parts the application shows:
+the text, the HTML and the attachments.
+
+#### Signed and encrypted mail
+
+`service::pgp` reads and sends OpenPGP mail, `service::signed_mail` reads
+S/MIME, and `service::security` spots PGP and S/MIME markers in a message and
+scores the signs of phishing.
+
+#### Mail from strangers
+
+`service::safebrowsing` checks links with Google Safe Browsing without sending
+it the links, `service::safety` holds what is already known about whether a
+message is safe, and `service::attachment_name` turns a stranger's file name
+into one that is safe to write and marks the file as having come from the
+internet.
+
+#### Calendar and contact servers
+
+`service::caldav` and `service::carddav` talk to CalDAV and CardDAV servers,
+`service::google_api` and `service::microsoft_graph` to Google's and
+Microsoft's, and `service::ical_subscription` reads calendar feeds.
+
+### Data layer
 
 #### Database (SQLite)
 
@@ -184,15 +197,15 @@ shipped. The one exception taken so far was a table of OAuth tokens that
 nothing read, which was dropped because leaving secrets nobody rotates in a
 file people copy is worse than the rule it broke.
 
-- **Schema**:
-  - Accounts table
-  - Messages table (with FTS for search)
-  - Folders table
-  - Contacts table
-  - Tags table
-  - Message-Tag relations
-  - Filters/Rules table
-  - Configuration/Settings
+Each kind of thing kept there has its own module under `data::message_cache`:
+messages, folders, accounts, contacts, calendars, tasks, notes, rules, tags,
+saved searches, the Outbox and the full text index among them.
+
+#### Accounts
+
+An account is `data::account`'s `Account`: its name, address, servers, whether
+it signs in with OAuth, and how often it is checked. It is stored by
+`data::message_cache::accounts`, and its password is not part of the row.
 
 #### Where files live
 
@@ -201,7 +214,8 @@ mail" for backups, for support, and for the uninstaller. `WIXEN_MAIL_DATA`
 moves the root, which is what a memory stick install needs.
 
 ```
-%LOCALAPPDATA%\wixen-mail├── config\                 settings, one file per account, oauth.toml
+%LOCALAPPDATA%\wixen-mail\
+├── config\                 settings, one file per account, oauth.toml
 ├── cache\                  message_cache.db and its SQLite sidecars
 └── logs\                   the running log and crash.log
 ```
@@ -221,136 +235,87 @@ implying otherwise. Windows keeps other users out of the folder; anything
 running as that user can read it, and so can anyone who takes the drive out of
 an unencrypted machine. See [Installing and uninstalling](installing.md).
 
-#### Configuration Manager
-- **Settings Categories**:
-  - Application preferences
-  - Account settings
-  - UI customization
-  - Accessibility options
-  - Privacy settings
+#### Settings storage
 
-## Technology Stack
+`data::config` reads and writes the settings files under `config\`.
 
-### Core Technologies
-- **Language**: Rust (stable channel)
-- **UI Framework**: WXDragon (Windows-specific)
-- **Database**: SQLite with rusqlite
-- **Async Runtime**: tokio
+### Common
 
-### Key Dependencies (Planned)
-- **Email Protocols**:
-  - `async-imap` - IMAP client
-  - `lettre` - SMTP client
-  - `pop3` - POP3 client (if needed)
-  
-- **Parsing**:
-  - `mail-parser` - Email parsing
-  - `html5ever` - HTML parsing
-  - `mime` - MIME type handling
-  
-- **Security**:
-  - `ring` - Cryptographic operations
-  - `sequoia-pgp` - PGP support
-  - `rustls` - TLS implementation
-  - `winapi` - Windows DPAPI access
-  
-- **Storage**:
-  - `rusqlite` - SQLite bindings
-  - `serde` / `serde_json` - Serialization
-  
-- **Accessibility**:
-  - `windows` crate - Windows API bindings
-  - UI Automation API integration
-  
-- **Utilities**:
-  - `tokio` - Async runtime
-  - `tracing` - Logging and diagnostics
-  - `anyhow` - Error handling
+#### Errors, logging and shared types
 
-## Data Models
+`common::error` defines the one error type every layer returns, and
+`common::logging` writes the log. `common::types` holds the types more than one
+layer uses, such as an email address and a message body.
 
-### Account
-```rust
-struct Account {
-    id: Uuid,
-    name: String,
-    email_address: String,
-    protocol: Protocol, // IMAP, POP3
-    incoming_server: ServerConfig,
-    outgoing_server: ServerConfig,
-    credentials: EncryptedCredentials,
-    settings: AccountSettings,
-}
-```
+## Technology stack
 
-### Message
-```rust
-struct Message {
-    id: Uuid,
-    account_id: Uuid,
-    folder_id: Uuid,
-    message_id: String, // RFC822 Message-ID
-    subject: String,
-    from: Vec<EmailAddress>,
-    to: Vec<EmailAddress>,
-    cc: Vec<EmailAddress>,
-    bcc: Vec<EmailAddress>,
-    date: DateTime<Utc>,
-    body: MessageBody,
-    attachments: Vec<Attachment>,
-    flags: MessageFlags,
-    tags: Vec<String>,
-}
-```
+- **Language**: Rust, stable channel.
+- **Window toolkit**: wxDragon, the Rust bindings for wxWidgets, on Windows.
+- **Database**: SQLite through `rusqlite`, built in.
+- **Async runtime**: `tokio`.
 
-### Folder
-```rust
-struct Folder {
-    id: Uuid,
-    account_id: Uuid,
-    name: String,
-    path: String, // Full IMAP path
-    parent_id: Option<Uuid>,
-    folder_type: FolderType, // Inbox, Sent, Drafts, etc.
-    unread_count: u32,
-    total_count: u32,
-}
-```
+The rest of the dependencies are in `Cargo.toml`, which is the only list kept
+up to date. Read from it on 2026-10-18, the ones that shape the program most
+are `async-imap` for IMAP, `lettre` for SMTP, `mail-parser` for reading
+messages, `ammonia` for sanitizing HTML, `keyring` for the credential store,
+`pgp` for OpenPGP, `tracing` for logging and `windows` for the Windows calls
+the toolkit does not make. Why OpenPGP is done with that crate is in
+[the PGP implementation choice](development/pgp-implementation-choice.md).
 
-## Threading Model
+## Data models
 
-### Main UI Thread
-- Handles all UI rendering and user input
-- Must remain responsive at all times
-- Offloads heavy work to background threads
+The types are in the code, and this page does not copy them, because a copy
+goes out of date without anything noticing. An account is
+`data::account::Account`, a stored message is
+`data::message_cache::CachedMessage`, and a stored folder is
+`data::message_cache::CachedFolder`.
 
-### Background Workers
-- **Sync Worker**: Handles email synchronization
-- **Send Worker**: Manages outgoing email queue
-- **Index Worker**: Updates search indexes
-- **Cache Worker**: Manages cache maintenance
+## Threading model
+
+### The window's thread
+
+wxWidgets draws on one thread, and everything that touches a control runs
+there. It never waits on the network or on a large read.
+
+### Background work
+
+`presentation::wx_app` owns one `tokio` runtime, and each piece of background
+work is started there by a function named for it:
+
+- `spawn_mail_sync` checks the accounts it is handed for new mail.
+- `spawn_mail_watch` keeps an IMAP IDLE connection open per enabled IMAP
+  account, so new mail is noticed without a check.
+- `flush_outbox` sends what is waiting in the Outbox.
+- `spawn_body_fetch` fetches the text of a message being opened.
+- `spawn_calendar_sync`, `spawn_contacts_sync`, `spawn_tasks_sync` and
+  `spawn_notes_sync` sync the other modules.
+
+Work that reads or writes the database runs on the runtime's blocking threads,
+because a SQLite connection cannot be shared between threads. There is no
+separate search index worker: the index is updated as messages are written.
 
 ### Communication
-- Use channels (tokio::sync::mpsc) for thread communication
-- Event-driven architecture for UI updates
-- Non-blocking operations wherever possible
 
-## Error Handling
+Background work sends its results back to the window as `UIUpdate` values over
+an `async_channel` channel, and the window applies them on its own thread.
+
+## Error handling
 
 ### Strategy
-- Use `anyhow::Result` for application errors
-- Use `thiserror` for library errors
-- Full error context
-- User-friendly error messages
-- Screen reader-accessible error announcements
+
+- Errors flow through `common::Error` and `common::Result`. A foreign error is
+  mapped where it enters, at the boundary of the library that raised it.
+- No `unwrap` or `expect` outside tests and `build.rs`.
+- An error a person sees says what happened, why, and what to do next, and is
+  announced to the screen reader as well as shown.
 
 ### Logging
-- Structured logging with `tracing`
-- Multiple log levels (Error, Warn, Info, Debug, Trace)
-- Log file rotation
-- Privacy-aware logging (no passwords or sensitive data)
 
-## Security Considerations
+- Structured logging with `tracing`, set up by `common::logging`.
+- The log file rotates daily.
+- Nothing logs a token, a password, or a message body.
+
+## Security considerations
 
 ### Credential storage
 
@@ -369,11 +334,6 @@ for an all-users install the account that approved the elevation prompt, so
 other accounts keep their entries and their data folder, and the uninstaller
 tells the person so (`installer/Wixen-Mail-Setup.iss`).
 
-### Network Security
-- Mandatory TLS for all connections
-- Certificate validation
-- Optional certificate pinning
-
 ### Data protection
 
 - The cached mail is not encrypted at rest. Encrypting it means encrypting the
@@ -385,11 +345,11 @@ tells the person so (`installer/Wixen-Mail-Setup.iss`).
   account and tells the person that other accounts keep theirs.
 - Nothing logs a token, a password, or a message body.
 
-## Testing Strategy
+## Testing strategy
 
-### Unit Tests
-- Test individual components in isolation
-- Mock external dependencies
+### Unit tests
+
+- Unit tests sit in a `tests` module beside the code they cover.
 - High code coverage (target: 80%+)
   Met by the library on 2026-09-14: 83.34% line coverage by
   `cargo llvm-cov --lib --summary-only` at `55464a5e`, the row on
@@ -401,45 +361,44 @@ tells the person so (`installer/Wixen-Mail-Setup.iss`).
   that command, so the target is kept as it is and read against the library,
   with the windows' figure written beside it rather than folded in.
 
-### Integration Tests
-- Test component interactions
-- Use test email servers
-- Database migration testing
+### Integration tests
 
-### Accessibility Tests
-- Automated accessibility checks
-- Screen reader compatibility tests
-- Keyboard navigation tests
+- Tests under `tests/` cross layers against a real database in a temporary
+  folder, and some read the documents to keep them true.
+- Network code is tested against its parsing and error mapping, and some of it
+  against small servers on the loopback address. Nothing is tested against a
+  real provider's servers.
 
-### Performance Tests
-- Startup time benchmarks
-- Message loading performance
-- Memory usage profiling
-- Large mailbox handling
+### Accessibility tests
 
-## Build and Deployment
+- Each window is scanned over UI Automation with Axe.Windows and over MSAA with
+  `scripts/msaa-names.ps1`, because a name missing on either channel is a name
+  somebody does not hear.
+- The cases under `nvda-tests` drive the program with NVDA running and check
+  what it says.
+- None of this replaces listening with a real screen reader.
 
-### Build Configuration
-- Debug build for development
-- Release build with optimizations
-- Profile-guided optimization for final release
+### Measurements
 
-### Distribution
-- Windows installer (MSI/EXE)
-- Portable version (ZIP)
-- Auto-update mechanism (future)
+Timings and counts, each with its date and the command that took it, are on
+[the measurements page](development/measurements.md).
 
-## Future Considerations
+## Build and distribution
 
-### Extensibility
-- Plugin API for extensions
-- Custom theme support
-- Script automation support
+- `cargo build --release` builds the program.
+- `scripts/build-installer.sh` builds the Windows installer with Inno Setup,
+  from `installer/Wixen-Mail-Setup.iss`.
+- `service::update_check` asks GitHub whether a newer version exists.
 
-### Cross-Platform
-- Abstract UI layer for future Linux/macOS support
-- Platform-agnostic core components
-- Conditional compilation for platform-specific features
+## Other platforms
+
+wxWidgets gives native, accessible controls on Windows, macOS and Linux, but
+two things this program relies on exist only on Windows: `wxAccessible`, which
+is how a name set in the code reaches the accessibility tree, and
+`UiaRaiseNotificationEvent`, which is how announcements are spoken and
+brailled. Both compile and do nothing elsewhere, so a port needs its own bridge
+for each. Code for one platform sits behind `#[cfg(target_os = "windows")]`
+with a fallback that keeps the crate building.
 
 ## References
 

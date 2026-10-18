@@ -1387,8 +1387,10 @@ pub struct SyncState {
 impl MessageCache {
     /// Create a new message cache
     ///
-    /// If a `SecurityService` is provided, passwords and tokens are encrypted at rest.
-    /// If `None`, base64 encoding is used (suitable for tests).
+    /// Nothing is written encrypted. A `SecurityService`, when one is given,
+    /// only reads back the passwords an older version left in the database
+    /// encrypted, so they can be collected into the credential store; without
+    /// one those old values are read as base64, which is what tests use.
     pub fn new(cache_dir: PathBuf, security: Option<SecurityService>) -> Result<Self> {
         std::fs::create_dir_all(&cache_dir)
             .map_err(|e| Error::Other(format!("Failed to create cache directory: {}", e)))?;
