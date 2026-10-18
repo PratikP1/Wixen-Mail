@@ -507,11 +507,21 @@ begin
 
   Leftovers := '';
 
-  { As the person uninstalling, because the rule names their mail and nobody
-    else's. Run elevated this would look for the administrator's rule, find
-    none, and report success having removed nothing. }
-  if not (ExecAsOriginalUser(Tool, 'remove-scope', '', SW_HIDE,
-                             ewWaitUntilTerminated, Outcome) and (Outcome = 0)) then
+  { Exec, which runs as the uninstaller, because nothing else is allowed here.
+    Inno's help says of ExecAsOriginalUser "This function is not supported at
+    uninstall time" (6.7.3, read 2026-10-18), and the refusal is fatal at this
+    step: until 2026-10-18 this line called it, and every uninstall stopped
+    with "Cannot call "ExecAsOriginalUser" function during Uninstall" before
+    removing a single file.
+
+    The rule names one account's mail, so who the uninstaller runs as decides
+    whose rule this removes. Uninstalling for one user, it runs as that user.
+    Uninstalling for everybody, it runs as the account that approved the
+    elevation prompt: the person themselves when they are an administrator,
+    and the administrator whose password they typed when they are not. In that
+    second case this finds no rule, reports success, and leaves the person's. }
+  if not (Exec(Tool, 'remove-scope', '', SW_HIDE,
+               ewWaitUntilTerminated, Outcome) and (Outcome = 0)) then
     Leftovers := 'Windows Search has not been told to stop looking at this mail.';
 
   { As setup, which is elevated, because the entries are under
