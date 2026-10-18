@@ -80,8 +80,12 @@
 #
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
-# 797 records were swept that day.
+# 791 records were swept that day.
 # 817 records have arrived since and have not been through it.
+#
+# 791 rather than 797 since 2026-10-18: the six swept records on the shadow
+# accessibility tree were retired by 13.2-28 with the code they measured, and
+# the comment where they stood says why.
 #
 # 798 rather than the 802 this line read until 2026-09-18: four swept
 # records on `names.rs`'s `should_select_first_row` were retired by 11-03
@@ -11705,62 +11709,15 @@ tests_last_seen = [
 #
 # Measured by hand: each guard applied alone, against the whole library,
 # reddened exactly the test(s) named and nothing else. Restored and reran
-# green after each. AutomationStore::update_state's guard reddens two tests,
-# not one: Accessibility::update_node_state calls straight through to it, so
-# breaking the lower layer breaks the integration test above it too.
-
-[[guard]]
-name = "every node registered at startup carries enabled, not just two of the three"
-file = "src/presentation/accessibility.rs"
-before = """            description: Some("Primary application window".to_string()),
-            state: automation::AutomationState {
-                enabled: true,"""
-after = """            description: Some("Primary application window".to_string()),
-            state: automation::AutomationState {"""
-red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
-
-[[guard]]
-name = "the folder tree is registered enabled, not left to the state default"
-file = "src/presentation/accessibility.rs"
-before = """            description: Some("Folder navigation".to_string()),
-            state: automation::AutomationState {
-                enabled: true,"""
-after = """            description: Some("Folder navigation".to_string()),
-            state: automation::AutomationState {"""
-red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
-
-[[guard]]
-name = "every module panel is registered enabled, not left to the state default"
-file = "src/presentation/accessibility.rs"
-before = """                state: automation::AutomationState {
-                    enabled: true,"""
-after = """                state: automation::AutomationState {"""
-red = ["presentation::accessibility::tests::test_every_node_registered_at_startup_is_enabled"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
-
-[[guard]]
-name = "update_node_state really reaches the tree and tells the bridge, not a stub returning Ok"
-file = "src/presentation/accessibility.rs"
-before = """        self.automation.update_state(node_id, state)?;
-        self.screen_reader
-            .notify_event(automation::AutomationEvent::NodeUpdated(
-                node_id.to_string(),
-            ))?;
-        Ok(())"""
-after = """        let _ = (node_id, state);
-        Ok(())"""
-red = ["presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
+# green after each.
+#
+# Retired 2026-10-18 by 13.2-28: the six records that measured the shadow
+# accessibility tree, the three on the nodes registered enabled, the two on
+# update_node_state and AutomationStore::update_state, and the one on
+# live_region_update. KeyboardHandler, FocusManager and AutomationStore reached
+# neither UI Automation nor MSAA, and their one effect in a running build was
+# "Focus moved to Folders" at start-up, said from a stored name (audit #37 and
+# #47). The code and its tests are gone, so there is no break left to measure.
 
 [[guard]]
 name = "feedback_settings reports what was just stored, not the type's default"
@@ -11769,48 +11726,7 @@ before = """        self.feedback.lock().map(|s| s.clone()).unwrap_or_default()"
 after = """        Default::default()"""
 red = ["presentation::accessibility::tests::test_feedback_settings_reports_what_was_just_stored_rather_than_the_default"]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
-
-[[guard]]
-name = "live_region_update really notifies the tree and announces the text, not a stub returning Ok"
-file = "src/presentation/accessibility.rs"
-before = """        self.screen_reader
-            .notify_event(automation::AutomationEvent::LiveRegion(
-                region_id.to_string(),
-                text.to_string(),
-            ))?;
-        self.screen_reader.announce(text)"""
-after = """        let _ = (region_id, text);
-        Ok(())"""
-red = ["presentation::accessibility::tests::test_live_region_update_notifies_the_tree_and_announces_the_text"]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-]
-
-[[guard]]
-name = "AutomationStore::update_state really replaces the stored state, not a stub returning Ok"
-file = "src/presentation/accessibility/automation.rs"
-before = """    pub fn update_state(&self, node_id: &str, state: AutomationState) -> Result<()> {
-        let mut nodes = self.nodes.write().map_err(|_| {
-            crate::common::Error::Other("Automation tree lock poisoned".to_string())
-        })?;
-        if let Some(node) = nodes.get_mut(node_id) {
-            node.state = state;
-        }
-        Ok(())
-    }"""
-after = """    pub fn update_state(&self, node_id: &str, state: AutomationState) -> Result<()> {
-        let _ = (node_id, state);
-        Ok(())
-    }"""
-red = [
-    "presentation::accessibility::automation::tests::test_updating_a_nodes_state_replaces_what_it_had",
-    "presentation::accessibility::tests::test_updating_a_nodes_state_reaches_the_tree_and_tells_the_bridge",
-]
-tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
-    { file = "src/presentation/accessibility/automation.rs", tests = 2 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 [[guard]]
@@ -28951,7 +28867,7 @@ red = [
     "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
     { file = "src/presentation/accessibility/feedback.rs", tests = 54 },
 ]
 
@@ -28999,7 +28915,7 @@ red = [
     "presentation::accessibility::tests::test_a_player_that_cannot_open_a_device_puts_its_complaint_where_the_eye_reads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # The plain part taken as written, its words joined and nothing skipped,
@@ -41825,11 +41741,12 @@ tests_last_seen = [
 
 # One flush handing the bridge only the last line it released, which is what
 # a screen reader was left to read when each line was written over the one
-# before (audit finding #32). Five cases written for the join go red, and two
-# older startup cases with them, because the startup sentence is released
-# with where the cursor landed and only the second would be left. Added
+# before (audit finding #32). Five cases written for the join go red. Added
 # 2026-10-17 by 13.2-22 and taken by hand against the whole library, 9,294
-# tests, nothing else red.
+# tests, nothing else red. Two older startup cases went red with them until
+# 2026-10-18, because the startup sentence was released with "Focus moved to
+# Folders" and only the second would be left; 13.2-28 took that line out, so
+# start-up releases one line and the break leaves it whole.
 [[guard]]
 name = "lines one flush releases go out as one line, not the last alone"
 file = "src/presentation/accessibility.rs"
@@ -41841,11 +41758,9 @@ red = [
     "presentation::accessibility::tests::test_a_turn_inside_a_turn_releases_once_at_the_end_of_the_outer_one",
     "presentation::accessibility::tests::test_flush_announcements_priority_order",
     "presentation::accessibility::tests::test_lines_released_together_go_out_as_urgent_as_the_most_urgent_with_no_topic",
-    "presentation::accessibility::tests::test_nothing_said_at_startup_is_wording_from_inside_the_program",
-    "presentation::accessibility::tests::test_the_first_lines_of_a_session_are_still_waiting_when_the_window_arrives",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # An announcement inside a turn released at once rather than held for the
@@ -41863,7 +41778,7 @@ red = [
     "presentation::accessibility::tests::test_a_turn_inside_a_turn_releases_once_at_the_end_of_the_outer_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # A turn that is never closed when it ends, so everything said after it is
@@ -41880,7 +41795,7 @@ red = [
     "presentation::accessibility::tests::test_a_turn_whose_work_panics_leaves_the_next_announcement_spoken",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # The status line given the last sentence shown alone, as it was, so a failed
@@ -41897,7 +41812,7 @@ red = [
     "presentation::accessibility::tests::test_the_status_line_shows_the_failure_before_the_lost_connection_not_the_last_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # A sentence about an event shown again kept beside the earlier one rather
@@ -41914,7 +41829,7 @@ red = [
     "presentation::accessibility::tests::test_an_event_shown_again_before_the_status_line_looks_is_shown_once_at_its_latest",
 ]
 tests_last_seen = [
-    { file = "src/presentation/accessibility.rs", tests = 35 },
+    { file = "src/presentation/accessibility.rs", tests = 30 },
 ]
 
 # The command dispatch left unwrapped, so each menu, accelerator, tray or

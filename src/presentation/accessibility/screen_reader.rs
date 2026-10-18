@@ -17,8 +17,6 @@ use crate::common::Result;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 
-use super::automation::AutomationEvent;
-
 /// How much the screen reader should protect an announcement from being
 /// dropped, mirroring the announcement queue's own priorities.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -530,7 +528,8 @@ pub(crate) fn handed_over_together(lines: &[Line]) -> Option<Line> {
 /// Bridge to Windows UI Automation for screen readers
 pub struct ScreenReaderBridge {
     last_announcement: Mutex<Option<String>>,
-    event_log: Mutex<Vec<AutomationEvent>>,
+    /// Every line released, oldest first.
+    released: Mutex<Vec<String>>,
     /// Native handle of the control used to carry announcements, or zero.
     live_region: AtomicIsize,
     /// Whether a window has been offered at all, which zero cannot say.
@@ -713,33 +712,27 @@ impl ScreenReaderBridge {
         }
         // Logged as asked for whether or not it can go anywhere yet, so the
         // record of what the code tried to say stays complete.
-        self.push_event(AutomationEvent::LiveRegion(
-            "global".to_string(),
-            text.to_string(),
-        ))?;
+        self.remember_released(text)?;
 
         self.deliver(text, urgency, topic)
     }
 
-    /// Notify native bridge of automation event.
-    pub fn notify_event(&self, event: AutomationEvent) -> Result<()> {
-        self.push_event(event)
-    }
-
-    fn push_event(&self, event: AutomationEvent) -> Result<()> {
-        let mut log = self.event_log.lock().map_err(|_| {
-            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
+    fn remember_released(&self, text: &str) -> Result<()> {
+        let mut released = self.released.lock().map_err(|_| {
+            crate::common::Error::Other("Screen reader released lines lock poisoned".to_string())
         })?;
-        log.push(event);
+        released.push(text.to_string());
         Ok(())
     }
 
-    /// Return event log (for diagnostics/testing).
-    pub fn events(&self) -> Result<Vec<AutomationEvent>> {
-        let log = self.event_log.lock().map_err(|_| {
-            crate::common::Error::Other("Screen reader event log lock poisoned".to_string())
-        })?;
-        Ok(log.clone())
+    /// Every line released, oldest first, for the tests of this layer and the
+    /// one above, which have no other way to see what was said. Says what the
+    /// code asked for, not that anybody heard it.
+    pub fn released(&self) -> Vec<String> {
+        match self.released.lock() {
+            Ok(released) => released.clone(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// Return last announced text (for diagnostics/testing)
@@ -756,7 +749,7 @@ impl Default for ScreenReaderBridge {
     fn default() -> Self {
         Self {
             last_announcement: Mutex::new(None),
-            event_log: Mutex::new(Vec::new()),
+            released: Mutex::new(Vec::new()),
             live_region: AtomicIsize::new(0),
             registered: AtomicBool::new(false),
             held: Mutex::new(Vec::new()),
@@ -958,7 +951,7 @@ pub(crate) mod tests {
             bridge.last_announcement().unwrap().as_deref(),
             Some("Hello")
         );
-        assert!(!bridge.events().unwrap().is_empty());
+        assert_eq!(bridge.released(), vec!["Hello"]);
     }
 
     /// Registering the window is the one wiring step everything else depends
