@@ -35,6 +35,21 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Copied from ci.yml rather than inherited. Workflow-level env belongs to the
+  # file it is written in, so a job here gets none of ci.yml's. The release
+  # gate ran with the sound on until 2026-10-18 (ledger 616); Pratik answered
+  # yes to setting it here, as everywhere else, on 2026-10-14.
+  #
+  # These runners ship no audio driver (actions/runner-images#6983), and
+  # rodio 0.22.2 does not fail cleanly there: it opens something anyway and
+  # faults on the first write, killing the test binary. That is not two
+  # failing tests, it is every test scheduled after the crash never running,
+  # and about 3,500 of ours were lost that way with nothing saying so.
+  #
+  # This does not skip a single sound test. They all still run and all still
+  # assert; the sound goes to a mixer with nothing listening instead of to a
+  # card. src/presentation/accessibility/feedback.rs has the detail.
+  WIXEN_NO_AUDIO: "1"
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -48,9 +63,26 @@ jobs:
     name: Release Quality Gate
     runs-on: windows-latest
 
+    # This job only reads. Clippy and the tests compile and run every
+    # dependency's build script and test code, so it holds a read-only token
+    # and its checkout does not keep that token in its git settings. It held
+    # the workflow's write token until 2026-10-18 (audit finding #42).
+    # build-release-assets below still holds the write token while it builds,
+    # because it tags; moving the build into a read-only job changes when a
+    # tag exists, which ledger 327 leaves to Pratik.
+    permissions:
+      contents: read
+
     steps:
       - name: Checkout code
+        # The whole history, because the share-of-history test runs
+        # `git merge-base` against 18a02454 and a checkout of one commit does
+        # not hold it; ci.yml's Test Suite says the rest. The release gate
+        # ran on one commit until 2026-10-18 (audit finding #39).
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.98.1

@@ -4657,16 +4657,55 @@ fn jobs_that_run_the_tests_without_the_history(workflow: &str) -> Vec<String> {
         .collect()
 }
 
+/// The same reading over several workflows, given as `(file name, text)`,
+/// each line led by the name of the file it is about.
+///
+/// The test below read `ci.yml` alone until 2026-10-17, while the release
+/// gate and the Linux and macOS jobs ran the tests on one commit in two other
+/// files (audit finding #39).
+fn workflows_that_run_the_tests_without_the_history(workflows: &[(String, String)]) -> Vec<String> {
+    workflows
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_run_the_tests_without_the_history(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect()
+}
+
+/// Every workflow as `(file name, text)`, in the order `the_workflows` gives.
+fn every_workflow_with_its_name() -> Vec<(String, String)> {
+    the_workflows()
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("a workflow file name")
+                .to_string();
+            let text = fs::read_to_string(&path).expect("a workflow file");
+            (name, text)
+        })
+        .collect()
+}
+
 #[test]
 fn test_every_job_that_runs_the_tests_checks_out_the_whole_history() {
-    // The workflow file is the artefact, and it cannot be run from here. What
-    // this cannot see is whether the job passes on a runner, only whether its
-    // checkout is the shape the fraction test needs.
-    let workflow = fs::read_to_string(".github/workflows/ci.yml").expect("the CI workflow");
-    let wrong = jobs_that_run_the_tests_without_the_history(&workflow);
+    // The workflow files are the artefact, and they cannot be run from here.
+    // What this cannot see is whether a job passes on a runner, only whether
+    // its checkout is the shape the fraction test needs.
+    let workflows = every_workflow_with_its_name();
+    assert!(
+        workflows.len() > 1 && workflows.iter().any(|(name, _)| name == "ci.yml"),
+        "the reading did not read every workflow, so it would cover one file and read \
+         as cover for all of them: {:?}",
+        workflows.iter().map(|(name, _)| name).collect::<Vec<_>>()
+    );
+    let wrong = workflows_that_run_the_tests_without_the_history(&workflows);
     assert!(
         wrong.is_empty(),
-        "CI would fail the fraction test on the runner:\n  {}",
+        "A workflow would fail the fraction test on the runner:\n  {}",
         wrong.join("\n  ")
     );
 }
@@ -4713,6 +4752,236 @@ fn test_the_history_reading_can_see_a_job_with_one_commit() {
     assert!(
         jobs_that_run_the_tests_without_the_history(builds_over_the_history).is_empty(),
         "a job running the build script over the whole history was named"
+    );
+
+    // Read across files, a shallow job in the second of two is named with its
+    // file's name, and the sound first file adds nothing. A reading that went
+    // back to one file would miss it.
+    let two_files = [
+        ("first.yml".to_string(), whole.to_string()),
+        ("second.yml".to_string(), shallow.clone()),
+    ];
+    let wrong = workflows_that_run_the_tests_without_the_history(&two_files);
+    assert!(
+        wrong.len() == 1 && wrong[0].starts_with("second.yml: the test job"),
+        "a shallow job in the second of two workflows was not named by its file: {wrong:?}"
+    );
+}
+
+/// What a `permissions:` key at `indent` spaces grants `contents`, or `None`
+/// when there is no such key. A block that names other scopes and leaves
+/// `contents` out grants it `none`, as GitHub reads it; `read-all` and
+/// `write-all` grant `read` and `write`.
+fn the_contents_permission(text: &str, indent: usize) -> Option<String> {
+    let indent_of = |line: &str| line.len() - line.trim_start().len();
+    let mut lines = text
+        .lines()
+        .skip_while(|line| indent_of(line) != indent || !line.trim().starts_with("permissions:"));
+    let key = lines.next()?;
+    let shorthand = key.trim().trim_start_matches("permissions:").trim();
+    if !shorthand.is_empty() {
+        return Some(shorthand.trim_end_matches("-all").to_string());
+    }
+    let granted = lines
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > indent)
+        .find_map(|line| line.trim().strip_prefix("contents:").map(str::trim));
+    Some(granted.unwrap_or("none").to_string())
+}
+
+/// Which jobs run `cargo test` or `cargo clippy` holding a token that may
+/// write, one line each, empty when none does.
+///
+/// Both compile and run code from every dependency, build scripts and test
+/// code included, so a job that only checks has no reason to hold a token
+/// that can push. A job's own `permissions:` block decides when it has one,
+/// else the workflow's does. And where the workflow grants write, a checkout
+/// that keeps its credentials leaves the token in the checkout's git
+/// settings, where any of that code can read it. The release gate held both
+/// until 2026-10-18 (audit finding #42).
+fn jobs_that_check_holding_a_token_that_can_write(workflow: &str) -> Vec<String> {
+    let granted = the_contents_permission(&what_it_does_not_what_it_says(workflow), 0);
+    the_jobs_of(workflow)
+        .into_iter()
+        .filter(|(_, text)| text.contains("cargo test") || text.contains("cargo clippy"))
+        .flat_map(|(name, text)| {
+            let effective = the_contents_permission(&text, 4).or_else(|| granted.clone());
+            let token = (effective.as_deref() != Some("read")).then(|| {
+                format!(
+                    "the {name} job runs the checks with a contents permission of {}, so code \
+                     it compiles could push; give the job permissions: contents: read",
+                    effective
+                        .as_deref()
+                        .unwrap_or("whatever the repository defaults to")
+                )
+            });
+            let keeps_credentials = granted.as_deref() == Some("write")
+                && text.contains("actions/checkout")
+                && !text
+                    .lines()
+                    .any(|line| line.trim() == "persist-credentials: false");
+            let credentials = keeps_credentials.then(|| {
+                format!(
+                    "the {name} job's checkout keeps the token in its git settings while the \
+                     workflow grants write; give it persist-credentials: false"
+                )
+            });
+            token.into_iter().chain(credentials)
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_job_that_checks_holds_a_read_only_token() {
+    // The workflow files are the artefact. What this cannot see is what a
+    // runner's token can really do, only what each job asks for.
+    let wrong: Vec<String> = every_workflow_with_its_name()
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_check_holding_a_token_that_can_write(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "A job that only checks holds a token that can write:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_token_reading_can_see_a_check_that_could_push() {
+    // The companion. A job inherits a write token from the workflow and is
+    // named; the same job with a read block of its own and a checkout that
+    // forgets the token is not; a job that runs no check is left alone.
+    let inherits = "permissions:\n  contents: write\n\njobs:\n  gate:\n    steps:\n    - uses: actions/checkout@v4\n      with:\n        persist-credentials: false\n    - run: cargo test\n  publish:\n    steps:\n    - uses: actions/checkout@v4\n    - run: gh release create\n";
+    let wrong = jobs_that_check_holding_a_token_that_can_write(inherits);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the gate job") && wrong[0].contains("of write"),
+        "a check inheriting the workflow's write token was not named, or the job that \
+         runs no check was: {wrong:?}"
+    );
+
+    let overrides = inherits.replace(
+        "  gate:\n    steps:\n",
+        "  gate:\n    permissions:\n      contents: read\n    steps:\n",
+    );
+    assert!(
+        jobs_that_check_holding_a_token_that_can_write(&overrides).is_empty(),
+        "a job whose own read block overrides the workflow was named"
+    );
+
+    let keeps = overrides.replace("      with:\n        persist-credentials: false\n", "");
+    let wrong = jobs_that_check_holding_a_token_that_can_write(&keeps);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("persist-credentials: false"),
+        "a checkout keeping the token while the workflow grants write was not named: {wrong:?}"
+    );
+
+    let clippy_with_nothing_said =
+        "jobs:\n  lint:\n    steps:\n    - run: cargo clippy -- -D warnings\n";
+    let wrong = jobs_that_check_holding_a_token_that_can_write(clippy_with_nothing_said);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("whatever the repository defaults to"),
+        "a clippy job with no permissions anywhere was not named: {wrong:?}"
+    );
+}
+
+/// Whether the `env:` key at `indent` spaces sets `WIXEN_NO_AUDIO`.
+fn its_env_turns_the_sound_off(text: &str, indent: usize) -> bool {
+    let indent_of = |line: &str| line.len() - line.trim_start().len();
+    text.lines()
+        .skip_while(|line| indent_of(line) != indent || line.trim() != "env:")
+        .skip(1)
+        .take_while(|line| line.trim().is_empty() || indent_of(line) > indent)
+        .any(|line| line.trim().starts_with("WIXEN_NO_AUDIO:"))
+}
+
+/// Which jobs run `cargo test` on a Windows runner with the sound on, one
+/// line each, empty when none does.
+///
+/// GitHub's Windows runners have no audio driver, and rodio faults on the
+/// first write there and kills the test binary, so every test after it never
+/// runs (ci.yml's comment on `WIXEN_NO_AUDIO`). The setting counts when the
+/// workflow's own `env:` or the job's sets it. The release gate ran with the
+/// sound on until 2026-10-18 (ledger 616).
+fn jobs_that_test_on_windows_with_the_sound_on(workflow: &str) -> Vec<String> {
+    let the_workflow_turns_it_off =
+        its_env_turns_the_sound_off(&what_it_does_not_what_it_says(workflow), 0);
+    the_jobs_of(workflow)
+        .into_iter()
+        .filter(|(_, text)| text.contains("cargo test"))
+        .filter(|(_, text)| {
+            text.lines()
+                .any(|line| line.trim().starts_with("runs-on:") && line.contains("windows"))
+        })
+        .filter(|(_, text)| !the_workflow_turns_it_off && !its_env_turns_the_sound_off(text, 4))
+        .map(|(name, _)| {
+            format!(
+                "the {name} job runs cargo test on a Windows runner with the sound on, so the \
+                 first sound a test plays crashes the run and every test after it never runs; \
+                 set WIXEN_NO_AUDIO in the workflow's env"
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_every_job_that_tests_on_windows_turns_the_sound_off() {
+    // The workflow files are the artefact. What this cannot see is whether a
+    // runner's sound really faults, only whether each job is told not to try.
+    let wrong: Vec<String> = every_workflow_with_its_name()
+        .iter()
+        .flat_map(|(file, text)| {
+            jobs_that_test_on_windows_with_the_sound_on(text)
+                .into_iter()
+                .map(move |line| format!("{file}: {line}"))
+        })
+        .collect();
+    assert!(
+        wrong.is_empty(),
+        "A job tests on Windows with the sound on:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_sound_reading_can_see_a_workflow_missing_the_setting() {
+    // The companion. A Windows job running the tests is named when nothing
+    // turns the sound off, and not when the workflow or the job does; a job
+    // on another runner, or one that runs no tests, is left alone.
+    let missing = "env:\n  CARGO_TERM_COLOR: always\n\njobs:\n  gate:\n    runs-on: windows-latest\n    steps:\n    - run: cargo test --quiet\n  lint:\n    runs-on: windows-latest\n    steps:\n    - run: cargo clippy\n  linux:\n    runs-on: ubuntu-latest\n    steps:\n    - run: cargo test\n";
+    let wrong = jobs_that_test_on_windows_with_the_sound_on(missing);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("the gate job"),
+        "a Windows job testing with the sound on was not named, or another job was: {wrong:?}"
+    );
+
+    let the_workflow_sets_it = missing.replace(
+        "  CARGO_TERM_COLOR: always\n",
+        "  CARGO_TERM_COLOR: always\n  WIXEN_NO_AUDIO: \"1\"\n",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&the_workflow_sets_it).is_empty(),
+        "a job under a workflow that turns the sound off was named"
+    );
+
+    let the_job_sets_it = missing.replace(
+        "    runs-on: windows-latest\n    steps:\n    - run: cargo test",
+        "    runs-on: windows-latest\n    env:\n      WIXEN_NO_AUDIO: \"1\"\n    steps:\n    - run: cargo test",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&the_job_sets_it).is_empty(),
+        "a job that turns the sound off itself was named"
+    );
+
+    let only_a_comment = missing.replace(
+        "  CARGO_TERM_COLOR: always\n",
+        "  CARGO_TERM_COLOR: always\n  # WIXEN_NO_AUDIO: \"1\"\n",
+    );
+    assert!(
+        jobs_that_test_on_windows_with_the_sound_on(&only_a_comment).len() == 1,
+        "a setting written only in a comment was read as in force"
     );
 }
 
