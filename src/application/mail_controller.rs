@@ -727,25 +727,17 @@ impl MailController {
         })
     }
 
-    /// Remove any message in a folder carrying this identifier.
-    ///
-    /// How a re-saved draft replaces the copy already filed. There is no
-    /// dependable way to be told where an appended message landed on every
-    /// server, so it is found again by the header it was written with, which is
-    /// the same every time for the same draft.
-    ///
-    /// Nothing found is success, not failure: the first save of a draft has no
-    /// previous copy, and neither does one filed before this existed.
-    pub async fn remove_by_message_id(&self, folder: &str, message_id: &str) -> Result<usize> {
-        let found = self.uids_with_message_id(folder, message_id).await?;
-        self.remove_these(folder, &found).await
-    }
-
     /// Which messages in a folder carry this identifier.
     ///
     /// Asked before a newer copy of a draft is filed, so the removal that
     /// follows names the copies that were there beforehand and cannot take the
-    /// one just filed: both carry the same identifier.
+    /// one just filed: both carry the same identifier. There is no dependable
+    /// way to be told where an appended message landed on every server, so the
+    /// copy is found again by the header it was written with, which is the same
+    /// every time for the same draft.
+    ///
+    /// Nothing found is success, not failure: the first save of a draft has no
+    /// previous copy, and neither does one filed before this existed.
     pub async fn uids_with_message_id(&self, folder: &str, message_id: &str) -> Result<Vec<u32>> {
         once_more_if_the_connection_went!(self, session, {
             if session.selected_folder() != Some(folder) {
@@ -892,12 +884,6 @@ impl MailController {
         })
     }
 
-    /// Check if connected
-    pub async fn is_connected(&self) -> bool {
-        let imap_session = self.imap_session.lock().await;
-        imap_session.is_some()
-    }
-
     /// Connect to POP3 server.
     pub async fn connect_pop3(
         &self,
@@ -1010,6 +996,21 @@ pub struct Pop3MessagePreview {
     pub uidl: String,
 }
 
+// Test support, kept below everything the program compiles: readings such as
+// `sent_copy`'s gate test take this file's first `#[cfg(test)]` as the end of
+// its production half.
+#[cfg(test)]
+impl MailController {
+    /// Whether an IMAP session is held.
+    ///
+    /// Nothing in the program asks; the tests do, to show that signing out
+    /// drops the session and that a failed sign-in is not held.
+    pub(crate) async fn is_connected(&self) -> bool {
+        let imap_session = self.imap_session.lock().await;
+        imap_session.is_some()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,9 +1060,10 @@ mod tests {
             // old copy of the draft having been cleaned up, appends the new
             // one, and the server ends up holding the same draft twice.
             controller
-                .remove_by_message_id("Drafts", "<abc@example.com>")
+                .uids_with_message_id("Drafts", "<abc@example.com>")
                 .await
                 .err(),
+            controller.remove_these("Drafts", &[4]).await.err(),
         ];
         for refusal in refusals {
             let message = refusal
@@ -1370,9 +1372,11 @@ mod against_a_server_that_answers {
         let _ = controller.delete_message("Archive", 1, None).await;
         let _ = controller.move_message("INBOX", 1, "Archive").await;
         let _ = controller.copy_message("Archive", 1, "INBOX").await;
-        let _ = controller
-            .remove_by_message_id("Drafts", "<abc@example.com>")
-            .await;
+        let found = controller
+            .uids_with_message_id("Drafts", "<abc@example.com>")
+            .await
+            .unwrap_or_default();
+        let _ = controller.remove_these("Drafts", &found).await;
 
         let opened: Vec<String> = server
             .transcript()
@@ -1927,8 +1931,12 @@ mod against_a_server_that_answers {
         let server = a_server_that_can("UIDPLUS").await;
         let controller = allowed_on(&server).await;
 
+        let found = controller
+            .uids_with_message_id("Drafts", "<d@x>")
+            .await
+            .expect("the previous copy to be found");
         let removed = controller
-            .remove_by_message_id("Drafts", "<d@x>")
+            .remove_these("Drafts", &found)
             .await
             .expect("the previous copy to be removed");
 
