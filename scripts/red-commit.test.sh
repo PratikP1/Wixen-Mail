@@ -303,4 +303,93 @@ test application::allowed::tests::test_b ... ok
 
 test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"
 
+# ── A test program that stopped part way ────────────────────────────────────
+# Added 2026-10-18 by 13.2-25, audit finding #44. In red mode cargo's exit
+# status is thrown away, because a red run is meant to fail, and this reader
+# sees only `test NAME ... FAILED` lines. A test binary that dies before it
+# reports leaves no such line, so the tests after the crash said nothing and the
+# run read as clean. Cargo prints one `     Running ` line per test binary it
+# starts and libtest one `test result: ` line per binary that finishes, so the
+# two counts tell a crash from a clean run. A shell suite prints neither.
+
+# What the verdict said, and whether it said a given sentence.
+verdict_says() {
+    local want="$1" desc="$2" named="$3" output="$4"
+    printf '%s\n' "$named" > "$work/named"
+    printf '%s\n' "$output" > "$work/output"
+    "$subject" verdict "$work/named" "$work/output" > "$work/said" 2>&1
+    if grep -qF "$want" "$work/said"; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "did not say '$want'" \
+            "said: $(paste -sd ' ' - < "$work/said")"
+    fi
+}
+
+a_binary_that_stopped="     Running unittests src\\lib.rs (target\\debug\\deps\\wixen_mail-0.exe)
+
+running 2 tests
+test application::allowed::tests::test_a ... FAILED
+test application::allowed::tests::test_b ... ok
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+
+     Running tests\\house_style.rs (target\\debug\\deps\\house_style-0.exe)
+
+running 78 tests
+error: test failed, to rerun pass \`--test house_style\`"
+
+verdict_is refused "a run where a test binary stopped before it reported is refused" \
+    "application::allowed::tests::test_a" "$a_binary_that_stopped"
+
+verdict_says "1 test binary stopped before it reported" \
+    "the refusal says how many test binaries stopped" \
+    "application::allowed::tests::test_a" "$a_binary_that_stopped"
+
+the_named_tests_binary_stopped="     Running unittests src\\lib.rs (target\\debug\\deps\\wixen_mail-0.exe)
+
+running 2 tests
+error: test failed, to rerun pass \`--lib\`
+
+     Running tests\\house_style.rs (target\\debug\\deps\\house_style-0.exe)
+
+running 1 test
+test test_unrelated ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 77 filtered out"
+
+verdict_says "1 test binary stopped before it reported" \
+    "a crash in the named test's own binary is said as a stop" \
+    "application::allowed::tests::test_a" "$the_named_tests_binary_stopped"
+
+verdict_says "application::allowed::tests::test_a was named as failing and never ran" \
+    "a crash in the named test's own binary still says the name never ran" \
+    "application::allowed::tests::test_a" "$the_named_tests_binary_stopped"
+
+verdict_is accepted "a run where every test binary reported is accepted" \
+    "application::allowed::tests::test_a" \
+    "     Running unittests src\\lib.rs (target\\debug\\deps\\wixen_mail-0.exe)
+
+running 1 test
+test application::allowed::tests::test_a ... FAILED
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+
+     Running tests\\house_style.rs (target\\debug\\deps\\house_style-0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 78 filtered out"
+
+verdict_is accepted "shell suite lines beside a run are not counted as test binaries" \
+    "check::the suites run before any mode branch" \
+    "test check::the suites run before any mode branch ... FAILED
+test check::every case in this suite ran ... ok
+test which-checks::every case in this suite ran ... ok
+     Running tests\\house_style.rs (target\\debug\\deps\\house_style-0.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 78 filtered out"
+
 suite_verdict
