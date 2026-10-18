@@ -1504,6 +1504,18 @@ impl MessageCache {
             Err(e) => tracing::warn!("Could not put the stored snippets right: {}", e),
         }
 
+        // Databases written before 2026-10-18 hold no unread count for a POP
+        // account's folders or the folders on this computer, because no check
+        // counts them. Counted from their rows, once; the triggers keep them
+        // from then on (13.2-31.2). Not fatal: until it runs those rows say
+        // nothing unread, which is what they said, and the next open tries
+        // again.
+        match cache.count_the_unread_mail_kept_here_once() {
+            Ok(0) => {}
+            Ok(counted) => tracing::info!("Counted the unread mail of {counted} folders kept here"),
+            Err(e) => tracing::warn!("Could not count the unread mail kept here: {}", e),
+        }
+
         // Databases written before 2026-09-24 keep a default signature per
         // account. Each account is given its own as an assignment and one
         // default is kept for the rest, once (#43). Not fatal: until it runs,
@@ -2720,6 +2732,64 @@ impl MessageCache {
             .map_err(|e| {
                 Error::Other(format!(
                     "Failed to note the mail already in the Trash: {}",
+                    e
+                ))
+            })?;
+
+        // ── Each folder's unread count, in step with the rows here ─────────
+        // `folders.unread_count` is what the folder tree says beside a folder,
+        // "Inbox, 5 unread". A check writes the server's count over it at the
+        // end of a folder's sync, and until 13.2-31.2 (2026-10-18) nothing
+        // else moved it, so a mark made here showed only at the next check
+        // (ledger 836). Pratik, 2026-10-15: changed at once, counted on this
+        // computer and corrected by the next check. So the count moves by
+        // what each write did to the folder's unread mail, never counted from
+        // the rows, because only part of a large folder may be kept here, and
+        // the next check's count replaces it. Kept by the store rather than by
+        // each writer, on the Trash triggers' reasoning above: the writers are
+        // several and a later one would forget. A row counts while it is
+        // unread and not deleted. Every lowering stops at nought, since a
+        // count the server set can be lower than the rows here.
+        //
+        // One trigger for an update rather than one to lower and one to
+        // raise: SQLite does not promise the order two triggers on one event
+        // fire in, and the lowering has to come first for the stop at nought
+        // to hold. Its `WHEN` keeps a write that changed nothing about what is
+        // unread, starring an unread row or a check writing a row as it was,
+        // from lowering a count and raising it again. A row replaced whole
+        // fires no delete trigger, as above; the one statement that does it,
+        // `save_message`, is called only by tests. Additive: three triggers,
+        // nothing dropped, nothing renamed.
+        self.conn
+            .execute_batch(
+                "CREATE TRIGGER IF NOT EXISTS an_unread_message_arrives_in_its_folders_count
+                 AFTER INSERT ON messages
+                 WHEN new.read = 0 AND new.deleted = 0
+                 BEGIN
+                     UPDATE folders SET unread_count = COALESCE(unread_count, 0) + 1
+                     WHERE id = new.folder_id;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS a_messages_change_moves_its_folders_count
+                 AFTER UPDATE OF read, deleted, folder_id ON messages
+                 WHEN old.folder_id IS NOT new.folder_id
+                   OR (old.read = 0 AND old.deleted = 0) IS NOT (new.read = 0 AND new.deleted = 0)
+                 BEGIN
+                     UPDATE folders SET unread_count = MAX(COALESCE(unread_count, 0) - 1, 0)
+                     WHERE id = old.folder_id AND old.read = 0 AND old.deleted = 0;
+                     UPDATE folders SET unread_count = COALESCE(unread_count, 0) + 1
+                     WHERE id = new.folder_id AND new.read = 0 AND new.deleted = 0;
+                 END;
+                 CREATE TRIGGER IF NOT EXISTS an_unread_message_is_forgotten_from_its_folders_count
+                 AFTER DELETE ON messages
+                 WHEN old.read = 0 AND old.deleted = 0
+                 BEGIN
+                     UPDATE folders SET unread_count = MAX(COALESCE(unread_count, 0) - 1, 0)
+                     WHERE id = old.folder_id;
+                 END;",
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to keep each folder's unread count in step: {}",
                     e
                 ))
             })?;

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 820 records have arrived since and have not been through it.
+# 823 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -7048,7 +7048,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/types.rs", tests = 28 },
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
 ]
 
 # ── The adapter that saves a draft at the server had never run ──────────────
@@ -7520,7 +7520,7 @@ red = [
     "data::message_cache::folders::tests::test_the_tree_reads_folders_in_the_order_the_folder_type_gives",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
 ]
 
 # ── The order somebody asked the message list to be in ──────────────────────
@@ -14100,7 +14100,7 @@ red = [
     "data::message_cache::folders::tests::test_a_renamed_folder_keeps_its_pin_under_its_new_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14128,7 +14128,7 @@ red = [
     "data::message_cache::folders::tests::test_a_folder_that_is_really_gone_takes_its_pin_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14288,7 +14288,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
@@ -14323,7 +14323,7 @@ red = [
     "data::message_cache::folders::tests::test_one_accounts_gone_folders_are_not_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
 ]
 
 [[guard]]
@@ -29837,7 +29837,7 @@ red = [
     "presentation::view_state::tests::test_a_folder_left_flat_comes_back_flat_whatever_the_setting_says",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 61 },
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
     { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
@@ -42160,4 +42160,69 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/installer.rs", tests = 28 },
+]
+
+# The update trigger's lowering taken out (13.2-31.2, ledger 836): a message
+# marked read, deleted or moved here would leave its folder's unread count
+# where the server put it, so the tree would say the old count until the
+# next check. Anchored on the lowering's own condition, which names the old
+# row and appears once. Measured by hand on 2026-10-18 against the whole
+# library: 9,276 passed and exactly these four failed.
+[[guard]]
+name = "a message marked read or moved here lowers its folder's unread count"
+file = "src/data/message_cache/mod.rs"
+before = '''                     WHERE id = old.folder_id AND old.read = 0 AND old.deleted = 0;'''
+after = '''                     WHERE 0;'''
+red = [
+    "data::message_cache::folders::tests::test_a_message_marked_read_here_lowers_its_folders_unread_count_at_once",
+    "data::message_cache::folders::tests::test_an_unread_message_deleted_here_lowers_its_folders_count",
+    "data::message_cache::folders::tests::test_an_unread_message_moved_here_moves_its_count_with_it",
+    "data::message_cache::folders::tests::test_the_next_checks_count_replaces_the_one_kept_here",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
+]
+
+# The update trigger's condition made always true (13.2-31.2): a write that
+# changes nothing about what is unread, starring an unread message or a
+# check writing a row as it was, would lower the count and raise it again,
+# which lifts a count the server set below the rows here off nought. Only
+# the case for a mark that changes nothing sees it, because a count above
+# nought comes back where it was. Anchored on the trigger's event line and
+# its condition's first line. Measured by hand on 2026-10-18 with the whole
+# `WHEN` taken out: 9,279 passed and exactly this one failed.
+[[guard]]
+name = "a write that changes nothing unread moves no folder's count"
+file = "src/data/message_cache/mod.rs"
+before = '''                 AFTER UPDATE OF read, deleted, folder_id ON messages
+                 WHEN old.folder_id IS NOT new.folder_id'''
+after = '''                 AFTER UPDATE OF read, deleted, folder_id ON messages
+                 WHEN 1 OR old.folder_id IS NOT new.folder_id'''
+red = [
+    "data::message_cache::folders::tests::test_a_mark_that_changes_nothing_moves_no_count",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
+]
+
+# The once-only count's condition on the account made always true
+# (13.2-31.2): every folder would be counted from its rows once, so an IMAP
+# Inbox only part of which is kept here would say less unread than the
+# server holds until the next check. Anchored on the condition's first line
+# and the line naming the accounts. Measured by hand on 2026-10-18: 9,279
+# passed and exactly this one failed.
+[[guard]]
+name = "the once-only count never counts a folder a check counts"
+file = "src/data/message_cache/folders.rs"
+before = '''                 WHERE NOT EXISTS (
+                     SELECT 1 FROM accounts a'''
+after = '''                 WHERE 1 OR NOT EXISTS (
+                     SELECT 1 FROM accounts a'''
+red = [
+    "data::message_cache::folders::tests::test_a_server_folder_is_never_counted_from_the_rows_here",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/folders.rs", tests = 71 },
 ]

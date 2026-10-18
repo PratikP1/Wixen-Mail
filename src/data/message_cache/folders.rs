@@ -4,6 +4,10 @@ use super::{CachedFolder, MessageCache};
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
+/// The `work_done_once` name of [`MessageCache::count_the_unread_mail_kept_here_once`].
+const THE_COUNT_OF_THE_MAIL_KEPT_HERE: &str =
+    "the unread count of the folders no check counts, 2026-10-18";
+
 /// What the last folder list from an account's server said about one folder,
 /// and what somebody has said back about it.
 ///
@@ -137,9 +141,46 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Count, once, the unread mail of the folders no check counts.
+    /// Count, once, the unread mail of the folders no check counts, and
+    /// answer how many folders were counted.
+    ///
+    /// A POP account's folders and the folders on this computer hold all
+    /// their mail here, and no check ever wrote their count, so until
+    /// 13.2-31.2 (2026-10-18) their rows in the tree said nothing unread. For
+    /// them a count from the rows is exact; the store's triggers keep it from
+    /// then on. A folder is counted when no account row with a protocol other
+    /// than POP owns it, which takes in the reserved id the folders on this
+    /// computer are kept under, since no account row carries it. Read as
+    /// `Protocol::from_stored` reads it. A folder a check counts is never
+    /// counted here, because only part of it may be kept.
+    ///
+    /// Recorded in `work_done_once` once it finished, so a second call does
+    /// nothing and one that failed is tried again at the next open.
     pub fn count_the_unread_mail_kept_here_once(&self) -> Result<usize> {
-        Ok(0)
+        if self.has_this_been_done(THE_COUNT_OF_THE_MAIL_KEPT_HERE)? {
+            return Ok(0);
+        }
+        let counted = self
+            .conn
+            .execute(
+                "UPDATE folders SET unread_count = (
+                     SELECT COUNT(*) FROM messages m
+                     WHERE m.folder_id = folders.id AND m.read = 0 AND m.deleted = 0
+                 )
+                 WHERE NOT EXISTS (
+                     SELECT 1 FROM accounts a
+                     WHERE a.id = folders.account_id
+                       AND lower(trim(a.protocol)) NOT IN ('pop3', 'pop')
+                 )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to count the unread mail of the folders no check counts: {e}"
+                ))
+            })?;
+        self.record_this_as_done(THE_COUNT_OF_THE_MAIL_KEPT_HERE)?;
+        Ok(counted)
     }
 
     /// Which folders somebody has chosen to sync, and which they have not.
