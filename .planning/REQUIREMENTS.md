@@ -149,6 +149,10 @@ write path added by this milestone passes through that gate.
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-07 has Empty Folder
     say a folder was emptied only when the server emptied it (finding #34). It adds no `[D]`
     clause and the box stays ticked.
+  - Plans, 2026-10-15, phase 13.2 on Pratik's yes of that day: 13.2-31.2 carries the count the
+    tree shows for a folder through a mark, a delete, a move or a copy made here at once, the
+    next check correcting it, as Mark Folder Read already zeroes it (ledger 836). It adds no
+    `[D]` clause and the box stays ticked.
   - 13.2-07 on 2026-10-15: Empty Folder at a server asks
     `server_delete::the_message_left_the_folder` of every delete's answer, and a message the
     server only marked, or copied to the Trash and left, stops that folder with the server's
@@ -1102,6 +1106,11 @@ write path added by this milestone passes through that gate.
     user meets them, not left only in the changelog.
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-19 keeps a subscribed
     feed's repeating event and its moved or cancelled days apart (finding #28). It adds no
+    `[D]` clause and the box stays open.
+  - Plans, 2026-10-16, phase 13.2 on a security review of that day against 13.2-19's
+    `e5d8516d`: 13.2-31.6 has the fold of a changed day, for a subscribed feed and for a
+    calendar server, find, change and delete rows only in the calendar being read, so a feed
+    naming a meeting held in another calendar of the account leaves it as it was. It adds no
     `[D]` clause and the box stays open.
   - 13.2-19 on 2026-10-16: the feed refresh takes a series and the days changed out of it
     apart by RECURRENCE-ID and folds each changed day through the calendar-server read's own
@@ -2641,6 +2650,13 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     that went (#35). The double send and the sent draft's copy in Drafts sit under no
     requirement, and each plan's line says so. They add no `[D]` clause and the box stays
     ticked.
+  - Plans, 2026-10-15, phase 13.2 on Pratik's yes of that day to the follow-ups of 13.2-04 and
+    13.2-05: 13.2-31.3 has the Outbox's own Delete leave a message the send loop has claimed
+    and say it is being sent, and narrows Undo Send's too-late sentence to match (ledger 843);
+    13.2-31.4 tries again, at the account's next check, the removal of a sent draft's copy from
+    Drafts that Send could not finish (ledger 845), which sits under no requirement as
+    13.2-05's line says, and its line says so. They add no `[D]` clause and the box stays
+    ticked.
   - 13.2-04 on 2026-10-14: Undo Send's answer is true while the send loop runs. The Outbox's
     rows carry `sending_since`, a pass claims each ready message through
     `claim_for_sending` before it counts or sends, and `delete_outbox_message`, Undo Send's
@@ -2969,6 +2985,17 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
   - Plans, 2026-10-14, phase 13.2 on Pratik's request of that day: 13.2-16 marks a file Save
     As writes and an attachment the reader saves as coming from the internet, the Mark of the
     Web (finding #22). It adds no `[D]` clause and the box stays ticked.
+  - Plans, 2026-10-17, phase 13.2 on Pratik's yes of that day to ledger 879: 13.2-31.7 moves
+    zip from 7.2.0 to 9.0.4 and has the zip import read every entry from the place it was
+    found, so a folder an older Windows zip tool named in the old DOS alphabet is still
+    brought in with its mail under zip 9, and says in its own sentence that an archive whose
+    contents do not match what it records is damaged or was changed, rather than that it
+    stops partway through. It adds no `[D]` clause and the box stays ticked.
+  - Plans, 2026-10-18, phase 13.2 on Pratik's yes of 2026-10-17/18: 13.2-31.8 has the zip
+    import say that a mailbox file holding more than its archive records about it is damaged
+    or changed after it was made, and whether any of its mail came in, where it said a
+    message in it held nothing a mail program recognises; the archive's other files still
+    come in whole. It adds no `[D]` clause and the box stays ticked.
   - 13.2-16 on 2026-10-16: an attachment saved from either window and a message saved with
     File, Save As carry a `Zone.Identifier` stream naming the Internet zone, written by
     `attachment_name::mark_as_from_the_internet` after the file; a drive with no room for it
@@ -3794,6 +3821,11 @@ seven groups.
     their file's module and a `build.rs` change earn its tests (#38, #41); 13.2-26.1 asks
     Pratik whether a documents-only commit still runs clippy and carries out his answer (#45);
     13.2-32 runs the phase's full gate. They add no `[D]` clause and the box stays ticked.
+  - Plans, 2026-10-17, phase 13.2 on Pratik's yes of that day to ledger 879: 13.2-31.7 moves
+    zip from 7.2.0 to 9.0.4, so the security audit the gate and CI run stops failing on three
+    advisories against 7.2.0, and takes out of `.cargo/audit.toml` the acceptance of those
+    three that the ammonia fix of 2026-10-18 put there until this plan. It adds no `[D]`
+    clause and the box stays ticked.
   - 13.2-24 on 2026-10-18: the reading that a job running the tests checks out the whole
     history reads every workflow rather than `ci.yml` alone, and the release gate and the
     Linux and macOS jobs of Other platforms now fetch it (finding #39, ledger 464 closed);
@@ -4138,6 +4170,11 @@ provider does.
     keeps one unreadable POP message from ending that account's mail (#13). Saving accounts
     (#3) and the calendar feed (#20) sit under no requirement, and their plans' lines say so.
     They add no `[D]` clause and the box stays ticked.
+  - Plans, 2026-10-15, phase 13.2 on Pratik's yes of that day to 13.2-06's follow-up: 13.2-31.5
+    shows the refusal of an address another account uses inside the Add or Edit Account
+    window, beside the address box, cleared when the address changes (ledger 848). Like the
+    saving of accounts it sits under no requirement, and its line says so. It adds no `[D]`
+    clause and the box stays ticked.
   - 13.2-06 on 2026-10-15: an account removed or switched off in the Account Manager stops
     being watched at once (finding #33). `handle_account_mgr` asks
     `checking_on_a_schedule::which_watches_stop` and stops each of those watches before any
@@ -4524,6 +4561,11 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     here on its conversation row at once, so a conversation marked from its row reads as
     marked without waiting for the next check (his second report). It adds no `[D]` clause
     and the box stays ticked.
+  - Plans, 2026-10-15, phase 13.2 on Pratik's yes of that day to the follow-ups of 13.2-02:
+    13.2-31.1 brings the store work of M or Delete on a conversation to 100 ms or less at the
+    size of his Inbox (ledger 837, of which he said "0.3 secs seems slow"), and 13.2-31.2 makes
+    the folder tree's unread count follow a mark made here at once, the next check correcting
+    it (ledger 836). They add no `[D]` clause and the box stays ticked.
   - 13.2-02 on 2026-10-14: under conversation view Mark as Read, Star, the label command and
     the runner's labels, Undo and Redo of a mark, and the read, starred and label update arms
     bring the conversation rows they touched up to date from the store at once,
@@ -5297,6 +5339,10 @@ as inserts (11-06.2 beside 11-06.1, which was at three tasks; 11-07.1 after 11-0
     13.2-11 replays a move or a delete kept from offline only into the folder numbering it was
     kept under, and stops an older waiting flag change overwriting a newer one (findings #5
     and #2). They add no `[D]` clause and the box stays ticked.
+  - Plans, 2026-10-15, phase 13.2 on Pratik's yes of that day to 13.2-02's follow-up: 13.2-31.1
+    has the reads a delete or a move made here runs read only the conversations it touched, so
+    a conversation row leaves at once without a pause at the size of his Inbox (ledger 837). It
+    adds no `[D]` clause and the box stays ticked.
   - 13.2-02 on 2026-10-14: under conversation view `take_row_out_of_the_list` takes the store
     and no longer returns early; a delete or a move made here brings its conversation rows up
     to date from the store, a row whose conversation has nothing left in the folder leaves at
@@ -7909,7 +7955,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOLDER-01 | Phase 1 | Complete; phase 13.2, planned 2026-10-14: 13.2-07, adding no `[D]` clause; 13.2-07 done 2026-10-15, Empty Folder stops at a message the server only marked or copied and says why, ledger 849 |
+| FOLDER-01 | Phase 1 | Complete; phase 13.2, planned 2026-10-14: 13.2-07, and 2026-10-15: 13.2-31.2, adding no `[D]` clause; 13.2-07 done 2026-10-15, Empty Folder stops at a message the server only marked or copied and says why, ledger 849 |
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Complete |
@@ -7932,7 +7978,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
-| PIM-03 | Phase 5 | Pending; phase 13.2: 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause. Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
+| PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause. Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
@@ -7956,14 +8002,14 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
 | FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause; 13.2-12 done 2026-10-15, an HTML-only message nested past 512 levels is saved with its words as its snippet and index row instead of overflowing the worker's stack (ledger 857) |
-| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845) |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, and 2026-10-15: 13.2-31.3 and 13.2-31.4, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845) |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
 | FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
 | FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
-| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871 |
+| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, and 2026-10-17: 13.2-31.7, and 2026-10-18: 13.2-31.8, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871 |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
@@ -7972,7 +8018,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, the open folder read again at most every ten seconds during the download and a text refusal ending one account, ledger 851 |
 | MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850 |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, each message's text asked for at most once a run, ledger 851 |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864 |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, and 2026-10-15: 13.2-31.5, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864 |
 | MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852; 13.2-22 done 2026-10-17, lines said at the same moment are joined into one line, most urgent first, and the status bar shows them in the same order, ledger 886 and 887 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
@@ -7980,11 +8026,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-20 | Phase 12 | Complete, 12-01 on 2026-09-22, on both `[D]` lines: the product cleared by a measurement on a built page window, no handler needed, and the case rewritten to wait for the front and write down where its next key goes; the run at the next push of `main` is Pratik's, ledger 567. Corrected 2026-09-23: runs 35839692317 and 35839954840 read the keyboard on the frame after a real activation, so the product half was not cleared by 12-01; 12-03.1 added the handler in `presentation::page_focus`, red first on wx's frame-saved path, and the case's record of the window's own thread, on a third `[D]` line; the run is still ledger 567 and the ear ledger 578. Corrected 2026-09-24 by 12-12: the run answered green later on 2026-09-23, NVDA run 35876075636 on pull request #94, so ledger 567 is fixed, as the requirement's `[S]` line already says; the ear, ledger 578, stays open |
 | FOUND-21 | Phase 12 | Complete, 12-02.1 at `a503ce77` on 2026-09-22: all seven `[D]` lines held, the limit built and proved on both paths and then relied on, and every one of the 26 records the sweep did not find in agreement measured again here. The `[S]` line waits for the next sweep, which is the only thing that can say the limit holds over a whole run and that nothing corrected here has gone stale again |
 | FOUND-22 | Phase 12 | Complete, 12-03.1 on 2026-09-23, on both `[D]` lines: `tests/the_nvda_cases_wait_for_words_the_program_says.rs` red on the four stale texts and then green, in the whole-tree list; the two cases corrected. The two cases green on the runner is the `[S]` line, ledger 576. Corrected 2026-09-24 by 12-12: NVDA runs 35872797349 and 35876075636 on pull request #94 passed both cases on 2026-09-23, so ledger 576 is fixed, as the requirement's `[S]` line already says |
-| FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed. Planned 2026-10-02: 13-44.6.2 and 13-44.6.3 move every test that sends a key or a click onto a desktop made for its run (ledgers 580 and 761); no `[D]` clause is added. 13-44.6.2 done 2026-10-02: the ten plain-control key targets and the directory sign-in on desktops made for their runs, every key sent with only the modifiers it means, ledger 580 closed with its cause removed. 13-44.6.3 done 2026-10-02: the five key targets that hold a browser or start a second copy of themselves run their window tests in a child on a desktop made for the run, the four with a browser in one turn shared with the clipboard target, ledger 761 closed with its cause removed. Phase 13.1, planned 2026-10-03: 13.1-01 (the runner, a copy with no history, the push of `main`), 13.1-02 (the whole-tree reading, the suites' time) and 13.1-05 (the phase's full gate), adding no `[D]` clause. 13.1-01 done 2026-10-03: the marker and signature readings run their window tests on the runner's own desktop where `CI` is set, because an elevated child's browser opens on the shell's desktop there (ledger 785 open with its cause named), and the forgetting rows and the share of history say when git finds no repository (458 closed). 13.1-02 done 2026-10-03: every code commit runs the whole-tree reading of mail taken off, and the script suites' growth since 2026-09-23 is a process start of about a third of a second on this machine, not the suites (803 open, 802 closed). Closing read 2026-10-04, 13.1-05: stands; the phase's full gate green at `0bc790d0`, 10,566 tests; phase 13.2, planned 2026-10-14: 13.2-24, 13.2-25, 13.2-26 and 13.2-26.1 (the gate and CI) and 13.2-32 (the phase's full gate), adding no `[D]` clause. 13.2-24 done 2026-10-18: the history reading reads every workflow, the release gate and the Linux and macOS jobs fetch the whole history, the release gate holds a read-only token and sets `WIXEN_NO_AUDIO` on Pratik's yes; no failure known before a run is left in it, and only his first dispatch can show it green (ledgers 464 and 616 closed, 891 open). 13.2-25 done 2026-10-18: the hook refuses a commit whose tree is not what it stages, outside planning, documents, the guard register and the root's Markdown, and a red commit whose test binary stopped part way is refused (325 noted and open). 13.2-26 done 2026-10-18: a changed file's guard records reach their library tests in whatever module they live, and a `build.rs` change earns every check (892 and 893 opened and closed). 13.2-26.1 done 2026-10-18: a documents-only commit runs no clippy and forces no rebuild, on Pratik's yes (894 opened and closed) |
+| FOUND-23 | Phase 12 | Complete 2026-09-24; until then this row read "Pending": 12-03.2 planned 2026-09-23 against `481a7918` from the measurement of nine executors; its last `[D]` line is 12-12's task 3, and its `[S]` line is that full gate and the stage lines the later plans print. 12-03.2 done 2026-09-23 on its seven `[D]` lines; the box and this row stay open for 12-12's task 3. Complete 2026-09-24: 12-12's full gate at `566116d3`, exit 0 after 516 s with 8,985 tests passed, green on its first run; ledger 585 fixed. Planned 2026-10-02: 13-44.6.2 and 13-44.6.3 move every test that sends a key or a click onto a desktop made for its run (ledgers 580 and 761); no `[D]` clause is added. 13-44.6.2 done 2026-10-02: the ten plain-control key targets and the directory sign-in on desktops made for their runs, every key sent with only the modifiers it means, ledger 580 closed with its cause removed. 13-44.6.3 done 2026-10-02: the five key targets that hold a browser or start a second copy of themselves run their window tests in a child on a desktop made for the run, the four with a browser in one turn shared with the clipboard target, ledger 761 closed with its cause removed. Phase 13.1, planned 2026-10-03: 13.1-01 (the runner, a copy with no history, the push of `main`), 13.1-02 (the whole-tree reading, the suites' time) and 13.1-05 (the phase's full gate), adding no `[D]` clause. 13.1-01 done 2026-10-03: the marker and signature readings run their window tests on the runner's own desktop where `CI` is set, because an elevated child's browser opens on the shell's desktop there (ledger 785 open with its cause named), and the forgetting rows and the share of history say when git finds no repository (458 closed). 13.1-02 done 2026-10-03: every code commit runs the whole-tree reading of mail taken off, and the script suites' growth since 2026-09-23 is a process start of about a third of a second on this machine, not the suites (803 open, 802 closed). Closing read 2026-10-04, 13.1-05: stands; the phase's full gate green at `0bc790d0`, 10,566 tests; phase 13.2, planned 2026-10-14: 13.2-24, 13.2-25, 13.2-26 and 13.2-26.1 (the gate and CI) and 13.2-32 (the phase's full gate), adding no `[D]` clause. 13.2-24 done 2026-10-18: the history reading reads every workflow, the release gate and the Linux and macOS jobs fetch the whole history, the release gate holds a read-only token and sets `WIXEN_NO_AUDIO` on Pratik's yes; no failure known before a run is left in it, and only his first dispatch can show it green (ledgers 464 and 616 closed, 891 open). 13.2-25 done 2026-10-18: the hook refuses a commit whose tree is not what it stages, outside planning, documents, the guard register and the root's Markdown, and a red commit whose test binary stopped part way is refused (325 noted and open). 13.2-26 done 2026-10-18: a changed file's guard records reach their library tests in whatever module they live, and a `build.rs` change earns every check (892 and 893 opened and closed). 13.2-26.1 done 2026-10-18: a documents-only commit runs no clippy and forces no rebuild, on Pratik's yes (894 opened and closed); phase 13.2, planned 2026-10-17: 13.2-31.7 (zip 9, so the gate's audit passes), adding no `[D]` clause |
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause; 13.2-03.1 done 2026-10-14, a message read from an opened conversation, or the row's own message filed in another folder, is marked read after the wait (ledger 841) |
-| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836) |
+| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, and 2026-10-15: 13.2-31.1 and 13.2-31.2, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836) |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause; 13.2-03 done 2026-10-14, a command from an opened conversation acts on the one message it names, and the window answers the menu key, Delete, Shift+Delete and M (ledger 839, 840); 13.2-03.1 done 2026-10-14, the window answers the rest of the list's message keys on the message under its cursor (ledger 841) |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |
@@ -8001,7 +8047,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-18 | Phase 11 | Complete, 11-11.3 at `6e23656b` (the line guard, the refused post and its log line, the released style, the reading over the real page, the pages); which state the tester was in, and what is heard, are his ear's (ledger 565) |
 | LIST-19 | Phase 11, then phase 12 | Complete, 2026-09-22: 11-11.1 merged at `8340e5e6` (the setting, the menu, the activation, the message view, the privacy page) and 12-02 at `70f5435a`, corrected at `cf58f9a4` (the separate window as a process of its own with a browser profile of its own, the erase reaching it, the route spawning it, ledger 566 fixed). What only an ear settles is ledger 560 and 568, and the scan's `page-window` target runs at the next push of `main` |
 | LIST-20 | Phase 11 | Complete, 11-06.2 at `116968fb`; whether NVDA reads the landed row once on Tab and on F6, and not twice, is the tester's ear (ledger 543) |
-| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, adding no `[D]` clause; 13.2-02 done 2026-10-14, a conversation row a delete made here emptied leaves at once and the cursor lands (ledger 834, 835); 13.2-11 done 2026-10-15, an older waiting flag change no longer undoes a newer one and a waiting move, delete or flag change goes to its own message after a renumbering or comes back (ledger 853) |
+| LIST-21 | Phase 11 | Complete, 11-07.1 at `fa20d04a`; a replayed move against a real server after a restart, a message another client changed meanwhile, and #63's proofs re-taken are the tester's account (ledger 546); phase 13.2, planned 2026-10-14: 13.2-02 and 13.2-11, and 2026-10-15: 13.2-31.1, adding no `[D]` clause; 13.2-02 done 2026-10-14, a conversation row a delete made here emptied leaves at once and the cursor lands (ledger 834, 835); 13.2-11 done 2026-10-15, an older waiting flag change no longer undoes a newer one and a waiting move, delete or flag change goes to its own message after a renumbering or comes back (ledger 853) |
 | LIST-22 | Phase 11 | Complete, 11-07.2 at `2526b31f`; what a real destination does with a message it already holds, Gmail's treatment of an appended message, and #63's crossing proofs re-taken are the tester's accounts' (ledger 187, 547); phase 13.2, planned 2026-10-14: 13.2-11, adding no `[D]` clause; 13.2-11 done 2026-10-15, a waiting crossing takes its source copy from its own message after a renumbering or comes back (ledger 853) |
 | LIST-23 | Phase 11 | Complete, 11-08.1 at `76897058`; his split threads becoming one after the next check, the row's count matching Gmail's, and the once-only pass answered by a real Gmail are his account's (ledger 549) |
 | LIST-24 | Phase 11 | Complete, 11-10.1 at `be97ed86`; the chapter address in NVDA's link list, a description's address heard as a link to its site, and a refused link's note heard beside its words are the tester's ear (ledger 557) |

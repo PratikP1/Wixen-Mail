@@ -11,7 +11,7 @@ state_head: dc592d07
 progress:
   total_phases: 17
   completed_phases: 0
-  total_plans: 297
+  total_plans: 306
   completed_plans: 291
   percent: 0
 previous_activity: 2026-09-06, 04-08 done on branch picture-decorative-answer. A picture put into a message keeps its description across a draft save and a reload, proved by a test and by a break taken by hand rather than by a green nobody watched. A picture can be marked decorative, which is a question somebody answers rather than an empty box, offered only where furniture is plausible. Whether a decorative picture is announced is the reader's answer, on a control in Settings, Reading. Nobody has heard any of it.
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-29)
 
 ## Current Position
 
-Phase: 13.2 (The audit's fixes). Current plan 33 of 35: 13.2-30 done on 2026-10-18,
-13.2-31 next.
+Phase: 13.2 (The audit's fixes). Current plan 34 of 44: 13.2-31 done on 2026-10-18,
+13.2-31.1 next.
 
 **13.2-30 done 2026-10-18** on branch `13.2-30-one-translation-system`, merged locally and
 not pushed, since nothing spoken or shown changed. The `I18n` registry in
@@ -387,6 +387,44 @@ loaded rows nor the store hold it, `Enter` says "That message is no longer on th
 computer, so it could not be opened." Ledger 831 to 833 opened: the tester's ear, the root
 fix, and the tree that holds only this folder's members. Until 13.2-01 the line above read
 "Current plan 0 of 35: planned, nothing executed, 13.2-01 next."
+
+**Five plans added to phase 13.2 on 2026-10-15**, 13.2-31.1 to 13.2-31.5, planned against
+`main` at `dbe9dfde` on Pratik's answer that day to six follow-ups 13.2-02 to 13.2-06 left:
+"yes. For 2, 0.3 secs seems slow." 13.2-31.1 brings M or Delete on a conversation to 100 ms
+or less at the size of his Inbox (ledger 837); 13.2-31.2 changes the folder tree's unread
+count at once for a change made here, the next check correcting it (836); 13.2-31.3 has the
+Outbox's Delete leave a message being sent and say so (843); 13.2-31.4 takes a sent draft's
+copy out of Drafts at the account's next check when Send could not (845); 13.2-31.5 shows a
+refused address inside the Add or Edit Account window (848). The sixth follow-up, ledger 847,
+stays the changelog's sentence, and 13.2-32's closing read closes the row. They sit at waves 35
+to 39, after 13.2-31.
+
+**One more plan added on 2026-10-16**, 13.2-31.6, planned against 13.2-19's branch at
+`e5d8516d` before that plan's merge, with `main` at `02f974b9`, for a security review's finding
+against that commit: a subscribed feed's changed day, and a calendar server's, found, changed
+and deleted rows across the account rather than only in the calendar being read, so a feed
+naming a meeting held in another calendar could move it or call a day of it off. It sits at
+wave 40.
+
+**One more plan added on 2026-10-17**, 13.2-31.7, planned against `main` at `bd7bd0c3` while
+13.2-21's executor worked on its branch, on Pratik's yes that day to ledger 879 and his "9.0.4":
+zip moves from 7.2.0 to 9.0.4, so the Security Audit stops failing on three advisories against
+7.2.0; every entry of a zip is read from where it was found, since under zip 9 a folder named
+in the old DOS alphabet would otherwise be listed and not read; and an archive whose contents
+do not match what it records is told so rather than that it stops partway through. It sits at
+wave 41.
+
+**Two more plans added on 2026-10-18**, planned against `main` at `f6f70f93` while an executor
+batch ran the ammonia fix and then 13.2-24 to 13.2-31, on Pratik's yes of 2026-10-17/18.
+13.2-31.8 has the import say that a mailbox file inside a zip holding more than the archive
+records about it is damaged or changed, and how much of its mail came in, where it said a
+message held nothing a mail program recognises while most of a folder was missing; it sits at
+wave 42. 13.2-31.9 keeps a settings file that cannot be read under a name of its own, puts
+settings that allow no change in its place, says so once after the window is on screen, and
+stops Settings writing its defaults over the file (ledger 889); it sits at wave 43. 13.2-32
+moved to wave 44, so the phase holds forty-four plans; the Phase line at the top of this
+section said "of 35" until the nine landed. `main` was 262 commits ahead of
+`origin/main` before the commit landing them, which is on `main` and not pushed.
 
 **Phase 13.2 planned 2026-10-14 against `main` at `dc592d07`**, inserted between phase 13.1 and
 phase 14 on Pratik's request that day, after the full audit: "I want all of the items that
@@ -4043,7 +4081,7 @@ counting `*-PLAN.md` on disk rather than incrementing, which that README also
 asks of whoever owns the merge. `WINDOWS.md` 325.
 
 Current Plan: 34
-Total Plans in Phase: 35
+Total Plans in Phase: 44
 
 ---
 

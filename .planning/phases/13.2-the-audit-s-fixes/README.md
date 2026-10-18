@@ -13,6 +13,25 @@ answered 50, with this clone's `origin/main` at `01ef4589`. The build Pratik has
 The directory is named the way `gsd-tools generate-slug "The audit's fixes"` answers,
 `the-audit-s-fixes`.
 
+Five more plans, 13.2-31.1 to 13.2-31.5, were written on 2026-10-15 against `main` at
+`dbe9dfde`, the version still `1.0.0-alpha.1`, for the follow-ups Pratik answered that day
+(see "Pratik's yes of 2026-10-15" below). On the day `guards/guards.toml` held 1,540 records by
+the TOML reader, and `.planning/WINDOWS.md`'s frontmatter said 856 entries, 730 open and 126
+fixed. One more, 13.2-31.6, was written on 2026-10-16 against 13.2-19's branch at `e5d8516d`,
+before that plan's merge, for a security review's finding against that commit (see "A security
+review of 2026-10-16" below). That day `main` stood at `02f974b9`, `guards/guards.toml` held
+1,563 records there and 1,565 on 13.2-19's branch, and the ledger's frontmatter said 875
+entries, 749 open and 126 fixed. One more, 13.2-31.7, was written on 2026-10-17 against `main`
+at `bd7bd0c3`, while 13.2-21's executor worked on its branch, on Pratik's yes that day to
+moving zip from 7.2.0 to 9.0.4 (see "Zip 9, decided 2026-10-17" below); that day
+`guards/guards.toml` held 1,581 records and the ledger's frontmatter said 883 entries, 757 open
+and 126 fixed. Two more, 13.2-31.8 and 13.2-31.9, were written on 2026-10-18 against `main` at
+`f6f70f93`, while an executor batch ran the ammonia fix and then 13.2-24 to 13.2-31, on
+Pratik's yes of 2026-10-17/18 (see "Zip 9, decided 2026-10-17" and "An unreadable settings
+file, decided 2026-10-18" below); that day `guards/guards.toml` held 1,608 records and the
+ledger's frontmatter said 890 entries, 764 open and 126 fixed. The nine sit between 13.2-31 and
+13.2-32, so the phase holds forty-four plans, one per wave from 1 to 44.
+
 **Goal.** The four regressions Pratik reported on 2026-10-14 are fixed first: Enter opens a
 message that is alone in its conversation, a mark or a delete made here shows on its
 conversation row at once, and the conversation window acts on the message under its cursor.
@@ -37,7 +56,13 @@ REAL-01. Five plans name none and each says why: 13.2-23 (no requirement is abou
 are written), 13.2-27 (none covers the uninstaller), and 13.2-28, 13.2-29 and 13.2-31
 (deletions of code nothing reaches, which no requirement describes). Those five leave three
 completion marks, not four. REAL-01 stays phase 14's to tick: 13.2-15, 13.2-17 and 13.2-21 add
-lines under it and leave its box open.
+lines under it and leave its box open. The five plans added on 2026-10-15 name requirements
+already on that list, LIST-04, LIST-21, FOLDER-01, FOUND-04 and MAIL-04; 13.2-31.6, added
+2026-10-16, names PIM-03, 13.2-31.7, added 2026-10-17, names FOUND-23 and FOUND-11, and
+13.2-31.8, added 2026-10-18, names FOUND-11, all on it too, so the list and the coverage stay as
+they are and thirty-eight plans now name one; each of those eight leaves four completion marks.
+13.2-31.9, added 2026-10-18 for ledger 889, names none, as 13.2-23 named none for the same
+settings file, so six plans name none and it leaves three marks.
 
 ## Pratik's words of 2026-10-14
 
@@ -84,6 +109,91 @@ folder never set show conversations. Four plans fix them, and they run before th
 13.2-03 with 13.2-03.1 for the fourth, split in two because one executor could not carry both
 halves. They went in front of the chain on 2026-10-14, and every audit plan moved up by three.
 
+## Pratik's yes of 2026-10-15
+
+The summaries of 13.2-02 to 13.2-06 left six follow-ups for Pratik, each a ledger row with a
+recommendation. On 2026-10-15 he answered all six:
+
+> "yes. For 2, 0.3 secs seems slow."
+
+His "2" is the second follow-up as they were put to him, the time M or Delete on a
+conversation takes. Five became plans, numbered after 13.2-31 so that 13.2-32's closing read
+and the phase's full gate cover them, one per wave like every plan here:
+
+| Follow-up | Ledger | The recommendation he said yes to | Plan |
+|---|---|---|---|
+| 1 | 836 | The unread count beside a folder in the folder tree, "Inbox, 5 unread", changes at once in either view, counted on this computer and corrected by the next check | 13.2-31.2 |
+| 2 | 837 | Find where the time goes when M or Delete on a conversation reads the store, about 0.3 s at the size of his Inbox, and bring it to 100 ms or less at that size, measured the way 13.2-02 measured it | 13.2-31.1 |
+| 3 | 843 | The Outbox's own Delete refuses a message a send already holds, with a sentence, as Undo Send now does | 13.2-31.3 |
+| 4 | 845 | When Send cannot take a sent draft's copy out of Drafts, the removal is remembered and tried again at that account's next check, silent unless it fails again | 13.2-31.4 |
+| 5 | 848 | When Add or Edit Account refuses an address another account uses, the same sentence is shown inside that window beside the address box and cleared when the address changes | 13.2-31.5 |
+| 6 | 847 | The password and sign-in tokens an earlier save left in the credential store, under an account it replaced, stay the changelog's sentence | none |
+
+13.2-31.1 runs first because it works in the same conversation reads that 13.2-31.2's count
+follows. Ledger 847 is closed by 13.2-32's closing read with his answer.
+
+## A security review of 2026-10-16
+
+A security review of 13.2-19's green commit, `e5d8516d`, found that a subscribed feed's changed
+day reaches past the feed's own calendar. Each changed day goes through
+`one_caldav_day_kept_out_of_its_series` in `src/application/caldav_sync.rs`, which found the
+series and the day's own row by the account and the event's name, and deleted by the same,
+never asking which calendar a row is in. A feed is anyone's to publish, so one naming a meeting
+held in another calendar of the account, as somebody who sent you an invitation could, can move
+a day of that meeting or call it off when the feed is refreshed. The calendar server's read
+calls the same function the same way, and has since `ad2b0fd3`, so two server calendars carrying
+one meeting reach each other's copy with nobody hostile involved.
+
+13.2-31.6 narrows every read and delete in that function to the calendar being read, for both
+callers, and leaves a meeting in another calendar as it was, saying nothing about it. It runs
+after the five plans above and before 13.2-32, so the closing read and the full gate cover it.
+
+## Zip 9, decided 2026-10-17
+
+13.2-19's pull request was the first CI run to meet three advisories published on 2026-10-09
+and 2026-10-10 against zip 7.2.0, RUSTSEC-2026-0367, 0368 and 0369, and the Security Audit job
+has failed on every branch and on `main` since (ledger 879). All three are about unpacking an
+archive to disk with `ZipArchive::extract`, which nothing here calls. Pratik answered the
+ledger's recommendation on 2026-10-17:
+
+> "Move to zip 9. yes to all the recommendations."
+
+Asked the same day between 9.0.0 and 9.0.4, he answered "9.0.4". So 13.2-31.7 moves zip to
+9.0.4 in a plan of its own. On his yes of 2026-10-17/18 a fix made before 13.2-24 accepted the
+three by id in `.cargo/audit.toml` until then, with that reason and the exit condition that
+they leave in the commit that moves zip, and moved ammonia to 4.1.8 for a fourth advisory,
+RUSTSEC-2026-0373; 13.2-31.7 takes the three out. Planning it found two things the move
+changes. zip 9 looks an entry up by the bytes of its name, so a folder named in the old DOS
+alphabet by an older Windows zip tool would be listed for the import and then not read; the
+plan reads every entry from the place it was found instead. And zip 9.0.4 refuses to read an
+entry past the size the archive records for it, so an archive whose contents do not match what
+it records would be told it "stops partway through" and to fetch another copy; the plan gives
+that case its own sentence first. It runs after the six plans above and before 13.2-32, so the
+closing read and the full gate, whose audit is the one this clears of zip, cover it.
+
+The same measurement found a case 13.2-31.7 does not reach. When the size an archive records
+for a mailbox file is smaller than the file by more than a little, the import reads the file
+until zip 9.0.4 stops it and then says "1 message in the archive could not be read, because
+there was nothing in it a mail program recognises": for a file of 394,670 bytes recorded as
+100,000, nothing came in, and for one recorded as 300,000, 878 of its 2,000 messages came in
+under a sentence saying that one message could not be read. Pratik answered yes on 2026-10-17/18 to 13.2-31.8, which says in
+13.2-31.7's words that the file is damaged or changed, and how much of it came in, and still
+brings in the archive's honest files whole. It runs after 13.2-31.7, whose typed reason it
+reuses.
+
+## An unreadable settings file, decided 2026-10-18
+
+13.2-23 made every save write the settings whole or not at all, and left ledger 889: a
+settings file a disk fault or a hand edit has made unreadable is said only in the log, every
+reading of the settings falls back on its own, Allow Changes answers nothing for every
+account, and OK in Settings writes the defaults over the file. Pratik answered yes on
+2026-10-17/18 to a plan for it. 13.2-31.9 keeps such a file under a name of its own before
+anything can save over it, puts settings that allow no change at any server in its place, says
+so once after the window is on screen, and has Settings refuse rather than open on its
+defaults; an account's settings file left by an older build, which today makes every reading
+fail, is kept and taken out of the way the same way. It runs after 13.2-31.8 and before
+13.2-32, so the closing read and the full gate cover it.
+
 ## The plans
 
 "Pushed" is whether the plan's branch goes out with a pull request under Pratik's standing OK
@@ -128,7 +238,16 @@ the section above.
 | 13.2-29 | 32 | The original skeleton's account manager, search engine and cache service are deleted, and `docs/architecture.md` is drawn from the real modules with a test that holds it there | #49 | none | no |
 | 13.2-30 | 33 | The translation registry that translates nothing is deleted, and three dependencies leave the build or move to dev-dependencies, with a census that stops the next one | #48, #50 | FEEDBACK-02 | no |
 | 13.2-31 | 34 | Functions nothing calls are deleted, each proved dead by grep: the ten the lean pass named, three IMAP helpers and the per-folder store reads | #51, #16, #8, #53 | none | no |
-| 13.2-32 | 35 | vCard unfolding calls the calendar reader's instead of a copy; the closing read of all 53 findings and the four reports, the listening lines and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | #52 | FOUND-23 | only if the closing read changes the changelog |
+| 13.2-31.1 | 35 | M or Delete on a conversation reads only that conversation, so the press does its store work in 100 ms or less at the size of Pratik's Inbox, measured as 13.2-02 measured it | none; ledger 837 | LIST-04, LIST-21 | no |
+| 13.2-31.2 | 36 | The unread count beside a folder in the folder tree changes at once for a mark, delete, move or copy made here, in either view, and the next check corrects it; a POP account's folders and the folders on this computer get a count | none; ledger 836 | LIST-04, FOLDER-01 | yes |
+| 13.2-31.3 | 37 | The Outbox's own Delete leaves a message the send loop has claimed and says once that it is being sent, rather than saying it was cancelled while it goes out | none; ledger 843 | FOUND-04 | yes |
+| 13.2-31.4 | 38 | A sent draft's copy that Send could not take out of Drafts is taken out at that account's next check, and said only if that fails too | none; ledger 845 | FOUND-04 | yes |
+| 13.2-31.5 | 39 | A refused address is shown inside the Add or Edit Account window beside the address box and cleared when the address changes, and every status line shows an ampersand as written | none; ledger 848 | MAIL-04 | yes |
+| 13.2-31.6 | 40 | A subscribed feed's changed days, and a calendar server's, are folded only into the calendar being read, so a feed naming a meeting held in another calendar of the account leaves it as it was | none; the security review of 2026-10-16 against `e5d8516d`, and a ledger row it opens and fixes | PIM-03 | no |
+| 13.2-31.7 | 41 | zip moves from 7.2.0 to 9.0.4, so the audit names no zip advisory; every entry of a zip is read from where it was found, so a folder named in the old DOS alphabet still brings its mail in; and an archive whose contents do not match what it records is told so in its own sentence | none; ledger 879, Pratik's yes of 2026-10-17 and his "9.0.4" | FOUND-23, FOUND-11 | yes |
+| 13.2-31.8 | 42 | A mailbox file in a zip holding more than the archive records about it is said at import to be damaged or changed, with whether any of its mail came in, never that a message held nothing a mail program recognises; the archive's other files still come in whole | none; Pratik's yes of 2026-10-17/18, and a ledger row it opens and fixes | FOUND-11 | yes |
+| 13.2-31.9 | 43 | A settings file, or an account's settings file, that cannot be read is kept under a name of its own, settings that allow no change take its place, start-up says so once after the window is on screen, and Settings never writes its defaults over it | none; ledger 889, Pratik's yes of 2026-10-17/18 | none | yes |
+| 13.2-32 | 44 | vCard unfolding calls the calendar reader's instead of a copy; the closing read of all 53 findings, the four reports, the five follow-ups, the feed's reach, the move to zip 9 and the plans of 2026-10-18, the listening lines and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | #52 | FOUND-23 | only if the closing read changes the changelog |
 
 ## One plan per wave, and why this order
 
@@ -150,13 +269,41 @@ both readings.
 - **13.2-24 to 13.2-27:** the gate, CI and the installer.
 - **13.2-28 to 13.2-31:** the deletions, last, so nothing deleted is a thing an earlier plan
   still needed.
+- **13.2-31.1 to 13.2-31.5, added 2026-10-15:** Pratik's yes to the follow-ups of 13.2-02 to
+  13.2-06. After the deletions, so 13.2-31.1 reads `messages.rs` as 13.2-31 leaves it, and
+  before the closing plan, so its read and its full gate cover them. 13.2-31.1 first, because
+  13.2-31.2's count follows the same conversation reads; the other three are separate
+  subjects that share `wx_app.rs` and the files written by rule, so each has its own wave.
+- **13.2-31.6, added 2026-10-16:** a security review's finding against 13.2-19's `e5d8516d`.
+  After 13.2-19, whose code it narrows, and after the five follow-ups so that no plan was
+  renumbered; before the closing plan, so its read and its full gate cover it. It shares only
+  the files written by rule with the five, so it has its own wave.
+- **13.2-31.7, added 2026-10-17:** the move to zip 9.0.4 on Pratik's yes of that day. After
+  the six, so no plan was renumbered and 13.2-30's changes to `Cargo.toml` and `Cargo.lock` are
+  in before it; before the closing plan, so its read and its full gate cover it. It shares one
+  test helper in `wx_app.rs` and the files written by rule with the six, so it has its own
+  wave.
+- **13.2-31.8, added 2026-10-18:** the import's sentence for a mailbox file holding more than
+  its archive records, on Pratik's yes of 2026-10-17/18. After 13.2-31.7, because it says the
+  case through the typed reason 13.2-31.7 makes and reads `mailbox_archive.rs` and
+  `importing_messages.rs` as that plan leaves them; before the closing plan. It shares those two
+  files with 13.2-31.7, so it has its own wave.
+- **13.2-31.9, added 2026-10-18:** an unreadable settings file, ledger 889, on the same yes.
+  After 13.2-31.8 as Pratik ordered the two, and after 13.2-29, which deletes modules from
+  `src/application/mod.rs` that this plan adds one to; before the closing plan. It shares
+  `wx_app.rs` with 13.2-31.2 to 13.2-31.4 and 13.2-31.7, in other functions, and the files
+  written by rule with all eight, so it has its own wave.
 - **13.2-32 last,** at the highest wave: the closing read and the phase's full gate.
 
 Two plans were split off on 2026-10-14 at the plan check's request and keep the numbering by
 decimals: 13.2-20.1 carries the events half of #1, and 13.2-26.1 carries #45, which changes a
 rule `CLAUDE.md` records as Pratik's. A third, 13.2-03.1, was split from 13.2-03 the same day
-because one executor could not carry both halves of the fourth report. So the waves run from 1
-to 35 and match the plan numbers only for 13.2-01 to 13.2-03.
+because one executor could not carry both halves of the fourth report. So the waves ran from 1
+to 35 and matched the plan numbers only for 13.2-01 to 13.2-03. On 2026-10-15 five plans went
+in after 13.2-31 at waves 35 to 39, numbered as decimals of 13.2-31 so that no plan was
+renumbered, on 2026-10-16 a sixth, 13.2-31.6, went in after them at wave 40, on 2026-10-17
+a seventh, 13.2-31.7, at wave 41, and on 2026-10-18 an eighth and a ninth, 13.2-31.8 and
+13.2-31.9, at waves 42 and 43; 13.2-32 moved to wave 44, and the waves run from 1 to 44.
 
 ## What waits on Pratik
 
@@ -170,7 +317,12 @@ checkpoint quotes them rather than asking again.
    folder tree's unread count changes at once, for his answer. 13.2-03 is written on the
    recommended answers to questions 3 and 4: after a command the conversation says only the
    command's own words, and deleting its last message lands him back in the list on the next
-   conversation. Neither plan stops to ask, and he may overrule either.
+   conversation. Neither plan stops to ask, and he may overrule either. Question 2 was
+   answered yes on 2026-10-15 ("Pratik's yes of 2026-10-15" above), and 13.2-31.2 carries it
+   out. That plan also gives a POP account's folders and the folders on this computer an
+   unread count for the first time, counted once from the mail kept here, which goes beyond
+   the ledger's words. He may say no before 13.2-31.2 starts; a no changes that plan before it
+   runs, as its decisions block says.
 2. **Any time: the identifier of his Artifact Signing certificate profile** (ledger 329). 13.2-16
    makes the update check trust that profile rather than the name "Pratik Patel", and ships
    the identifier empty, so the check refuses every installer until he gives it, which is
@@ -216,8 +368,8 @@ edits both files for another reason, the dependencies it removes.
 
 ## Decisions the planners took
 
-Taken 2026-10-14 where a finding or its verdict left a choice open; Pratik may overrule any of
-them. The full reasoning is in each plan's `decisions` block or premises.
+Taken 2026-10-14 where a finding or its verdict left a choice open, on 2026-10-15 for the
+five follow-up plans, on 2026-10-16 for 13.2-31.6, on 2026-10-17 for 13.2-31.7, and on 2026-10-18 for 13.2-31.8 and 13.2-31.9; Pratik may overrule any of them. The full reasoning is in each plan's `decisions` block or premises.
 
 - **13.2-01:** the store is read for one row when the loaded rows do not hold the row's message,
   rather than refusing; the refusal reads "That message is no longer on this computer, so it
@@ -285,6 +437,64 @@ them. The full reasoning is in each plan's `decisions` block or premises.
   goes; a census in `service::outward` of what a release build carries.
 - **13.2-31:** `is_connected` made test-only rather than deleted, because eight assertions use
   it; both unused update-download host constants deleted, since 13.2-16 adds no host check.
+- **13.2-31.1:** the 100 ms budget covers the whole store work of the press, both reads of one
+  conversation, the writes and the rule over the rows on screen, not only the read 13.2-02
+  timed (its premise 2 measured the press at about 350 to 570 ms on 2026-10-15); the reads kept
+  off the folder index with SQLite's unary plus, not `INDEXED BY` or a new index; the press
+  timed on the store as written and again after a close and an open; no pull request, since
+  nothing spoken or shown changes.
+- **13.2-31.2:** a folder's count moves by what the rows here did, through four additive
+  triggers in the shape of the Trash triggers, and is never counted from the rows of a folder
+  a check counts, because only part of a large folder may be here; a POP account's folders and
+  the folders on this computer counted once from their rows (item 1 of "What waits on Pratik");
+  deletes, moves and copies move the count as marks do; the tree reworded in place, saying
+  nothing; the rewording held under 20 ms at three accounts of forty folders, and the press
+  with it at or under 100 ms.
+- **13.2-31.3:** one store answer with three cases, taken out, being sent or not there; the
+  being-sent sentence said once per Delete, with a number when several are selected; Undo
+  Send's too-late sentence narrowed by dating to say Delete takes out only a message that is
+  not being sent.
+- **13.2-31.4:** the removal kept before it is tried, so closing the program mid-removal loses
+  nothing; the second try is the last, and one that fails again is said once by subject and
+  forgotten; never tried for a draft that is a draft here again; removing an account forgets
+  its removals.
+- **13.2-31.5:** the line sits under the address box and shows only while it holds a sentence,
+  carrying it as its accessible name rather than as the box's description, so focus in the
+  box does not say the refusal a second time; the ampersand fix reaches every window's status
+  line through `said_and_shown`, since it is the same fault.
+- **13.2-31.6:** the fold of a changed day reads and deletes in exactly the calendar being
+  read, for a feed and for a calendar server, not in `event_in`'s wider set, which for a feed
+  takes in every calendar that is not a feed; a feed's day whose series is held only in another
+  calendar is stored in the feed's calendar as the meeting it says and nothing is said about the
+  other; the deletion notes stay asked across the account, as ledger 825 already carries; no
+  pull request, since no sentence, window or control changes.
+- **13.2-31.7:** zip 9.0.4, as Pratik answered; a read of an entry that fails with
+  `std::io::ErrorKind::InvalidData` kept as its own typed reason where zip's error comes in,
+  never a match on zip's text, and said with its own sentence, damaged or changed after it was
+  made, nothing imported, nobody sent for another copy; the lying-size test's expectation
+  changed in place and a sibling holding the per-entry limit's sentence on an honest entry;
+  each entry of a zip read from the place it was found rather than by its name; the log line
+  for a name not written as UTF-8 read from its bytes; the import's own sentence for an entry
+  that fails partway through left to 13.2-31.8, which reuses the typed reason; the three ids
+  the ammonia fix accepted taken out of `.cargo/audit.toml` with a dated note saying they went;
+  pushed, because the import says a new sentence and reads some folder names differently, and
+  CI's Security Audit on the branch is the first that can show zip gone from it.
+- **13.2-31.8:** the reader hands the stop over as its own typed answer carrying the
+  `std::io::ErrorKind` of the read that stopped it, and the import classifies that kind through
+  13.2-31.7's typed reason, so the two plans cannot call one fault two things; the archive's
+  other mailbox files keep coming in and the damaged file's mail before the stop is kept, both
+  by rules the code already states, so neither is a question for Pratik; the sentence says
+  "mailbox file", names no count of what is missing, which nothing knows, and sends nobody for
+  another copy; every other kind of stop is said as today and given a row of its own.
+- **13.2-31.9:** the unreadable file kept first, by a new file opened with `create_new` and
+  named `app_config.json.unreadable-<UTC date and time>`, with `-2`, `-3` and on when the name
+  is taken, and only then replaced through `written_whole`; an account's file kept the same way
+  and then removed, since nothing makes one again; the replacement allowing no change at any
+  server, so the first-run question asks; done once in `main.rs` after the log exists and after
+  the hand-over decision, before the window, and handed to the window as a value; said once
+  through `send_status` after show and after the first-run question, skipped in a scan run;
+  Settings refusing to open on its defaults over a file it could not read; pushed, because
+  start-up says a new sentence and Settings a new refusal.
 - **13.2-32:** the vCard unfolding moved onto the calendar reader's with no red, the 103
   contacts tests as the oracle and a re-measure of the calendar records as the proof. At the
   plan check's request, three vCard folds the calendar reader may not have met are first added

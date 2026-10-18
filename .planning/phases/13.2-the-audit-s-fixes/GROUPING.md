@@ -23,7 +23,11 @@ split off on 2026-10-14, 13.2-20.1 from 13.2-20 and 13.2-26.1 from 13.2-26, this
 regressions Pratik reported that day went in front of the chain, 13.2-01 to 13.2-03 with
 13.2-03.1, and every audit plan moved up by three: the audit's first plan, 13.2-01 until then,
 is 13.2-04, and its last is 13.2-32. Every plan number in this file is the new one. The waves
-now run from 1 to 35, and the phase README's plan table gives each.
+ran from 1 to 35 until 2026-10-15, when five plans for Pratik's follow-ups went in after
+13.2-31, on 2026-10-16 one more for a security review's finding went in after them, on
+2026-10-17 one for the move to zip 9 after that, and on 2026-10-18 two more, for an archive
+holding more than it records and an unreadable settings file; they now run from 1 to 44, and
+the phase README's plan table gives each.
 
 The four regression plans come first, because Pratik meets all four every time he uses the
 mailbox, and phase 14's delete sitting hears the third; `REGRESSIONS.md` sets out each. After
@@ -71,6 +75,15 @@ task count the plan should need: S is 2 tasks, M is 3, L is 4.
 | 13.2-29 | The original skeleton's account manager, search engine and cache service are deleted, and docs/architecture.md drawn from the real modules | #49 | src/application/accounts.rs; src/application/search.rs; src/service/cache.rs; src/common/types.rs; src/data/email_providers.rs; src/data/account.rs; src/application/mod.rs; src/service/mod.rs; tests/integration_tests.rs; docs/architecture.md | No | M |
 | 13.2-30 | The translation registry that translates nothing is deleted, and three dependencies leave the build or move to dev-dependencies | #48, #50 | src/service/spellcheck/mod.rs; src/vendor/paperback/html_to_text.rs; src/vendor/paperback/mod.rs; src/service/mod.rs; Cargo.toml; Cargo.lock; src/service/outward.rs; src/service/security.rs; .cargo/audit.toml | No | M |
 | 13.2-31 | Functions nothing calls are deleted: the ten the lean pass named, three IMAP helpers, and the per-folder store reads | #51, #16, #8 and #53 (overlapping, merged) | src/presentation/html_renderer.rs; src/service/pgp/mod.rs; src/service/outlook_data_file.rs; src/service/update_download.rs (two unused host constants); src/vendor/paperback/table_text.rs, text.rs, html_to_text.rs; src/service/protocols/imap.rs; src/application/mail_controller.rs; src/data/message_cache/messages.rs; tests/the_list_at_two_hundred_thousand_rows.rs; docs/development/measurements.md | No | L |
+| 13.2-31.1 | M or Delete on a conversation reads only that conversation, its store work at the size of Pratik's Inbox 100 ms or less | None: ledger 837, Pratik's yes of 2026-10-15 | src/data/message_cache/messages.rs (the narrowed scope); src/data/message_cache/mod.rs (a plan reading in `storage_shape`); tests/a_change_made_here_reaches_the_conversation_rows.rs (the timing case); docs/development/measurements.md | No | M |
+| 13.2-31.2 | The folder tree's unread count changes at once for a change made here, and the next check corrects it | None: ledger 836, Pratik's yes of 2026-10-15 | src/data/message_cache/mod.rs (four triggers); src/data/message_cache/folders.rs; src/presentation/folder_tree.rs; src/presentation/ui_types.rs; src/presentation/wx_app.rs; tests/the_folder_tree_counts_follow_a_change_made_here.rs | Yes | M |
+| 13.2-31.3 | The Outbox's own Delete leaves a message being sent and says so once | None: ledger 843, Pratik's yes of 2026-10-15 | src/data/message_cache/outbox.rs (`cancel_queued`); src/application/sending_later.rs; src/presentation/wx_app.rs; tests/nothing_leaves_the_outbox_unasked.rs | Yes | M |
+| 13.2-31.4 | A sent draft's copy Send could not take out of Drafts goes at the account's next check | None: ledger 845, Pratik's yes of 2026-10-15 | src/data/message_cache/drafts_left_at_the_server.rs (new); src/data/message_cache/mod.rs (one table); src/data/message_cache/drafts.rs; src/application/draft_copy.rs; src/presentation/wx_app.rs; tests/a_draft_left_at_the_server_goes_at_the_next_check.rs | Yes | M |
+| 13.2-31.5 | A refused address is shown beside the address box in the account window, and a status line keeps an ampersand | None: ledger 848, Pratik's yes of 2026-10-15 | src/presentation/status_line.rs; src/presentation/wx_account_manager.rs; tests/account_edit_protocol_fields.rs | Yes | M |
+| 13.2-31.6 | A feed's changed days, and a calendar server's, are folded only into the calendar being read | None: the security review of 2026-10-16 against 13.2-19's `e5d8516d` | src/data/message_cache/calendar.rs (a lookup and a delete in one calendar); src/application/caldav_sync.rs (`one_caldav_day_kept_out_of_its_series`) | No | M |
+| 13.2-31.7 | zip moves from 7.2.0 to 9.0.4, every entry of a zip is read from where it was found, and a damaged or changed archive is told so in its own sentence | None: ledger 879, Pratik's yes of 2026-10-17 and his "9.0.4" | Cargo.toml and Cargo.lock (zip 9.0.4, nix 0.31.3 in the lock); .cargo/audit.toml (the three ids the ammonia fix accepted, out); src/service/mailbox_archive.rs (the typed reason and its sentence, entries read from their place); src/presentation/accessibility/sound_scheme_import.rs; src/presentation/wx_app.rs (a test helper); src/application/importing_messages.rs (a reading) | Yes | M |
+| 13.2-31.8 | A mailbox file in a zip holding more than its archive records is said at import to be damaged or changed, with how much of it came in | None: Pratik's yes of 2026-10-17/18 | src/application/message_files.rs (the reader's typed answer for a stop); src/application/importing_messages.rs (`an_archive_brought_in`); src/application/import_tree.rs (`FoldersImported` and its sentence); src/service/mailbox_archive.rs (13.2-31.7's typed reason, built from a kind) | Yes | M |
+| 13.2-31.9 | A settings file that cannot be read is kept under its own name, replaced by settings that allow no change, and said once at start-up | None: ledger 889, Pratik's yes of 2026-10-17/18 | src/data/config.rs (the keeping and replacing); src/main.rs (run once before the window); src/presentation/wx_app.rs (the sentence after show, Settings refusing); src/application/unreadable_settings.rs (new, the sentences); src/application/mod.rs; tests/an_unreadable_settings_file_is_kept_and_said.rs | Yes | M |
 | 13.2-32 | vCard unfolding calls the iCalendar unfolding instead of copying it, and the phase closes with the full gate | #52 | src/data/message_cache/contacts.rs; src/service/caldav.rs (unfolded); guards/guards.toml (two records with byte-identical anchors); the full gate by hand, `scripts/check.sh all` | No | M |
 
 Every plan also writes the files written by rule where it applies: `docs/changelog.md` for a
@@ -80,7 +93,15 @@ where it takes a figure. Because the plans are chained one per wave, two plans t
 same file never run at once. The rows for 13.2-20.1 and 13.2-26.1 were added on 2026-10-14,
 when the plan check split #1's events from 13.2-20 and #45 from 13.2-26. The four rows above
 13.2-04 were added the same day, when the regression plans went in front; they carry Pratik's
-reports and no audit finding.
+reports and no audit finding. The five rows after 13.2-31 were added on 2026-10-15 for the
+follow-ups 13.2-02 to 13.2-06 left, on Pratik's yes of that day; they carry ledger rows and no
+audit finding. The row for 13.2-31.6 was added on 2026-10-16 for a security review's finding
+against 13.2-19's `e5d8516d`; it carries no audit finding, and its plan opens and fixes a ledger
+row of its own. The row for 13.2-31.7 was added on 2026-10-17 for Pratik's yes that day to
+ledger 879, the move to zip 9; it carries no audit finding. The rows for 13.2-31.8 and
+13.2-31.9 were added on 2026-10-18 for his yes of 2026-10-17/18, the first to a case found
+while planning the move to zip 9, the second to ledger 889; neither carries an audit finding,
+and 13.2-31.8 opens and fixes a ledger row of its own.
 
 ## Every finding, once
 
