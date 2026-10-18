@@ -654,6 +654,59 @@ if [ -z "$mode" ]; then
     decide_the_mode_for_this_commit "$message_file"
 fi
 
+# A commit is judged on the files it holds, or refused.
+#
+# Added 2026-10-18 by 13.2-25, audit finding #40. The mode above is decided from
+# the staged files, and everything below builds and tests the files on disk. So
+# a commit could pass while its own snapshot did not build, the parent's `mod b;`
+# staged and `b.rs` left untracked, and be refused over work it did not hold.
+# When the hook runs this, two questions are asked over one pathspec before the
+# first stage: does a tracked file differ from the index the hook was handed,
+# which for a partial commit is git's temporary one, and is any file untracked
+# and not ignored. Either refuses. By hand nothing is refused, as before.
+#
+# The pathspec is the whole tree, since `locales/` is compiled in, `scripts/`
+# and `.githooks/` run this gate, and `installer/`, `nvda-tests/` and the root's
+# other files are read by tests, less four things planning and re-measuring
+# leave unstaged in the same checkout: `.planning`, `docs`, `guards` and the
+# Markdown files at the root, `glob` so `src/notes.md` is still asked about.
+# Those four are where an unstaged change can still reach a test that reads
+# documents, and ledger 325 says so and stays open.
+the_build_inputs_left_out_of_the_commit() {
+    local pathspec=(':(top)' ':(top,exclude).planning' ':(top,exclude)docs'
+        ':(top,exclude)guards' ':(top,exclude,glob)*.md')
+    git diff --name-only --no-renames -- "${pathspec[@]}" &&
+        git ls-files --others --exclude-standard -- "${pathspec[@]}"
+}
+
+if [ -n "$message_file" ]; then
+    if ! left_out="$(the_build_inputs_left_out_of_the_commit)"; then
+        echo "check.sh: could not compare the files on disk with what this commit" >&2
+        echo "stages, so it cannot say its tests would judge this commit. Refused." >&2
+        exit 1
+    fi
+    if [ -n "$left_out" ]; then
+        mapfile -t left_out_paths <<< "$left_out"
+        echo >&2
+        echo "This commit stages some files and leaves these different on disk," >&2
+        echo "changed or untracked:" >&2
+        printf '    %s\n' "${left_out_paths[@]:0:5}" >&2
+        if [ "${#left_out_paths[@]}" -gt 5 ]; then
+            echo "    and $(( ${#left_out_paths[@]} - 5 )) more" >&2
+        fi
+        echo >&2
+        echo "The gate would run $mode over the files on disk, not over this commit," >&2
+        echo "so it could pass a commit that does not build on its own, or refuse it" >&2
+        echo "over work it does not hold. Stage them with git add, or set them aside" >&2
+        echo "with" >&2
+        echo >&2
+        echo "    git stash --keep-index -u" >&2
+        echo >&2
+        echo "and commit again, then git stash pop." >&2
+        exit 1
+    fi
+fi
+
 # Where a run's seconds went, one stage at a time.
 #
 # Added 2026-09-23 by 12-03.2. A measurement of nine executors that day put 28%
