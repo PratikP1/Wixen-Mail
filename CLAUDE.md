@@ -332,6 +332,16 @@ none until 2026-09-02, both covering `src/presentation` from outside. If you
 write an integration test that guards a source module, write it a record too, or
 it runs on every commit except the ones that could break it.
 
+**Since 2026-10-18 the same holds for a record whose library tests live in
+another module.** A record that names no `suite` reddens library tests, and
+`--lib a::b::` reached only the changed file's own module. Read that day with
+Python's TOML reader over `guards/guards.toml`, 1,160 records named no suite
+and broke a source file, 77 of them named no test in that file's module and 212
+more named some outside it, and none of those ran on the commits that could
+break them, nor at a merge after 2026-09-23. `check.sh` now adds a `--lib` run
+for each module a changed file's records name in `red`, reading the list in
+both the ways the registry writes it (13.2-26, audit finding #38).
+
 **Read those two numbers as warm, and as a floor.** The same documents-only
 path took 2m56s on 2026-09-02, because it followed two commits that had changed
 test files and so paid for a clippy rebuild, and because the document-reading
@@ -381,7 +391,8 @@ gate runs once a phase rather than at every merge. A merge made with `git merge
 branch's whole diff earns by the rules a branch commit is judged by, with the
 document-reading targets when that diff holds a document. So a branch that
 changed a workflow, the installer script or a dependency still earns everything
-at its merge. The whole suite, the release build and the security audit run
+at its merge, and since 2026-10-18 so does one that changed `build.rs`, which
+reaches every target the way the manifest does (13.2-26, audit finding #41). The whole suite, the release build and the security audit run
 once a phase: `scripts/check.sh all` by hand in the phase's closing plan, on its
 branch, after its last commit and before its merge, with `main` unmoved since
 the branch was cut, its output written to a file and its exit status read

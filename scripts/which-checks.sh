@@ -476,9 +476,21 @@ fi
 # A rule written inside that branch would let an installer change that also
 # bumps the version answer `affected`, which is nearly every installer commit
 # there will ever be, and the hole would stay open for exactly them.
+#
+# `build.rs` joined this arm on 2026-10-18 (13.2-26, audit finding #41). It
+# reaches every target the way the manifest does, and one test reads it as
+# data, `test_the_build_script_stamps_the_same_copyright_on_the_executable` in
+# `tests/the_about_dialog_names_its_owners_and_its_links.rs`, which no scoped run
+# reached because `build.rs` is neither `src/*.rs` nor `tests/*.rs`. The root's
+# is the only one in the tree, read 2026-10-18, so the name is matched whole
+# rather than in any folder. `rust-toolchain.toml` was weighed with it and left
+# out:
+# `house_style`'s `test_ci_and_this_machine_are_told_to_use_the_same_compiler`
+# runs on every scoped commit and refuses a channel bump unless every workflow
+# moves in the same commit, and a workflow answers `all` a few lines down.
 for path in "$@"; do
     case "$path" in
-        *.iss)
+        *.iss | build.rs)
             echo all
             exit 0
             ;;

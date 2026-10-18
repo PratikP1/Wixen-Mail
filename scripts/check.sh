@@ -140,6 +140,125 @@ the_inputs_of_a_suite[which-checks]="scripts/which-checks.test.sh scripts/which-
 what_every_suite_is_owed_for=(scripts/shell-suite.sh .githooks/commit-msg)
 what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scripts/mutants_report.py scripts/read-a-proof.py scripts/build-installer.sh scripts/make-brand.py scripts/make-icon.py scripts/render_svg.py scripts/msaa-names.ps1 scripts/uia-events.ps1)
 
+# Every record of a guard registry, read into three arrays of one entry per
+# record: `record_files`, `record_suites`, empty where it names none, and
+# `record_reds`, its red names with a space between them. Arrays rather than
+# printed lines, because the readers below would read those lines back through
+# `read`, which reads a byte at a time from a pipe here.
+#
+#     check.sh --records-in <registry>
+#
+# prints them, one record to a line and `|` between the three, for comparing
+# with a TOML reader by hand.
+#
+# **This is a line scan, not a TOML parse.** A shell script has no TOML reader,
+# and the file is written one key per line. So the scan keys on a `[[guard]]`
+# header and then on `file = "..."`, `suite = "..."` and `red` at column 0
+# inside it, keeping the record when the next header arrives. A red list is
+# read in both the ways the registry writes one: a bare `red = [` line, a name
+# to a line, and a bare `]`; and `red = ["...", "..."]` on one line, which 137
+# records used on 2026-10-14.
+#
+# Since 2026-10-18 (13.2-26) the scan skips the inside of a multi-line string,
+# `"""` or `'''`, so a `before` or `after` text holding a line that begins
+# `file = `, `suite = ` or `red = [` is not read as a key. A string ends at the
+# next delimiter of the kind it opened with, which TOML allows inside a `"""`
+# string only escaped. `\"""` is one such escape and the scan reads it as an
+# end; on 2026-10-18 every one of the 19 lines holding it ended its string
+# there, and the scan's records were compared with Python's TOML reader for all
+# 1,612 records and agreed on every file, suite and red name.
+#
+# `grep -o` hands the loop the pieces it reads rather than whole lines: a key
+# line, a red name, a string's opening key, and each delimiter on its own; and
+# they are split in memory rather than read with `mapfile`, which read a byte at
+# a time here. Whole lines through `mapfile` cost two seconds a scan, measured
+# 2026-10-18, against half a second for the scan this replaced, and the check
+# suite asks the question dozens of times.
+#
+# What it would still miss: a record spelled as an inline table, a key sharing a
+# line with another, or a value quoted some other way. A record this misses is
+# a guard that does not run on the commit that could break it, which is the
+# defect the two readers below exist to fix, so the limit is written down here
+# rather than left to be found.
+record_files=()
+record_suites=()
+record_reds=()
+read_the_records_in() {
+    local registry="$1"
+    local piece file="" suite="" reds="" name listing="" closing=""
+    local -a pieces
+    record_files=()
+    record_suites=()
+    record_reds=()
+    # Split on newlines alone and never globbed, `[[guard]]` being a pattern,
+    # both put back when the function returns.
+    local - IFS=$'\n'
+    set -f
+
+    pieces=($(grep -oE \
+        "^(\[\[guard\]\]|file = \".*\"|suite = \".*\"|red = \[.*|\]|    \"[A-Za-z0-9_:]+\",?)\$|^[a-z_]+ = (\"\"\"|''')|\"\"\"|'''" \
+        "$registry" || true))
+    for piece in "${pieces[@]+"${pieces[@]}"}"; do
+        if [ -n "$closing" ]; then
+            [ "$piece" = "$closing" ] && closing=""
+            continue
+        fi
+        case "$piece" in
+            '[[guard]]')
+                [ -n "$file" ] && keep_the_record "$file" "$suite" "$reds"
+                file=""
+                suite=""
+                reds=""
+                listing=""
+                ;;
+            'file = "'*'"')
+                name="${piece#file = \"}"
+                file="${name%\"}"
+                ;;
+            'suite = "'*'"')
+                name="${piece#suite = \"}"
+                suite="${name%\"}"
+                ;;
+            'red = [')
+                listing=yes
+                ;;
+            'red = ['*']')
+                name="${piece#red = [}"
+                name="${name%]}"
+                name="${name//[\" ]/}"
+                for name in ${name//,/$'\n'}; do
+                    reds+="${reds:+ }$name"
+                done
+                ;;
+            ']')
+                listing=""
+                ;;
+            '    "'*)
+                [ -n "$listing" ] && reds+="${reds:+ }${piece//[\" ,]/}"
+                ;;
+            *' = """' | *" = '''")
+                closing="${piece: -3}"
+                ;;
+        esac
+    done
+    [ -n "$file" ] && keep_the_record "$file" "$suite" "$reds"
+    return 0
+}
+
+keep_the_record() {
+    record_files+=("$1")
+    record_suites+=("$2")
+    record_reds+=("$3")
+}
+
+if [ "${1:-}" = "--records-in" ]; then
+    read_the_records_in "$2"
+    for index in "${!record_files[@]}"; do
+        echo "${record_files[$index]}|${record_suites[$index]}|${record_reds[$index]}"
+    done
+    exit 0
+fi
+
 # Which integration targets guard a changed source file.
 #
 #     check.sh --suites-for <registry> [changed-file ...]
@@ -156,18 +275,6 @@ what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scri
 # second list beside the first would drift from it, which is a shape this
 # repository keeps getting caught by.
 #
-# **This is a line scan, not a TOML parse.** A shell script has no TOML reader,
-# and the file is written one key per line. So the scan keys on a `[[guard]]`
-# header and then on `file = "..."` and `suite = "..."` at column 0 inside it,
-# remembering the pair when the next header arrives. What it would miss: a
-# record spelled as an inline table, a `file` or `suite` sharing a line with
-# another key, a value quoted some other way, or a `before`/`after` string
-# holding a line that begins `file = ` at column 0. Measured 2026-09-02: 550
-# records and 550 such lines, so no record has that shape today and nothing
-# would say so if one arrived. A record this misses is a guard that does not run
-# on the commit that could break it, which is the defect this function exists to
-# fix, so the limit is written down here rather than left to be found.
-#
 # Its suite is `scripts/check.test.sh`, which this script runs in every mode.
 # In every mode until 2026-09-23; since then, on the commits that stage one of
 # that suite's inputs, this file among them, and in `all` and `all_but_slow`.
@@ -183,33 +290,14 @@ the_suites_that_guard_what_changed() {
     fi
 
     local -a couplings=() answers=()
-    local line file="" suite="" coupling path candidate already seen
+    local index coupling path candidate already seen
 
-    # Narrowed to the three kinds of line that carry a coupling before the loop
-    # reads them, so the scan is over about 1,650 lines rather than 12,800 and
-    # the shapes it reads are visible in one place.
-    while IFS= read -r line; do
-        case "$line" in
-            '[[guard]]')
-                if [ -n "$file" ] && [ -n "$suite" ]; then
-                    couplings+=("$file|$suite")
-                fi
-                file=""
-                suite=""
-                ;;
-            'file = "'*'"')
-                file="${line#file = \"}"
-                file="${file%\"}"
-                ;;
-            'suite = "'*'"')
-                suite="${line#suite = \"}"
-                suite="${suite%\"}"
-                ;;
-        esac
-    done < <(grep -E '^(\[\[guard\]\]|file = |suite = )' "$registry" || true)
-    if [ -n "$file" ] && [ -n "$suite" ]; then
-        couplings+=("$file|$suite")
-    fi
+    read_the_records_in "$registry"
+    for index in "${!record_files[@]}"; do
+        if [ -n "${record_suites[$index]}" ]; then
+            couplings+=("${record_files[$index]}|${record_suites[$index]}")
+        fi
+    done
 
     for path in "$@"; do
         # Everything except a changed test file, which already runs its own
@@ -261,6 +349,49 @@ the_suites_that_guard_what_changed() {
     printf '%s\n' "${answers[@]}"
 }
 
+# Which library modules hold the red tests of the records that break a changed
+# file and name no suite, one `a::b::tests::` filter to a line, unsorted and
+# possibly repeated.
+#
+#     the_modules_that_guard_what_changed <registry> [changed-path ...]
+#
+# A record with no `suite` reddens library tests, and they need not live in the
+# module of the file it breaks. Read 2026-10-18 with Python's TOML reader over
+# the registry's 1,612 records: 1,160 name no suite and break a source file, 77
+# of them name no red test in that file's own module (`calendar.rs` 10,
+# `wx_app.rs` 9, `google_api.rs` 6, `mail_sync.rs` 6, `managers.rs` 5) and 212
+# more name some tests outside it. The scoped run reached only the changed
+# file's own module, so those guards ran on every commit except the ones that
+# could break them, and since 2026-09-23 the merge has not run them either
+# (audit finding #38, closed here by 13.2-26).
+#
+# A name's module is everything before its last `::`, the rule `the_filters_for`
+# in `scripts/guards.py` uses for the sweep. A name with no `::` has no module a
+# filter could name and is skipped; none of the 1,612 records held one that day.
+the_modules_that_guard_what_changed() {
+    local registry="$1"
+    shift
+    if [ ! -r "$registry" ]; then
+        return 0
+    fi
+    local index name path
+    local -A changed=()
+    for path in "$@"; do
+        changed[$path]=1
+    done
+    read_the_records_in "$registry"
+    for index in "${!record_files[@]}"; do
+        [ -z "${record_suites[$index]}" ] &&
+            [ -n "${changed[${record_files[$index]}]-}" ] || continue
+        for name in ${record_reds[$index]}; do
+            case "$name" in
+                *::*) echo "${name%::*}::" ;;
+            esac
+        done
+    done
+    return 0
+}
+
 # The mapping on its own, so `scripts/check.test.sh` can ask it about a made-up
 # file list and a made-up registry rather than running the whole gate. Answered
 # here, before anything with a side effect and before the mode is looked at, so
@@ -300,6 +431,10 @@ the_staged_paths() {
 # and in one call cargo would refuse the whole line over it before any target
 # ran, so a branch that deleted a target could not be committed or merged.
 #
+# Since 2026-10-18 (13.2-26) a `--lib` line also goes to each module that holds
+# the red tests of a record breaking a changed file and naming no suite, from
+# `the_modules_that_guard_what_changed`, unless a module already run holds it.
+#
 # No line holds `--no-fail-fast`. The runner's line owns it, because cargo
 # refuses the flag given twice.
 #
@@ -327,7 +462,7 @@ the_scoped_runs() {
         merging=yes
         shift
     fi
-    local registry="$1" path module target source line=""
+    local registry="$1" path module target source filter covered line=""
     shift
     local -a paths=("$@") targets=()
     local -A named=() modules=()
@@ -363,6 +498,18 @@ the_scoped_runs() {
                 ;;
         esac
     done
+    # Sorted, so a module comes before the modules inside it and covers them.
+    while IFS= read -r filter; do
+        covered=""
+        for module in "${!modules[@]}"; do
+            case "$filter" in
+                "$module::"*) covered=yes ;;
+            esac
+        done
+        [ -n "$covered" ] && continue
+        modules[${filter%::}]=1
+        echo "--lib $filter -- --test-threads=4"
+    done < <(the_modules_that_guard_what_changed "$registry" "${paths[@]+"${paths[@]}"}" | sort -u)
     while IFS= read -r target; do
         [ -n "$target" ] && targets+=("$target")
     done < <(the_suites_that_guard_what_changed "$registry" "${paths[@]+"${paths[@]}"}")

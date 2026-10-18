@@ -2,8 +2,8 @@
 schema_version: 1
 open_count: 762
 waived_count: 0
-fixed_count: 129
-total_count: 891
+fixed_count: 131
+total_count: 893
 last_updated: 2026-10-18T12:00:00.000Z
 ---
 
@@ -906,6 +906,8 @@ last_updated: 2026-10-18T12:00:00.000Z
 | 889 | 13.2 | todo | src/data/config.rs |  | Left by 13.2-23, finding #7 of the audit of 2026-10-14: a settings file that cannot be read is said only in the log. Since 13.2-23 a save can no longer leave it half written, but a disk fault or a hand edit still can, and then every load fails, the person meets the defaults with no sentence, Allow Changes answers nothing for every account, and the next save from Settings writes the defaults over the file. The verdict on finding #7 called telling the person a separate, larger change. Recommended: at start-up, when the stored settings exist and cannot be read, say so once in plain words and keep the unreadable file beside the new one under another name before anything saves; Pratik's to schedule | open |  | 2026-10-17T23:55:00.000Z |  |
 | 890 | 13.2 | todo | guards/guards.toml |  | Found by 13.2-23: the record "a settings file written before reading was a setting still loads" reddens application::mail_controller::against_a_server_that_answers::test_a_command_that_names_a_different_folder_opens_that_one_first on Pratik's machine, three runs in three, because that test reaches allowed_for, which reads the real profile, and the profile there has no reading field. On a runner the profile is written fresh with the field, so the test stays green there. A guard whose measurement depends on the settings file of the machine running it can agree on one and disagree on the other. Recommended: have scripts/guards.py run the library with WIXEN_MAIL_DATA pointed at a fresh empty folder, so every measurement reads the profile a runner reads; a small tooling change, for a later plan | open |  | 2026-10-17T23:55:00.000Z |  |
 | 891 | 13.2 | unrun-verify | .github/workflows/release.yml |  | 13.2-24, audit findings #39 and #42 and ledger 616: release.yml's quality-gate now checks out the whole history, holds a contents read token that its checkout does not keep, and runs with WIXEN_NO_AUDIO, and other-platforms.yml's linux and macos jobs check out the whole history. Nothing was dispatched, so none of it has run on a runner. No failure known before a run is left in the release gate, but whether it passes, and whether the Linux and macOS jobs get past the history test to an answer about the platform, is known only from the first dispatch of Release (ledger 326) and of Other platforms, both Pratik's. Open until each has run once after 13.2-24 | open |  | 2026-10-18T09:13:45.000Z |  |
+| 892 | 13.2 | unmet-truth | scripts/check.sh |  | Audit finding #38 of 2026-10-14: a guard record with no suite reddens library tests, and the scoped run reached only the changed file's own module, so a record whose red tests live in another module ran on every commit except the ones that could break it, and since 2026-09-23 not at the merge either. Read 2026-10-18 with Python's TOML reader over guards/guards.toml: 1,160 records name no suite and break a source file, 77 of them name no test in that file's module and 212 more name some outside it | fixed | Closed on 2026-10-18 by 13.2-26 (262c8a22): the scoped run adds a --lib line for each module a changed file's suite-less records name in red, reading the list on its own lines and on one line, and skipping the inside of a multi-line string. The scan agreed with Python's TOML reader on every file, suite and red name of all 1,612 records, and --suites-for answered as before for each of the 302 files the registry names. A change to src/application/sent_copy.rs now runs --lib application::mail_controller::against_a_server_that_answers:: | 2026-10-18T10:30:00.000Z | 2026-10-18T10:30:00.000Z |
+| 893 | 13.2 | unmet-truth | scripts/which-checks.sh |  | Audit finding #41 of 2026-10-14, the build.rs half: a commit changing build.rs answered affected on a branch and at its merge, and the scoped run chose no target for it, so test_the_build_script_stamps_the_same_copyright_on_the_executable, which reads build.rs as data, ran on every commit except the ones that could break it | fixed | Closed on 2026-10-18 by 13.2-26 (10434be0): build.rs joins the installer script's arm and answers all on a branch, beside a version bump and at a merge. rust-toolchain.toml was left out on the verdict's reason: house_style's test_ci_and_this_machine_are_told_to_use_the_same_compiler runs on every scoped commit and refuses a channel bump unless every workflow moves with it, and a workflow already answers all | 2026-10-18T10:30:00.000Z | 2026-10-18T10:30:00.000Z |
 
 ````json
 [
@@ -11600,6 +11602,30 @@ last_updated: 2026-10-18T12:00:00.000Z
     "reason": "",
     "recorded_at": "2026-10-18T09:13:45.000Z",
     "resolved_at": null
+  },
+  {
+    "id": 892,
+    "kind": "unmet-truth",
+    "phase": "13.2",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "Audit finding #38 of 2026-10-14: a guard record with no suite reddens library tests, and the scoped run reached only the changed file's own module, so a record whose red tests live in another module ran on every commit except the ones that could break it, and since 2026-09-23 not at the merge either. Read 2026-10-18 with Python's TOML reader over guards/guards.toml: 1,160 records name no suite and break a source file, 77 of them name no test in that file's module and 212 more name some outside it",
+    "status": "fixed",
+    "reason": "Closed on 2026-10-18 by 13.2-26 (262c8a22): the scoped run adds a --lib line for each module a changed file's suite-less records name in red, reading the list on its own lines and on one line, and skipping the inside of a multi-line string. The scan agreed with Python's TOML reader on every file, suite and red name of all 1,612 records, and --suites-for answered as before for each of the 302 files the registry names. A change to src/application/sent_copy.rs now runs --lib application::mail_controller::against_a_server_that_answers::",
+    "recorded_at": "2026-10-18T10:30:00.000Z",
+    "resolved_at": "2026-10-18T10:30:00.000Z"
+  },
+  {
+    "id": 893,
+    "kind": "unmet-truth",
+    "phase": "13.2",
+    "file": "scripts/which-checks.sh",
+    "line": null,
+    "description": "Audit finding #41 of 2026-10-14, the build.rs half: a commit changing build.rs answered affected on a branch and at its merge, and the scoped run chose no target for it, so test_the_build_script_stamps_the_same_copyright_on_the_executable, which reads build.rs as data, ran on every commit except the ones that could break it",
+    "status": "fixed",
+    "reason": "Closed on 2026-10-18 by 13.2-26 (10434be0): build.rs joins the installer script's arm and answers all on a branch, beside a version bump and at a merge. rust-toolchain.toml was left out on the verdict's reason: house_style's test_ci_and_this_machine_are_told_to_use_the_same_compiler runs on every scoped commit and refuses a channel bump unless every workflow moves with it, and a workflow already answers all",
+    "recorded_at": "2026-10-18T10:30:00.000Z",
+    "resolved_at": "2026-10-18T10:30:00.000Z"
   }
 ]
 ````

@@ -478,6 +478,24 @@ expect all "a workflow file beside a version bump" \
 expect docs_only "a document inside the .github folder" gsd/x .github/PULL_REQUEST_TEMPLATE.md
 expect affected "a yml file outside the workflows folder" gsd/x .github/dependabot.yml
 
+# ── What changed: the build script ──────────────────────────────────────────
+# Added 2026-10-18 by 13.2-26 (audit finding #41). `build.rs` reaches every
+# target the way the manifest does, and a test reads it as data:
+# `test_the_build_script_stamps_the_same_copyright_on_the_executable` in
+# `tests/the_about_dialog_names_its_owners_and_its_links.rs`. A `build.rs` is not
+# `src/*.rs` and not `tests/*.rs`, so on a branch it answered `affected` and the
+# scoped run chose no target for it, and a merge carrying it answered the same.
+expect all "a build script on a branch" gsd/x build.rs
+expect all "a build script beside a source file" gsd/x src/lib.rs build.rs
+expect all "a build script on main" main build.rs
+expect all "a build script beside a version bump" \
+    --manifest-diff-file="$version_bump" gsd/x build.rs Cargo.toml Cargo.lock
+expect all "a build script at a merge into main" --merge main build.rs
+
+# The toolchain file stays as it was, for the reason `which-checks.sh` gives
+# beside the build script's rule.
+expect affected "the toolchain file alone on a branch" gsd/x rust-toolchain.toml
+
 # ── No file list means we cannot tell, so defer only what the branch allows ──
 expect all_but_slow "a branch with nothing said about the change" gsd/x
 
