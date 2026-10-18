@@ -85,15 +85,6 @@ pub fn display_len(s: &str) -> usize {
 }
 
 #[must_use]
-pub const fn ch_width(ch: char) -> usize {
-    if cfg!(any(windows, target_os = "macos")) {
-        ch.len_utf16()
-    } else {
-        1
-    }
-}
-
-#[must_use]
 pub const fn is_space_like(ch: char) -> bool {
     ch.is_whitespace() || matches!(ch, '\u{00A0}' | '\u{200B}')
 }

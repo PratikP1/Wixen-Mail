@@ -534,16 +534,6 @@ pub fn import_a_private_key(armoured: &str) -> WhatImportingAKeyFound {
     keys::import(armoured)
 }
 
-/// Whether a private key has been imported on this computer.
-///
-/// Asked by the surfaces that offer to import one, so they can say whether a
-/// key is already here. It answers from the credential store
-/// rather than from a stored flag, for the reason [`keyring_entries`] gives
-/// about deciding from a flag whether a secret exists.
-pub fn a_private_key_is_here() -> bool {
-    keys::a_key_is_here()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

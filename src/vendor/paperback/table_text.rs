@@ -32,48 +32,6 @@ use super::text::{collapse_whitespace, display_len, trim_string};
 
 use scraper::{Html, Node};
 
-/// `<table>…</table>` HTML -> tab-separated text: rows by '\n', cells (`<td>`/`<th>`) by '\t'.
-/// Cell text whitespace-collapsed + trimmed; internal '\t'/'\n' -> space; nested tables flattened.
-///
-/// Only the outermost table's grid structure is honored: rows and cells that belong to a nested
-/// `<table>` do not start new rows/cells, they are flattened into the enclosing cell's text.
-#[must_use]
-pub fn html_table_to_tsv(html: &str) -> String {
-    let fragment = Html::parse_fragment(html);
-    let Some(table) = find_first_table(fragment.tree.root()) else {
-        return String::new();
-    };
-    let mut rows: Vec<String> = Vec::new();
-    collect_rows(table, &mut rows);
-    rows.join("\n")
-}
-
-/// Produce the on-screen text for a table in the requested display mode (see `tsv_to_display`).
-#[must_use]
-pub fn html_table_to_display(html: &str, inline: bool) -> String {
-    tsv_to_display(&html_table_to_tsv(html), inline)
-}
-
-/// Build a `<table border="1">…</table>` string from a rectangular grid of pre-extracted,
-/// plain-text cell values (one inner `Vec` per row). Cells are inserted verbatim (no
-/// HTML-escaping); the downstream `html_table_to_*` functions handle whitespace collapsing.
-/// Callers extract the cell text themselves, so this only owns the grid-to-HTML wrapping.
-#[must_use]
-pub fn build_html_table_from_grid(rows: &[Vec<String>]) -> String {
-    let mut html = String::from("<table border=\"1\">");
-    for row in rows {
-        html.push_str("<tr>");
-        for cell in row {
-            html.push_str("<td>");
-            html.push_str(cell);
-            html.push_str("</td>");
-        }
-        html.push_str("</tr>");
-    }
-    html.push_str("</table>");
-    html
-}
-
 /// Render a tab-separated table body in the requested display mode.
 ///
 /// - `inline == true`  -> the TSV unchanged.
@@ -88,24 +46,6 @@ fn tsv_to_display(tsv: &str, inline: bool) -> String {
         "[Table]".to_string()
     } else {
         format!("[Table]: {}", first_line.replace('\t', " "))
-    }
-}
-
-#[must_use]
-pub fn table_caption_from_html(html: &str) -> Option<String> {
-    let fragment = Html::parse_fragment(html);
-    let table = find_first_table(fragment.tree.root())?;
-    if let Some(caption) = caption_element_text(table) {
-        return Some(caption);
-    }
-    // Reuse the already-parsed tree instead of calling html_table_to_tsv(html) again.
-    let mut rows: Vec<String> = Vec::new();
-    collect_rows(table, &mut rows);
-    let first_row = first_tsv_row_text(&rows.join("\n"));
-    if first_row.is_empty() {
-        None
-    } else {
-        Some(first_row)
     }
 }
 
