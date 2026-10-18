@@ -770,3 +770,218 @@ fn test_the_roadmap_reading_can_tell_an_unticked_box_from_a_ticked_one() {
          which is the roadmap being right"
     );
 }
+
+// ---------------------------------------------------------------------------
+// The architecture page, held to the modules that do the work.
+//
+// Until 2026-10-18 `docs/architecture.md` drew an Account Manager, a Search
+// Engine and a Cache Service as the design. Each was a module the program
+// never built: a `Vec`, a `contains` over strings and an unbounded `HashMap`,
+// reached by their own tests and nothing else (audit #49, plan 13.2-29). A
+// contributor reading the page went looking for the wrong code, and the page
+// described a cache with size-based eviction that had no code at all.
+//
+// So every component the page describes names the module behind it, and the
+// module has to be on disk. A box nobody built cannot name one.
+// ---------------------------------------------------------------------------
+
+/// The page that says how Wixen Mail is built.
+const THE_ARCHITECTURE_PAGE: &str = "docs/architecture.md";
+
+/// The heading the component sections sit under.
+const THE_COMPONENTS_HEADING: &str = "## Component Details";
+
+/// The layers a module path begins with, which are the folders under `src/`.
+const THE_LAYERS: [&str; 5] = ["presentation", "application", "service", "data", "common"];
+
+/// One `####` section under the components heading, and the modules it names.
+#[derive(Debug)]
+struct ComponentSection {
+    heading: String,
+    line: usize,
+    modules: Vec<String>,
+}
+
+/// Every code span on one line, in order.
+fn code_spans(line: &str) -> impl Iterator<Item = &str> {
+    line.split('`').skip(1).step_by(2)
+}
+
+/// Whether a code span names a module: a path under `src/`, or one written
+/// `layer::module` starting with a layer.
+fn names_a_module(span: &str) -> bool {
+    span.starts_with("src/")
+        || span
+            .split_once("::")
+            .is_some_and(|(layer, _)| THE_LAYERS.contains(&layer))
+}
+
+/// Every component section under the components heading.
+///
+/// A section runs from its `####` heading to the next heading of any depth.
+/// Lines inside a fenced block are skipped, because a diagram is not a claim
+/// about a module.
+fn component_sections(text: &str) -> Vec<ComponentSection> {
+    let mut sections: Vec<ComponentSection> = Vec::new();
+    let mut under_components = false;
+    let mut in_a_section = false;
+    let mut in_a_fence = false;
+
+    for (index, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            in_a_fence = !in_a_fence;
+            continue;
+        }
+        if in_a_fence {
+            continue;
+        }
+        if line.starts_with("## ") {
+            under_components = line.trim_end() == THE_COMPONENTS_HEADING;
+            in_a_section = false;
+            continue;
+        }
+        if !under_components {
+            continue;
+        }
+        if let Some(heading) = line.strip_prefix("#### ") {
+            sections.push(ComponentSection {
+                heading: heading.trim().to_string(),
+                line: index + 1,
+                modules: Vec::new(),
+            });
+            in_a_section = true;
+            continue;
+        }
+        if line.starts_with('#') {
+            in_a_section = false;
+            continue;
+        }
+        if !in_a_section {
+            continue;
+        }
+        if let Some(section) = sections.last_mut() {
+            section.modules.extend(
+                code_spans(line)
+                    .filter(|span| names_a_module(span))
+                    .map(|span| span.trim_end_matches("::").to_string()),
+            );
+        }
+    }
+    sections
+}
+
+/// Whether a module named on the page is on disk.
+///
+/// `layer::a::b` is `src/layer/a/b.rs` or `src/layer/a/b/mod.rs`; a path under
+/// `src/` is itself. A name that ends in a type rather than a module is not on
+/// disk under either spelling, so the page has to name the module.
+fn module_on_disk(module: &str) -> bool {
+    if module.starts_with("src/") {
+        return Path::new(module).exists();
+    }
+    let folder = Path::new("src").join(module.replace("::", "/"));
+    folder.with_extension("rs").is_file() || folder.join("mod.rs").is_file()
+}
+
+/// Every component the page describes without a module that is on disk.
+fn components_without_their_module(page: &str, text: &str) -> Vec<String> {
+    let sections = component_sections(text);
+    if sections.is_empty() {
+        return vec![format!(
+            "{page}: no component section under \"{THE_COMPONENTS_HEADING}\", so this \
+             check has stopped reading the page"
+        )];
+    }
+
+    let mut wrong = Vec::new();
+    for section in sections {
+        if section.modules.is_empty() {
+            wrong.push(format!(
+                "{page}:{}: \"{}\" names no module",
+                section.line, section.heading
+            ));
+        }
+        for module in section.modules.iter().filter(|m| !module_on_disk(m)) {
+            wrong.push(format!(
+                "{page}:{}: \"{}\" names `{module}`, which is not in src/",
+                section.line, section.heading
+            ));
+        }
+    }
+    wrong
+}
+
+#[test]
+fn test_every_component_the_architecture_page_draws_names_a_module_the_tree_has() {
+    let text = fs::read_to_string(THE_ARCHITECTURE_PAGE)
+        .unwrap_or_else(|e| panic!("{THE_ARCHITECTURE_PAGE} is the architecture page, and it {e}"));
+
+    let wrong = components_without_their_module(THE_ARCHITECTURE_PAGE, &text);
+
+    assert!(
+        wrong.is_empty(),
+        "every component this page describes names the module that does the work, \
+         so a contributor is sent to real code. These do not:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+/// A made-up page: one component naming nothing, one naming a module nobody
+/// wrote, one naming a real module, and a section outside the components that
+/// names nothing and is not read.
+const AN_INVENTED_ARCHITECTURE_PAGE: &str = "\
+# Invented architecture
+
+## Component Details
+
+### Application Layer
+
+#### Account Manager
+- Manages accounts.
+
+#### Search Engine
+- Searches, in `application::nothing_here`.
+
+#### Saved searches
+- A search kept under a name, in `application::saved_searches`.
+
+## Threading Model
+
+#### Index Worker
+- Updates the index.
+";
+
+#[test]
+fn test_the_architecture_reading_sees_a_component_with_no_module_and_one_not_on_disk() {
+    // The case above passes on a page it cannot read, so this hands the same
+    // reading a page with both faults and one section that has neither.
+    assert_eq!(
+        components_without_their_module("invented.md", AN_INVENTED_ARCHITECTURE_PAGE),
+        vec![
+            "invented.md:7: \"Account Manager\" names no module".to_string(),
+            "invented.md:10: \"Search Engine\" names `application::nothing_here`, \
+             which is not in src/"
+                .to_string(),
+        ],
+        "the reading missed a component with no module, missed one naming a \
+         module nobody wrote, or read past the components heading"
+    );
+
+    // A page whose components heading has gone is a reading that has stopped,
+    // not a page with no faults.
+    assert_eq!(
+        components_without_their_module("invented.md", "# Invented\n\n## Overview\n"),
+        vec![
+            "invented.md: no component section under \"## Component Details\", so \
+             this check has stopped reading the page"
+                .to_string(),
+        ]
+    );
+
+    // The disk probe, both ways, and both spellings of a module file.
+    assert!(module_on_disk("data::message_cache::searching"));
+    assert!(module_on_disk("data::message_cache"));
+    assert!(module_on_disk("src/common/paths.rs"));
+    assert!(!module_on_disk("application::nothing_here"));
+    assert!(!module_on_disk("data::account::Account"));
+}
