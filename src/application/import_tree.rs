@@ -371,6 +371,12 @@ pub struct FoldersImported {
     /// Messages read out of the archive that could not be saved on this
     /// computer.
     pub not_written_down: usize,
+    /// Mailbox files holding more than the archive records about them, read
+    /// until they stopped matching before any of their mail came in.
+    pub did_not_match_and_none_came_in: usize,
+    /// Mailbox files holding more than the archive records about them, whose
+    /// mail up to the point where they stopped matching came in.
+    pub did_not_match_and_some_came_in: usize,
     /// What the saved Outlook messages in the archive left in their files.
     pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
 }
@@ -388,6 +394,16 @@ impl FoldersImported {
         self.not_written_down = mail.not_written_down;
         self.files_too_large_to_keep = mail.files_too_large_to_keep;
         self.from_saved_outlook_messages = mail.from_saved_outlook_messages;
+    }
+
+    /// Count one mailbox file that stopped matching what the archive records
+    /// about it, by whether any of its mail had come in before it did.
+    pub fn one_mailbox_file_did_not_match(&mut self, some_of_its_mail_came_in: bool) {
+        if some_of_its_mail_came_in {
+            self.did_not_match_and_some_came_in += 1;
+        } else {
+            self.did_not_match_and_none_came_in += 1;
+        }
     }
 
     /// Whether the archive held nothing at all: no folder filled, and no file
@@ -558,6 +574,7 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
         imported.could_not_be_read,
         imported.not_written_down,
     );
+    what_mailbox_files_that_did_not_match_left(&mut said, imported);
     what_files_too_large_to_keep_left(&mut said, imported.files_too_large_to_keep);
     // An archive nothing at all was found in. "No folders were imported" on its
     // own is what a broken import says too, and somebody who cannot tell those
@@ -569,6 +586,44 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
     // imports cannot come to word one fact two ways.
     what_saved_outlook_messages_left(&mut said, &imported.from_saved_outlook_messages);
     said.spoken()
+}
+
+/// What mailbox files holding more than the archive records about them left
+/// behind, in the words an archive refused whole for the same fault is told
+/// in.
+///
+/// Never as a message holding nothing a mail program recognises: a file
+/// stopped partway was once said as "1 message" while most of a folder was
+/// missing. How much is missing is not said, because nothing knows it; and
+/// nobody is sent for another copy, because the archive is what it is.
+fn what_mailbox_files_that_did_not_match_left(said: &mut SummingUp, imported: &FoldersImported) {
+    if imported.did_not_match_and_none_came_in > 0 {
+        said.sentence(match imported.did_not_match_and_none_came_in {
+            1 => "1 mailbox file in the archive does not match what the archive records about \
+                  it, so the archive is damaged or was changed after it was made, and none of \
+                  that file's mail was imported"
+                .to_string(),
+            many => format!(
+                "{many} mailbox files in the archive do not match what the archive records \
+                 about them, so the archive is damaged or was changed after it was made, and \
+                 none of their mail was imported"
+            ),
+        });
+    }
+    if imported.did_not_match_and_some_came_in > 0 {
+        said.sentence(match imported.did_not_match_and_some_came_in {
+            1 => "1 mailbox file in the archive does not match what the archive records about \
+                  it, so the archive is damaged or was changed after it was made. Its mail up \
+                  to the point where it stopped matching was imported, and the rest was left out"
+                .to_string(),
+            many => format!(
+                "{many} mailbox files in the archive do not match what the archive records \
+                 about them, so the archive is damaged or was changed after it was made. Their \
+                 mail up to the point where each stopped matching was imported, and the rest \
+                 was left out"
+            ),
+        });
+    }
 }
 
 /// What somebody pointed at when they asked to import.
@@ -1178,6 +1233,60 @@ mod tests {
     }
 
     #[test]
+    fn test_a_mailbox_file_that_does_not_match_its_archive_is_said_with_how_much_of_it_came_in() {
+        // In the words the archive refused whole is told in, and never as a
+        // message holding nothing a mail program recognises, which once hid
+        // most of a folder behind "1 message". Nobody is sent for another
+        // copy: the archive is what it is. And an archive whose only mailbox
+        // file was such a file is not told it holds nothing that reads as
+        // mail, because it held some and could not be trusted.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                did_not_match_and_none_came_in: 1,
+                ..FoldersImported::default()
+            }),
+            "No folders were imported. 1 mailbox file in the archive does not match what the \
+             archive records about it, so the archive is damaged or was changed after it was \
+             made, and none of that file's mail was imported."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                did_not_match_and_none_came_in: 2,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 2 mailbox files in the archive do not match what the \
+             archive records about them, so the archive is damaged or was changed after it was \
+             made, and none of their mail was imported."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 2,
+                messages: 881,
+                did_not_match_and_some_came_in: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 2 folders, 881 messages. 1 mailbox file in the archive does not match what \
+             the archive records about it, so the archive is damaged or was changed after it was \
+             made. Its mail up to the point where it stopped matching was imported, and the rest \
+             was left out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 3,
+                messages: 900,
+                did_not_match_and_some_came_in: 2,
+                ..FoldersImported::default()
+            }),
+            "Imported 3 folders, 900 messages. 2 mailbox files in the archive do not match what \
+             the archive records about them, so the archive is damaged or was changed after it \
+             was made. Their mail up to the point where each stopped matching was imported, and \
+             the rest was left out."
+        );
+    }
+
+    #[test]
     fn test_everything_this_module_says_is_a_sentence_and_names_no_machinery() {
         // All of it is read aloud. A fragment with no stop on the end runs into
         // whatever is spoken next, and a sentence naming a mechanism tells
@@ -1194,6 +1303,8 @@ mod tests {
                 already_here: 1,
                 could_not_be_read: 1,
                 not_written_down: 1,
+                did_not_match_and_none_came_in: 1,
+                did_not_match_and_some_came_in: 1,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
             what_the_folder_import_did(&FoldersImported {
@@ -1206,6 +1317,8 @@ mod tests {
                 already_here: 2,
                 could_not_be_read: 2,
                 not_written_down: 2,
+                did_not_match_and_none_came_in: 2,
+                did_not_match_and_some_came_in: 2,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
         ];

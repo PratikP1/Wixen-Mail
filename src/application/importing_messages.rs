@@ -1065,9 +1065,20 @@ pub fn an_archive_brought_in(
             // somebody is allowed to bring, it was about what one call could
             // hold. Read this way nothing grows with the size of the file, so
             // there is nothing left to refuse.
+            //
+            // What the archive answers is still dropped, and with it the
+            // sentence for reaching what the whole archive may unpack to; the
+            // file's stop is counted below like any other (ledger 908).
             let _ = archive.one_entry_read_in_pieces(&entry.named, |reading| {
-                for read in message_files::each_message_read_piece_by_piece(reading) {
-                    into.one_read_filed(&read, &mut brought_in);
+                let before = brought_in.brought_in;
+                let ended =
+                    message_files::each_message_handed_over_piece_by_piece(reading, |read| {
+                        into.one_read_filed(&read, &mut brought_in);
+                    });
+                if let message_files::HowTheReadingEnded::TheFileStoppedBeingReadable(kind) = ended
+                {
+                    let some_came_in = brought_in.brought_in > before;
+                    a_stop_counted(kind, some_came_in, &mut counted, &mut brought_in);
                 }
                 Ok(())
             });
@@ -1083,6 +1094,30 @@ pub fn an_archive_brought_in(
     }
     counted.carry_the_mail_counts(&brought_in);
     import_tree::what_the_folder_import_did(&counted)
+}
+
+/// Count a mailbox file in an archive that stopped being readable partway
+/// through, by the kind of the read that stopped it.
+///
+/// One that stopped matching what the archive records about it is its own
+/// fault, counted by whether any of its mail had come in before it did. Any
+/// other stop is counted as a stretch that held no mail, which is how every
+/// stop was said before the kind was kept, so nothing else changes.
+fn a_stop_counted(
+    kind: std::io::ErrorKind,
+    some_came_in: bool,
+    counted: &mut crate::application::import_tree::FoldersImported,
+    brought_in: &mut MessagesImported,
+) {
+    use crate::service::mailbox_archive::WhyAnEntryWasNotRead;
+    match WhyAnEntryWasNotRead::from(kind) {
+        WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords => {
+            counted.one_mailbox_file_did_not_match(some_came_in);
+        }
+        WhyAnEntryWasNotRead::ItCouldNotBeRead => {
+            brought_in.count_one(WhatToDoWithIt::ItCouldNotBeRead);
+        }
+    }
 }
 
 // ── Writing messages out ────────────────────────────────────────────────────
@@ -2626,6 +2661,136 @@ mod end_to_end {
             vec![imported("Entw\u{fc}rfe")]
         );
         assert_eq!(how_many_in(&cache, &imported("Entw\u{fc}rfe")), 2);
+    }
+
+    // ── A mailbox file holding more than its archive records ─────────────
+
+    /// A mailbox of this many messages, each its own, whose identifiers start
+    /// with `called`.
+    ///
+    /// About two hundred bytes a message, so two thousand of them make a
+    /// file of several hundred kilobytes: larger than the piece the reader
+    /// takes at a time, and larger than the sizes the tests record for it.
+    fn a_mailbox_of(called: &str, how_many: usize) -> Vec<u8> {
+        (1..=how_many)
+            .map(|which| {
+                format!(
+                    "From {called}@example.com Mon Jul 20 10:00:00 2026\r\n\
+                     From: {called} <{called}@example.com>\r\n\
+                     Subject: {called} number {which}\r\n\
+                     Message-ID: <{called}-{which}@example.com>\r\n\
+                     \r\n\
+                     Message {which} of the {called} folder, kept for the years it covers.\r\n\
+                     \r\n"
+                )
+            })
+            .collect::<String>()
+            .into_bytes()
+    }
+
+    /// A zip holding the folder `Altered`, two thousand messages recorded as
+    /// this many bytes, and, if asked for, the folder `Honest`, three messages
+    /// recorded as they are.
+    fn a_zip_recording_altered_as(
+        place: &std::path::Path,
+        recorded: u64,
+        with_an_honest_folder: bool,
+    ) -> std::path::PathBuf {
+        let altered = a_mailbox_of("altered", 2000);
+        assert!(
+            altered.len() as u64 > recorded,
+            "the altered file, {} bytes, holds no more than the {recorded} recorded for it",
+            altered.len()
+        );
+        let honest = a_mailbox_of("honest", 3);
+        let mut entries: Vec<(&str, &[u8], Option<u64>)> =
+            vec![("Altered.mbox", altered.as_slice(), Some(recorded))];
+        if with_an_honest_folder {
+            entries.push(("Honest.mbox", honest.as_slice(), None));
+        }
+        crate::service::mailbox_archive::for_tests::a_zip_recording_these_sizes(
+            &place.join("mail.zip"),
+            &entries,
+        )
+    }
+
+    /// What is said about a mailbox file none of whose mail came in.
+    const NONE_OF_IT_CAME_IN: &str = "1 mailbox file in the archive does not match what the \
+         archive records about it, so the archive is damaged or was changed after it was made, \
+         and none of that file's mail was imported.";
+
+    #[test]
+    fn test_a_mailbox_file_holding_more_than_its_archive_records_is_said_to_be_damaged_or_changed()
+    {
+        // Measured on zip 9.0.4 by 13.2-31.7's planner: a file of about 400
+        // kilobytes recorded as 100,000 bytes brought nothing in and was said
+        // as one message holding nothing a mail program recognises. The file
+        // stopped matching before a message of it was finished.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at = a_zip_recording_altered_as(place.path(), 100_000, false);
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert!(the_folders_under_imported(&cache).is_empty());
+        assert_eq!(
+            said,
+            format!("No folders were imported. {NONE_OF_IT_CAME_IN}")
+        );
+    }
+
+    #[test]
+    fn test_a_mailbox_file_that_does_not_match_its_archive_leaves_the_rest_of_the_archive_to_come_in()
+     {
+        // The honest folder beside it comes in whole, as one unreadable file
+        // has never taken the rest of an archive with it.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at = a_zip_recording_altered_as(place.path(), 100_000, true);
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(how_many_in(&cache, &imported("Honest")), 3);
+        assert_eq!(
+            said,
+            format!("Imported 1 folder, 3 messages. {NONE_OF_IT_CAME_IN}")
+        );
+    }
+
+    #[test]
+    fn test_the_mail_before_a_file_stops_matching_its_archive_comes_in_and_is_said_to() {
+        // Recorded as 300,000 bytes, 878 of the two thousand came in on the
+        // planner's measurement, under a sentence saying one message could not
+        // be read while more than a thousand were missing. What came in stays,
+        // and the sentence says the rest was left out without guessing how
+        // much, which nothing knows.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at = a_zip_recording_altered_as(place.path(), 300_000, true);
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(
+            the_folders_under_imported(&cache),
+            vec![imported("Altered"), imported("Honest")]
+        );
+        let some_of_it = how_many_in(&cache, &imported("Altered"));
+        assert!(
+            (1..2000).contains(&some_of_it),
+            "{some_of_it} of the altered file's 2,000 messages came in"
+        );
+        assert_eq!(how_many_in(&cache, &imported("Honest")), 3);
+        assert_eq!(
+            said,
+            format!(
+                "Imported 2 folders, {} messages. 1 mailbox file in the archive does not match \
+                 what the archive records about it, so the archive is damaged or was changed \
+                 after it was made. Its mail up to the point where it stopped matching was \
+                 imported, and the rest was left out.",
+                some_of_it + 3
+            )
+        );
     }
 
     // ── The files an imported message carried ───────────────────────────

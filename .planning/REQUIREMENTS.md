@@ -3052,6 +3052,16 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     a reading through the whole import in `application::importing_messages` and two new
     guard records; nobody has heard the new sentence (ledger 905). No `[D]` clause; the box
     stays ticked.
+  - 13.2-31.8 on 2026-10-19: a mailbox file in a zip holding more than the archive records
+    about it, which zip 9.0.4 stops partway through, is said at import to make the archive
+    damaged or changed after it was made, with whether any of that file's mail came in,
+    where it was said as one message holding nothing a mail program recognises while 892 of
+    2,000 messages came in (ledger 906 opened and fixed). The mail before the stop stays and
+    the archive's other files come in whole. Held by three readings through the whole import
+    in `application::importing_messages`, a case for the sentence in
+    `application::import_tree`, three for the reader in `application::message_files` and
+    three guard records; nobody has heard the new sentence (ledger 907), and every other
+    stop is still said as before (ledger 908). No `[D]` clause; the box stays ticked.
 
 - [x] **FOUND-12**: Settings opens at once, and the number is on the measurements page.
   - **Closed 2026-09-17 by the phase's closing read in 09-10; 09-09, merged 2026-09-17 at
@@ -8092,7 +8102,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
 | FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
-| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, and 2026-10-17: 13.2-31.7, and 2026-10-18: 13.2-31.8, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871; 13.2-31.7 done 2026-10-19, on zip 9.0.4 every zip entry is read from where it was found, so a folder named in the old DOS alphabet brings its mail in, and a damaged or changed archive says so, adding no `[D]` clause |
+| FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, and 2026-10-17: 13.2-31.7, and 2026-10-18: 13.2-31.8, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871; 13.2-31.7 done 2026-10-19, on zip 9.0.4 every zip entry is read from where it was found, so a folder named in the old DOS alphabet brings its mail in, and a damaged or changed archive says so, adding no `[D]` clause; 13.2-31.8 done 2026-10-19, a mailbox file in a zip holding more than its archive records is said to be damaged or changed with whether any of its mail came in, ledger 906, adding no `[D]` clause |
 | FOUND-12 | Phase 9 | Complete, 09-09 at `a8b26596`; whether it feels immediate is the tester's |
 | FOUND-13 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA says "check box" and the new state on Space is the tester's |
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |

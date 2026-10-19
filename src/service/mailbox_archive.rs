@@ -487,7 +487,16 @@ pub enum WhyAnEntryWasNotRead {
 
 impl From<&std::io::Error> for WhyAnEntryWasNotRead {
     fn from(why: &std::io::Error) -> Self {
-        match why.kind() {
+        why.kind().into()
+    }
+}
+
+/// The one rule, for a reader that kept the kind of a failure rather than the
+/// failure: the import reading a mailbox file a piece at a time, stopped
+/// partway through it.
+impl From<std::io::ErrorKind> for WhyAnEntryWasNotRead {
+    fn from(kind: std::io::ErrorKind) -> Self {
+        match kind {
             std::io::ErrorKind::InvalidData => Self::ItDoesNotMatchWhatTheArchiveRecords,
             _ => Self::ItCouldNotBeRead,
         }
@@ -2955,6 +2964,39 @@ pub(crate) mod for_tests {
             }
         }
         std::fs::write(at, &bytes).expect("write the zip with the names replaced");
+        at.to_path_buf()
+    }
+
+    /// One zip whose entries record these sizes, where a size is given,
+    /// rather than the sizes they really have.
+    ///
+    /// Each entry is written properly and then only the size recorded beside
+    /// it is changed, with its real check, the way somebody altering an
+    /// archive after it was made would leave it.
+    pub(crate) fn a_zip_recording_these_sizes(
+        at: &Path,
+        entries: &[(&str, &[u8], Option<u64>)],
+    ) -> PathBuf {
+        let file = std::fs::File::create(at).expect("create the test zip");
+        let mut writing = zip::ZipWriter::new(file);
+        for (named, holding, recorded) in entries {
+            writing
+                .start_file(*named, zip::write::SimpleFileOptions::default())
+                .expect("start an entry");
+            writing.write_all(holding).expect("write an entry");
+            if let Some(recorded) = recorded {
+                let mut check = flate2::Crc::new();
+                check.update(holding);
+                // Only the size recorded beside bytes this project's own writer
+                // packed is overwritten, which is the shape the test exists for.
+                unsafe {
+                    writing
+                        .set_file_metadata(*recorded, check.sum())
+                        .expect("record a size the entry does not have");
+                }
+            }
+        }
+        writing.finish().expect("finish the test zip");
         at.to_path_buf()
     }
 }
