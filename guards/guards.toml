@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 844 records have arrived since and have not been through it.
+# 845 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -9862,7 +9862,7 @@ tests_last_seen = [
     { file = "src/application/export_tree.rs", tests = 55 },
     { file = "src/application/looking_people_up.rs", tests = 43 },
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/message_files.rs", tests = 51 },
+    { file = "src/application/message_files.rs", tests = 54 },
     { file = "src/application/reply.rs", tests = 35 },
     { file = "src/common/types.rs", tests = 28 },
     { file = "src/presentation/message_rows.rs", tests = 41 },
@@ -42692,4 +42692,23 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 86 },
+]
+
+# A mailbox file that stopped being readable handed over as one more message
+# that could not be read, so its kind is lost and a file holding more than
+# its archive records is said as a stretch holding no mail (13.2-31.8,
+# T-13.2-31.8-01). Written 2026-10-19 by 13.2-31.8.
+[[guard]]
+name = "a reading that stops is answered apart from the messages, with its kind"
+file = "src/application/message_files.rs"
+before = '''        if let Some(kind) = archive.stopped_by {
+            return HowTheReadingEnded::TheFileStoppedBeingReadable(kind);'''
+after = '''        if let Some(kind) = None::<std::io::ErrorKind> {
+            return HowTheReadingEnded::TheFileStoppedBeingReadable(kind);'''
+red = [
+    "application::message_files::tests::test_a_reading_that_stops_for_another_reason_says_that_reason",
+    "application::message_files::tests::test_a_reading_that_stops_says_how_it_stopped_and_hands_over_what_came_before",
+]
+tests_last_seen = [
+    { file = "src/application/message_files.rs", tests = 54 },
 ]

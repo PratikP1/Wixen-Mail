@@ -1200,12 +1200,25 @@ pub enum HowTheReadingEnded {
 
 /// Every message a mailbox holds, each handed to `each`, answering how the
 /// reading came to an end.
+///
+/// The same reading as [`each_message_read_piece_by_piece`], with the stop
+/// kept apart from the messages. The iterator hands a file that stopped being
+/// readable over as one more message it could not read, which is all a
+/// caller counting messages needs. A caller that has to say why the file
+/// stopped needs the kind of the read that stopped it, and a message cannot
+/// carry that without somebody reading it back out of the text.
 pub fn each_message_handed_over_piece_by_piece(
     reading: impl std::io::Read,
-    each: impl FnMut(Result<MessageFromAFile>),
+    mut each: impl FnMut(Result<MessageFromAFile>),
 ) -> HowTheReadingEnded {
-    let _ = (reading, each);
-    HowTheReadingEnded::TheFileStoppedBeingReadable(std::io::ErrorKind::Other)
+    let mut archive = AnArchiveInPieces::of(reading, HowMuchToHold::default());
+    while let Some(block) = archive.next_block() {
+        if let Some(kind) = archive.stopped_by {
+            return HowTheReadingEnded::TheFileStoppedBeingReadable(kind);
+        }
+        each(block.and_then(|block| one_message_out_of(&block)));
+    }
+    HowTheReadingEnded::AtTheEndOfTheFile
 }
 
 /// An archive being read a piece at a time, giving up one message at a time.
@@ -1242,6 +1255,9 @@ struct AnArchiveInPieces<R> {
     anything_was_read: bool,
     /// Whether the last message has been given up.
     the_last_one_is_out: bool,
+    /// The kind of the read that stopped the file being readable, once one
+    /// has.
+    stopped_by: Option<std::io::ErrorKind>,
 }
 
 impl<R: std::io::Read> AnArchiveInPieces<R> {
@@ -1263,6 +1279,7 @@ impl<R: std::io::Read> AnArchiveInPieces<R> {
             the_front_was_looked_at: false,
             anything_was_read: false,
             the_last_one_is_out: false,
+            stopped_by: None,
         }
     }
 
@@ -1329,9 +1346,12 @@ impl<R: std::io::Read> AnArchiveInPieces<R> {
             return match self.reading.read(&mut self.piece[from..to]) {
                 Ok(read) => Ok(read),
                 Err(why) if why.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(why) => Err(Error::Other(format!(
-                    "{THE_FILE_STOPPED_BEING_READABLE}: {why}."
-                ))),
+                Err(why) => {
+                    self.stopped_by = Some(why.kind());
+                    Err(Error::Other(format!(
+                        "{THE_FILE_STOPPED_BEING_READABLE}: {why}."
+                    )))
+                }
             };
         }
     }
