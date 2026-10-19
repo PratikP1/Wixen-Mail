@@ -14,7 +14,9 @@
 //! exactly one application per process, and `cargo test` runs each file
 //! under `tests/` as its own process.
 
+use std::ffi::c_void;
 use std::sync::{Arc, Mutex};
+use wixen_mail::application::one_address_one_account::{Mailbox, who_already_uses};
 use wixen_mail::common::types::Protocol;
 use wixen_mail::data::account::Account;
 use wixen_mail::data::config::ConfigManager;
@@ -22,6 +24,7 @@ use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::wx_account_manager::{
     AccountEditWidgets, SignatureChoices, advance_to_connection_page, build_account_edit_dialog,
     build_account_manager_dialog, return_to_identity_page, say_whether_the_trash_is_recognised,
+    show_why_the_address_was_refused,
 };
 use wxdragon::prelude::*;
 
@@ -167,6 +170,109 @@ fn expect_every_letter_its_own(name: &'static str, w: &AccountEditWidgets, into:
     let twice = letters_claimed_twice(&w.dialog);
     if !twice.is_empty() {
         into.push((name, format!("letters claimed twice: {}", twice.join("; "))));
+    }
+}
+
+/// winuser.h: `OBJID_CLIENT`, the object `AccessibleObjectFromWindow` hands
+/// out for a window's own content; oaidl.h: `VT_I4`.
+const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+const VT_I4: u16 = 3;
+/// The child id that means the object itself rather than one of its children.
+const CHILDID_SELF: i64 = 0;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Guid {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+/// {618736E0-3C3D-11CF-810C-00AA00389B71}
+const IID_IACCESSIBLE: Guid = Guid {
+    data1: 0x618736E0,
+    data2: 0x3C3D,
+    data3: 0x11CF,
+    data4: [0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+};
+
+/// A VARIANT as the 64-bit ABI lays it out: 24 bytes, the type at offset 0
+/// and the payload at offset 8.
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct Variant {
+    vt: u16,
+    reserved1: u16,
+    reserved2: u16,
+    reserved3: u16,
+    val: i64,
+    extra: u64,
+}
+
+type Hresult = i32;
+type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> Hresult;
+
+// IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accParent (7),
+// get_accChildCount (8), get_accChild (9), get_accName (10).
+const VTBL_RELEASE: usize = 2;
+const VTBL_GET_ACC_NAME: usize = 10;
+
+#[link(name = "oleacc")]
+unsafe extern "system" {
+    fn AccessibleObjectFromWindow(
+        hwnd: isize,
+        id_object: u32,
+        riid: *const Guid,
+        out: *mut *mut c_void,
+    ) -> Hresult;
+}
+
+#[link(name = "oleaut32")]
+unsafe extern "system" {
+    fn SysStringLen(s: *mut u16) -> u32;
+    fn SysFreeString(s: *mut u16);
+}
+
+/// The name MSAA gives a window: what NVDA says for it. Copied from
+/// `tests/mark_as_read_says_which_way_it_will_go.rs`, which reads a toolbar
+/// button's the same way.
+fn msaa_name_of(hwnd: isize) -> Result<String, String> {
+    let mut object: *mut c_void = std::ptr::null_mut();
+    // SAFETY: a live window handle; the object is released before returning.
+    let hr =
+        unsafe { AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object) };
+    if hr < 0 || object.is_null() {
+        return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+    }
+    let myself = Variant {
+        vt: VT_I4,
+        reserved1: 0,
+        reserved2: 0,
+        reserved3: 0,
+        val: CHILDID_SELF,
+        extra: 0,
+    };
+    // SAFETY: `object` is a live IAccessible, a pointer to its vtable; the
+    // slots are Release's and get_accName's, and the BSTR is freed once.
+    unsafe {
+        let vtable = *(object as *const *const *const c_void);
+        let get_name: GetBstrFn = std::mem::transmute(*vtable.add(VTBL_GET_ACC_NAME));
+        let release: ReleaseFn = std::mem::transmute(*vtable.add(VTBL_RELEASE));
+        let mut name: *mut u16 = std::ptr::null_mut();
+        let hr_name = get_name(object, myself, &mut name);
+        release(object);
+        if hr_name < 0 {
+            return Err(format!("get_accName hr=0x{hr_name:x}"));
+        }
+        if name.is_null() {
+            return Ok(String::new());
+        }
+        let len = SysStringLen(name) as usize;
+        let text = String::from_utf16_lossy(std::slice::from_raw_parts(name, len));
+        SysFreeString(name);
+        Ok(text)
     }
 }
 
@@ -445,6 +551,110 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             expect_shown("back to identity: Next shown", &w.next, true, &mut wrong);
             expect_shown("back to identity: Back hidden", &w.back, false, &mut wrong);
             expect_shown("back to identity: OK hidden", &w.ok, false, &mut wrong);
+
+            // ── An address another account uses is refused inside the
+            // ── window, beside the box, and goes when the address changes
+            // ── (ledger 848). The other account is named with an ampersand,
+            // ── which a label would otherwise take for an access letter. ──
+            {
+                let w = build_account_edit_dialog(
+                    &manager.dialog,
+                    None,
+                    &a11y,
+                    None,
+                    &SignatureChoices::default(),
+                );
+                expect_shown(
+                    "a new window: the refusal line hidden",
+                    &w.address_refused,
+                    false,
+                    &mut wrong,
+                );
+                expect_eq(
+                    "a new window: the refusal line",
+                    &w.address_refused.get_label(),
+                    "",
+                    &mut wrong,
+                );
+
+                let taken = who_already_uses(
+                    Mailbox {
+                        id: "new",
+                        name: "",
+                        address: "rd@example.com",
+                    },
+                    [Mailbox {
+                        id: "held",
+                        name: "R&D",
+                        address: "RD@example.com",
+                    }],
+                )
+                .expect("R&D to use the address");
+                let said = "R&D already uses RD@example.com. Edit that account rather than \
+                            adding the address again.";
+                show_why_the_address_was_refused(&w, Some(&taken));
+                expect_shown(
+                    "refused: the refusal line shown",
+                    &w.address_refused,
+                    true,
+                    &mut wrong,
+                );
+                // The native window's own text, which wraps at the box's
+                // width by turning spaces into line breaks: one real
+                // ampersand is written as two, and nothing else claims a key.
+                let hwnd = w.address_refused.get_handle() as isize;
+                let shown = win32_text(hwnd, GetWindowTextW).replace(['\r', '\n'], " ");
+                expect_eq(
+                    "refused: the refusal line's text",
+                    &shown,
+                    "R&&D already uses RD@example.com. Edit that account rather than adding \
+                     the address again.",
+                    &mut wrong,
+                );
+                if let Some(letter) = alt_key_of(&shown) {
+                    wrong.push((
+                        "refused: the refusal line claims no letter",
+                        format!("it claims {letter}"),
+                    ));
+                }
+                match msaa_name_of(hwnd) {
+                    Ok(name) => {
+                        expect_eq("refused: the refusal line's name", &name, said, &mut wrong)
+                    }
+                    Err(why) => wrong.push(("refused: the refusal line's name", why)),
+                }
+                expect_every_letter_its_own("refused: Alt letters", &w, &mut wrong);
+
+                advance_to_connection_page(&w);
+                expect_shown(
+                    "refused, connection page: the refusal line hidden",
+                    &w.address_refused,
+                    false,
+                    &mut wrong,
+                );
+                return_to_identity_page(&w);
+                expect_shown(
+                    "refused, back to identity: the refusal line shown again",
+                    &w.address_refused,
+                    true,
+                    &mut wrong,
+                );
+
+                // `set_value` raises the box's change, as typing does.
+                w.email_f.set_value("someone@example.org");
+                expect_shown(
+                    "a new address: the refusal line hidden",
+                    &w.address_refused,
+                    false,
+                    &mut wrong,
+                );
+                expect_eq(
+                    "a new address: the refusal line",
+                    &w.address_refused.get_label(),
+                    "",
+                    &mut wrong,
+                );
+            }
 
             // ── A POP3 account's connection page shows POP fields, not
             // ── IMAP ones. ───────────────────────────────────────────────

@@ -1623,6 +1623,10 @@ pub struct AccountEditWidgets {
     pub name_f: TextCtrl,
     pub sender_name_f: TextCtrl,
     pub email_f: TextCtrl,
+    /// Under the address box: why OK did nothing when another account
+    /// already uses the address, worded by
+    /// [`show_why_the_address_was_refused`] and empty otherwise.
+    pub address_refused: StaticText,
     /// Which signature this account signs with, the default first (#43).
     pub signature_choice: Choice,
     pub protocol_choice: Choice,
@@ -1811,6 +1815,15 @@ fn refusal_for(working: &[Account], typed: &Account) -> Option<AddressTaken> {
 fn back_to_the_address(w: &AccountEditWidgets) {
     return_to_identity_page(w);
     w.email_f.set_focus();
+}
+
+/// Show under the address box why OK did nothing, or take the line away
+/// with `None`.
+///
+/// `pub` so the window's own test can call it, the way it calls
+/// [`say_whether_the_trash_is_recognised`].
+pub fn show_why_the_address_was_refused(w: &AccountEditWidgets, refused: Option<&AddressTaken>) {
+    let _ = (w, refused);
 }
 
 /// Show the Add or Edit Account window until the person cancels or gives an
@@ -2133,6 +2146,15 @@ pub fn build_account_edit_dialog(
     // windows for them. A, because N is Next's on this page.
     let (name_label, name_f) = tf("&Account Name:", "");
     let (email_label, email_f) = tf("&Email Address:", "");
+    // Why OK did nothing, under the box it is about: an address another
+    // account already uses (ledger 848). The window covers the Account
+    // Manager's status line, where the sentence is also shown.
+    let address_refused = {
+        let line = StaticText::builder(&dlg).with_label("").build();
+        leave_the_cell_empty(&fields);
+        fields.add(&line, 0, SizerFlag::Expand | SizerFlag::All, 4);
+        line
+    };
     // The third box in this dialog that could be mistaken for the other two.
     // Account Name is what you call the account, usually "Work"; Username is
     // what signs in to the server; this is the name a recipient reads in their
@@ -2494,6 +2516,7 @@ pub fn build_account_edit_dialog(
         name_f,
         sender_name_f,
         email_f,
+        address_refused,
         signature_choice,
         protocol_choice,
         imap_f,
@@ -4263,5 +4286,116 @@ mod tests {
 
         assert!(!the_editor_asks_before_keeping_anything(too_late));
         assert!(the_editor_asks_before_keeping_anything(in_time));
+    }
+
+    /// Where a refused address is not shown inside the window that refused
+    /// it (ledger 848). In `show_edit`, the line beside the address box is
+    /// worded after the sentence is said and before the window comes back
+    /// over the Account Manager's status line. In the address box's handler,
+    /// the line is taken away before the handler reads the new address, so
+    /// it goes whatever is typed.
+    ///
+    /// Read as text, because both need a modal window and a person at it. It
+    /// can tell the order of the calls. It cannot tell what is drawn; the
+    /// window's own test in `tests/account_edit_protocol_fields.rs` reads
+    /// that.
+    fn where_a_refusal_is_not_shown_in_the_window(screen: &str) -> Vec<&'static str> {
+        let mut wrong = Vec::new();
+        let editor = between(screen, "fn show_edit(", "\n}").unwrap_or_default();
+        let said = editor.find("said_and_shown(status, a11y, &taken");
+        let shown = editor.find("show_why_the_address_was_refused(&w, Some(&taken))");
+        let back = editor.find("back_to_the_address(&w)");
+        if !matches!((said, shown, back), (Some(said), Some(shown), Some(back)) if said < shown && shown < back)
+        {
+            wrong.push(
+                "show_edit does not show the refusal in the window between saying it and \
+                 showing the window again",
+            );
+        }
+        let handler = between(screen, "email_f.on_text_changed(", "\n    });").unwrap_or_default();
+        let cleared = handler.find("show_why_the_address_was_refused(&w, None)");
+        let read = handler.find(".split('@')");
+        if !matches!((cleared, read), (Some(cleared), Some(read)) if cleared < read) {
+            wrong.push(
+                "the address box's handler does not take the refusal away before it reads \
+                 the new address",
+            );
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_a_refused_address_is_shown_in_the_window_that_refused_it() {
+        // The refusal was said and put on the Account Manager's status line,
+        // and the Add or Edit window came straight back over that line, so
+        // somebody reading the screen saw OK do nothing and no reason.
+        assert_eq!(
+            where_a_refusal_is_not_shown_in_the_window(&the_account_manager()),
+            Vec::<&str>::new()
+        );
+    }
+
+    #[test]
+    fn test_the_reading_can_see_a_refusal_shown_only_behind_the_window() {
+        let sound = "fn show_edit() {\n\
+            \x20   said_and_shown(status, a11y, &taken.to_string(), Priority::High);\n\
+            \x20   show_why_the_address_was_refused(&w, Some(&taken));\n\
+            \x20   back_to_the_address(&w);\n\
+            }\n\
+            \x20   email_f.on_text_changed({\n\
+            \x20       move |_| {\n\
+            \x20           show_why_the_address_was_refused(&w, None);\n\
+            \x20           let email = email_f.get_value();\n\
+            \x20           if let Some(domain) = email.split('@').nth(1) {}\n\
+            \x20       }\n\
+            \x20   });\n";
+        assert_eq!(
+            where_a_refusal_is_not_shown_in_the_window(sound),
+            Vec::<&str>::new(),
+            "a sound editor and handler were reported"
+        );
+
+        let only_behind = sound.replace(
+            "    show_why_the_address_was_refused(&w, Some(&taken));\n",
+            "",
+        );
+        assert_ne!(only_behind, sound, "the plant changed nothing");
+        let found = where_a_refusal_is_not_shown_in_the_window(&only_behind);
+        assert!(
+            found.len() == 1 && found[0].starts_with("show_edit"),
+            "an editor that only says the refusal was not reported: {found:?}"
+        );
+
+        let too_late = sound
+            .replace("    show_why_the_address_was_refused(&w, Some(&taken));\n", "")
+            .replace(
+                "    back_to_the_address(&w);\n",
+                "    back_to_the_address(&w);\n    show_why_the_address_was_refused(&w, Some(&taken));\n",
+            );
+        let found = where_a_refusal_is_not_shown_in_the_window(&too_late);
+        assert!(
+            found.len() == 1 && found[0].starts_with("show_edit"),
+            "a refusal shown after the window came back was not reported: {found:?}"
+        );
+
+        let never_cleared = sound.replace("show_why_the_address_was_refused(&w, None);\n", "");
+        assert_ne!(never_cleared, sound, "the plant changed nothing");
+        let found = where_a_refusal_is_not_shown_in_the_window(&never_cleared);
+        assert!(
+            found.len() == 1 && found[0].contains("handler"),
+            "a handler that leaves the refusal was not reported: {found:?}"
+        );
+
+        let cleared_for_some = sound
+            .replace("show_why_the_address_was_refused(&w, None);\n", "")
+            .replace(
+                ".nth(1) {}",
+                ".nth(1) { show_why_the_address_was_refused(&w, None); }",
+            );
+        let found = where_a_refusal_is_not_shown_in_the_window(&cleared_for_some);
+        assert!(
+            found.len() == 1 && found[0].contains("handler"),
+            "a handler that clears only for an address with an @ was not reported: {found:?}"
+        );
     }
 }
