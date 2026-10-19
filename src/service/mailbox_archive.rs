@@ -2016,6 +2016,12 @@ mod tests {
         // states about itself was written by whoever built it. So what is
         // counted is what really came out, and the reading stops at the limit
         // rather than at whatever the archive said would happen.
+        //
+        // Since zip 9.0.4 the reader underneath stops an entry at the size the
+        // archive records and fails the read, so the lie is caught when the
+        // archive is looked over, before anything past the claimed ten bytes is
+        // read, and the archive is refused as one that does not match what it
+        // records.
         let place = a_place_to_work();
         let far_too_much = vec![b'A'; 200_000];
         let at = a_zip_lying_about_a_size(place.path(), "Work/Bomb.mbox", &far_too_much, 10);
@@ -2024,15 +2030,46 @@ mod tests {
             ..HowMuchToAllow::default()
         };
 
-        let mut archive = opened_allowing(&at, allowing_a_little).expect("the archive opens");
-        let refused = archive
-            .one_entry_read_through("Work/Bomb.mbox")
-            .err()
-            .map(|why| why.to_string())
-            .expect("an entry that unpacks past the limit is refused");
+        let refused = match opened_allowing(&at, allowing_a_little) {
+            Err(why) => why.to_string(),
+            Ok(open) => panic!(
+                "the archive opened and holds {} entries",
+                open.what_it_holds().len()
+            ),
+        };
 
-        assert!(refused.contains("Work/Bomb.mbox"), "{refused}");
-        assert!(refused.contains("unpacks to more than"), "{refused}");
+        assert!(refused.contains("is damaged"), "{refused}");
+        assert!(refused.contains("nothing was imported"), "{refused}");
+        assert!(!refused.contains("stops partway through"), "{refused}");
+    }
+
+    #[test]
+    fn test_an_honest_entry_larger_than_one_read_may_hold_is_refused_by_its_name() {
+        // The limit the case above used to say, held on an entry whose size
+        // is the truth: asked for whole, an entry larger than one read may
+        // hold is refused, and the sentence names it.
+        let place = a_place_to_work();
+        let long = a_long_mailbox();
+        let held: Vec<(&str, &[u8])> = vec![("Work/Invoices.mbox", &long)];
+        let less_than_the_entry = HowMuchToAllow {
+            most_one_thing_unpacks_to: 64,
+            ..HowMuchToAllow::default()
+        };
+
+        for at in [
+            a_zip_of(place.path(), &held),
+            a_folder_of(place.path(), &held),
+        ] {
+            let mut archive = opened_allowing(&at, less_than_the_entry).expect("it opens");
+            let refused = archive
+                .one_entry_read_through("Work/Invoices.mbox")
+                .err()
+                .map(|why| why.to_string())
+                .expect("an entry larger than one read may hold is refused");
+
+            assert!(refused.contains("Work/Invoices.mbox"), "{refused}");
+            assert!(refused.contains("unpacks to more than"), "{refused}");
+        }
     }
 
     #[test]
@@ -2443,15 +2480,113 @@ mod tests {
         let mut archive = opened(&at).expect("an archive with such a name still opens");
         let named = archive.what_it_holds()[0].named.to_string();
 
+        let written =
+            zip::ZipArchive::new(std::fs::File::open(&at).expect("open the test zip again"))
+                .expect("the test zip is an archive")
+                .by_index(0)
+                .expect("its one entry")
+                .name_raw()
+                .to_vec();
         assert!(
-            named.contains('\u{fffd}'),
-            "the name came back as text after all: {named:?}"
+            std::str::from_utf8(&written).is_err(),
+            "the fixture's name was written as text after all: {written:?}"
         );
         assert_eq!(
             archive
                 .one_entry_read_through(&named)
                 .expect("the name handed over finds the entry again"),
             a_folder_of_mail()
+        );
+    }
+
+    #[test]
+    fn test_two_entries_whose_names_are_not_text_and_differ_are_both_held_and_both_read() {
+        // Two folders whose names differ only in bytes that are not UTF-8.
+        // Read as text with a stand-in for every such byte, the two names
+        // became one, and one folder's mail was left out without a word.
+        let place = a_place_to_work();
+        let at = for_tests::a_zip_whose_names_another_program_wrote(
+            &place.path().join("two.zip"),
+            &[
+                ("W\u{f6}rk.mbox", b"W\xff\xferk.mbox", a_folder_of_mail()),
+                ("W\u{e4}rk.mbox", b"W\xfe\xffrk.mbox", one_message()),
+            ],
+        );
+
+        let mut archive = opened(&at).expect("the archive opens");
+        let names: Vec<String> = archive
+            .what_it_holds()
+            .iter()
+            .map(|entry| entry.named.to_string())
+            .collect();
+
+        assert_eq!(names.len(), 2, "{names:?}");
+        assert_ne!(names[0], names[1]);
+        let read: Vec<Vec<u8>> = names
+            .iter()
+            .map(|named| {
+                archive
+                    .one_entry_read_through(named)
+                    .expect("each name finds its own entry")
+            })
+            .collect();
+        assert_eq!(
+            read,
+            vec![a_folder_of_mail().to_vec(), one_message().to_vec()]
+        );
+    }
+
+    /// A zip holding one folder of mail under a name an older Windows zip tool
+    /// wrote in the old DOS alphabet, where 0x81 is the letter u with two dots
+    /// and nothing marks the name as UTF-8.
+    fn a_zip_named_in_the_old_dos_alphabet(inside: &Path) -> PathBuf {
+        for_tests::a_zip_whose_names_another_program_wrote(
+            &inside.join("dos.zip"),
+            &[("Entw?rfe.mbox", b"Entw\x81rfe.mbox", a_folder_of_mail())],
+        )
+    }
+
+    #[test]
+    fn test_a_name_written_in_the_old_dos_alphabet_reads_as_its_letters_and_finds_its_entry() {
+        // The case people have: a German folder of drafts zipped by an older
+        // Windows tool. Its name is read in the alphabet that tool wrote, and
+        // the name handed over finds the entry again.
+        let place = a_place_to_work();
+        let at = a_zip_named_in_the_old_dos_alphabet(place.path());
+
+        let mut archive = opened(&at).expect("the archive opens");
+        let named = archive.what_it_holds()[0].named.to_string();
+
+        assert_eq!(named, "Entw\u{fc}rfe.mbox");
+        assert_eq!(
+            archive
+                .one_entry_read_through(&named)
+                .expect("the name handed over finds the entry again"),
+            a_folder_of_mail()
+        );
+    }
+
+    #[test]
+    fn test_a_name_not_written_as_utf8_is_said_in_the_log() {
+        // A name read in the old DOS alphabet may not be the letters its
+        // writer meant, and somebody asking why a folder came in under an odd
+        // name finds the answer in the log.
+        let place = a_place_to_work();
+        let at = a_zip_named_in_the_old_dos_alphabet(place.path());
+        let logs =
+            crate::presentation::accessibility::screen_reader::tests::CapturedLogs::default();
+        let _held = logs.as_the_default();
+
+        opened(&at).expect("the archive opens");
+
+        assert!(
+            logs.events().iter().any(|(level, message)| {
+                *level == tracing::Level::WARN
+                    && message.contains("Entw\u{fc}rfe.mbox")
+                    && message.contains("was not written as UTF-8")
+            }),
+            "{:?}",
+            logs.events()
         );
     }
 
