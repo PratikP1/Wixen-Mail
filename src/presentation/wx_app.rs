@@ -39185,7 +39185,13 @@ mod what_an_export_holds {
         let file = std::fs::File::open(at).expect("the export");
         let mut zip = zip::ZipArchive::new(file).expect("a zip");
         (0..zip.len())
-            .map(|which| zip.by_index(which).expect("an entry").name().to_string())
+            .map(|which| {
+                zip.by_index(which)
+                    .expect("an entry")
+                    .name()
+                    .expect("a name that reads")
+                    .into_owned()
+            })
             .collect()
     }
 

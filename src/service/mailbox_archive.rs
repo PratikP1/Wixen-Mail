@@ -107,8 +107,25 @@ enum Holding {
 struct EntryOpening {
     /// The path inside the archive, spelled however the archive spelled it.
     named: String,
+    /// Where it was found, which is where it is read from again.
+    found_at: FoundAt,
     /// The beginning of it, or all of it when it is shorter than that.
     opens_with: Vec<u8>,
+}
+
+/// Where an entry was found when its archive was looked over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FoundAt {
+    /// This place in a zip's own list of what it holds.
+    ///
+    /// A zip's entry is read again from here rather than looked up by its
+    /// name. The zip reader keeps names as the bytes they were written in,
+    /// and a name not written as UTF-8 is handed over read in the old DOS
+    /// alphabet, whose bytes are not the ones it was written in, so asking for
+    /// it by that name finds nothing (zip-rs/zip2 issue 1080).
+    InTheZip(usize),
+    /// Under the folder somebody chose, at the name it was found by.
+    UnderTheFolder,
 }
 
 /// How much of an archive this program will read before refusing it.
@@ -360,21 +377,30 @@ fn a_zip_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArchiv
         if !entry.is_file() {
             continue;
         }
-        let named = entry.name().to_string();
-        // A name in an archive is whatever bytes somebody wrote and need not be
-        // text at all, and what comes back for one of those has a stand-in
-        // character where each unreadable byte was. Handed over as it is, since
-        // the same stand-in name finds the entry again, but said out loud
-        // because a folder that reads aloud as nothing is worth a line in the
-        // log when somebody asks why.
-        if named.contains(char::REPLACEMENT_CHARACTER) {
+        let named = match entry.name() {
+            Ok(named) => named.into_owned(),
+            Err(why) => {
+                found.one_could_not_be_read(
+                    &format!("the name of entry {which} of {}: {why}", at.display()),
+                    WhyAnEntryWasNotRead::ItCouldNotBeRead,
+                );
+                continue;
+            }
+        };
+        // A name in an archive is whatever bytes somebody wrote, and an older
+        // Windows zip tool wrote them in the old DOS alphabet. One not written
+        // as UTF-8 is read in that alphabet, so it reads as letters, but they
+        // may not be the letters its writer meant, which is worth a line in the
+        // log when somebody asks why a folder came in under an odd name.
+        if std::str::from_utf8(entry.name_raw()).is_err() {
             tracing::warn!(
-                "the name {named} in {} is not text, so it will read out as very little",
+                "the name {named} in {} was not written as UTF-8, so it is read in the old DOS \
+                 alphabet and may not say what its writer meant",
                 at.display()
             );
         }
         match how_it_begins(&mut entry) {
-            Ok(opens_with) => found.one_more(named, opens_with)?,
+            Ok(opens_with) => found.one_more(named, FoundAt::InTheZip(which), opens_with)?,
             Err(why) => {
                 found.one_could_not_be_read(
                     &format!("{named} in {}: {why}", at.display()),
@@ -506,7 +532,7 @@ impl WhatWasFound {
     /// zip and a folder are held to the same one. What is counted is the name
     /// and the opening really read, never a size the archive stated about
     /// itself.
-    fn one_more(&mut self, named: String, opens_with: Vec<u8>) -> Result<()> {
+    fn one_more(&mut self, named: String, found_at: FoundAt, opens_with: Vec<u8>) -> Result<()> {
         if self.entries.len() >= self.allowed.most_things_in_it {
             return Err(holds_more_things_than_this_program_will_open(
                 &self.opened_at,
@@ -521,7 +547,11 @@ impl WhatWasFound {
                 self.allowed.most_held_while_looking_it_over,
             ));
         }
-        self.entries.push(EntryOpening { named, opens_with });
+        self.entries.push(EntryOpening {
+            named,
+            found_at,
+            opens_with,
+        });
         Ok(())
     }
 
@@ -641,7 +671,7 @@ impl WhatWasFound {
                 continue;
             }
             match std::fs::File::open(found.path()).and_then(|mut file| how_it_begins(&mut file)) {
-                Ok(opens_with) => self.one_more(named, opens_with)?,
+                Ok(opens_with) => self.one_more(named, FoundAt::UnderTheFolder, opens_with)?,
                 Err(why) => self.one_could_not_be_read(&format!("{named}: {why}"), (&why).into()),
             }
         }
@@ -788,12 +818,6 @@ impl MailboxArchive {
     /// here repairs such a name, because a name the archive never offered is
     /// not a name this archive has.
     pub fn one_entry_read_through(&mut self, named: &str) -> Result<Vec<u8>> {
-        if !self.holds(named) {
-            return Err(Error::Other(format!(
-                "There is nothing called {named} in {}.",
-                self.opened_at.display()
-            )));
-        }
         let opened_at = self.opened_at.clone();
         let allowed = self.allowed;
         // How much is left of what this archive may unpack to altogether, and
@@ -805,25 +829,14 @@ impl MailboxArchive {
             .saturating_sub(self.unpacked_so_far)
             .min(allowed.most_one_thing_unpacks_to);
 
-        let all_of_it = match &mut self.holding {
-            Holding::AZipFile(zip) => {
-                let mut entry = zip.by_name(named).map_err(|why| {
-                    Error::Other(format!(
-                        "{named} in {} could not be read: {why}.",
-                        opened_at.display()
-                    ))
-                })?;
-                as_far_as_allowed(&mut entry, room_left)
-            }
-            Holding::AFolder(root) => std::fs::File::open(root.join(named))
-                .and_then(|mut file| as_far_as_allowed(&mut file, room_left)),
-        }
-        .map_err(|why| {
+        let mut entry = self.the_entry_opened(named)?;
+        let all_of_it = as_far_as_allowed(&mut entry, room_left).map_err(|why| {
             Error::Other(format!(
                 "{named} in {} could not be read: {why}.",
                 opened_at.display()
             ))
         })?;
+        drop(entry);
 
         // Refused rather than cut short. A folder of mail handed over with its
         // last thousand messages missing is imported without complaint and
@@ -869,39 +882,16 @@ impl MailboxArchive {
         named: &str,
         take: impl FnOnce(&mut dyn Read) -> Result<T>,
     ) -> Result<T> {
-        if !self.holds(named) {
-            return Err(Error::Other(format!(
-                "There is nothing called {named} in {}.",
-                self.opened_at.display()
-            )));
-        }
         let opened_at = self.opened_at.clone();
         let allowed = self.allowed;
-        let could_not_be_read = |why: &dyn std::fmt::Display| {
-            Error::Other(format!(
-                "{named} in {} could not be read: {why}.",
-                opened_at.display()
-            ))
-        };
         let room_left = allowed
             .most_the_whole_of_it_unpacks_to
             .saturating_sub(self.unpacked_so_far);
 
-        let (what_the_caller_made, came_out, ran_out) = match &mut self.holding {
-            Holding::AZipFile(zip) => {
-                let entry = zip.by_name(named).map_err(|why| could_not_be_read(&why))?;
-                let mut counting = AsFarAsThereIsRoom::of(entry, room_left);
-                let made = take(&mut counting);
-                (made, counting.came_out, counting.ran_out)
-            }
-            Holding::AFolder(root) => {
-                let file =
-                    std::fs::File::open(root.join(named)).map_err(|why| could_not_be_read(&why))?;
-                let mut counting = AsFarAsThereIsRoom::of(file, room_left);
-                let made = take(&mut counting);
-                (made, counting.came_out, counting.ran_out)
-            }
-        };
+        let mut counting = AsFarAsThereIsRoom::of(self.the_entry_opened(named)?, room_left);
+        let what_the_caller_made = take(&mut counting);
+        let (came_out, ran_out) = (counting.came_out, counting.ran_out);
+        drop(counting);
 
         self.unpacked_so_far = self.unpacked_so_far.saturating_add(came_out);
         if ran_out {
@@ -913,18 +903,55 @@ impl MailboxArchive {
         what_the_caller_made
     }
 
-    /// Whether one of the names the archive offered is this one.
+    /// One entry the archive offered under this name, opened where it was
+    /// found and ready to be read.
     ///
-    /// A name is what a caller has to go on, so two entries under one name
-    /// would be one entry read twice. In a zip that cannot arrive here: the
-    /// reader underneath keeps entries by name and has already made two of them
-    /// into one before anything in this file sees either. That is worth knowing
-    /// rather than being surprised by, and nothing at this level can see it
-    /// happen or say so. A folder cannot hold two files under one name at all.
-    fn holds(&self, named: &str) -> bool {
-        self.in_name_order
+    /// Only under a name the archive itself offered, and from the place it was
+    /// found rather than by asking the archive for the name again: a zip's
+    /// name not written as UTF-8 is handed over in letters whose bytes are not
+    /// the ones the zip keeps, so the name alone would find nothing.
+    ///
+    /// The zip reader keeps its entries by the bytes of their names, so two
+    /// whose bytes differ are two entries. Two whose different bytes read as
+    /// the same letters, one written as UTF-8 and one in the old DOS alphabet,
+    /// are one name here, and asking for it reads the first of them. Nothing at
+    /// this level can tell the two apart by name or say so. A folder cannot
+    /// hold two files under one name at all.
+    fn the_entry_opened(&mut self, named: &str) -> Result<Box<dyn Read + '_>> {
+        let opened_at = &self.opened_at;
+        let nothing_called = || {
+            Error::Other(format!(
+                "There is nothing called {named} in {}.",
+                opened_at.display()
+            ))
+        };
+        let could_not_be_read = |why: &dyn std::fmt::Display| {
+            Error::Other(format!(
+                "{named} in {} could not be read: {why}.",
+                opened_at.display()
+            ))
+        };
+        let found_at = self
+            .in_name_order
             .binary_search_by(|at| self.looked_over[*at].named.as_str().cmp(named))
-            .is_ok()
+            .map(|at| self.looked_over[self.in_name_order[at]].found_at)
+            .map_err(|_| nothing_called())?;
+
+        match (&mut self.holding, found_at) {
+            (Holding::AZipFile(zip), FoundAt::InTheZip(which)) => {
+                let entry = zip.by_index(which).map_err(|why| could_not_be_read(&why))?;
+                Ok(Box::new(entry))
+            }
+            (Holding::AFolder(root), FoundAt::UnderTheFolder) => {
+                let file =
+                    std::fs::File::open(root.join(named)).map_err(|why| could_not_be_read(&why))?;
+                Ok(Box::new(file))
+            }
+            // An entry is only ever found in the archive holding it, so these
+            // two never meet. Said as a name this archive does not have rather
+            // than read from somewhere else.
+            _ => Err(nothing_called()),
+        }
     }
 
     /// Everything the archive holds: each entry's name and how it begins.
@@ -2232,9 +2259,11 @@ mod tests {
         assert_eq!(
             read_back
                 .file_names()
+                .map(|named| named.expect("a name that reads").into_owned())
                 .collect::<std::collections::BTreeSet<_>>(),
             ["INBOX.mbox", "Receipts 2019/"]
                 .into_iter()
+                .map(String::from)
                 .collect::<std::collections::BTreeSet<_>>()
         );
     }

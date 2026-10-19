@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 843 records have arrived since and have not been through it.
+# 844 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -38311,7 +38311,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/service/mailbox_archive.rs", tests = 42 },
+    { file = "src/service/mailbox_archive.rs", tests = 46 },
 ]
 
 # The folders inside counted without the mark between a folder and the one
@@ -38396,7 +38396,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/service/mailbox_archive.rs", tests = 42 },
+    { file = "src/service/mailbox_archive.rs", tests = 46 },
 ]
 
 # A read that fails because what came out does not match what the archive
@@ -38412,9 +38412,32 @@ after = '''        match why.kind() {
             std::io::ErrorKind::InvalidData => Self::ItCouldNotBeRead,'''
 red = [
     "service::mailbox_archive::tests::test_an_archive_whose_contents_do_not_match_what_it_records_says_so_and_not_that_it_stops_partway",
+    "service::mailbox_archive::tests::test_an_entry_claiming_to_be_small_is_still_only_read_as_far_as_it_is_allowed",
 ]
 tests_last_seen = [
-    { file = "src/service/mailbox_archive.rs", tests = 42 },
+    { file = "src/service/mailbox_archive.rs", tests = 46 },
+]
+
+# A zip's entry looked up again by the name handed over rather than read
+# from the place it was found, so a name not written as UTF-8, read in the
+# old DOS alphabet, finds nothing and its folder's mail is left out
+# (13.2-31.7, T-13.2-31.7-01). Written 2026-10-19 by 13.2-31.7.
+[[guard]]
+name = "a zip's entry is read again from the place it was found"
+file = "src/service/mailbox_archive.rs"
+before = '''            (Holding::AZipFile(zip), FoundAt::InTheZip(which)) => {
+                let entry = zip.by_index(which).map_err(|why| could_not_be_read(&why))?;'''
+after = '''            (Holding::AZipFile(zip), FoundAt::InTheZip(which)) => {
+                let entry = zip.by_name(named).map_err(|why| could_not_be_read(&why))?;'''
+red = [
+    "application::importing_messages::end_to_end::test_a_zip_whose_folder_names_were_written_in_the_old_dos_alphabet_is_brought_in_with_its_mail",
+    "service::mailbox_archive::tests::test_a_name_written_in_the_old_dos_alphabet_reads_as_its_letters_and_finds_its_entry",
+    "service::mailbox_archive::tests::test_an_entry_whose_name_is_not_text_can_still_be_asked_for_by_the_name_given_back",
+    "service::mailbox_archive::tests::test_two_entries_whose_names_are_not_text_and_differ_are_both_held_and_both_read",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 52 },
+    { file = "src/service/mailbox_archive.rs", tests = 46 },
 ]
 
 # Names in one folder told apart with their capitals counted, so Hello and
