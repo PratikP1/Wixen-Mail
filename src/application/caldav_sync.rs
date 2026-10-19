@@ -5498,6 +5498,309 @@ mod tests {
         }
     }
 
+    // ── A changed day never reaches another calendar's meeting ───────────
+    //
+    // A feed is anyone's to publish, and a meeting's UID is no secret:
+    // whoever sent the invitation knows it. So a feed naming a meeting held
+    // in another calendar of the account must leave that meeting exactly as
+    // it was, and two calendars on one server carrying the same meeting must
+    // each keep their own copy. Found by the security review of 2026-10-16.
+
+    /// A meeting another calendar of `acct` holds, the shape a read leaves:
+    /// its series from `series` (UID, start, end, rule), and, when given, the
+    /// day `moved` (the day it was, its new start and end) moved out of it
+    /// and called off the series. Each row is handed back as the store keeps
+    /// it, to be compared whole with what the store keeps after a read.
+    fn a_meeting_held_in_another_calendar(
+        cache: &MessageCache,
+        calendar_id: &str,
+        (uid, starts, ends, rule): (&str, &str, &str, &str),
+        moved: Option<(&str, &str, &str)>,
+    ) -> Vec<CalendarEventEntry> {
+        let mut series = held_event(&format!("{calendar_id}-series"), uid, calendar_id, "acct");
+        series.start_datetime = starts.to_string();
+        series.end_datetime = ends.to_string();
+        series.recurrence_rule = Some(rule.to_string());
+        let mut rows = vec![series];
+        if let Some((the_day_it_was, moved_starts, moved_ends)) = moved {
+            rows[0].exception_dates = Some(crate::service::caldav::the_called_off_value_for(
+                the_day_it_was,
+                false,
+            ));
+            let mut that_day = held_event(
+                &format!("{calendar_id}-moved"),
+                &format!("{uid}:{the_day_it_was}"),
+                calendar_id,
+                "acct",
+            );
+            that_day.start_datetime = moved_starts.to_string();
+            that_day.end_datetime = moved_ends.to_string();
+            that_day.provider_recurrence_id = Some(the_day_it_was.to_string());
+            that_day.cut_from_event_id = Some(rows[0].id.clone());
+            rows.push(that_day);
+        }
+        rows.iter()
+            .map(|row| {
+                cache
+                    .save_calendar_event(row)
+                    .expect("the other calendar's row");
+                cache
+                    .get_event_by_id(&row.id)
+                    .expect("the row to be readable")
+                    .expect("the row to be there")
+            })
+            .collect()
+    }
+
+    /// The assembly, every Tuesday at nine, held in a calendar of its own,
+    /// with its Tuesday of 10 March moved to eleven when `with_its_moved_day`.
+    fn the_assembly_held_in(
+        cache: &MessageCache,
+        calendar_id: &str,
+        with_its_moved_day: bool,
+    ) -> Vec<CalendarEventEntry> {
+        a_meeting_held_in_another_calendar(
+            cache,
+            calendar_id,
+            (
+                "assembly",
+                "2026-03-03T09:00:00Z",
+                "2026-03-03T09:30:00Z",
+                "FREQ=WEEKLY;BYDAY=TU",
+            ),
+            with_its_moved_day.then_some((
+                "2026-03-10T09:00:00Z",
+                "2026-03-10T11:00:00Z",
+                "2026-03-10T11:30:00Z",
+            )),
+        )
+    }
+
+    /// The weekly review of the server fixtures, held in a second calendar,
+    /// with its Thursday of 12 March moved to eleven when `with_its_moved_day`.
+    fn the_weekly_review_held_in(
+        cache: &MessageCache,
+        calendar_id: &str,
+        with_its_moved_day: bool,
+    ) -> Vec<CalendarEventEntry> {
+        a_meeting_held_in_another_calendar(
+            cache,
+            calendar_id,
+            (
+                "e-1",
+                "2026-03-05T09:00:00Z",
+                "2026-03-05T10:00:00Z",
+                "FREQ=WEEKLY",
+            ),
+            with_its_moved_day.then_some((
+                "2026-03-12T09:00:00Z",
+                "2026-03-12T11:00:00Z",
+                "2026-03-12T12:00:00Z",
+            )),
+        )
+    }
+
+    fn assert_left_as_it_was(cache: &MessageCache, before: &[CalendarEventEntry], case: &str) {
+        for row in before {
+            let after = cache
+                .get_event_by_id(&row.id)
+                .expect("the row to be readable");
+            assert_eq!(
+                after.as_ref(),
+                Some(row),
+                "{case}: a read of another calendar changed {}",
+                row.id
+            );
+        }
+    }
+
+    const THE_SCHOOLS_FEED: &str = "sub-the-school";
+    const A_CALENDAR_OF_ONES_OWN: &str = "cal-my-own";
+
+    #[tokio::test]
+    async fn test_a_feeds_moved_day_leaves_a_meeting_in_another_calendar_as_it_was() {
+        for (index, (case, with_its_moved_day)) in [
+            ("the series alone", false),
+            ("the series and its moved day", true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cache = temp_cache(&format!("feed_moved_day_another_calendar_{index}"));
+            let before = the_assembly_held_in(&cache, A_CALENDAR_OF_ONES_OWN, with_its_moved_day);
+            let mut calendar = a_subscribed_calendar(THE_SCHOOLS_FEED);
+
+            refreshed_from(&cache, &mut calendar, a_feed_of(&[THE_ASSEMBLY_MOVED])).await;
+
+            assert_left_as_it_was(&cache, &before, case);
+            let in_the_feed = cache
+                .get_events_for_calendar(THE_SCHOOLS_FEED)
+                .expect("the feed's calendar to be readable");
+            assert_eq!(in_the_feed.len(), 1, "{case}: {in_the_feed:?}");
+            assert_eq!(
+                in_the_feed[0].provider_event_id.as_deref(),
+                Some(THE_MOVED_TUESDAYS_IDENTITY),
+                "{case}"
+            );
+            assert!(
+                in_the_feed[0]
+                    .start_datetime
+                    .starts_with("2026-03-10T14:00"),
+                "{case}: the feed's day is at {}",
+                in_the_feed[0].start_datetime
+            );
+            assert_eq!(
+                in_the_feed[0].cut_from_event_id, None,
+                "{case}: the feed's day was cut from a series in another calendar"
+            );
+            if !with_its_moved_day {
+                assert!(
+                    everything_drawn_on(&cache, the_changed_tuesday())
+                        .iter()
+                        .any(|drawn| drawn.starts_with("2026-03-10T09:00")),
+                    "{case}: the meeting held elsewhere stopped drawing its Tuesday: {:?}",
+                    everything_drawn_on(&cache, the_changed_tuesday())
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_day_a_feed_cancels_leaves_a_meeting_in_another_calendar_as_it_was() {
+        for (index, (case, with_its_moved_day)) in [
+            ("the series alone", false),
+            ("the series and its moved day", true),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cache = temp_cache(&format!("feed_cancelled_day_another_calendar_{index}"));
+            let before = the_assembly_held_in(&cache, A_CALENDAR_OF_ONES_OWN, with_its_moved_day);
+            let mut calendar = a_subscribed_calendar(THE_SCHOOLS_FEED);
+
+            let result =
+                refreshed_from(&cache, &mut calendar, a_feed_of(&[THE_ASSEMBLY_CANCELLED])).await;
+
+            assert_left_as_it_was(&cache, &before, case);
+            assert_eq!(
+                cache
+                    .get_events_for_calendar(THE_SCHOOLS_FEED)
+                    .expect("the feed's calendar to be readable"),
+                Vec::new(),
+                "{case}"
+            );
+            assert_eq!(result.deleted, 0, "{case}: {result:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_feeds_moved_day_deleted_here_leaves_a_meeting_in_another_calendar_as_it_was() {
+        let cache = temp_cache("feed_deleted_moved_day_another_calendar");
+        let before = the_assembly_held_in(&cache, A_CALENDAR_OF_ONES_OWN, false);
+        let mut calendar = a_subscribed_calendar(THE_SCHOOLS_FEED);
+        let feed = a_feed_of(&[THE_ASSEMBLY_MOVED]);
+        let mut the_feeds_day = held_event(
+            "the-feeds-day",
+            THE_MOVED_TUESDAYS_IDENTITY,
+            THE_SCHOOLS_FEED,
+            "acct",
+        );
+        the_feeds_day.provider_recurrence_id = Some("2026-03-10T09:00:00Z".to_string());
+        cache
+            .save_calendar_event(&the_feeds_day)
+            .expect("the feed's moved day");
+        cache
+            .delete_calendar_event(&the_feeds_day.id)
+            .expect("the feed's moved day to be deleted here");
+
+        for pass in 1..=2 {
+            refreshed_from(&cache, &mut calendar, feed.clone()).await;
+            assert_left_as_it_was(&cache, &before, &format!("refresh {pass}"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_moved_day_read_from_one_server_calendar_leaves_another_calendars_series_as_it_was()
+     {
+        let cache = temp_cache("server_moved_day_another_calendar");
+        let before = the_weekly_review_held_in(&cache, "cal-second", false);
+        let mut first = container("cal-first", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_moved_day_with_no_series_present(),
+        )
+        .await;
+        first.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &first,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        assert_left_as_it_was(&cache, &before, "the second calendar");
+        let in_the_first = cache
+            .get_events_for_calendar("cal-first")
+            .expect("the first calendar to be readable");
+        assert_eq!(in_the_first.len(), 1, "{in_the_first:?}");
+        assert_eq!(
+            in_the_first[0].provider_event_id.as_deref(),
+            Some("e-1:2026-03-12T09:00:00Z")
+        );
+        assert_eq!(
+            in_the_first[0].cut_from_event_id, None,
+            "the moved day was cut from the second calendar's series"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_day_one_server_calendar_calls_off_leaves_another_calendars_copy_as_it_was() {
+        let cache = temp_cache("server_cancelled_day_another_calendar");
+        let before = the_weekly_review_held_in(&cache, "cal-second", true);
+        let mut first = container("cal-first", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_series_and_a_cancelled_day(),
+        )
+        .await;
+        first.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &first,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        assert_left_as_it_was(&cache, &before, "the second calendar");
+        let in_the_first = cache
+            .get_events_for_calendar("cal-first")
+            .expect("the first calendar to be readable");
+        assert_eq!(in_the_first.len(), 1, "{in_the_first:?}");
+        assert!(
+            in_the_first[0]
+                .exception_dates
+                .as_deref()
+                .unwrap_or_default()
+                .contains("20260312T090000"),
+            "the first calendar's own series kept the day it called off: {:?}",
+            in_the_first[0].exception_dates
+        );
+    }
+
     #[tokio::test]
     async fn test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows() {
         // The server takes the deletion and the read that follows in the same
