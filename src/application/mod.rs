@@ -155,6 +155,7 @@ pub mod threading;
 pub mod time_blocks;
 pub mod trying_again;
 pub mod undoing;
+pub mod unreadable_settings;
 pub mod what_a_rule_catches_here;
 pub mod what_is_said_while_fetching;
 pub mod what_rules_tell_the_server;

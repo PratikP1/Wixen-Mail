@@ -1443,7 +1443,7 @@ fn and_taken_away(why: std::io::Error, left: &Path) -> std::io::Error {
 
 /// What start-up found it could not read in the settings folder, and what
 /// became of each file. Empty when everything read.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WhatWasKept {
     /// The settings folder, where every kept copy is.
     pub folder: PathBuf,
