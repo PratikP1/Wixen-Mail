@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 827 records have arrived since and have not been through it.
+# 828 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -16733,7 +16733,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 15 },
 ]
 
 # ── A network loss is said once, because it is a change and not an answer ───
@@ -16824,7 +16824,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 15 },
 ]
 
 # ── The window that asks which copy to keep ─────────────────────────────────
@@ -40212,7 +40212,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 12 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 15 },
 ]
 
 # A sent draft's copy at the server answered as gone without anything being
@@ -42301,4 +42301,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/sending_later.rs", tests = 52 },
+]
+
+# The Outbox's Delete saying the words for a message being sent inside its
+# loop, once per message, which is a pass holding five said five times
+# (13.2-31.3, guardrail 5). Anchored on the arm that counts a message being
+# sent. Measured by hand on 2026-10-19: the whole library 9,290 passed, and
+# in the target exactly this one failed.
+[[guard]]
+name = "Delete says once, after its loop, that the messages being sent stay"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_leaves_the_outbox_unasked"
+before = '''            InTheOutbox::BeingSent => {
+                being_sent += 1;
+                continue;'''
+after = '''            InTheOutbox::BeingSent => {
+                being_sent += 1;
+                if let Some(words) = crate::application::sending_later::the_ones_being_sent_stay(1) {
+                    send_refusal(tx, rt, &words);
+                }
+                continue;'''
+red = [
+    "test_delete_says_once_that_the_messages_being_sent_stay",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_leaves_the_outbox_unasked.rs", tests = 15 },
 ]
