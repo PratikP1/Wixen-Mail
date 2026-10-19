@@ -2190,97 +2190,22 @@ impl MessageCache {
     /// same to a card written by anything else that folded in front of a
     /// space.
     ///
-    /// The iCalendar reader answers the same question in
-    /// `service::caldav::put_back_together`, and this agrees with it.
-    ///
     /// A card somebody laid out by hand uses that same white space to show what
     /// sits inside what, and the two cannot both be obeyed. Read as folding,
     /// every line of an indented card joins onto the one that opens it, so the
     /// whole card becomes a single line with no address anywhere on it and the
-    /// contact is gone. [`laid_out_by_hand`] is the one shape where the
-    /// difference can be told, and there the layout is taken off instead and
-    /// nothing is joined.
+    /// contact is gone. White space directly after the line that opens or
+    /// closes a card is the one shape where the difference can be told,
+    /// because `BEGIN:VCARD` is eleven octets and nothing folds it, and there
+    /// the layout is taken off instead and nothing is joined.
     ///
-    /// [`laid_out_by_hand`]: MessageCache::laid_out_by_hand
+    /// The reading lives in `service::caldav::unfolded`, shared with every
+    /// other reader of the line format: the calendar, the notes, subscribed
+    /// feeds, invitations and free/busy. A card is the same lines as a calendar
+    /// document, so a fix to how folds are read reaches contacts the day it
+    /// reaches the rest.
     fn unfold_vcard_lines(block: &str) -> Vec<String> {
-        let separate: Vec<&str> = block
-            .lines()
-            .map(|raw| raw.trim_end_matches('\r'))
-            .collect();
-        if Self::laid_out_by_hand(&separate) {
-            return separate
-                .iter()
-                .map(|line| line.trim_start().to_string())
-                .collect();
-        }
-        Self::put_back_together(&separate)
-    }
-
-    /// Lines with the ones the format broke in two joined back onto their first
-    /// part.
-    fn put_back_together(separate: &[&str]) -> Vec<String> {
-        let mut lines: Vec<String> = Vec::new();
-        for line in separate {
-            match line.strip_prefix([' ', '\t']) {
-                Some(carried_on) if !lines.is_empty() => {
-                    if let Some(last) = lines.last_mut() {
-                        last.push_str(carried_on);
-                    }
-                }
-                _ => lines.push((*line).to_string()),
-            }
-        }
-        lines
-    }
-
-    /// Whether this card's leading white space is somebody's layout rather than
-    /// a line the format broke in two.
-    ///
-    /// RFC 6350 section 3.2 says a line beginning with white space carries on
-    /// the line above, so reading it that way is the standard-correct reading
-    /// and it is what happens everywhere this cannot tell. Hand-written and
-    /// pretty-printed card files that indent do exist, though, and people
-    /// import files they did not write, so where the difference *can* be told
-    /// it is worth telling.
-    ///
-    /// One shape tells it. White space directly after the line that opens or
-    /// closes a card is layout, because what follows the colon on such a line
-    /// is `VCARD`: it holds no white space, `BEGIN:VCARD` is eleven octets, and
-    /// folding happens at seventy-five. No producer breaks one of those in two,
-    /// so nothing there is carrying anything on.
-    ///
-    /// A card indented only in the middle, where every indented line follows an
-    /// ordinary property, is left as folding. That shape really is ambiguous
-    /// and the standard's answer is the one to give.
-    ///
-    /// The calendar reader draws the same line in the same place, in
-    /// `service::caldav::laid_out_by_hand`, and the two agree on purpose.
-    fn laid_out_by_hand(lines: &[&str]) -> bool {
-        let mut before: Option<&str> = None;
-        for line in lines {
-            if Self::indented(line) && before.is_some_and(Self::opens_or_closes_a_card) {
-                return true;
-            }
-            before = Some(*line);
-        }
-        false
-    }
-
-    /// Whether a line carries something and begins with white space.
-    ///
-    /// A line of nothing but white space carries nothing, so it says nothing
-    /// about how the file is laid out.
-    fn indented(line: &str) -> bool {
-        line.starts_with([' ', '\t']) && !line.trim().is_empty()
-    }
-
-    /// Whether a line opens or closes a card, whatever is in front of it.
-    fn opens_or_closes_a_card(line: &str) -> bool {
-        let named = line.trim_start();
-        ["BEGIN", "END"].iter().any(|marker| {
-            Self::vcard_named(named, marker)
-                .is_some_and(|(_, names)| names.trim().eq_ignore_ascii_case("VCARD"))
-        })
+        crate::service::caldav::unfolded(block)
     }
 
     /// A name to show for somebody whose address arrived without one.
@@ -2633,8 +2558,8 @@ mod tests {
 
     // ── A file somebody laid out by hand ────────────────────────────────────
     //
-    // The same trade the calendar reader makes in `service::caldav::unfolded`,
-    // for the same reason and with the same cost. A line beginning with white
+    // The trade the calendar reader makes in `service::caldav::unfolded`, which
+    // since 2026-10-19 is the reading cards get too. A line beginning with white
     // space is the rest of the line above it, which is what RFC 6350 section
     // 3.2 says it is, and it is also what somebody's indentation looks like.
 

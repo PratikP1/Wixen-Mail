@@ -80,8 +80,13 @@
 #
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
-# 787 records were swept that day.
+# 786 records were swept that day.
 # 851 records have arrived since and have not been through it.
+#
+# 786 rather than 787 since 2026-10-19: the swept record on the copy of the
+# fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
+# reader began calling `service::caldav::unfolded`, and the comment where it
+# stood says why.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -10713,15 +10718,12 @@ tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
 
-[[guard]]
-name = "a leading indented line with nothing above it stands on its own rather than vanishing"
-file = "src/data/message_cache/contacts.rs"
-before = """                Some(carried_on) if !lines.is_empty() => {"""
-after = """                Some(carried_on) if true => {"""
-red = ["data::message_cache::contacts::tests::test_a_line_indented_with_nothing_above_it_stands_on_its_own"]
-tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 103 },
-]
+# "a leading indented line with nothing above it stands on its own rather than
+# vanishing" stood here, anchored inside the copy of `put_back_together` in
+# `contacts.rs`. Retired 2026-10-19 by 13.2-32: the vCard reader now calls
+# `service::caldav::unfolded`, the copy is gone, and the same break in the one
+# loop left is "a document whose first line is indented keeps that line", whose
+# red list now names the contacts test this record named.
 
 [[guard]]
 name = "a card the database refuses is counted upward, not downward"
@@ -24671,10 +24673,15 @@ name = "a document whose first line is indented keeps that line"
 file = "src/service/caldav.rs"
 before = """            Some(carried_on) if !lines.is_empty() => {"""
 after = """            Some(carried_on) if true => {"""
+# The contacts test joined this list on 2026-10-19, measured by hand against the
+# whole library (9,346 tests, these two red and nothing else), when 13.2-32 made
+# the vCard reader call `unfolded` and retired the record that broke the copy.
 red = [
+    "data::message_cache::contacts::tests::test_a_line_indented_with_nothing_above_it_stands_on_its_own",
     "service::caldav::tests::test_a_document_whose_first_line_is_indented_keeps_that_line",
 ]
 tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 103 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
