@@ -281,6 +281,22 @@ fn stops_partway_through(at: &Path) -> Error {
     ))
 }
 
+/// What to say about an archive that is all there and does not match what it
+/// records about itself.
+///
+/// What came out of an entry failed the check the archive keeps for it, or ran
+/// past the size it records. The disk it sat on damaged it, or somebody changed
+/// it after it was made. Either way it is not cut short, so fetching another
+/// copy of the same file is no help and the program that wrote it is not to
+/// blame, and this says neither.
+fn does_not_match_what_it_records(at: &Path) -> Error {
+    Error::Other(format!(
+        "{} is damaged or was changed after it was made. What is inside it does not match what \
+         the file records about it, so nothing was imported from it.",
+        at.display()
+    ))
+}
+
 /// What to say about an archive with nothing in it.
 ///
 /// An import of nothing that says nothing looks exactly like a broken import,
@@ -331,7 +347,10 @@ fn a_zip_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArchiv
             // The rest of the archive is still there. Abandoning it here would
             // lose somebody eleven folders of mail over one, and say nothing
             // about which one was the problem.
-            found.one_could_not_be_read(&format!("entry {which} of {}", at.display()));
+            found.one_could_not_be_read(
+                &format!("entry {which} of {}", at.display()),
+                WhyAnEntryWasNotRead::ItCouldNotBeRead,
+            );
             continue;
         };
         // A zip marks each of its own folders with an entry of no bytes, and a
@@ -357,7 +376,10 @@ fn a_zip_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArchiv
         match how_it_begins(&mut entry) {
             Ok(opens_with) => found.one_more(named, opens_with)?,
             Err(why) => {
-                found.one_could_not_be_read(&format!("{named} in {}: {why}", at.display()));
+                found.one_could_not_be_read(
+                    &format!("{named} in {}: {why}", at.display()),
+                    (&why).into(),
+                );
             }
         }
     }
@@ -421,6 +443,31 @@ fn a_folder_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArc
     ))
 }
 
+/// Why one entry of an archive could not be read.
+///
+/// Decided by the kind of the failure alone, never by its text, which belongs
+/// to the zip reader and changes when it does. A read that fails with
+/// [`std::io::ErrorKind::InvalidData`] is the zip reader saying that what came
+/// out does not match what the archive records: a failed check, or more bytes
+/// than the recorded size. Both mean the same thing to the person importing,
+/// so they are one reason here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhyAnEntryWasNotRead {
+    /// What came out does not match what the archive records about it.
+    ItDoesNotMatchWhatTheArchiveRecords,
+    /// It could not be found, opened or read, for any other reason.
+    ItCouldNotBeRead,
+}
+
+impl From<&std::io::Error> for WhyAnEntryWasNotRead {
+    fn from(why: &std::io::Error) -> Self {
+        match why.kind() {
+            std::io::ErrorKind::InvalidData => Self::ItDoesNotMatchWhatTheArchiveRecords,
+            _ => Self::ItCouldNotBeRead,
+        }
+    }
+}
+
 /// What looking over an archive turned up, and what it could not.
 struct WhatWasFound {
     /// What was pointed at, for anything that has to be said about it.
@@ -433,6 +480,8 @@ struct WhatWasFound {
     held_while_looking: u64,
     /// How many could not be read, whatever the reason.
     could_not_be_read: usize,
+    /// How many of those did not match what the archive records about them.
+    did_not_match: usize,
     /// How many folders sat deeper than this program follows.
     too_deep_to_follow: usize,
 }
@@ -446,6 +495,7 @@ impl WhatWasFound {
             entries: Vec::new(),
             held_while_looking: 0,
             could_not_be_read: 0,
+            did_not_match: 0,
             too_deep_to_follow: 0,
         }
     }
@@ -481,8 +531,11 @@ impl WhatWasFound {
     /// helping can find out which file it was. A count on its own says a file
     /// was lost and not which one; a log line on its own is a warning nobody
     /// gets.
-    fn one_could_not_be_read(&mut self, which: &str) {
+    fn one_could_not_be_read(&mut self, which: &str, why: WhyAnEntryWasNotRead) {
         self.could_not_be_read += 1;
+        if why == WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords {
+            self.did_not_match += 1;
+        }
         tracing::warn!("{which} could not be read, so it was left out of the import");
     }
 
@@ -491,10 +544,14 @@ impl WhatWasFound {
     /// An archive whose every entry was unreadable is a damaged archive rather
     /// than an empty one, and telling somebody to choose a different file when
     /// the one they chose is the right file and broken sends them looking in
-    /// the wrong place.
+    /// the wrong place. And one whose entries did not match what it records is
+    /// all there, so it is not told that it stops partway through.
     fn nothing_at_all(&self, at: &Path, choose_instead: &str) -> Result<()> {
         if !self.entries.is_empty() {
             return Ok(());
+        }
+        if self.did_not_match > 0 {
+            return Err(does_not_match_what_it_records(at));
         }
         if self.could_not_be_read > 0 {
             return Err(stops_partway_through(at));
@@ -529,14 +586,20 @@ impl WhatWasFound {
                 )));
             }
             Err(why) => {
-                self.one_could_not_be_read(&format!("{named_under}: {why}"));
+                self.one_could_not_be_read(&format!("{named_under}: {why}"), (&why).into());
                 return Ok(());
             }
         };
         for found in reading {
-            let Ok(found) = found else {
-                self.one_could_not_be_read(&format!("something in {}", folder.display()));
-                continue;
+            let found = match found {
+                Ok(found) => found,
+                Err(why) => {
+                    self.one_could_not_be_read(
+                        &format!("something in {}: {why}", folder.display()),
+                        (&why).into(),
+                    );
+                    continue;
+                }
             };
             let Some(named) = found.file_name().to_str().map(|part| {
                 if named_under.is_empty() {
@@ -548,12 +611,18 @@ impl WhatWasFound {
                 // A name this computer holds and Rust cannot read as text. It
                 // could not be handed over, asked for again, or read out loud,
                 // so it is left where it is and counted.
-                self.one_could_not_be_read(&format!("a file in {}", folder.display()));
+                self.one_could_not_be_read(
+                    &format!("a file in {}", folder.display()),
+                    WhyAnEntryWasNotRead::ItCouldNotBeRead,
+                );
                 continue;
             };
-            let Ok(what_it_is) = found.file_type() else {
-                self.one_could_not_be_read(&named);
-                continue;
+            let what_it_is = match found.file_type() {
+                Ok(what_it_is) => what_it_is,
+                Err(why) => {
+                    self.one_could_not_be_read(&format!("{named}: {why}"), (&why).into());
+                    continue;
+                }
             };
             if what_it_is.is_dir() {
                 if depth + 1 > MOST_FOLDERS_DEEP {
@@ -573,7 +642,7 @@ impl WhatWasFound {
             }
             match std::fs::File::open(found.path()).and_then(|mut file| how_it_begins(&mut file)) {
                 Ok(opens_with) => self.one_more(named, opens_with)?,
-                Err(why) => self.one_could_not_be_read(&format!("{named}: {why}")),
+                Err(why) => self.one_could_not_be_read(&format!("{named}: {why}"), (&why).into()),
             }
         }
         Ok(())
