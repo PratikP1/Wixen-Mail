@@ -1963,6 +1963,30 @@ impl MessageCache {
             )
             .map_err(|e| Error::Other(format!("Failed to create drafts table: {}", e)))?;
 
+        // A sent draft's removal from the server's Drafts folder, kept until it
+        // is seen to finish and tried again at the account's next check
+        // (13.2-31.4, ledger 845). Additive: a table of its own, nothing
+        // dropped or renamed.
+        self.conn
+            .execute(
+                "CREATE TABLE IF NOT EXISTS drafts_left_at_the_server (
+                account_id TEXT NOT NULL,
+                draft_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                folder_path TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                kept_at TEXT NOT NULL,
+                PRIMARY KEY (account_id, draft_id)
+            )",
+                [],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "Failed to create drafts_left_at_the_server table: {}",
+                    e
+                ))
+            })?;
+
         self.conn
             .execute(
                 "CREATE TABLE IF NOT EXISTS tags (

@@ -20,7 +20,8 @@
 //! backed up, so removing an account forgets its removals with its drafts.
 
 use super::MessageCache;
-use crate::common::Result;
+use crate::common::{Error, Result};
+use rusqlite::params;
 
 /// A removal of a sent draft's copy from the server's Drafts folder that has
 /// not been seen to finish.
@@ -46,7 +47,21 @@ impl MessageCache {
     /// Keep a removal that has not been seen to finish. Keeping the same
     /// draft's removal again leaves one.
     pub fn keep_a_draft_left_at_the_server(&self, left: &DraftLeftAtTheServer) -> Result<()> {
-        let _ = left;
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO drafts_left_at_the_server
+                 (account_id, draft_id, message_id, folder_path, subject, kept_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    left.account_id,
+                    left.draft_id,
+                    left.message_id,
+                    left.folder_path,
+                    left.subject,
+                    left.kept_at,
+                ],
+            )
+            .map_err(|e| Error::Other(format!("A sent draft's removal could not be kept: {e}")))?;
         Ok(())
     }
 
@@ -55,8 +70,30 @@ impl MessageCache {
         &self,
         account_id: &str,
     ) -> Result<Vec<DraftLeftAtTheServer>> {
-        let _ = account_id;
-        Ok(Vec::new())
+        let could_not_read =
+            |e: rusqlite::Error| Error::Other(format!("The kept removals could not be read: {e}"));
+        let mut statement = self
+            .conn
+            .prepare(
+                "SELECT account_id, draft_id, message_id, folder_path, subject, kept_at
+                 FROM drafts_left_at_the_server WHERE account_id = ?1
+                 ORDER BY kept_at, draft_id",
+            )
+            .map_err(could_not_read)?;
+        let rows = statement
+            .query_map(params![account_id], |row| {
+                Ok(DraftLeftAtTheServer {
+                    account_id: row.get(0)?,
+                    draft_id: row.get(1)?,
+                    message_id: row.get(2)?,
+                    folder_path: row.get(3)?,
+                    subject: row.get(4)?,
+                    kept_at: row.get(5)?,
+                })
+            })
+            .map_err(could_not_read)?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(could_not_read)
     }
 
     /// Forget one account's removal of one draft, answering whether there was
@@ -66,8 +103,18 @@ impl MessageCache {
         account_id: &str,
         draft_id: &str,
     ) -> Result<bool> {
-        let _ = (account_id, draft_id);
-        Ok(false)
+        let forgotten = self
+            .conn
+            .execute(
+                "DELETE FROM drafts_left_at_the_server WHERE account_id = ?1 AND draft_id = ?2",
+                params![account_id, draft_id],
+            )
+            .map_err(|e| {
+                Error::Other(format!(
+                    "A sent draft's removal could not be forgotten: {e}"
+                ))
+            })?;
+        Ok(forgotten > 0)
     }
 }
 

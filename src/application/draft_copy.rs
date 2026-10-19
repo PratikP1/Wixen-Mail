@@ -186,7 +186,8 @@ impl TakenAway {
             }
             Self::ACopyMayStillBeThere(reason) => format!(
                 "The message you sent may still be in Drafts on the server, so your other \
-                 devices could show it as a draft nobody has sent. The server said: {}",
+                 devices could show it as a draft nobody has sent. Wixen Mail tries to take it \
+                 out again at the next check for mail. The server said: {}",
                 ended(reason)
             ),
         }
@@ -216,8 +217,10 @@ pub enum AfterTheSecondTry {
 
 /// What the answer of a second try means.
 pub fn after_the_second_try(taken: &TakenAway) -> AfterTheSecondTry {
-    let _ = taken;
-    AfterTheSecondTry::ForgetAndSay(String::new())
+    match taken {
+        TakenAway::Gone | TakenAway::NothingWasFiled => AfterTheSecondTry::Forget,
+        TakenAway::ACopyMayStillBeThere(reason) => AfterTheSecondTry::ForgetAndSay(reason.clone()),
+    }
 }
 
 /// The one sentence a check says for the sent messages whose copy is still
@@ -226,8 +229,27 @@ pub fn after_the_second_try(taken: &TakenAway) -> AfterTheSecondTry {
 /// `subjects` are those messages' subjects and `reason` the server's words
 /// for the first of them.
 pub fn still_in_drafts_after_a_second_try(subjects: &[String], reason: &str) -> Option<String> {
-    let _ = (subjects, reason);
-    Some(String::new())
+    let reason = ended(reason);
+    match subjects {
+        [] => None,
+        [subject] => {
+            let which = match subject.trim() {
+                "" => "A message you sent with no subject".to_string(),
+                named => format!("The message \"{named}\" you sent"),
+            };
+            Some(format!(
+                "{which} is still in Drafts on the server, so your other devices could show it \
+                 as a draft nobody has sent. Taking it out failed again, so delete it from \
+                 Drafts yourself. The server said: {reason}"
+            ))
+        }
+        several => Some(format!(
+            "{} messages you sent are still in Drafts on the server, so your other devices \
+             could show them as drafts nobody has sent. Taking them out failed again, so \
+             delete them from Drafts yourself. The server said: {reason}",
+            several.len()
+        )),
+    }
 }
 
 /// Take a sent draft's copies out of the server's Drafts folder.
