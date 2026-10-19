@@ -566,15 +566,20 @@ impl WhatToTakeBack {
     /// a message up, nothing here can see whether the connection has opened, so
     /// saying "it has gone" would be a guess and saying "it has not" would be a
     /// worse one. It says what it knows, which is that it cannot be promised
-    /// back, and points at the Outbox, where a row that is still there can
-    /// still be deleted.
+    /// back, and points at the Outbox, where a row that is still there and
+    /// that no pass of the send loop holds can still be deleted.
+    ///
+    /// Until 2026-10-15 the too-late refusal said Delete takes out any message
+    /// still there. The Outbox's Delete has refused a message being sent since
+    /// then (ledger 843), so that would have sent somebody to a key that says
+    /// no.
     pub fn why_not(&self) -> Option<&'static str> {
         match self {
             WhatToTakeBack::ThisOne(_) => None,
             WhatToTakeBack::NothingWaiting => Some("There is nothing waiting to send."),
             WhatToTakeBack::TooLateForEverything => Some(
                 "Too late to take that back. Look in the Outbox: if the message \
-                 is still there, Delete takes it out of the queue.",
+                 is still there and is not being sent, Delete takes it out of the queue.",
             ),
         }
     }
@@ -590,8 +595,13 @@ impl WhatToTakeBack {
 /// said per message would be the same words five times over. `None` when none
 /// was being sent.
 pub fn the_ones_being_sent_stay(count: usize) -> Option<String> {
-    let _ = count;
-    None
+    match count {
+        0 => None,
+        1 => Some("One message is being sent now, so it stays in the Outbox.".to_string()),
+        several => Some(format!(
+            "{several} messages are being sent now, so they stay in the Outbox."
+        )),
+    }
 }
 
 impl Readiness {

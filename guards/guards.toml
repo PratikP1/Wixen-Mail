@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 825 records have arrived since and have not been through it.
+# 827 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -2939,7 +2939,7 @@ tests_last_seen = [
     { file = "src/application/one_day_of_a_series.rs", tests = 10 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/application/repeating.rs", tests = 27 },
-    { file = "src/application/sending_later.rs", tests = 47 },
+    { file = "src/application/sending_later.rs", tests = 52 },
     { file = "src/application/when_people_are_free.rs", tests = 60 },
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
@@ -22469,7 +22469,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/printing.rs", tests = 28 },
-    { file = "src/application/sending_later.rs", tests = 47 },
+    { file = "src/application/sending_later.rs", tests = 52 },
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/managers.rs", tests = 137 },
@@ -35115,7 +35115,7 @@ red = [
     "test_a_queued_message_goes_out_from_the_address_its_row_carries",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/outbox.rs", tests = 35 },
+    { file = "src/data/message_cache/outbox.rs", tests = 37 },
     { file = "tests/a_message_goes_out_from_the_address_it_was_written_from.rs", tests = 9 },
 ]
 
@@ -40173,7 +40173,7 @@ red = [
     "data::message_cache::outbox::tests::test_a_message_queued_before_there_were_claims_is_unclaimed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/outbox.rs", tests = 35 },
+    { file = "src/data/message_cache/outbox.rs", tests = 37 },
 ]
 
 # Undo Send's delete without the claim: it takes out a message a pass is
@@ -40191,7 +40191,7 @@ red = [
     "data::message_cache::outbox::tests::test_undo_send_cannot_take_back_a_message_the_send_loop_has_claimed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/outbox.rs", tests = 35 },
+    { file = "src/data/message_cache/outbox.rs", tests = 37 },
 ]
 
 # The send loop sending what it read without claiming it: the claim is
@@ -42264,4 +42264,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/folder_tree.rs", tests = 100 },
+]
+
+# The Outbox's Delete without the claim condition (13.2-31.3, ledger 843): it
+# takes out a message a pass of the send loop holds, and the window says "It
+# will not be sent." while the pass sends it. Anchored on the statement, which
+# says `rowid` where Undo Send's says `id`. Measured by hand on 2026-10-19:
+# the whole library 9,288 passed and exactly these two failed.
+[[guard]]
+name = "the Outbox's Delete cannot take out a message the send loop has claimed"
+file = "src/data/message_cache/outbox.rs"
+before = '''                "DELETE FROM outbox_queue WHERE rowid = ?1 AND sending_since IS NULL",'''
+after = '''                "DELETE FROM outbox_queue WHERE rowid = ?1",'''
+red = [
+    "data::message_cache::outbox::tests::test_a_message_whose_send_failed_can_be_taken_out_again",
+    "data::message_cache::outbox::tests::test_the_outbox_cannot_take_out_a_message_the_send_loop_has_claimed",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/outbox.rs", tests = 37 },
+]
+
+# The words for several messages being sent answering the words for one
+# (13.2-31.3): Delete over five messages a pass holds would say "One message
+# is being sent now", and the person would look for four that went. Measured
+# by hand on 2026-10-19: the whole library 9,289 passed and exactly this one
+# failed.
+[[guard]]
+name = "several messages being sent are said with their number"
+file = "src/application/sending_later.rs"
+before = '''        several => Some(format!(
+            "{several} messages are being sent now, so they stay in the Outbox."
+        )),'''
+after = '''        _ => Some("One message is being sent now, so it stays in the Outbox.".to_string()),'''
+red = [
+    "application::sending_later::what_delete_says_about_messages_being_sent::test_several_messages_being_sent_are_said_once_with_their_number",
+]
+tests_last_seen = [
+    { file = "src/application/sending_later.rs", tests = 52 },
 ]

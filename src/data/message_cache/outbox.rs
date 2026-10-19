@@ -362,24 +362,48 @@ impl MessageCache {
         Ok(rows)
     }
 
-    /// Take a message out of the queue by the identifier the list shows.
+    /// Take a message out of the queue by the identifier the list shows, if
+    /// no pass of the send loop has claimed it. The Outbox's Delete.
     ///
     /// Cancelling a send, which is the one thing worth being able to do to a
     /// message that has not gone yet and could not be done at all before: the
     /// queue was a number on the status bar.
+    ///
+    /// [`CancelAnswer::BeingSent`] when a pass holds the row, which stays and
+    /// goes; [`CancelAnswer::NotThere`] when no row has that number. One race
+    /// is left, and it errs the safe way: a pass whose send failed can let go
+    /// of its claim between the delete and the question after it, so this
+    /// says "being sent" about a message that is waiting again, and the next
+    /// Delete takes it out. A claim is never taken on a row that is gone, so
+    /// the other order cannot happen.
+    ///
+    /// Until 2026-10-15 this took out a claimed row too, and the window said
+    /// "It will not be sent." while the pass went on and sent it (ledger 843).
     pub fn cancel_queued(&self, rowid: i64) -> Result<CancelAnswer> {
         // Listed negative so it cannot be mistaken for a message id, and
         // turned back here. Taking the absolute value rather than requiring
         // one sign, so a caller holding either reaches the same row.
+        let rowid = rowid.abs();
         let removed = self
             .conn
             .execute(
-                "DELETE FROM outbox_queue WHERE rowid = ?1",
-                params![rowid.abs()],
+                "DELETE FROM outbox_queue WHERE rowid = ?1 AND sending_since IS NULL",
+                params![rowid],
             )
             .map_err(|e| Error::Other(format!("Failed to cancel the message: {}", e)))?;
-        Ok(match removed > 0 {
-            true => CancelAnswer::TakenOut,
+        if removed > 0 {
+            return Ok(CancelAnswer::TakenOut);
+        }
+        let still_there: bool = self
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM outbox_queue WHERE rowid = ?1)",
+                params![rowid],
+                |row| row.get(0),
+            )
+            .map_err(|e| Error::Other(format!("Failed to read the outbox: {}", e)))?;
+        Ok(match still_there {
+            true => CancelAnswer::BeingSent,
             false => CancelAnswer::NotThere,
         })
     }
