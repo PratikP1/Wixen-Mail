@@ -67,7 +67,7 @@ pub const MICROSOFT_ASKS_FOR_THE_BROWSER: &str = "Microsoft does not let mail pr
 /// What Get App Password says when there is no page to open.
 const ASK_YOUR_PROVIDER: &str =
     "Enter your email address first, or ask your provider where it hands out app passwords.";
-use crate::presentation::status_line::{said_and_shown, shown_and_signalled};
+use crate::presentation::status_line::{as_a_label, said_and_shown, shown_and_signalled};
 use crate::presentation::wx_identities::show_identity_manager;
 use crate::presentation::wx_managers::get_selected;
 use crate::service::oauth::AuthManager;
@@ -1246,6 +1246,8 @@ struct IdentityFields {
     sender_name: TextCtrl,
     email_label: StaticText,
     email: TextCtrl,
+    /// Shown with the page only while it holds a refusal.
+    address_refused: StaticText,
     signature_label: StaticText,
     signature: Choice,
 }
@@ -1258,6 +1260,8 @@ impl IdentityFields {
         self.sender_name.show(visible);
         self.email_label.show(visible);
         self.email.show(visible);
+        self.address_refused
+            .show(visible && !self.address_refused.get_label().is_empty());
         self.signature_label.show(visible);
         self.signature.show(visible);
     }
@@ -1820,10 +1824,27 @@ fn back_to_the_address(w: &AccountEditWidgets) {
 /// Show under the address box why OK did nothing, or take the line away
 /// with `None`.
 ///
+/// Shown, not said: `show_edit` has already said the sentence at High, and
+/// the line carries it as its name rather than as the address box's
+/// description, so focus landing in the box does not say it a second time.
+/// Wrapped at the box's width, so it does not widen the window. Shown only
+/// while the address box is, since it is about that box.
+///
 /// `pub` so the window's own test can call it, the way it calls
 /// [`say_whether_the_trash_is_recognised`].
 pub fn show_why_the_address_was_refused(w: &AccountEditWidgets, refused: Option<&AddressTaken>) {
-    let _ = (w, refused);
+    let said = refused.map(ToString::to_string).unwrap_or_default();
+    let line = w.address_refused;
+    if said.is_empty() && line.get_label().is_empty() {
+        // Nothing shown, so nothing to take away: the box's handler asks on
+        // every keystroke.
+        return;
+    }
+    line.set_label(&as_a_label(&said));
+    line.wrap(w.email_f.get_size().width);
+    set_accessible_name(&line, &said);
+    line.show(!said.is_empty() && w.email_f.is_shown());
+    w.dialog.layout();
 }
 
 /// Show the Add or Edit Account window until the person cancels or gives an
@@ -1878,6 +1899,7 @@ fn show_edit(
             break typed;
         };
         said_and_shown(status, a11y, &taken.to_string(), Priority::High);
+        show_why_the_address_was_refused(&w, Some(&taken));
         back_to_the_address(&w);
     };
     // Said here rather than handed back, because what the window says
@@ -2189,6 +2211,7 @@ pub fn build_account_edit_dialog(
         sender_name: sender_name_f,
         email_label,
         email: email_f,
+        address_refused,
         signature_label,
         signature: signature_choice,
     };
@@ -2609,6 +2632,9 @@ pub fn build_account_edit_dialog(
     // said.
     email_f.on_text_changed({
         move |_| {
+            // A refusal is about the address it refused, so it goes the
+            // moment the address changes, whatever is typed (ledger 848).
+            show_why_the_address_was_refused(&w, None);
             let email = email_f.get_value();
             if let Some(domain) = email.split('@').nth(1) {
                 let (imap, smtp, ip, sp) = detect_provider(domain);
