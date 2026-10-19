@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 833 records have arrived since and have not been through it.
+# 834 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -6211,13 +6211,17 @@ tests_last_seen = [
 # line. It cannot tell whether the announcement reaches a screen reader from
 # inside a modal dialog, whether the priority is the right one, or whether the
 # sentence itself is true. Only a screen reader run answers the first.
+#
+# Rewritten on 2026-10-19 by 13.2-31.5: the line is written through
+# as_a_label, which keeps an ampersand in the sentence, so the before and the
+# after quote that line. The break is the same silence and was measured again.
 
 [[guard]]
 name = "every answer a window gives on a line of text is said out loud"
 file = "src/presentation/status_line.rs"
-before = """    line.set_label(said);
+before = """    line.set_label(&as_a_label(said));
     let _ = a11y.announce(said, priority);"""
-after = """    line.set_label(said);
+after = """    line.set_label(&as_a_label(said));
     let _ = (a11y, priority);"""
 red = [
     "presentation::status_line::tests::test_the_one_place_that_shows_a_sentence_says_it_too",
@@ -6226,10 +6230,37 @@ red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/status_line.rs", tests = 3 },
+    { file = "src/presentation/status_line.rs", tests = 7 },
     { file = "src/presentation/wx_account_manager.rs", tests = 22 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
+]
+
+# ── An ampersand in a sentence on a status line ─────────────────────────────
+#
+# A label reads a lone ampersand as the mark of an access letter, so a
+# sentence naming an account called "R&D" showed "RD" on every window's status
+# line and gave D a key. said_and_shown writes the sentence through
+# as_a_label, which doubles every ampersand, and says it as written. The break
+# puts the sentence on the line as written again. Added by 13.2-31.5 on
+# 2026-10-19, measured by hand against the whole library: one red, the reading.
+#
+# What this record cannot see. It is a source read, because the line needs a
+# window. It cannot tell whether a caller doubled the sentence before handing
+# it in; the plan read every caller for that and found none.
+
+[[guard]]
+name = "a sentence on a status line keeps its ampersands and claims no letter"
+file = "src/presentation/status_line.rs"
+before = """    line.set_label(&as_a_label(said));
+    let _ = a11y.announce(said, priority);"""
+after = """    line.set_label(said);
+    let _ = a11y.announce(said, priority);"""
+red = [
+    "presentation::status_line::tests::test_every_status_line_shows_a_sentence_with_its_ampersands_kept",
+]
+tests_last_seen = [
+    { file = "src/presentation/status_line.rs", tests = 7 },
 ]
 
 # ── The failures on the screen accounts are created on ──────────────────────
@@ -6343,19 +6374,23 @@ tests_last_seen = [
 #
 # What this record cannot see. A source read of the helper's body; it cannot
 # tell whether the one notification is heard.
+#
+# Rewritten on 2026-10-19 by 13.2-31.5: the line is written through
+# as_a_label, so the before and the after quote that line. The break is the
+# same and was measured again.
 
 [[guard]]
 name = "an outcome that is also an event is shown and signalled from one call"
 file = "src/presentation/status_line.rs"
-before = """    line.set_label(said);
+before = """    line.set_label(&as_a_label(said));
     let _ = a11y.signal(event, said);"""
-after = """    line.set_label(said);
+after = """    line.set_label(&as_a_label(said));
     let _ = (a11y, event);"""
 red = [
     "presentation::status_line::tests::test_an_outcome_that_is_also_an_event_is_one_notification_carrying_the_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/status_line.rs", tests = 3 },
+    { file = "src/presentation/status_line.rs", tests = 7 },
 ]
 
 # ── What the tag, signature, filter and contact windows answer ──────────────

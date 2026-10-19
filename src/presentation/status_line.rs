@@ -23,7 +23,7 @@ pub(crate) fn said_and_shown(
     said: &str,
     priority: Priority,
 ) {
-    line.set_label(said);
+    line.set_label(&as_a_label(said));
     let _ = a11y.announce(said, priority);
 }
 
@@ -46,7 +46,7 @@ pub(crate) fn shown_and_signalled(
     event: FeedbackEvent,
     said: &str,
 ) {
-    line.set_label(said);
+    line.set_label(&as_a_label(said));
     let _ = a11y.signal(event, said);
 }
 
@@ -57,12 +57,8 @@ pub(crate) fn shown_and_signalled(
 /// account called "R&D" would show "RD" and claim D, so every `&` is
 /// doubled, which is how a label writes one real ampersand. The sentence
 /// said aloud is the one as written, never this.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the status lines call it in the next commit")
-)]
 pub(crate) fn as_a_label(sentence: &str) -> String {
-    sentence.to_string()
+    sentence.replace('&', "&&")
 }
 
 #[cfg(test)]
