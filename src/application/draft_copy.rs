@@ -247,12 +247,16 @@ async fn the_ones_carrying_it_exactly<K: KeepsTheDraft>(
     message_id: &str,
     found: Vec<u32>,
 ) -> std::result::Result<Vec<u32>, String> {
-    // Red until the comparison: every number found is kept.
-    for uid in &found {
-        let _not_yet_compared = server.identifier_at(folder, *uid).await;
+    let mut exactly = Vec::with_capacity(found.len());
+    for uid in found {
+        let held = server.identifier_at(folder, uid).await?;
+        exactly.extend(crate::application::renumbered::the_number_confirmed(
+            message_id,
+            uid,
+            held.as_deref(),
+        ));
     }
-    let _ = message_id;
-    Ok(found)
+    Ok(exactly)
 }
 
 /// The lock behind [`one_filing_at_a_time`]. One for the whole process.
