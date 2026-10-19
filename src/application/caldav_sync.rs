@@ -969,7 +969,10 @@ pub async fn sync_caldav_calendar(
             (account_id, &calendar.id),
             changed,
             the_day_it_was,
-            &deleted_here,
+            HeldBeforeTheRead {
+                rows: &local_events,
+                deleted_here: &deleted_here,
+            },
             &mut seen_uids,
             &mut result,
         )?;
@@ -994,6 +997,14 @@ pub async fn sync_caldav_calendar(
     }
 
     Ok(result)
+}
+
+/// What this computer held for the calendar being read before the read wrote
+/// anything: the calendar's rows, and the names somebody deleted here.
+#[derive(Clone, Copy)]
+struct HeldBeforeTheRead<'a> {
+    rows: &'a [CalendarEventEntry],
+    deleted_here: &'a crate::application::deletions::DeletedHere,
 }
 
 /// One CalDAV day of a series that no longer matches the rest of them, folded
@@ -1031,11 +1042,15 @@ fn one_caldav_day_kept_out_of_its_series(
     filed_under: (&str, &str),
     changed: &CalDavEvent,
     the_day_it_was: &str,
-    deleted_here: &crate::application::deletions::DeletedHere,
+    held: HeldBeforeTheRead<'_>,
     seen_uids: &mut std::collections::HashSet<String>,
     result: &mut CalendarSyncResult,
 ) -> Result<()> {
     let (account_id, calendar_id) = filed_under;
+    let HeldBeforeTheRead {
+        rows: held_rows,
+        deleted_here,
+    } = held;
     let compound_id = format!("{}:{}", changed.uid, the_day_it_was);
     seen_uids.insert(compound_id.clone());
 
@@ -1091,7 +1106,7 @@ fn one_caldav_day_kept_out_of_its_series(
         if let Some(series) = series {
             let called_off =
                 crate::service::caldav::the_called_off_value_for(the_day_it_was, series.is_all_day);
-            let (after, went) =
+            let (after, _) =
                 crate::application::calendar::with_one_more_day_called_off(&series, &called_off);
             // `with_one_more_day_called_off`'s own doc comment says it: "whether
             // the change is waiting to be sent is left exactly as the series had
@@ -1110,6 +1125,18 @@ fn one_caldav_day_kept_out_of_its_series(
                 pending: series.pending,
                 ..after
             })?;
+            // Counted against the series as this computer held it before the
+            // read, which has just written it down again from a copy naming no
+            // day called off. Counted against that copy, every read took the
+            // day off afresh and said "1 deleted" (ledger 878). A series new
+            // to this read is counted against itself: its day goes for the
+            // first time.
+            let as_it_was = held_rows
+                .iter()
+                .find(|row| row.provider_event_id.as_deref() == Some(changed.uid.as_str()))
+                .unwrap_or(&series);
+            let (_, went) =
+                crate::application::calendar::with_one_more_day_called_off(as_it_was, &called_off);
             the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;
         }
         if the_day_went {
@@ -1268,7 +1295,10 @@ pub async fn refresh_subscription(
             (account_id, &calendar.id),
             changed,
             the_day_it_was,
-            &deleted_here,
+            HeldBeforeTheRead {
+                rows: &held,
+                deleted_here: &deleted_here,
+            },
             &mut in_feed,
             &mut result,
         )?;
@@ -2123,13 +2153,19 @@ mod tests {
             };
             let mut seen_uids = std::collections::HashSet::new();
             let mut result = CalendarSyncResult::default();
+            let held = cache
+                .get_events_for_calendar(calendar_id)
+                .expect("the calendar to be readable");
 
             one_caldav_day_kept_out_of_its_series(
                 &cache,
                 (account_id, calendar_id),
                 &changed,
                 recurrence_id,
-                &crate::application::deletions::DeletedHere::default(),
+                HeldBeforeTheRead {
+                    rows: &held,
+                    deleted_here: &crate::application::deletions::DeletedHere::default(),
+                },
                 &mut seen_uids,
                 &mut result,
             )
