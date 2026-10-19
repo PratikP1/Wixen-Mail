@@ -11,23 +11,122 @@
 //! question has been answered.
 
 use crate::common::Result;
-use crate::data::config::{ConfigManager, WhatWasKept};
+use crate::data::config::{ConfigManager, Fate, SettingsFile, UnreadableFile, WhatWasKept};
 
 /// Keep whatever the real settings folder holds that cannot be read. Run once
 /// at start-up, before anything loads or saves the settings.
 pub fn keep_at_start_up() -> Result<WhatWasKept> {
-    let _ = ConfigManager::new()?;
-    Ok(WhatWasKept::default())
+    Ok(ConfigManager::new()?.keep_what_cannot_be_read())
 }
 
 /// What start-up says about what it kept, or `None` when everything read.
-pub fn what_start_up_says(_kept: &WhatWasKept) -> Option<String> {
-    None
+///
+/// The settings first, because they are what changed under the person, then
+/// the account files, then anything that could not be set aside, which ends
+/// on what that means until it can be read.
+pub fn what_start_up_says(kept: &WhatWasKept) -> Option<String> {
+    let folder = kept.folder.display();
+    let kept_as = |which: SettingsFile| -> Vec<&str> {
+        kept.unreadable
+            .iter()
+            .filter(|file| file.which == which)
+            .filter_map(|file| match &file.fate {
+                Fate::KeptAs(name) => Some(name.as_str()),
+                Fate::LeftAsItIs(_) => None,
+            })
+            .collect()
+    };
+    let settings = kept_as(SettingsFile::TheSettings);
+    let accounts = kept_as(SettingsFile::AnAccounts);
+    let left: Vec<&UnreadableFile> = kept
+        .unreadable
+        .iter()
+        .filter(|file| matches!(file.fate, Fate::LeftAsItIs(_)))
+        .collect();
+
+    let mut said: Vec<String> = settings
+        .iter()
+        .map(|name| {
+            format!(
+                "Your settings could not be read, so Wixen Mail started with fresh ones and \
+                 asked again what it may change. The old settings were kept as {name} in \
+                 {folder}."
+            )
+        })
+        .collect();
+    said.extend(what_is_said_about_accounts(
+        &accounts,
+        !settings.is_empty(),
+        &folder.to_string(),
+    ));
+    said.extend(left.iter().map(|file| {
+        format!(
+            "{}, {}, could not be read or set aside, so it was left as it is in {folder}.",
+            what_it_held(file.which),
+            file.name
+        )
+    }));
+    if !left.is_empty() {
+        let them = if left.len() == 1 { "it" } else { "they" };
+        said.push(format!(
+            "Until {them} can be read, Wixen Mail sends no mail and changes nothing at your \
+             mail servers, and Settings will not open."
+        ));
+    }
+    (!said.is_empty()).then(|| said.join(" "))
+}
+
+/// The sentence about account files kept, or none when none was. `beside`
+/// says whether the settings file was kept too, which the sentence before it
+/// has said, so this one says "either" and names the same folder.
+fn what_is_said_about_accounts(accounts: &[&str], beside: bool, folder: &str) -> Option<String> {
+    let said = match (accounts, beside) {
+        ([], _) => return None,
+        ([one], false) => format!(
+            "The settings file for an account could not be read, so it was set aside and your \
+             other settings were read as usual. It was kept as {one} in {folder}."
+        ),
+        ([one], true) => format!(
+            "The settings file for an account could not be read either, and was kept as {one} \
+             in the same folder."
+        ),
+        (many, false) => format!(
+            "{} settings files for accounts could not be read, so they were set aside and your \
+             other settings were read as usual. They were kept in {folder} as {}.",
+            many.len(),
+            listed(many)
+        ),
+        (many, true) => format!(
+            "{} settings files for accounts could not be read either, and were kept in the same \
+             folder as {}.",
+            many.len(),
+            listed(many)
+        ),
+    };
+    Some(said)
+}
+
+/// How a file that could not be set aside is named in its sentence.
+fn what_it_held(which: SettingsFile) -> &'static str {
+    match which {
+        SettingsFile::TheSettings => "Your settings file",
+        SettingsFile::AnAccounts => "The settings file for an account",
+    }
+}
+
+/// Names joined the way a sentence lists them: "a and b", "a, b and c".
+fn listed(names: &[&str]) -> String {
+    match names {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// What Settings says when it will not open over settings it could not read.
 pub fn settings_will_not_open() -> &'static str {
-    ""
+    "Settings did not open, because your stored settings could not be read. They were left \
+     as they are, so nothing was written over them."
 }
 
 #[cfg(test)]

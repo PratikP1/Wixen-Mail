@@ -5,6 +5,7 @@ use wixen_mail::application::running::{Claim, ThisCopy};
 use wixen_mail::common::logging::{self, LogLevel, LoggerConfig, init_logging};
 use wixen_mail::common::paths::{AppPaths, LegacyLocations, MigrationReport};
 use wixen_mail::common::{started, version};
+use wixen_mail::data::config::{Fate, WhatWasKept};
 use wixen_mail::presentation::WxMailApp;
 use wixen_mail::presentation::accessibility::platform_bridge;
 use wixen_mail::presentation::command_line::{self, Command};
@@ -165,6 +166,12 @@ fn main() {
         }
     }
 
+    // A settings file that cannot be read, kept and replaced (ledger 889).
+    // Here, once, by the copy that runs the window: after the log can record
+    // it and the hand-over is decided, before the window loads or saves the
+    // settings. The window says it to the person once it is on screen.
+    let kept = keep_what_cannot_be_read();
+
     offer_this_program_to_windows();
 
     // Before the application is built, because an unknown name here has to
@@ -192,7 +199,7 @@ fn main() {
 
     match WxMailApp::new(this_copy) {
         Ok(app) => {
-            if let Err(e) = app.run(scan_target, open) {
+            if let Err(e) = app.run(scan_target, open, kept) {
                 tracing::error!("UI error: {}", e);
                 write_to_the_crash_file(&format!("UI run error: {}", e));
                 show_error_dialog(&format!("Wixen Mail failed to run:\n{}", e));
@@ -419,6 +426,36 @@ fn report_migration(report: Option<&MigrationReport>) {
         // somebody has to be able to find out why it did not move.
         tracing::warn!("Left in place, could not move {}: {reason}", path.display());
     }
+}
+
+/// Keep any settings file that cannot be read, and say in the log what became
+/// of each, the way the migration is said.
+///
+/// A failure to look is logged and answered as nothing kept: the settings
+/// then read or fail exactly as they did before this existed.
+fn keep_what_cannot_be_read() -> WhatWasKept {
+    let kept = match wixen_mail::application::unreadable_settings::keep_at_start_up() {
+        Ok(kept) => kept,
+        Err(why) => {
+            tracing::warn!("Could not look for settings that cannot be read: {why}");
+            return WhatWasKept::default();
+        }
+    };
+    let folder = kept.folder.display();
+    for file in &kept.unreadable {
+        match &file.fate {
+            Fate::KeptAs(name) => tracing::warn!(
+                "Settings file {} could not be read, so it was kept as {name} in {folder} \
+                 and taken out of the way",
+                file.name
+            ),
+            Fate::LeftAsItIs(why) => tracing::warn!(
+                "Settings file {} could not be read and was left as it is in {folder}: {why}",
+                file.name
+            ),
+        }
+    }
+    kept
 }
 
 /// Install a panic hook that writes crash info to a log file.

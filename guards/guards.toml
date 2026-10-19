@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 849 records have arrived since and have not been through it.
+# 851 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -42232,6 +42232,58 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/config.rs", tests = 79 },
+]
+
+# The sentence about an unreadable settings file said before the first-run
+# question, whose dialog would then come up over it. Added 2026-10-19 by
+# 13.2-31.9, taken by hand against the target.
+[[guard]]
+name = "start-up says what it kept of unreadable settings after the first-run question"
+file = "src/presentation/wx_app.rs"
+suite = "an_unreadable_settings_file_is_kept_and_said"
+before = '''                ask_about_the_alpha_once(&frame, &a11y);
+                // What start-up kept of settings it could not read (ledger
+                // 889), said once. After the question, so its dialog cannot
+                // cut the sentence off, and so the sentence can say the
+                // question was asked again.
+                if let Some(said) =
+                    crate::application::unreadable_settings::what_start_up_says(&kept)
+                {
+                    send_status(&scan_tx, &scan_rt, &said);
+                }'''
+after = '''                // What start-up kept of settings it could not read (ledger
+                // 889), said once. After the question, so its dialog cannot
+                // cut the sentence off, and so the sentence can say the
+                // question was asked again.
+                if let Some(said) =
+                    crate::application::unreadable_settings::what_start_up_says(&kept)
+                {
+                    send_status(&scan_tx, &scan_rt, &said);
+                }
+                ask_about_the_alpha_once(&frame, &a11y);'''
+red = [
+    "test_start_up_says_what_it_kept_once_after_the_first_run_question",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_unreadable_settings_file_is_kept_and_said.rs", tests = 6 },
+]
+
+# Settings opening on settings of its own when the stored ones cannot be read,
+# so its OK writes them over the file it could not read (ledger 889). Added
+# 2026-10-19 by 13.2-31.9, taken by hand against the target.
+[[guard]]
+name = "Settings refuses to open over settings it could not read"
+file = "src/presentation/wx_app.rs"
+suite = "an_unreadable_settings_file_is_kept_and_said"
+before = '''    let mut mgr = match ConfigManager::load_stored() {'''
+after = '''    let mut mgr = match ConfigManager::load_stored().or_else(|_| ConfigManager::new()) {'''
+red = [
+    "test_settings_refuses_rather_than_opening_on_settings_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_unreadable_settings_file_is_kept_and_said.rs", tests = 6 },
 ]
 
 # The release gate's checkout back to the one commit the action fetches by
