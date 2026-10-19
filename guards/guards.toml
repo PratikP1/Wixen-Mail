@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 833 records have arrived since and have not been through it.
+# 837 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -6211,13 +6211,17 @@ tests_last_seen = [
 # line. It cannot tell whether the announcement reaches a screen reader from
 # inside a modal dialog, whether the priority is the right one, or whether the
 # sentence itself is true. Only a screen reader run answers the first.
+#
+# Rewritten on 2026-10-19 by 13.2-31.5: the line is written through
+# as_a_label, which keeps an ampersand in the sentence, so the before and the
+# after quote that line. The break is the same silence and was measured again.
 
 [[guard]]
 name = "every answer a window gives on a line of text is said out loud"
 file = "src/presentation/status_line.rs"
-before = """    line.set_label(said);
+before = """    line.set_label(&as_a_label(said));
     let _ = a11y.announce(said, priority);"""
-after = """    line.set_label(said);
+after = """    line.set_label(&as_a_label(said));
     let _ = (a11y, priority);"""
 red = [
     "presentation::status_line::tests::test_the_one_place_that_shows_a_sentence_says_it_too",
@@ -6226,10 +6230,37 @@ red = [
     "presentation::wx_managers::tests::test_every_answer_the_manager_windows_give_is_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/status_line.rs", tests = 3 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/status_line.rs", tests = 7 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "src/presentation/wx_calendar.rs", tests = 15 },
     { file = "src/presentation/wx_managers.rs", tests = 44 },
+]
+
+# ── An ampersand in a sentence on a status line ─────────────────────────────
+#
+# A label reads a lone ampersand as the mark of an access letter, so a
+# sentence naming an account called "R&D" showed "RD" on every window's status
+# line and gave D a key. said_and_shown writes the sentence through
+# as_a_label, which doubles every ampersand, and says it as written. The break
+# puts the sentence on the line as written again. Added by 13.2-31.5 on
+# 2026-10-19, measured by hand against the whole library: one red, the reading.
+#
+# What this record cannot see. It is a source read, because the line needs a
+# window. It cannot tell whether a caller doubled the sentence before handing
+# it in; the plan read every caller for that and found none.
+
+[[guard]]
+name = "a sentence on a status line keeps its ampersands and claims no letter"
+file = "src/presentation/status_line.rs"
+before = """    line.set_label(&as_a_label(said));
+    let _ = a11y.announce(said, priority);"""
+after = """    line.set_label(said);
+    let _ = a11y.announce(said, priority);"""
+red = [
+    "presentation::status_line::tests::test_every_status_line_shows_a_sentence_with_its_ampersands_kept",
+]
+tests_last_seen = [
+    { file = "src/presentation/status_line.rs", tests = 7 },
 ]
 
 # ── The failures on the screen accounts are created on ──────────────────────
@@ -6276,7 +6307,7 @@ red = [
     "presentation::wx_account_manager::tests::test_an_account_still_unauthorised_after_trying_again_reaches_the_earcon_channel",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # ── A sign-in failure is one notification, not a sentence and a cue ─────────
@@ -6327,7 +6358,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_two_failures_on_this_screen_are_said_above_the_ordinary_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # ── The one call for an outcome that is also an event raises the event ──────
@@ -6343,19 +6374,23 @@ tests_last_seen = [
 #
 # What this record cannot see. A source read of the helper's body; it cannot
 # tell whether the one notification is heard.
+#
+# Rewritten on 2026-10-19 by 13.2-31.5: the line is written through
+# as_a_label, so the before and the after quote that line. The break is the
+# same and was measured again.
 
 [[guard]]
 name = "an outcome that is also an event is shown and signalled from one call"
 file = "src/presentation/status_line.rs"
-before = """    line.set_label(said);
+before = """    line.set_label(&as_a_label(said));
     let _ = a11y.signal(event, said);"""
-after = """    line.set_label(said);
+after = """    line.set_label(&as_a_label(said));
     let _ = (a11y, event);"""
 red = [
     "presentation::status_line::tests::test_an_outcome_that_is_also_an_event_is_one_notification_carrying_the_sentence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/status_line.rs", tests = 3 },
+    { file = "src/presentation/status_line.rs", tests = 7 },
 ]
 
 # ── What the tag, signature, filter and contact windows answer ──────────────
@@ -9111,7 +9146,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_missing_credentials_condition_is_worded_once_not_here",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # ── One owner for what a manager window says about a changed row ────────────
@@ -9187,7 +9222,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # ── A changed day of a CalDAV series has to be marked seen before it can be
@@ -9614,7 +9649,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -9630,7 +9665,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_pop_delete_controls_carry_their_consequence_to_a_screen_reader",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # ── A server that never answers is waited for off the window's thread, but ──
@@ -30863,7 +30898,7 @@ red = [
     "test_the_four_numbers_are_spin_controls_holding_their_own_ranges",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/every_spin_control_names_the_field_a_person_types_in.rs", tests = 16 },
 ]
 
@@ -31323,7 +31358,67 @@ red = [
     "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
+    { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
+]
+
+# ── A refused address is shown in the window that refused it (848) ──────────
+#
+# Add and Edit Account refuse an address another account uses, say why at
+# High, and show the same window again. The window covers the Account
+# Manager's status line, so somebody reading the screen saw OK do nothing and
+# no reason. The sentence now goes on a line under the address box too, and
+# the address box's handler takes it away when the address changes. Added by
+# 13.2-31.5 on 2026-10-19, each measured by hand against the whole library
+# and the window's own target.
+#
+# The first break takes the line out of show_edit. Only the reading reddens:
+# the window's own test calls show_why_the_address_was_refused directly,
+# because show_edit runs a modal loop no test can drive.
+#
+# The second takes the clearing out of the handler. The reading and the
+# window's test both redden, the second because a new address set in the box
+# leaves the refusal shown. A record runs one target, so the same break is
+# written twice: once against the library, once against the window's target.
+
+[[guard]]
+name = "a refused address is shown inside the window that refused it"
+file = "src/presentation/wx_account_manager.rs"
+before = '''        show_why_the_address_was_refused(&w, Some(&taken));
+        back_to_the_address(&w);'''
+after = '''        back_to_the_address(&w);'''
+red = [
+    "presentation::wx_account_manager::tests::test_a_refused_address_is_shown_in_the_window_that_refused_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
+]
+
+[[guard]]
+name = "a refusal beside the address box goes when the address changes"
+file = "src/presentation/wx_account_manager.rs"
+before = '''            show_why_the_address_was_refused(&w, None);
+            let email = email_f.get_value();'''
+after = '''            let email = email_f.get_value();'''
+red = [
+    "presentation::wx_account_manager::tests::test_a_refused_address_is_shown_in_the_window_that_refused_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
+]
+
+[[guard]]
+name = "the live window takes a refusal away when a new address is set"
+file = "src/presentation/wx_account_manager.rs"
+suite = "account_edit_protocol_fields"
+before = '''            show_why_the_address_was_refused(&w, None);
+            let email = email_f.get_value();'''
+after = '''            let email = email_f.get_value();'''
+red = [
+    "test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/account_edit_protocol_fields.rs", tests = 1 },
 ]
 
@@ -34691,7 +34786,7 @@ red = [
     "test_a_typed_password_goes_to_the_credential_store_and_the_settings_have_no_room_for_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -34711,7 +34806,7 @@ red = [
     "test_with_a_password_saved_the_box_and_the_window_both_say_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -35095,7 +35190,7 @@ red = [
     "test_an_account_not_saved_yet_is_refused_with_a_sentence_and_no_manager_opens",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/other_addresses_are_managed_per_account.rs", tests = 16 },
 ]
 
@@ -36665,7 +36760,7 @@ red = [
     "test_a_sign_in_over_an_unencrypted_address_is_refused_at_ok_with_focus_on_the_address",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/the_directory_sign_in_has_a_window_of_its_own.rs", tests = 14 },
 ]
 
@@ -37208,7 +37303,7 @@ red = [
     "test_every_place_that_decides_gmail_or_microsoft_asks_the_one_check",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
     { file = "tests/one_check_says_who_runs_the_mail.rs", tests = 2 },
 ]
 
@@ -37247,7 +37342,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_password_box_is_described_with_the_app_password_advice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # Microsoft given the page for personal accounts' app passwords, which
@@ -37267,7 +37362,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_runs_the_mail.rs", tests = 9 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # The feedback report naming accounts by the saved name alone again, so a
@@ -39404,7 +39499,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # A Gmail account's calendars other than its main one were never read: the
@@ -40371,7 +40466,7 @@ red = [
     "presentation::wx_account_manager::tests::test_the_add_and_the_edit_arms_both_ask_before_an_account_is_kept",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # The Account Manager asking nothing about the watches: an account it removed
@@ -41178,7 +41273,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_auth.rs", tests = 18 },
-    { file = "src/presentation/wx_account_manager.rs", tests = 22 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # Every browser sign-in tells the provider which address to sign in as, so

@@ -23,7 +23,7 @@ pub(crate) fn said_and_shown(
     said: &str,
     priority: Priority,
 ) {
-    line.set_label(said);
+    line.set_label(&as_a_label(said));
     let _ = a11y.announce(said, priority);
 }
 
@@ -46,8 +46,19 @@ pub(crate) fn shown_and_signalled(
     event: FeedbackEvent,
     said: &str,
 ) {
-    line.set_label(said);
+    line.set_label(&as_a_label(said));
     let _ = a11y.signal(event, said);
+}
+
+/// A sentence made safe to put on a label, shown as it was written.
+///
+/// A label reads a lone `&` as the mark of an access letter: it hides the
+/// ampersand and gives the letter after it a key. A sentence naming an
+/// account called "R&D" would show "RD" and claim D, so every `&` is
+/// doubled, which is how a label writes one real ampersand. The sentence
+/// said aloud is the one as written, never this.
+pub(crate) fn as_a_label(sentence: &str) -> String {
+    sentence.replace('&', "&&")
 }
 
 #[cfg(test)]
@@ -241,6 +252,119 @@ mod tests {
             what_the_one_notification_leaves_out("fn something_else() {}")[0]
                 .contains("two notifications or as none"),
             "a file with no such call at all was not reported"
+        );
+    }
+
+    /// What a routine that writes a sentence on a line gets wrong about its
+    /// ampersands: the sentence put on the label as written, or the doubled
+    /// sentence handed to the screen reader.
+    ///
+    /// Read as text, a statement at a time, because calling it needs a
+    /// window. It can tell which statement carries `as_a_label(`. It cannot
+    /// tell whether a caller doubled the sentence before handing it in.
+    fn what_the_line_shows_wrongly(source: &str, routine: &str) -> Vec<String> {
+        let Some((_, rest)) = source.split_once(&format!("fn {routine}(")) else {
+            return vec![format!("there is no {routine} here to read")];
+        };
+        let body = &rest[..rest.find("\n}").unwrap_or(rest.len())];
+        let statements: Vec<&str> = body.split(';').collect();
+        let mut wrong = Vec::new();
+        if !statements
+            .iter()
+            .any(|statement| statement.contains("set_label(") && statement.contains("as_a_label("))
+        {
+            wrong.push(format!(
+                "{routine} puts the sentence on the line as written, so an ampersand in it is \
+                 hidden and the letter after it claims a key"
+            ));
+        }
+        if statements
+            .iter()
+            .any(|statement| !statement.contains("set_label(") && statement.contains("as_a_label("))
+        {
+            wrong.push(format!(
+                "{routine} hands the doubled sentence on, so the screen reader says two \
+                 ampersands"
+            ));
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_an_ampersand_in_a_sentence_is_shown_and_claims_no_letter() {
+        // A label hides a lone ampersand and gives the next letter a key, and
+        // shows two in a row as one. So "R&D" goes on a label as "R&&D", and
+        // a label written "&&" by somebody shows as "&&&&".
+        assert_eq!(
+            super::as_a_label("R&D already uses a@b.c."),
+            "R&&D already uses a@b.c."
+        );
+        assert_eq!(super::as_a_label("&&"), "&&&&");
+        // Read back the way the accessibility layer reads a label, which is
+        // the toolkit's own rule: what is shown is what was written.
+        let sentence = "Tom & Jerry already uses tj@example.com.";
+        assert_eq!(
+            crate::presentation::accessibility::names::name_from_label(&super::as_a_label(
+                sentence
+            )),
+            sentence
+        );
+    }
+
+    #[test]
+    fn test_a_sentence_without_an_ampersand_is_shown_as_it_is() {
+        let sentence = "Work already uses pratik@example.com.";
+        assert_eq!(super::as_a_label(sentence), sentence);
+    }
+
+    #[test]
+    fn test_every_status_line_shows_a_sentence_with_its_ampersands_kept() {
+        // Both routines that write a sentence on a window's status line pass
+        // it through `as_a_label` to the label and hand it on as written.
+        let source = the_one_call();
+        let wrong: Vec<String> = ["said_and_shown", "shown_and_signalled"]
+            .iter()
+            .flat_map(|routine| what_the_line_shows_wrongly(&source, routine))
+            .collect();
+        assert!(wrong.is_empty(), "{}", wrong.join("\n  "));
+    }
+
+    #[test]
+    fn test_the_label_reading_can_see_a_sentence_put_on_the_line_as_written() {
+        let sound = "pub(crate) fn a_line_writer(\n\
+            \x20   line: &StaticText,\n\
+            ) {\n\
+            \x20   line.set_label(&as_a_label(said));\n\
+            \x20   let _ = a11y.announce(said, priority);\n\
+            }\n";
+        assert!(
+            what_the_line_shows_wrongly(sound, "a_line_writer").is_empty(),
+            "a routine that doubles for the label alone was reported as wrong"
+        );
+
+        let as_written = sound.replace("set_label(&as_a_label(said))", "set_label(said)");
+        assert_ne!(as_written, sound, "the plant changed nothing");
+        let found = what_the_line_shows_wrongly(&as_written, "a_line_writer");
+        assert!(
+            found.len() == 1 && found[0].contains("as written"),
+            "a sentence put on the line as written was not reported: {found:?}"
+        );
+
+        let doubled_aloud = sound.replace(
+            "a11y.announce(said, priority)",
+            "a11y.announce(&as_a_label(said), priority)",
+        );
+        assert_ne!(doubled_aloud, sound, "the plant changed nothing");
+        let found = what_the_line_shows_wrongly(&doubled_aloud, "a_line_writer");
+        assert!(
+            found.len() == 1 && found[0].contains("screen reader"),
+            "a doubled sentence handed to the screen reader was not reported: {found:?}"
+        );
+
+        assert!(
+            what_the_line_shows_wrongly("fn something_else() {}", "a_line_writer")[0]
+                .contains("no a_line_writer"),
+            "a file without the routine was not reported"
         );
     }
 }

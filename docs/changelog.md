@@ -1437,6 +1437,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Add Account and Edit Account show why an address was refused, inside the window
+  (2026-10-19, MAIL-04).** When you press OK on an address another account already uses, the
+  window says why and comes back so you can change it. Until now the reason was shown only on
+  the Account Manager's status line, which that window covers, so somebody reading the screen
+  saw OK do nothing. The same sentence now also shows under the address box, for example "Work
+  already uses pratik@example.com. Edit that account rather than adding the address again.",
+  and goes as soon as you change the address. It is still said once, and it is not said again
+  when the cursor lands in the address box. Separately, a sentence on any window's status line
+  that holds an ampersand, such as one naming an account called "R&D", now shows the
+  ampersand. Until now it was hidden and the letter after it was marked as a keyboard shortcut.
+
+  Known limits. Nobody has yet seen the new line on a build, at a large text size, or heard it
+  with a screen reader.
+
 - **A sent message left in Drafts on the server is taken out at the next check (2026-10-19,
   FOUND-04).** When you send a message you wrote as a draft, Wixen Mail takes the draft's copy
   out of the account's Drafts folder on the mail server, so your phone and webmail do not show
