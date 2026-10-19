@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 851 records have arrived since and have not been through it.
+# 853 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -18042,7 +18042,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/drafts.rs", tests = 9 },
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── An empty description quietly becoming a decorative mark ─────────────────
@@ -18170,7 +18170,7 @@ red = [
     "presentation::html_renderer::tests::test_a_decorative_picture_is_left_alone_when_the_reader_asked_for_silence",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── This reader's words reaching somebody else's message ────────────────────
@@ -18214,7 +18214,7 @@ red = [
     "presentation::html_renderer::tests::test_an_empty_description_is_kept_and_is_not_the_same_as_having_none",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── An owner of credential store entries that nobody registered ─────────────
@@ -18785,13 +18785,15 @@ before = """            MessageBody::Html(html) | MessageBody::Multipart { html,
             }
             MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
-        self.wrap_prepared(&content, "Back to message list (Escape)")"""
+        self.wrap_prepared(&content, "Message", "Back to message list (Escape)")"""
 after = """            MessageBody::Html(html) | MessageBody::Multipart { html, .. } => {
                 self.sanitize_and_count_held_back(html).0
             }
             MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
-        self.wrap_prepared(&content, "Back to message list (Escape)")"""
+        self.wrap_prepared(&content, "Message", "Back to message list (Escape)")"""
+# Both halves' last line rewritten 2026-10-19 by 13.2-32, when the shell began
+# taking the page's title (ledger 872); the break is unchanged.
 red = [
     "presentation::html_renderer::tests::test_a_reader_is_told_how_many_were_held_back_and_where_the_switch_is",
     "presentation::html_renderer::tests::test_one_held_back_picture_is_not_reported_in_the_plural",
@@ -18801,8 +18803,38 @@ red = [
     "presentation::html_renderer::tests::test_mail_opened_from_encryption_fetches_no_picture_whatever_the_setting_says",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
+
+# Ledger 872, 13.2-32, 2026-10-19. WebView2 names its window pane and the page
+# root after the document's title and, with none, after its address, which for
+# a string handed over is a data: address holding the whole page in base64.
+# Taken by hand against the whole library before it was written down.
+[[guard]]
+name = "a message's page carries a title so its panes are not named after its address"
+file = "src/presentation/html_renderer.rs"
+before = """<html{language}><head><meta charset="utf-8"><title>{title}</title><style>"""
+after = """<html{language}><head><meta charset="utf-8"><style>"""
+red = [
+    "presentation::html_renderer::tests::test_a_conversation_document_is_titled_with_its_subject_so_its_panes_are_not_named_after_its_address",
+    "presentation::html_renderer::tests::test_a_preview_document_has_a_title_so_its_panes_are_not_named_after_its_address",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
+]
+
+[[guard]]
+name = "a conversation's page is titled with its subject"
+file = "src/presentation/html_renderer.rs"
+before = """        self.wrap_prepared(&body, named, "Close this window (Escape)")"""
+after = """        self.wrap_prepared(&body, "Message", "Close this window (Escape)")"""
+red = [
+    "presentation::html_renderer::tests::test_a_conversation_document_is_titled_with_its_subject_so_its_panes_are_not_named_after_its_address",
+]
+tests_last_seen = [
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
+]
+
 [[guard]]
 name = "the composer asks for the renderer that does not name a sender"
 file = "src/presentation/html_renderer.rs"
@@ -18830,7 +18862,7 @@ red = [
     "presentation::html_renderer::tests::test_the_constructor_the_composer_calls_is_the_one_that_stays_quiet",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── An ordinary message grows nothing ───────────────────────────────────────
@@ -18867,7 +18899,7 @@ red = [
     "presentation::html_renderer::tests::test_a_message_with_nothing_held_back_says_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── Unblocking one address, by taking off the domain block over it ──────────
@@ -29260,7 +29292,7 @@ red = [
     "test_the_testers_message_shown_as_a_page_has_its_three_addresses_as_links",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
     { file = "tests/an_address_written_out_is_a_link.rs", tests = 11 },
 ]
 
@@ -29306,7 +29338,7 @@ red = [
     "presentation::html_renderer::tests::test_safe_external_url_allows_a_telephone_number_and_refuses_an_empty_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
 # ── Pictures shown by default, except the ones that look like trackers ──────
@@ -29434,7 +29466,7 @@ red = [
     "test_the_sending_path_calls_none_of_the_three_rules_and_the_reading_path_calls_all",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
     { file = "tests/pictures_show_by_default_except_beacons.rs", tests = 26 },
 ]
 
@@ -29526,7 +29558,7 @@ red = [
     "test_a_message_on_its_way_out_keeps_what_its_writer_hid",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
 ]
 
@@ -33041,7 +33073,7 @@ red = [
     "presentation::reader_text::encryption_tests::test_a_page_holding_a_pgp_mime_message_that_opened_fetches_no_picture",
 ]
 tests_last_seen = [
-    { file = "src/presentation/html_renderer.rs", tests = 94 },
+    { file = "src/presentation/html_renderer.rs", tests = 96 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
 ]
 

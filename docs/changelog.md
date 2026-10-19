@@ -1446,6 +1446,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message's page is named after the message, not after its own text (2026-10-19).** The
+  window a message opens in and the preview pane show a message through the Edge browser
+  engine, which names its panes after the page's title. The page had no title, so the engine
+  named those panes after the page's address, and that address was the whole page, hundreds of
+  characters of encoded text. A screen reader that reached one of those panes could read it
+  aloud. Now the page carries a title: a
+  conversation's subject, or "No subject" when it has none, and "Message" for the preview
+  pane.
+
+  Known limits. Nobody has heard the new names yet. The automated scan can only check that the
+  names are short.
+
 - **Settings that cannot be read are kept, and you are told (2026-10-19).** When the settings
   file had been damaged, by a disk fault or by editing it by hand, Wixen Mail started on its
   built-in settings without a word, synced no account, and OK in Settings then wrote those
