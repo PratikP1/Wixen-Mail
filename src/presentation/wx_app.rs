@@ -1182,10 +1182,14 @@ impl WxMailApp {
     /// holds that association. `None` for an ordinary start. It is acted on
     /// after the window is on screen, because a composer parented to a frame
     /// that is not shown yet has nowhere to be modal to.
+    ///
+    /// `kept` is what start-up kept of settings it could not read (ledger
+    /// 889), said once after the first-run question.
     pub fn run(
         self,
         scan_target: Option<crate::presentation::scan_target::ScanTarget>,
         open: Option<crate::application::opening::Opening>,
+        kept: crate::data::config::WhatWasKept,
     ) -> Result<()> {
         let state = self.state.clone();
         let ui_rx = self.ui_rx.clone();
@@ -6879,6 +6883,15 @@ impl WxMailApp {
             // run, which has nobody to answer it.
             if scan_target.is_none() {
                 ask_about_the_alpha_once(&frame, &a11y);
+                // What start-up kept of settings it could not read (ledger
+                // 889), said once. After the question, so its dialog cannot
+                // cut the sentence off, and so the sentence can say the
+                // question was asked again.
+                if let Some(said) =
+                    crate::application::unreadable_settings::what_start_up_says(&kept)
+                {
+                    send_status(&scan_tx, &scan_rt, &said);
+                }
             }
 
             // A move to another account this program was closed part way
@@ -23338,19 +23351,21 @@ fn handle_settings(
     asked_at: std::time::Instant,
 ) -> Option<theme::Palette> {
     use crate::data::config::ConfigManager;
-    let mut mgr = match ConfigManager::new() {
-        Ok(mut mgr) => {
-            // Nothing stored yet is normal on a first run. Something stored
-            // and unreadable is not, but the dialog can still open on
-            // defaults, and saving will overwrite whatever went wrong.
-            if let Err(e) = mgr.load() {
-                tracing::warn!("Stored settings not read, showing defaults: {}", e);
-            }
-            mgr
-        }
+    // The stored settings, or no dialog. Until 13.2-31.9 this opened on the
+    // built-in settings when the stored ones could not be read, and OK then
+    // wrote those over the file it could not read (ledger 889). Start-up
+    // keeps such a file and puts readable settings in its place, so meeting
+    // one here means it could not be set aside or went bad while the program
+    // ran; it is left as it is, and said.
+    let mut mgr = match ConfigManager::load_stored() {
+        Ok(mgr) => mgr,
         Err(e) => {
-            tracing::error!("Settings folder unavailable: {}", e);
-            send_status(tx, rt, &format!("Settings could not be opened: {}.", e));
+            tracing::warn!("Settings did not open, the stored settings could not be read: {e}");
+            send_status(
+                tx,
+                rt,
+                crate::application::unreadable_settings::settings_will_not_open(),
+            );
             return None;
         }
     };

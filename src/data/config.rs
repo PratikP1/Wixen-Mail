@@ -1149,11 +1149,9 @@ impl ConfigManager {
         // Load app config
         let app_config_path = self.app_config_path();
         if app_config_path.exists() {
-            let content = fs::read_to_string(&app_config_path)
+            let content = fs::read(&app_config_path)
                 .map_err(|e| Error::Config(format!("Failed to read app config: {}", e)))?;
-            self.app_config = serde_json::from_str(&content)
-                .map_err(|e| Error::Config(format!("Failed to parse app config: {}", e)))?;
-            self.app_config.validate()?;
+            self.app_config = settings_in(&content)?;
         } else {
             // Create default config file
             self.save_app_config()?;
@@ -1166,20 +1164,12 @@ impl ConfigManager {
             let entry = entry
                 .map_err(|e| Error::Config(format!("Failed to read directory entry: {}", e)))?;
             let path = entry.path();
-            if let Some(filename) = path.file_name() {
-                let filename_str = filename.to_string_lossy();
-                if filename_str.starts_with("account_") && filename_str.ends_with(".json") {
-                    let content = fs::read_to_string(&path).map_err(|e| {
-                        Error::Config(format!("Failed to read account config: {}", e))
-                    })?;
-                    let account_config: AccountConfig =
-                        serde_json::from_str(&content).map_err(|e| {
-                            Error::Config(format!("Failed to parse account config: {}", e))
-                        })?;
-                    account_config.validate()?;
-                    self.account_configs
-                        .insert(account_config.id.clone(), account_config);
-                }
+            if is_an_account_file(&path) {
+                let content = fs::read(&path)
+                    .map_err(|e| Error::Config(format!("Failed to read account config: {}", e)))?;
+                let account_config = account_in(&content)?;
+                self.account_configs
+                    .insert(account_config.id.clone(), account_config);
             }
         }
 
@@ -1232,6 +1222,270 @@ impl ConfigManager {
     pub fn app_config_mut(&mut self) -> &mut AppConfig {
         &mut self.app_config
     }
+
+    /// Keep every settings file that cannot be read, and take it out of the
+    /// way, so the settings read again and nothing saves over what was there.
+    ///
+    /// Each file is read through the same reader `load` uses, so the two
+    /// cannot disagree about what is unreadable. One that is not readable has
+    /// its bytes copied to a name of their own beside it, onto the disk,
+    /// before anything else touches it. Then the settings file is replaced,
+    /// through the same whole write every save uses, so there is never a
+    /// moment with no file for another reader to fill with defaults; an
+    /// account's file, which nothing makes any more, is removed. A file whose
+    /// bytes cannot be read or copied is left as it is (ledger 889).
+    pub fn keep_what_cannot_be_read(&self) -> WhatWasKept {
+        self.keep_what_cannot_be_read_at(chrono::Utc::now())
+    }
+
+    fn keep_what_cannot_be_read_at(&self, at: chrono::DateTime<chrono::Utc>) -> WhatWasKept {
+        let settings = self.app_config_path();
+        let settings_fate = fate_of(
+            &settings,
+            |bytes| settings_in(bytes).is_ok(),
+            at,
+            || self.replaced_by_settings_that_allow_nothing(),
+        )
+        .map(|fate| UnreadableFile {
+            which: SettingsFile::TheSettings,
+            name: name_of(&settings),
+            fate,
+        });
+        let account_fates = self.account_files().into_iter().filter_map(|account| {
+            fate_of(
+                &account,
+                |bytes| account_in(bytes).is_ok(),
+                at,
+                || {
+                    fs::remove_file(&account).map_err(|e| {
+                        Error::Config(format!("Failed to remove account config: {}", e))
+                    })
+                },
+            )
+            .map(|fate| UnreadableFile {
+                which: SettingsFile::AnAccounts,
+                name: name_of(&account),
+                fate,
+            })
+        });
+        WhatWasKept {
+            folder: self.config_dir.clone(),
+            unreadable: settings_fate.into_iter().chain(account_fates).collect(),
+        }
+    }
+
+    /// Put settings that allow no change at any server where unreadable ones
+    /// were.
+    ///
+    /// Wider settings would hand out what nobody chose: an unreadable file
+    /// allowed no change everywhere it was read (`allowed_for`), while a
+    /// fresh profile lets tasks, contacts and calendars change at a provider.
+    /// `told_about_the_alpha` stays false, so the first-run question asks
+    /// what may change.
+    fn replaced_by_settings_that_allow_nothing(&self) -> Result<()> {
+        ConfigManager {
+            app_config: AppConfig {
+                // Nothing allowed until the person says what may change.
+                allowed_changes: crate::application::allowed::Allowed::NOTHING,
+                ..AppConfig::default()
+            },
+            account_configs: HashMap::new(),
+            config_dir: self.config_dir.clone(),
+        }
+        .save_app_config()
+    }
+
+    /// Every account file in the folder, in name order. A folder that cannot
+    /// be listed answers none here; `load` meets the same failure and answers
+    /// it as an error, which Settings says.
+    fn account_files(&self) -> Vec<PathBuf> {
+        let mut accounts: Vec<PathBuf> = fs::read_dir(&self.config_dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| is_an_account_file(path))
+            .collect();
+        accounts.sort();
+        accounts
+    }
+}
+
+/// Whether a file in the settings folder is an account's. Only a name ending
+/// `.json` is, so a file left unfinished by a save or kept aside as
+/// unreadable is never read as an account.
+fn is_an_account_file(path: &Path) -> bool {
+    path.file_name()
+        .map(|name| name.to_string_lossy())
+        .is_some_and(|name| name.starts_with("account_") && name.ends_with(".json"))
+}
+
+/// The settings `bytes` hold, read the one way `load` and the keeping both
+/// read them.
+fn settings_in(bytes: &[u8]) -> Result<AppConfig> {
+    let settings: AppConfig = serde_json::from_slice(bytes)
+        .map_err(|e| Error::Config(format!("Failed to parse app config: {}", e)))?;
+    settings.validate()?;
+    Ok(settings)
+}
+
+/// The account `bytes` hold, read the one way `load` and the keeping both
+/// read them.
+fn account_in(bytes: &[u8]) -> Result<AccountConfig> {
+    let account: AccountConfig = serde_json::from_slice(bytes)
+        .map_err(|e| Error::Config(format!("Failed to parse account config: {}", e)))?;
+    account.validate()?;
+    Ok(account)
+}
+
+/// What became of one settings file, or `None` when it reads or is not there.
+fn fate_of(
+    path: &Path,
+    reads: impl Fn(&[u8]) -> bool,
+    at: chrono::DateTime<chrono::Utc>,
+    take_out_of_the_way: impl FnOnce() -> Result<()>,
+) -> Option<Fate> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(why) => {
+            return Some(Fate::LeftAsItIs(format!(
+                "its bytes could not be read: {why}"
+            )));
+        }
+    };
+    if reads(&bytes) {
+        return None;
+    }
+    let kept = match kept_beside(path, &bytes, at) {
+        Ok(kept) => kept,
+        Err(why) => return Some(Fate::LeftAsItIs(format!("no copy could be kept: {why}"))),
+    };
+    Some(match take_out_of_the_way() {
+        Ok(()) => Fate::KeptAs(kept),
+        Err(why) => Fate::LeftAsItIs(format!(
+            "a copy was kept as {kept}, but the file could not be taken out of the way: {why}"
+        )),
+    })
+}
+
+/// How many copies of one file can be kept in one second before the keeping
+/// gives up rather than looking for a name for ever.
+const MOST_COPIES_IN_ONE_SECOND: u32 = 999;
+
+/// Write `bytes` to a name of their own beside `original`, onto the disk,
+/// and answer that name.
+///
+/// The name is the original's with `.unreadable-` and the time in UTC added,
+/// then `-2`, `-3` and on when that is taken, so it never ends `.json` and no
+/// load reads it. Opened only if nothing holds the name yet, so a copy
+/// already kept is never written over, even by a second keeping in the same
+/// second.
+fn kept_beside(
+    original: &Path,
+    bytes: &[u8],
+    at: chrono::DateTime<chrono::Utc>,
+) -> std::io::Result<String> {
+    let stamp = at.format("%Y-%m-%d-%H%M%S").to_string();
+    for turn in 1..=MOST_COPIES_IN_ONE_SECOND {
+        let kept = a_kept_name(original, &stamp, turn);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&kept)
+        {
+            Ok(mut file) => {
+                let written = file.write_all(bytes).and_then(|()| file.sync_all());
+                drop(file);
+                return written
+                    .map(|()| name_of(&kept))
+                    .map_err(|why| and_taken_away(why, &kept));
+            }
+            Err(why) if why.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(why) => return Err(why),
+        }
+    }
+    Err(std::io::Error::other(format!(
+        "{MOST_COPIES_IN_ONE_SECOND} copies were already kept in that second"
+    )))
+}
+
+/// `original` with `.unreadable-` and `stamp` added, and `-turn` after the
+/// first.
+fn a_kept_name(original: &Path, stamp: &str, turn: u32) -> PathBuf {
+    let mut named = original.as_os_str().to_owned();
+    named.push(format!(".unreadable-{stamp}"));
+    if turn > 1 {
+        named.push(format!("-{turn}"));
+    }
+    PathBuf::from(named)
+}
+
+/// A file's own name, without its folder.
+fn name_of(path: &Path) -> String {
+    path.file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// `why`, after taking away what is left at `left`, which is not a file
+/// anybody should keep; one that cannot be taken away is said too, since
+/// somebody will find it.
+fn and_taken_away(why: std::io::Error, left: &Path) -> std::io::Error {
+    match fs::remove_file(left) {
+        Ok(()) => why,
+        Err(also) => std::io::Error::other(format!(
+            "{why}; the unfinished {} could not be taken away either: {also}",
+            left.display()
+        )),
+    }
+}
+
+/// What start-up found it could not read in the settings folder, and what
+/// became of each file. Empty when everything read.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WhatWasKept {
+    /// The settings folder, where every kept copy is.
+    pub folder: PathBuf,
+    /// Each file that could not be read, in the order it was met.
+    pub unreadable: Vec<UnreadableFile>,
+}
+
+impl WhatWasKept {
+    /// Whether every file read, so there is nothing to say.
+    pub fn is_empty(&self) -> bool {
+        self.unreadable.is_empty()
+    }
+}
+
+/// One settings file that could not be read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnreadableFile {
+    /// Which of the settings it held.
+    pub which: SettingsFile,
+    /// Its name in the settings folder.
+    pub name: String,
+    /// What was done with it.
+    pub fate: Fate,
+}
+
+/// The two kinds of file the settings folder holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsFile {
+    /// `app_config.json`, everything but the accounts.
+    TheSettings,
+    /// An `account_*.json` an older build left.
+    AnAccounts,
+}
+
+/// What became of a file that could not be read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Fate {
+    /// Its bytes were copied to this name in the same folder, and then the
+    /// file was replaced or removed.
+    KeptAs(String),
+    /// It could not be kept, so it was left as it is; why, for the log.
+    LeftAsItIs(String),
 }
 
 /// One settings file written at a time in this process. `load` writes the
@@ -1255,17 +1509,8 @@ fn written_whole(target: &Path, content: &str) -> std::io::Result<()> {
         .unwrap_or_else(PoisonError::into_inner);
     let on_the_way = the_name_on_the_way_to(target);
     let file = fs::File::create(&on_the_way)?;
-    onto_the_disk_and_over(file, content, &on_the_way, target).map_err(|why| {
-        // What is left of it is not a file anybody should keep, and one that
-        // cannot be taken away is said, since somebody will find it.
-        match fs::remove_file(&on_the_way) {
-            Ok(()) => why,
-            Err(also) => std::io::Error::other(format!(
-                "{why}; the unfinished {} could not be taken away either: {also}",
-                on_the_way.display()
-            )),
-        }
-    })
+    onto_the_disk_and_over(file, content, &on_the_way, target)
+        .map_err(|why| and_taken_away(why, &on_the_way))
 }
 
 fn onto_the_disk_and_over(
@@ -1500,6 +1745,221 @@ mod tests {
             .expect("the settings to be read past what was left");
 
         assert!(manager.account_configs.is_empty());
+    }
+
+    // Ledger 889: a settings file a disk fault or a hand edit has made
+    // unreadable was said only in the log, and Settings' OK wrote the defaults
+    // over it. These hold the keeping that start-up now does first.
+
+    /// One moment, so two keepings in a case fall in the same second.
+    fn a_moment() -> chrono::DateTime<chrono::Utc> {
+        use chrono::TimeZone;
+        chrono::Utc
+            .with_ymd_and_hms(2026, 10, 19, 14, 3, 22)
+            .single()
+            .expect("a moment that exists")
+    }
+
+    /// Every name in the folder with its bytes, sorted, for comparing a
+    /// folder before and after.
+    fn every_file_in(folder: &Path) -> Vec<(String, Vec<u8>)> {
+        let mut files: Vec<(String, Vec<u8>)> = fs::read_dir(folder)
+            .expect("the settings folder")
+            .map(|entry| {
+                let entry = entry.expect("an entry in the settings folder");
+                (
+                    entry.file_name().to_string_lossy().into_owned(),
+                    fs::read(entry.path()).expect("a file in the settings folder"),
+                )
+            })
+            .collect();
+        files.sort();
+        files
+    }
+
+    /// The name a file was kept as, or a failure naming what became of it.
+    fn kept_as(file: &UnreadableFile) -> &str {
+        match &file.fate {
+            Fate::KeptAs(name) => name,
+            Fate::LeftAsItIs(why) => panic!("{} was not kept: {why}", file.name),
+        }
+    }
+
+    #[test]
+    fn test_an_unreadable_settings_file_is_kept_and_replaced_by_settings_that_allow_nothing() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+        let broken = b"{\"version\": \"1.0.0\", \"theme\": ".to_vec();
+        fs::write(config_dir.join("app_config.json"), &broken).expect("a broken settings file");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+
+        let kept = manager.keep_what_cannot_be_read_at(a_moment());
+
+        assert_eq!(kept.folder, config_dir);
+        assert_eq!(kept.unreadable.len(), 1, "{kept:#?}");
+        let only = &kept.unreadable[0];
+        assert_eq!(only.which, SettingsFile::TheSettings);
+        assert_eq!(only.name, "app_config.json");
+        let name = kept_as(only);
+        assert!(
+            name.starts_with("app_config.json.unreadable-") && !name.ends_with(".json"),
+            "{name}"
+        );
+        assert_eq!(
+            fs::read(config_dir.join(name)).expect("the kept copy"),
+            broken,
+            "the kept copy is not the file that could not be read"
+        );
+        let mut later = ConfigManager::in_dir(config_dir).expect("the same settings folder");
+        later.load().expect("the settings put in its place to read");
+        assert_eq!(
+            later.app_config().allowed_changes,
+            crate::application::allowed::Allowed::NOTHING,
+            "fresh settings allowed more at a server than nothing"
+        );
+        assert!(
+            !later.app_config().told_about_the_alpha,
+            "the first-run question would not ask what may change"
+        );
+    }
+
+    #[test]
+    fn test_two_unreadable_files_kept_in_one_second_keep_two_copies() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        let settings = config_dir.join("app_config.json");
+
+        fs::write(&settings, "the first broken file").expect("a broken settings file");
+        let first = manager.keep_what_cannot_be_read_at(a_moment());
+        fs::write(&settings, "the second broken file").expect("another broken settings file");
+        let second = manager.keep_what_cannot_be_read_at(a_moment());
+
+        assert_eq!((first.unreadable.len(), second.unreadable.len()), (1, 1));
+        let (first, second) = (
+            kept_as(&first.unreadable[0]),
+            kept_as(&second.unreadable[0]),
+        );
+        assert_ne!(
+            first, second,
+            "the second copy was kept under the first's name"
+        );
+        assert_eq!(
+            fs::read_to_string(config_dir.join(first)).expect("the first copy"),
+            "the first broken file"
+        );
+        assert_eq!(
+            fs::read_to_string(config_dir.join(second)).expect("the second copy"),
+            "the second broken file"
+        );
+    }
+
+    #[test]
+    fn test_an_unreadable_account_file_is_kept_and_the_rest_of_the_settings_read_again() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.app_config_mut().working_day_starts = 6;
+        manager.save().expect("sound settings");
+        let account = config_dir.join("account_acc-1.json");
+        fs::write(&account, "{\"id\": \"acc-1\", \"na").expect("a broken account file");
+
+        let kept = manager.keep_what_cannot_be_read_at(a_moment());
+
+        assert_eq!(kept.unreadable.len(), 1, "{kept:#?}");
+        let only = &kept.unreadable[0];
+        assert_eq!(only.which, SettingsFile::AnAccounts);
+        assert_eq!(only.name, "account_acc-1.json");
+        let name = kept_as(only);
+        assert!(
+            name.starts_with("account_acc-1.json.unreadable-") && !name.ends_with(".json"),
+            "{name}"
+        );
+        assert_eq!(
+            fs::read_to_string(config_dir.join(name)).expect("the kept copy"),
+            "{\"id\": \"acc-1\", \"na"
+        );
+        assert!(!account.exists(), "the account file was left in the way");
+        let mut later = ConfigManager::in_dir(config_dir).expect("the same settings folder");
+        later
+            .load()
+            .expect("the rest of the settings to read again");
+        assert_eq!(later.app_config().working_day_starts, 6);
+        assert_eq!(
+            later.app_config().allowed_changes,
+            AppConfig::default().allowed_changes,
+            "sound settings were replaced because an account file was broken"
+        );
+    }
+
+    #[test]
+    fn test_settings_that_all_read_are_left_exactly_as_they_were() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        let mut manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        manager.account_configs.insert(
+            "acc-1".to_string(),
+            AccountConfig::new("acc-1".to_string(), "Work".to_string()),
+        );
+        manager.save().expect("sound settings and a sound account");
+        let before = every_file_in(&config_dir);
+
+        let kept = manager.keep_what_cannot_be_read_at(a_moment());
+
+        assert!(kept.is_empty(), "{kept:#?}");
+        assert_eq!(every_file_in(&config_dir), before);
+    }
+
+    #[test]
+    fn test_a_kept_copy_is_never_read_as_settings_or_as_an_account() {
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(&config_dir).expect("the settings folder");
+        fs::write(config_dir.join("app_config.json"), "not settings").expect("broken settings");
+        fs::write(config_dir.join("account_acc-1.json"), "not an account")
+            .expect("a broken account");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+        assert_eq!(
+            manager
+                .keep_what_cannot_be_read_at(a_moment())
+                .unreadable
+                .len(),
+            2
+        );
+
+        let mut later =
+            ConfigManager::in_dir(config_dir.clone()).expect("the same settings folder");
+        later
+            .load()
+            .expect("the settings to read past the kept copies");
+        assert!(later.account_configs.is_empty());
+        assert!(
+            later.keep_what_cannot_be_read_at(a_moment()).is_empty(),
+            "a kept copy was read again as a file that could not be read"
+        );
+    }
+
+    #[test]
+    fn test_a_settings_file_whose_bytes_cannot_be_read_is_left_where_it_is() {
+        // A folder standing at the name is a file nothing can read the bytes
+        // of, made on purpose. There is nothing to keep, so nothing may take
+        // it away either.
+        let dir = tempfile::TempDir::new().expect("a temporary folder");
+        let config_dir = dir.path().join("config");
+        fs::create_dir_all(config_dir.join("app_config.json")).expect("a folder in the way");
+        let manager = ConfigManager::in_dir(config_dir.clone()).expect("a settings folder");
+
+        let kept = manager.keep_what_cannot_be_read_at(a_moment());
+
+        assert_eq!(kept.unreadable.len(), 1, "{kept:#?}");
+        assert_eq!(kept.unreadable[0].which, SettingsFile::TheSettings);
+        assert!(
+            matches!(kept.unreadable[0].fate, Fate::LeftAsItIs(_)),
+            "{kept:#?}"
+        );
+        assert!(config_dir.join("app_config.json").is_dir());
     }
 
     #[test]

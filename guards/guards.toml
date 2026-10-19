@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 847 records have arrived since and have not been through it.
+# 851 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -12504,7 +12504,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -12519,7 +12519,7 @@ red = [
     "data::config::permission_tests::test_a_language_nothing_here_can_check_falls_back_to_english_on_purpose",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -12546,7 +12546,7 @@ red = [
     "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
@@ -12576,7 +12576,7 @@ red = [
     "presentation::which_language_row::tests::test_a_tag_nothing_offers_is_added_as_stored",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/presentation/which_language_row.rs", tests = 6 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
@@ -12607,7 +12607,7 @@ red = [
     "service::spellcheck::tests::test_a_bare_language_is_checked_in_the_machines_own_region_rather_than_windows_first",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/service/spellcheck/mod.rs", tests = 56 },
 ]
 
@@ -13981,7 +13981,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_a_setting_said_to_be_offered_elsewhere_really_is",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 [[guard]]
@@ -14874,16 +14874,16 @@ red = [
     # about a settings file and never guarded this rule on purpose.
     "data::config::tests::test_a_settings_file_written_before_reading_was_a_setting_still_loads",
 ]
+tests_last_seen = [
+    { file = "src/application/allowed.rs", tests = 28 },
+    { file = "src/data/config.rs", tests = 79 },
+]
 # On 2026-10-17, re-measured by 13.2-23 three times on Pratik's machine, that
 # test went red in company each time beside the one named. It reaches
 # `allowed_for`, which reads the real profile, and the profile there has no
 # `reading` field, so the break reads it as false. On a runner the profile is
 # written fresh with the field, so naming it would fail the sweep there. Kept
 # off the list, the count below written by hand; ledger 890.
-tests_last_seen = [
-    { file = "src/application/allowed.rs", tests = 28 },
-    { file = "src/data/config.rs", tests = 73 },
-]
 
 # ── What a saved search covers, said rather than only worked out ───────────
 #
@@ -19353,7 +19353,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_every_setting_somebody_can_change_is_read_by_something",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -20747,7 +20747,7 @@ red = [
     "data::config::every_setting_is_acted_on::test_where_an_accounts_notes_go_is_said_by_a_screen",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
     { file = "src/presentation/wx_settings.rs", tests = 0 },
 ]
 
@@ -22138,7 +22138,7 @@ red = [
     "data::config::permission_tests::test_a_fresh_installation_is_not_looking_for_new_versions",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # Nothing published reading as up to date, which is T-07-19 in one line. The
@@ -24825,7 +24825,7 @@ red = [
     "data::config::tests::test_a_saved_settings_file_names_the_build_that_wrote_it",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # The reading in tests/installer.rs is a second copy of the script's
@@ -29388,7 +29388,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/describing_pictures.rs", tests = 8 },
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # A reader's word sent to a recipient. The undescribed rule moves into
@@ -42122,7 +42122,7 @@ red = [
     "data::config::tests::test_a_save_that_cannot_finish_leaves_the_settings_as_they_were",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # The same for an account's file, which the save loop writes on its own.
@@ -42136,7 +42136,7 @@ red = [
     "data::config::tests::test_a_save_that_cannot_finish_an_account_leaves_that_account_as_it_was",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # The unfinished file copied over the name rather than renamed, so it stays
@@ -42156,22 +42156,26 @@ red = [
     "data::config::tests::test_a_save_that_cannot_finish_leaves_the_settings_as_they_were",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # `load` reading any name that holds `.json`, so half an account file left by
 # a power cut fails every load from then on. Added 2026-10-17 by 13.2-23,
-# taken by hand against `data::config::`.
+# taken by hand against `data::config::`. Re-anchored 2026-10-19 by 13.2-31.9
+# on the one predicate `load` and the keeping of unreadable files both call,
+# and re-measured.
 [[guard]]
 name = "an unfinished account file is not read as an account"
 file = "src/data/config.rs"
-before = '''                if filename_str.starts_with("account_") && filename_str.ends_with(".json") {'''
-after = '''                if filename_str.starts_with("account_") && filename_str.contains(".json") {'''
+before = '''        .is_some_and(|name| name.starts_with("account_") && name.ends_with(".json"))'''
+after = '''        .is_some_and(|name| name.starts_with("account_") && name.contains(".json"))'''
 red = [
     "data::config::tests::test_a_file_left_unfinished_beside_an_account_is_not_read_as_one",
+    "data::config::tests::test_a_kept_copy_is_never_read_as_settings_or_as_an_account",
+    "data::config::tests::test_an_unreadable_account_file_is_kept_and_the_rest_of_the_settings_read_again",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
 ]
 
 # The one-at-a-time lock taken out, so saves made at once on several threads
@@ -42190,7 +42194,96 @@ red = [
     "data::config::tests::test_saves_made_at_once_on_several_threads_all_land_whole",
 ]
 tests_last_seen = [
-    { file = "src/data/config.rs", tests = 73 },
+    { file = "src/data/config.rs", tests = 79 },
+]
+
+# Ledger 889: the settings put in place of an unreadable file written as a
+# fresh profile has them, which lets tasks, contacts and calendars change at a
+# provider, wider than an unreadable file allowed, with nobody having chosen
+# it. Added 2026-10-19 by 13.2-31.9, taken by hand against the whole library.
+[[guard]]
+name = "settings put in place of an unreadable file allow nothing"
+file = "src/data/config.rs"
+before = '''                // Nothing allowed until the person says what may change.
+                allowed_changes: crate::application::allowed::Allowed::NOTHING,'''
+after = '''                // Nothing allowed until the person says what may change.'''
+red = [
+    "data::config::tests::test_an_unreadable_settings_file_is_kept_and_replaced_by_settings_that_allow_nothing",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 79 },
+]
+
+# The kept copy of an unreadable file opened so it can write over a copy
+# already kept, so a second keeping in the same second loses the first.
+# Added 2026-10-19 by 13.2-31.9, taken by hand against the whole library.
+[[guard]]
+name = "a kept copy of an unreadable settings file is never written over"
+file = "src/data/config.rs"
+before = '''            .write(true)
+            .create_new(true)
+            .open(&kept)'''
+after = '''            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&kept)'''
+red = [
+    "data::config::tests::test_two_unreadable_files_kept_in_one_second_keep_two_copies",
+]
+tests_last_seen = [
+    { file = "src/data/config.rs", tests = 79 },
+]
+
+# The sentence about an unreadable settings file said before the first-run
+# question, whose dialog would then come up over it. Added 2026-10-19 by
+# 13.2-31.9, taken by hand against the target.
+[[guard]]
+name = "start-up says what it kept of unreadable settings after the first-run question"
+file = "src/presentation/wx_app.rs"
+suite = "an_unreadable_settings_file_is_kept_and_said"
+before = '''                ask_about_the_alpha_once(&frame, &a11y);
+                // What start-up kept of settings it could not read (ledger
+                // 889), said once. After the question, so its dialog cannot
+                // cut the sentence off, and so the sentence can say the
+                // question was asked again.
+                if let Some(said) =
+                    crate::application::unreadable_settings::what_start_up_says(&kept)
+                {
+                    send_status(&scan_tx, &scan_rt, &said);
+                }'''
+after = '''                // What start-up kept of settings it could not read (ledger
+                // 889), said once. After the question, so its dialog cannot
+                // cut the sentence off, and so the sentence can say the
+                // question was asked again.
+                if let Some(said) =
+                    crate::application::unreadable_settings::what_start_up_says(&kept)
+                {
+                    send_status(&scan_tx, &scan_rt, &said);
+                }
+                ask_about_the_alpha_once(&frame, &a11y);'''
+red = [
+    "test_start_up_says_what_it_kept_once_after_the_first_run_question",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_unreadable_settings_file_is_kept_and_said.rs", tests = 6 },
+]
+
+# Settings opening on settings of its own when the stored ones cannot be read,
+# so its OK writes them over the file it could not read (ledger 889). Added
+# 2026-10-19 by 13.2-31.9, taken by hand against the target.
+[[guard]]
+name = "Settings refuses to open over settings it could not read"
+file = "src/presentation/wx_app.rs"
+suite = "an_unreadable_settings_file_is_kept_and_said"
+before = '''    let mut mgr = match ConfigManager::load_stored() {'''
+after = '''    let mut mgr = match ConfigManager::load_stored().or_else(|_| ConfigManager::new()) {'''
+red = [
+    "test_settings_refuses_rather_than_opening_on_settings_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_unreadable_settings_file_is_kept_and_said.rs", tests = 6 },
 ]
 
 # The release gate's checkout back to the one commit the action fetches by

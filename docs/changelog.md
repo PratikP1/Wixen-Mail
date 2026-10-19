@@ -1446,6 +1446,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Settings that cannot be read are kept, and you are told (2026-10-19).** When the settings
+  file had been damaged, by a disk fault or by editing it by hand, Wixen Mail started on its
+  built-in settings without a word, synced no account, and OK in Settings then wrote those
+  settings over the damaged file. Now Wixen Mail keeps a copy of the damaged file in the same
+  folder under a name of its own, such as `app_config.json.unreadable-2026-10-19-140322`, and
+  puts fresh settings in its place that let it change nothing at your mail servers, so the
+  first-run question asks again what it may change. Once the window is up, it says once that
+  your settings could not be read and where the old file was kept. Settings will not open over
+  settings it could not read, and says so, so nothing is written over them. A settings file for
+  an account, left by an older version, that cannot be read no longer stops every other setting
+  from being read: it is kept and set aside the same way.
+
+  Known limits. Nobody has heard the new sentences yet. A file whose contents cannot be read at
+  all, or copied, is left where it is; until it can be read, Wixen Mail sends no mail and
+  changes nothing at your mail servers, and Settings says why it will not open.
+
 - **A folder in a zip that holds more than the zip records is said to be damaged or changed
   (2026-10-19, FOUND-11).** When a mailbox file inside a zip of mail held more than the zip
   records about it, which is what a zip damaged or changed after it was made can look like,
