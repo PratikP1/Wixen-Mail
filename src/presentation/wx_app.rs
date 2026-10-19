@@ -19023,6 +19023,77 @@ fn send_the_flag_changes_that_were_waiting(
     }
 }
 
+/// Take out of the server's Drafts folder the sent drafts' copies Send could
+/// not, on a session that is already open (13.2-31.4, ledger 845).
+///
+/// The second try is the last. Every removal tried here is forgotten, so a
+/// server that refuses for good is said once, at this check, and not at every
+/// check after it, and the copies still there are said in one sentence after
+/// the loop. A draft that is a draft here again is forgotten with nothing
+/// removed, because its copy in Drafts is now the draft; Undo Send files a
+/// taken-back message under a new id, so this is a net rather than the usual
+/// case. The write gate is met at the session, as for the flag changes above.
+fn take_away_the_drafts_left_at_the_server(
+    cache: &crate::data::message_cache::MessageCache,
+    controller: &crate::application::mail_controller::MailController,
+    account_id: &str,
+    handle: &tokio::runtime::Handle,
+    say: &dyn Fn(UIUpdate),
+) {
+    use crate::application::draft_copy::{self, AfterTheSecondTry};
+    let left = match cache.drafts_left_at_the_server_for(account_id) {
+        Ok(left) => left,
+        Err(why) => {
+            tracing::warn!("The kept removals of {account_id} could not be read: {why}");
+            return;
+        }
+    };
+    let mut failed_again = Vec::new();
+    let mut first_reason = None;
+    for draft in &left {
+        let taken = match cache.load_draft(&draft.draft_id) {
+            Ok(Some(_)) => None,
+            Ok(None) => {
+                let _turn = handle.block_on(draft_copy::one_filing_at_a_time().lock());
+                Some(handle.block_on(draft_copy::take_away_the_filed_copy(
+                    &draft_copy::DraftAtTheServer {
+                        session: controller,
+                    },
+                    &draft.folder_path,
+                    &draft.message_id,
+                )))
+            }
+            // Whether it is a draft again is not known, so nothing is removed
+            // and the removal waits for the next check.
+            Err(why) => {
+                tracing::warn!("A kept removal of {account_id} waits, its draft unread: {why}");
+                continue;
+            }
+        };
+        if let Err(why) = cache.forget_the_draft_left_at_the_server(account_id, &draft.draft_id) {
+            tracing::warn!("A kept removal of {account_id} could not be forgotten: {why}");
+        }
+        if let Some(AfterTheSecondTry::ForgetAndSay(reason)) =
+            taken.as_ref().map(draft_copy::after_the_second_try)
+        {
+            tracing::warn!(
+                "A sent draft's copy is still in {} at the server of {account_id} after a \
+                 second try: {reason}",
+                draft.folder_path
+            );
+            first_reason.get_or_insert(reason);
+            failed_again.push(draft.subject.clone());
+        }
+    }
+    let said = draft_copy::still_in_drafts_after_a_second_try(
+        &failed_again,
+        first_reason.as_deref().unwrap_or_default(),
+    );
+    if let Some(said) = said {
+        say(UIUpdate::StatusUpdated(said));
+    }
+}
+
 /// A folder's numbering now, its UIDVALIDITY, asked of the server once per
 /// folder in a replay and remembered in `asked`. A failure is not
 /// remembered, so the next change in that folder asks again.
@@ -20237,7 +20308,21 @@ fn take_the_filed_copy_away(
         // No Drafts folder, so nothing could have been filed in one.
         return;
     };
-    spawn_draft_removal(tx, rt, account, folder, message_id);
+    // Kept before the worker starts, so a removal under way when the program
+    // closes is still tried at the account's next check; the worker forgets
+    // it once the copy is gone (13.2-31.4, ledger 845).
+    let left = crate::data::message_cache::drafts_left_at_the_server::DraftLeftAtTheServer {
+        account_id: account.id.clone(),
+        draft_id: draft.id.clone(),
+        message_id: message_id.clone(),
+        folder_path: folder.clone(),
+        subject: draft.subject.clone(),
+        kept_at: chrono::Utc::now().to_rfc3339(),
+    };
+    if let Err(why) = cache.keep_a_draft_left_at_the_server(&left) {
+        tracing::warn!("A sent draft's removal could not be kept for the next check: {why}");
+    }
+    spawn_draft_removal(tx, rt, account, folder, message_id, draft.id.clone());
 }
 
 /// Replace this draft's row in a folder on this computer.
@@ -20376,12 +20461,18 @@ fn spawn_draft_append(
 /// is there. What is removed and what is said are decided in
 /// [`crate::application::draft_copy::take_away_the_filed_copy`]; only a copy
 /// that may have been left behind is said.
+///
+/// The removal [`take_the_filed_copy_away`] kept is forgotten here once the
+/// copy is gone or none was there, through a cache of this thread's own,
+/// since the window's cannot cross threads. One that may still be there
+/// stays kept for the account's next check (13.2-31.4, ledger 845).
 fn spawn_draft_removal(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
     account: crate::data::account::Account,
     folder: String,
     message_id: String,
+    draft_id: String,
 ) {
     let tx = tx.clone();
     let handle = rt.handle().clone();
@@ -20403,6 +20494,22 @@ fn spawn_draft_removal(
             }
             Err(reason) => draft_copy::TakenAway::ACopyMayStillBeThere(reason.to_string()),
         };
+        if !taken.needs_saying() {
+            let forgotten = match AppPaths::resolve()
+                .ok()
+                .and_then(|paths| MessageCache::new(paths.cache_dir(), None).ok())
+            {
+                Some(cache) => cache
+                    .forget_the_draft_left_at_the_server(&account.id, &draft_id)
+                    .map_err(|why| why.to_string()),
+                None => Err("the mail on this computer could not be opened".to_string()),
+            };
+            if let Err(why) = forgotten {
+                // Harmless beyond a question: the next check asks for the
+                // copy again, finds none, and forgets it then.
+                tracing::warn!("A finished removal of a sent draft could not be forgotten: {why}");
+            }
+        }
         if taken.needs_saying() {
             let said = UIUpdate::StatusUpdated(taken.what_happened());
             let _ = handle.block_on(tx.send(said));
@@ -31927,6 +32034,20 @@ fn spawn_mail_sync(
             // this program is in front of that server because somebody pressed
             // Check Mail, opened a folder, or the watch on their inbox woke.
             send_the_flag_changes_that_were_waiting(
+                &cache,
+                &controller,
+                &account.id,
+                &handle,
+                &say,
+            );
+
+            // The sent drafts' copies Send could not take out of Drafts, tried
+            // again on this same session, after the changes that were waiting
+            // and before any folder is listed, so the Drafts folder this check
+            // reads no longer holds them (13.2-31.4, ledger 845). A server
+            // still out of reach ended this check above, and costs a kept
+            // removal nothing.
+            take_away_the_drafts_left_at_the_server(
                 &cache,
                 &controller,
                 &account.id,

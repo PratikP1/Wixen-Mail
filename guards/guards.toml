@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 831 records have arrived since and have not been through it.
+# 833 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -42383,4 +42383,45 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 24 },
+]
+
+# The check no longer trying the kept removals: the call in spawn_mail_sync
+# replaced by a closure that takes the same arguments and does nothing, so a
+# sent draft's copy left in Drafts while offline stays there for good
+# (13.2-31.4, ledger 845). The library cannot see it; the reading of the
+# check does. Measured by hand on 2026-10-19: the whole library 9,303 passed
+# and 0 failed, and the target 9 passed and 1 failed, this one.
+[[guard]]
+name = "the next check tries the kept removals of sent drafts"
+file = "src/presentation/wx_app.rs"
+suite = "a_draft_left_at_the_server_goes_at_the_next_check"
+before = '''            take_away_the_drafts_left_at_the_server(
+                &cache,'''
+after = '''            (|_: &_, _: &_, _: &_, _: &_, _: &_| ())(
+                &cache,'''
+red = [
+    "test_the_next_check_tries_the_removal_after_the_flag_changes",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_draft_left_at_the_server_goes_at_the_next_check.rs", tests = 10 },
+]
+
+# The second try removing a kept copy without asking whether its draft is a
+# draft here again, so a message taken back and saved would be taken out of
+# Drafts behind somebody's back (13.2-31.4, premise 3). Measured by hand on
+# 2026-10-19: the whole library 9,303 passed and 0 failed, and the target 9
+# passed and 1 failed, this one.
+[[guard]]
+name = "a kept removal is not tried for a draft that is a draft here again"
+file = "src/presentation/wx_app.rs"
+suite = "a_draft_left_at_the_server_goes_at_the_next_check"
+before = '''        let taken = match cache.load_draft(&draft.draft_id) {'''
+after = '''        let taken = match Ok::<Option<()>, crate::common::Error>(None) {'''
+red = [
+    "test_a_removal_is_not_tried_for_a_draft_that_is_a_draft_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_draft_left_at_the_server_goes_at_the_next_check.rs", tests = 10 },
 ]
