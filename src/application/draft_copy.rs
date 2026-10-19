@@ -38,6 +38,14 @@ pub(crate) trait KeepsTheDraft {
     async fn file_this_one(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String>;
     /// Take these ones out again, and say how many really went.
     async fn remove_these(&self, folder: &str, uids: &[u32]) -> std::result::Result<usize, String>;
+    /// The `Message-ID` the message under this number really carries, or
+    /// nothing when it carries none. What the search above cannot say: it
+    /// matches any identifier that contains the one asked for.
+    async fn identifier_at(
+        &self,
+        folder: &str,
+        uid: u32,
+    ) -> std::result::Result<Option<String>, String>;
 }
 
 /// What became of the copy of a draft at the server.
@@ -204,7 +212,11 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     folder: &str,
     message_id: &str,
 ) -> TakenAway {
-    let there = match server.copies_already_there(folder, message_id).await {
+    let found = match server.copies_already_there(folder, message_id).await {
+        Ok(found) => found,
+        Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
+    };
+    let there = match the_ones_carrying_it_exactly(server, folder, message_id, found).await {
         Ok(there) => there,
         Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
     };
@@ -216,6 +228,31 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
         Ok(_) => TakenAway::ACopyMayStillBeThere(CANNOT_REMOVE_ONE.to_string()),
         Err(refused) => TakenAway::ACopyMayStillBeThere(refused),
     }
+}
+
+/// The numbers the search found whose message carries the draft's identifier
+/// exactly (ledger 854).
+///
+/// The search behind [`KeepsTheDraft::copies_already_there`], `HEADER
+/// MESSAGE-ID`, matches any message whose header contains the text asked for
+/// (RFC 3501, section 6.4.4), so a message in Drafts whose identifier merely
+/// holds the draft's would be removed with it. Each number is read first and
+/// kept only when the renumbering decision's own comparison,
+/// [`crate::application::renumbered::the_number_confirmed`], says it is the
+/// same identifier. A number whose message cannot be read is an answer nobody
+/// has, so it stops the removal rather than being guessed either way.
+async fn the_ones_carrying_it_exactly<K: KeepsTheDraft>(
+    server: &K,
+    folder: &str,
+    message_id: &str,
+    found: Vec<u32>,
+) -> std::result::Result<Vec<u32>, String> {
+    // Red until the comparison: every number found is kept.
+    for uid in &found {
+        let _not_yet_compared = server.identifier_at(folder, *uid).await;
+    }
+    let _ = message_id;
+    Ok(found)
 }
 
 /// The lock behind [`one_filing_at_a_time`]. One for the whole process.
@@ -283,6 +320,17 @@ impl KeepsTheDraft for DraftAtTheServer<'_> {
             .await
             .map_err(|e| e.to_string())
     }
+
+    async fn identifier_at(
+        &self,
+        folder: &str,
+        uid: u32,
+    ) -> std::result::Result<Option<String>, String> {
+        self.session
+            .message_id_at(folder, uid)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -303,8 +351,14 @@ mod tests {
         already_there: std::result::Result<Vec<u32>, String>,
         filing: std::result::Result<(), String>,
         removal: std::result::Result<usize, String>,
+        /// What reading a number answers, where it is not the draft's own
+        /// identifier, [`THE_DRAFTS_IDENTIFIER`].
+        carrying: std::collections::HashMap<u32, std::result::Result<Option<String>, String>>,
         asked: RefCell<Vec<Asked>>,
     }
+
+    /// The identifier every removal and filing here is asked about.
+    const THE_DRAFTS_IDENTIFIER: &str = "<d@x>";
 
     impl Scripted {
         fn holding(uids: Vec<u32>) -> Self {
@@ -313,6 +367,7 @@ mod tests {
                 already_there: Ok(uids),
                 filing: Ok(()),
                 removal: Ok(count),
+                carrying: std::collections::HashMap::new(),
                 asked: RefCell::new(Vec::new()),
             }
         }
@@ -344,6 +399,17 @@ mod tests {
         ) -> std::result::Result<usize, String> {
             self.asked.borrow_mut().push(Asked::Remove(uids.to_vec()));
             self.removal.clone()
+        }
+
+        async fn identifier_at(
+            &self,
+            _folder: &str,
+            uid: u32,
+        ) -> std::result::Result<Option<String>, String> {
+            self.carrying
+                .get(&uid)
+                .cloned()
+                .unwrap_or_else(|| Ok(Some(THE_DRAFTS_IDENTIFIER.to_string())))
         }
     }
 
@@ -537,6 +603,66 @@ mod tests {
 
     async fn sending(server: &Scripted) -> TakenAway {
         take_away_the_filed_copy(server, "Drafts", "<d@x>").await
+    }
+
+    /// An identifier that holds the draft's, so the server's search answers
+    /// its number too, and is another message's.
+    const ONE_THAT_ONLY_CONTAINS_IT: &str = "<re.<d@x>>";
+
+    #[tokio::test]
+    async fn test_a_message_whose_identifier_only_contains_the_drafts_stays_in_drafts() {
+        // Ledger 854. The search matches any Message-ID that contains the
+        // text asked for (RFC 3501, section 6.4.4), so a message in Drafts
+        // whose identifier holds the draft's was removed with the sent copy.
+        let mut server = Scripted::holding(vec![4, 9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+        server.removal = Ok(1);
+
+        let taken = sending(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::Remove(vec![4])],
+            "the removal named a message that is not the sent draft's copy"
+        );
+        assert_eq!(taken, TakenAway::Gone);
+    }
+
+    #[tokio::test]
+    async fn test_a_search_that_found_only_another_message_removes_nothing() {
+        let mut server = Scripted::holding(vec![9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+
+        let taken = sending(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies],
+            "something was removed although no message carried the draft's identifier"
+        );
+        assert_eq!(taken, TakenAway::NothingWasFiled);
+    }
+
+    #[tokio::test]
+    async fn test_a_message_the_server_will_not_let_be_read_is_not_removed() {
+        // Not knowing what a message carries is not knowing it is the copy,
+        // so it stays, and the person hears that a copy may still be there.
+        let mut server = Scripted::holding(vec![4]);
+        server
+            .carrying
+            .insert(4, Err("the fetch was refused".to_string()));
+
+        let taken = sending(&server).await;
+
+        assert_eq!(*server.asked.borrow(), vec![Asked::WhichCopies]);
+        assert_eq!(
+            taken,
+            TakenAway::ACopyMayStillBeThere("the fetch was refused".to_string())
+        );
     }
 
     #[tokio::test]
