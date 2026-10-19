@@ -2136,6 +2136,58 @@ mod tests {
         );
     }
 
+    /// What sits between `<head>` and `</head>`, or the whole page when it has
+    /// no head, so a failing assertion prints what was there.
+    fn the_head_of(page: &str) -> &str {
+        page.split_once("<head>")
+            .and_then(|(_, rest)| rest.split_once("</head>"))
+            .map_or(page, |(head, _)| head)
+    }
+
+    #[test]
+    fn test_a_conversation_document_is_titled_with_its_subject_so_its_panes_are_not_named_after_its_address()
+     {
+        // WebView2 names its window and the root of the page after the
+        // document's title, and a document with no title after its address.
+        // This page is handed over as a string, which the engine loads as a
+        // data: address, so the name was the whole page in base64: the scan of
+        // 2026-10-16 found two panes of the formatted message window named
+        // that way, past 512 characters, one of them holding the keyboard
+        // (ledger 872). The subject is what names the page, as its h1 does.
+        let renderer = HtmlRenderer::new();
+
+        let titled = renderer.render_thread("Bell & Ross <notes>", &[part("Ada", 0, "Body")]);
+        let untitled = renderer.render_thread("  ", &[part("Ada", 0, "Body")]);
+
+        assert!(
+            the_head_of(&titled).contains("<title>Bell &amp; Ross &lt;notes&gt;</title>"),
+            "{}",
+            the_head_of(&titled)
+        );
+        assert!(
+            the_head_of(&untitled).contains("<title>No subject</title>"),
+            "{}",
+            the_head_of(&untitled)
+        );
+    }
+
+    #[test]
+    fn test_a_preview_document_has_a_title_so_its_panes_are_not_named_after_its_address() {
+        // The same engine and the same fallback, on the document the preview
+        // pane and the separate page window are given. That window takes its
+        // title from the page and says it aloud when it arrives, so without
+        // one it was titled, and announced, as the address.
+        let renderer = HtmlRenderer::new();
+
+        let page = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
+
+        assert!(
+            the_head_of(&page).contains("<title>Message</title>"),
+            "{}",
+            the_head_of(&page)
+        );
+    }
+
     #[test]
     fn test_a_document_carries_the_language_it_was_handed_into_its_opening_tag() {
         // A real document, rendered twice, read for the tag that came out.
