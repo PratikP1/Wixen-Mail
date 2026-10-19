@@ -1188,6 +1188,26 @@ pub fn each_message_read_piece_by_piece_allowing(
     AnArchiveInPieces::of(reading, allowed).map(|block| one_message_out_of(&block?))
 }
 
+/// How reading a mailbox a piece at a time came to an end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HowTheReadingEnded {
+    /// The file was read to its end.
+    AtTheEndOfTheFile,
+    /// The file stopped being readable partway through, for a reason of this
+    /// kind.
+    TheFileStoppedBeingReadable(std::io::ErrorKind),
+}
+
+/// Every message a mailbox holds, each handed to `each`, answering how the
+/// reading came to an end.
+pub fn each_message_handed_over_piece_by_piece(
+    reading: impl std::io::Read,
+    each: impl FnMut(Result<MessageFromAFile>),
+) -> HowTheReadingEnded {
+    let _ = (reading, each);
+    HowTheReadingEnded::TheFileStoppedBeingReadable(std::io::ErrorKind::Other)
+}
+
 /// An archive being read a piece at a time, giving up one message at a time.
 struct AnArchiveInPieces<R> {
     /// Where the bytes come from.
@@ -3220,6 +3240,94 @@ mod tests {
             what_the_file_holds(an_archive().as_bytes()),
             FileHolds::ManyMessages
         );
+    }
+
+    /// Somewhere to read from that fails, with this kind, the first time it
+    /// is asked.
+    struct AReadThatFails(std::io::ErrorKind);
+
+    impl std::io::Read for AReadThatFails {
+        fn read(&mut self, _into: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(self.0, "the reading stopped here"))
+        }
+    }
+
+    /// What came out of a mailbox handed over piece by piece, and how the
+    /// reading ended.
+    fn handed_over(
+        reading: impl std::io::Read,
+    ) -> (
+        Vec<std::result::Result<MessageFromAFile, String>>,
+        HowTheReadingEnded,
+    ) {
+        let mut came_out = Vec::new();
+        let ended = each_message_handed_over_piece_by_piece(reading, |read| {
+            came_out.push(read.map_err(|why| why.to_string()));
+        });
+        (came_out, ended)
+    }
+
+    /// The subjects of what came out, with anything handed over as a failure
+    /// said in its place, so a stop handed over as a message shows.
+    fn subjects_of(came_out: &[std::result::Result<MessageFromAFile, String>]) -> Vec<String> {
+        came_out
+            .iter()
+            .map(|read| match read {
+                Ok(read) => read.message.subject.clone(),
+                Err(why) => format!("a failure: {why}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_a_reading_that_stops_says_how_it_stopped_and_hands_over_what_came_before() {
+        // A zip whose mailbox file holds more than the archive records is
+        // stopped partway through by the zip reader with this kind. What came
+        // before is handed over; the stop is not a message, so it is answered
+        // apart from them with its kind, for the import to say what it was.
+        // The second message is in hand when the reading stops, and half a
+        // message is not offered as a whole one.
+        let mailbox = std::io::Read::chain(
+            an_archive().as_bytes(),
+            AReadThatFails(std::io::ErrorKind::InvalidData),
+        );
+
+        let (came_out, ended) = handed_over(mailbox);
+
+        assert_eq!(subjects_of(&came_out), vec!["The first one"]);
+        assert_eq!(
+            ended,
+            HowTheReadingEnded::TheFileStoppedBeingReadable(std::io::ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn test_a_reading_that_stops_for_another_reason_says_that_reason() {
+        // The kind is the one the read failed with, whatever it is. Which kinds
+        // mean what is for the import to decide, not the reader.
+        let mailbox = std::io::Read::chain(
+            an_archive().as_bytes(),
+            AReadThatFails(std::io::ErrorKind::UnexpectedEof),
+        );
+
+        let (came_out, ended) = handed_over(mailbox);
+
+        assert_eq!(subjects_of(&came_out), vec!["The first one"]);
+        assert_eq!(
+            ended,
+            HowTheReadingEnded::TheFileStoppedBeingReadable(std::io::ErrorKind::UnexpectedEof)
+        );
+    }
+
+    #[test]
+    fn test_a_reading_that_reaches_the_end_says_so() {
+        let (came_out, ended) = handed_over(an_archive().as_bytes());
+
+        assert_eq!(
+            subjects_of(&came_out),
+            vec!["The first one", "The second one"]
+        );
+        assert_eq!(ended, HowTheReadingEnded::AtTheEndOfTheFile);
     }
 }
 
