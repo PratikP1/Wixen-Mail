@@ -160,6 +160,12 @@ write path added by this milestone passes through that gate.
     three cases in `server_delete`, the sentence case and a reading of
     `spawn_the_folder_empty` with a planted companion in `emptying`, and a new record. Seeing
     it at a server is ledger 849. No `[D]` clause is added and the box stays ticked.
+  - 13.2-31.2 on 2026-10-18: the count the tree announces for a folder, which Mark Folder Read
+    already zeroes, now follows a mark, a delete, a move or a copy of one message made here at
+    once, and the next check corrects it from the server (ledger 836). A POP account's folders
+    and the folders on this computer, whose count nothing wrote before, are counted once from
+    their rows and kept the same way. Hearing it is ledger 899. No `[D]` clause is added and
+    the box stays ticked.
 
 - [ ] **FOLDER-02**: Nested folder hierarchy in the folder tree.
   - Evidence: rewritten 2026-09-04. The previous evidence said the inventory records the tree
@@ -4583,6 +4589,15 @@ untouched throughout and their ledger numbers, 533 to 565, are items 58 to 83 on
     the named conversations alone and searching `messages` through `idx_messages_thread`,
     held on every commit by a plan reading in `storage_shape` (ledger 837, fixed). It adds no
     `[D]` clause and the box stays ticked.
+  - 13.2-31.2 on 2026-10-18: the count the folder tree announces for a folder, as in "Inbox,
+    5 unread", follows a mark, a delete, a move or a copy made here at once, in either view,
+    and the next check corrects it from the server, on Pratik's yes of 2026-10-15 (ledger 836,
+    closed). The store moves `folders.unread_count` through three triggers on `messages`, and
+    each place that changes a folder's unread mail here asks the tree to reword the rows whose
+    words changed, saying nothing. Held by ten cases in `data::message_cache::folders`, three
+    in `presentation::folder_tree` and two readings with planted companions in
+    `tests/the_folder_tree_counts_follow_a_change_made_here.rs`. Hearing it is ledger 899. It
+    adds no `[D]` clause and the box stays ticked.
 
 - [x] **LIST-05**: Shift with the arrow keys selects more than one message, every command
   that acts on messages acts on the selection with one announcement saying how many, and a
@@ -7967,7 +7982,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOLDER-01 | Phase 1 | Complete; phase 13.2, planned 2026-10-14: 13.2-07, and 2026-10-15: 13.2-31.2, adding no `[D]` clause; 13.2-07 done 2026-10-15, Empty Folder stops at a message the server only marked or copied and says why, ledger 849 |
+| FOLDER-01 | Phase 1 | Complete; phase 13.2, planned 2026-10-14: 13.2-07, and 2026-10-15: 13.2-31.2, adding no `[D]` clause; 13.2-07 done 2026-10-15, Empty Folder stops at a message the server only marked or copied and says why, ledger 849; 13.2-31.2 done 2026-10-18, the count the tree announces follows a mark, delete, move or copy made here at once, corrected by the next check, and POP folders and folders on this computer counted once (ledger 836, 899) |
 | FOLDER-02 | Phase 1 | Pending |
 | FOLDER-03 | Phase 1 | Complete |
 | THREAD-01 | Phase 1 | Complete |
@@ -8042,7 +8057,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | LIST-01 | Phase 11 | Complete, 11-03 at `70f4737b`; whether a kept folder is heard as checked, the new state after Space, the level, the title and the All Mail sentence are the tester's ear, ledger 533 |
 | LIST-02 | Phase 11 | In progress, 11-04 at `03513fd0`: the rule, the lines, the guard and the pages held; the two size rows owed, ledger 537; whether the lines are the ones a report needs is the tester's next report, ledger 535; #64's half stays #64's. Read again 2026-09-20 by 11-12: the rows are still owed, the box stays open on that clause |
 | LIST-03 | Phase 11 | Complete, 11-05 at `5c82f680`; reopened 2026-09-18 on the tester's word and amended for 11-05.1, the first Space starting no clock, held 2026-09-18 by 11-05.1 at `b3ab5d51`; whether the unread count survives a walk through his inbox by ear, and whether the second Space and not the first moves it, are the tester's ear, ledger 539; phase 13.2, planned 2026-10-14: 13.2-03.1, adding no `[D]` clause; 13.2-03.1 done 2026-10-14, a message read from an opened conversation, or the row's own message filed in another folder, is marked read after the wait (ledger 841) |
-| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, and 2026-10-15: 13.2-31.1 and 13.2-31.2, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836); 13.2-31.1 done 2026-10-18, the store work of M on a conversation at the size of his Inbox from 484 ms to 20.5 ms, the two reads reading only its conversations (ledger 837) |
+| LIST-04 | Phase 11 | Complete, 11-06 at `fe143d46` and 11-07 at `b35a40cd`; the label heard, the word after M, the list not jumping and the thread marked from its row are the tester's ear, ledger 540 and 544; phase 13.2, planned 2026-10-14: 13.2-02, and 2026-10-15: 13.2-31.1 and 13.2-31.2, adding no `[D]` clause; 13.2-02 done 2026-10-14, a mark made here shows on its conversation row at once and Mark as Read then offers Mark as Unread (ledger 834, 836); 13.2-31.1 done 2026-10-18, the store work of M on a conversation at the size of his Inbox from 484 ms to 20.5 ms, the two reads reading only its conversations (ledger 837); 13.2-31.2 done 2026-10-18, the folder tree's unread count follows a change made here at once in either view, corrected by the next check, ledger 836 closed on his yes (ledger 899) |
 | LIST-05 | Phase 11 | Complete, 11-07 at `b35a40cd`; NVDA's selected and not selected, the count after Ctrl+A, one sentence after a command over many and the refusal above the bound are the tester's ear, ledger 544; phase 13.2, planned 2026-10-14: 13.2-03 and 13.2-03.1, adding no `[D]` clause; 13.2-03 done 2026-10-14, a command from an opened conversation acts on the one message it names, and the window answers the menu key, Delete, Shift+Delete and M (ledger 839, 840); 13.2-03.1 done 2026-10-14, the window answers the rest of the list's message keys on the message under its cursor (ledger 841) |
 | LIST-06 | Phase 11 | Complete, 11-08 at `75c211fe`; the sender heard first on his thread rows, the preview and the window on that message, and a conversation's text arriving from Gmail on landing are the tester's ear's and account's (ledger 548); phase 13.2, planned 2026-10-14: 13.2-01, adding no `[D]` clause; 13.2-01 done 2026-10-14, Enter on a conversation row of one loaded message opens it and says why when it cannot (ledger 831 to 833) |
 | LIST-07 | Phase 11 | Complete, 11-09 at `bd5f6929`; the row heard whole and once on the key, arrowing quiet under the NVDA profile, and what Narrator and JAWS need are the tester's ear's (ledger 550) |

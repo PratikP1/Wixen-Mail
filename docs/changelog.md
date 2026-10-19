@@ -1437,6 +1437,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The unread count beside a folder changes as soon as you change a message (2026-10-18).**
+  The folder tree says how many unread messages each folder holds, as in "Inbox, 5 unread".
+  Until now that number changed only at the next check for mail, so after you marked a message
+  read with M, or deleted, moved or copied it, the tree still said the old count. Now the count
+  changes at once, in the message view and the conversation view, and the next check for mail
+  corrects it from the server. Undo, and a change the server refused being put back, move the
+  count back. A POP account's folders and the folders kept on this computer now say how many
+  unread messages they hold, for the first time, counted once from the mail kept here.
+
+  Known limits. A change made while that folder is being checked shows again only at the
+  following check, because the check writes the count it read from the server before your
+  change. Nothing is spoken when a count changes: you hear the new count when you reach the
+  folder's row. Nobody has heard this with a screen reader yet.
+
 - **M and Delete on a conversation no longer hold the window in a large mailbox
   (2026-10-18).** Under conversation view, marking a conversation read or unread with M, or
   deleting it, held the window for about half a second in a big folder or in All Inboxes, so
