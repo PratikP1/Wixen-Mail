@@ -5417,6 +5417,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once() {
+        // Ledger 878. The read writes the series down again from the feed,
+        // whose series names no day called off, so the fold took the
+        // cancelled day off once more on every refresh and the status line
+        // said "1 deleted" though nothing new went. Measured on 2026-10-16
+        // by refreshing this feed twice.
+        let cache = temp_cache("feed_cancelled_day_twice");
+        let mut calendar = a_subscribed_calendar("sub-assembly-off-twice");
+        let feed = a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_CANCELLED]);
+
+        let first = refreshed_from(&cache, &mut calendar, feed.clone()).await;
+        let again = refreshed_from(&cache, &mut calendar, feed).await;
+
+        assert_eq!(
+            first.deleted, 1,
+            "the first refresh took the day off: {first:?}"
+        );
+        assert_eq!(
+            again.deleted, 0,
+            "the second refresh took nothing new off: {again:?}"
+        );
+        assert!(
+            everything_drawn_on(&cache, the_changed_tuesday()).is_empty(),
+            "the cancelled assembly came back: {:?}",
+            everything_drawn_on(&cache, the_changed_tuesday())
+        );
+        assert_eq!(
+            everything_drawn_on(&cache, the_tuesday_after()).len(),
+            1,
+            "the series stopped repeating"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_series_an_earlier_refresh_folded_onto_its_moved_day_is_put_right_by_the_next() {
         // What the old refresh left when the moved day came last: one row
         // under the series' UID, holding the moved day's time and no repeat
