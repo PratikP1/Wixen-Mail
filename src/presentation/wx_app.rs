@@ -27761,7 +27761,7 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
     }
 
     match cache.cancel_queued(row_id) {
-        Ok(true) => {
+        Ok(crate::data::message_cache::CancelAnswer::TakenOut) => {
             send_status(tx, rt, "Taken out of the outbox. It will not be sent.");
             load_folder_messages(
                 &Some(cache.clone()),
@@ -27771,7 +27771,10 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 tx,
             );
         }
-        Ok(false) => send_refusal(tx, rt, "That message is no longer in the Outbox."),
+        Ok(
+            crate::data::message_cache::CancelAnswer::NotThere
+            | crate::data::message_cache::CancelAnswer::BeingSent,
+        ) => send_refusal(tx, rt, "That message is no longer in the Outbox."),
         Err(e) => send_refusal(tx, rt, &format!("It could not be cancelled: {e}.")),
     }
     true

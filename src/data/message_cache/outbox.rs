@@ -367,7 +367,7 @@ impl MessageCache {
     /// Cancelling a send, which is the one thing worth being able to do to a
     /// message that has not gone yet and could not be done at all before: the
     /// queue was a number on the status bar.
-    pub fn cancel_queued(&self, rowid: i64) -> Result<bool> {
+    pub fn cancel_queued(&self, rowid: i64) -> Result<CancelAnswer> {
         // Listed negative so it cannot be mistaken for a message id, and
         // turned back here. Taking the absolute value rather than requiring
         // one sign, so a caller holding either reaches the same row.
@@ -378,7 +378,10 @@ impl MessageCache {
                 params![rowid.abs()],
             )
             .map_err(|e| Error::Other(format!("Failed to cancel the message: {}", e)))?;
-        Ok(removed > 0)
+        Ok(match removed > 0 {
+            true => CancelAnswer::TakenOut,
+            false => CancelAnswer::NotThere,
+        })
     }
 
     /// Take a queued message out by the identifier it was queued under, if no
@@ -466,6 +469,17 @@ impl MessageCache {
     }
 }
 
+/// What became of a message the Outbox's Delete asked to take out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CancelAnswer {
+    /// It was waiting, and it has left the queue: it will not be sent.
+    TakenOut,
+    /// A pass of the send loop holds it, so it stays and goes.
+    BeingSent,
+    /// No row has that number: it went, or something took it out first.
+    NotThere,
+}
+
 /// One queued message and when it may go, from a row of the queue's own
 /// column list, which both readings of the queue select.
 fn a_queued_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<(QueuedOutboxMessage, GoAfter)> {
@@ -546,8 +560,9 @@ mod tests {
         );
 
         // And cancelling still finds the row it names.
-        assert!(
+        assert_eq!(
             cache.cancel_queued(rows[0].id).unwrap(),
+            CancelAnswer::TakenOut,
             "the row could not be cancelled by the number it was listed with"
         );
         assert!(
@@ -804,8 +819,9 @@ mod tests {
             .expect("the outbox")[0]
             .id;
 
-        assert!(
+        assert_eq!(
             cache.cancel_queued(row_id).expect("the cancel to run"),
+            CancelAnswer::TakenOut,
             "cancelling a message that is there reported that it was not"
         );
         assert!(
@@ -815,8 +831,9 @@ mod tests {
                 .is_empty(),
             "the message was reported cancelled and is still queued"
         );
-        assert!(
-            !cache.cancel_queued(row_id).expect("the cancel to run"),
+        assert_eq!(
+            cache.cancel_queued(row_id).expect("the cancel to run"),
+            CancelAnswer::NotThere,
             "cancelling nothing reported that it cancelled something"
         );
     }
@@ -1735,6 +1752,74 @@ mod tests {
             still_queued(&cache),
             vec!["on-its-way".to_string()],
             "the claimed message left the queue, or the unclaimed one stayed"
+        );
+    }
+
+    /// The number the Outbox lists its first message under.
+    fn first_listed(cache: &MessageCache) -> i64 {
+        cache
+            .outbox_rows("acc-1", chrono::Local::now(), dates())
+            .expect("the outbox to be read")[0]
+            .id
+    }
+
+    #[test]
+    fn test_the_outbox_cannot_take_out_a_message_the_send_loop_has_claimed() {
+        // Ledger 843. The Outbox's Delete took out a message a pass already
+        // held and said "Taken out of the outbox. It will not be sent." while
+        // the pass went on and sent it. The same claim that stops Undo Send
+        // stops this.
+        let cache = one_ready("outbox_delete_claimed", "on-its-way");
+        let listed = first_listed(&cache);
+        assert!(
+            cache
+                .claim_for_sending("on-its-way", at("2026-10-15 09:00:10"))
+                .expect("the claim to run"),
+            "the pass could not claim the message"
+        );
+
+        assert_eq!(
+            cache.cancel_queued(listed).expect("the cancel to run"),
+            CancelAnswer::BeingSent,
+            "the Outbox's Delete took out a message the send loop was sending"
+        );
+        assert_eq!(
+            still_queued(&cache),
+            vec!["on-its-way".to_string()],
+            "the message being sent left the queue"
+        );
+    }
+
+    #[test]
+    fn test_a_message_whose_send_failed_can_be_taken_out_again() {
+        // A failed send lets go of its claim, so the message is waiting again
+        // and the Outbox's Delete takes it out, as it did before there were
+        // claims. Without that a message a server refused could never leave.
+        let cache = one_ready("outbox_delete_after_failure", "refused");
+        let listed = first_listed(&cache);
+        assert!(
+            cache
+                .claim_for_sending("refused", at("2026-10-15 09:00:10"))
+                .expect("the claim to run")
+        );
+        assert_eq!(
+            cache.cancel_queued(listed).expect("the cancel to run"),
+            CancelAnswer::BeingSent,
+            "the message was taken out while its pass still held it"
+        );
+
+        cache
+            .update_outbox_failure("refused", "mailbox full")
+            .expect("the failure to be recorded");
+
+        assert_eq!(
+            cache.cancel_queued(listed).expect("the cancel to run"),
+            CancelAnswer::TakenOut,
+            "a message whose send failed could not be taken out"
+        );
+        assert!(
+            still_queued(&cache).is_empty(),
+            "the message was reported taken out and is still queued"
         );
     }
 
