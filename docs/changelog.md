@@ -1446,6 +1446,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A folder in a zip that holds more than the zip records is said to be damaged or changed
+  (2026-10-19, FOUND-11).** When a mailbox file inside a zip of mail held more than the zip
+  records about it, which is what a zip damaged or changed after it was made can look like,
+  File, Import stopped reading that file partway and said that one message "could not be
+  read, because there was nothing in it a mail program recognises". That hid how much was
+  missing: in one test, 892 of a folder's 2,000 messages came in under that sentence. Now the
+  import says the mailbox file does not match what the zip records, so the zip is damaged or
+  was changed after it was made, and says whether any of that file's mail came in. The mail
+  read before the file stopped matching stays, and the zip's other folders still come in
+  whole.
+
+  Known limits. Nobody has heard the new sentence yet. A mailbox file that stops being
+  readable for any other reason is still said as one message holding nothing a mail program
+  recognises.
+
 - **A damaged zip of mail says it is damaged, not that it stops partway through (2026-10-19,
   FOUND-11).** When a zip of mail had been damaged, or changed after it was made, so that what
   is inside it does not match what the zip records about it, File, Import said the file "stops

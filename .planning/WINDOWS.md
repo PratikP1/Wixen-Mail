@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 764
+open_count: 766
 waived_count: 0
-fixed_count: 141
-total_count: 905
-last_updated: 2026-10-19T18:00:00.000Z
+fixed_count: 142
+total_count: 908
+last_updated: 2026-10-19T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -920,6 +920,9 @@ last_updated: 2026-10-19T18:00:00.000Z
 | 903 | 13.2 | unrun-verify | src/presentation/wx_account_manager.rs |  | 13.2-31.5 closed ledger 848: a refused address is shown on a line under the address box in the Add or Edit Account window, cleared when the address changes, and every status line keeps an ampersand. Held by the window's own test in tests/account_edit_protocol_fields.rs, which reads the line's native text, its MSAA name and the page's letters on a window that was never shown, and by readings of show_edit and the address box's handler; the line is hidden in the Accessibility run's scan, because nothing is refused there. For the tester, on a build holding 13.2-31.5's merge: Add Account with the address of an account he already has, OK, and see the reason under the address box; under NVDA hear it once, and not again when focus lands in the address box; type one character and see it go. Then the same at 200% text size, the line wrapping inside the window rather than widening it or running off its edge. Closed when he has seen and heard both | open |  | 2026-10-19T12:00:00.000Z |  |
 | 904 | 13.2 | deviation | src/application/caldav_sync.rs |  | The security review of 2026-10-16 against 13.2-19's e5d8516d: one_caldav_day_kept_out_of_its_series found a changed day's series and its own row by the account and the event's name, and deleted a cancelled day's row by the same, never asking which calendar a row was in. Reached from a subscribed feed since e5d8516d and from a calendar server since ad2b0fd3. A feed naming a meeting held in another calendar of the account, as somebody who sent an invitation to it could, moved a day of it, took over its moved row or called a day off at a refresh; two server calendars carrying one meeting reached each other's copy. Fixed 2026-10-19 by 13.2-31.6: the store's event_in_one_calendar and delete_event_in_one_calendar match account, calendar and name through A_ROW_IN_ONE_CALENDAR, and the fold reads and deletes only through them, for both callers; a series held only in another calendar is left as it was and the feed's day stored as the meeting it says. Held by two store cases and five fold cases, red at d82f3ef9 and b76bd101, green at 2f8c130c and 3052d977, and four guard records | fixed |  | 2026-10-19T12:00:00.000Z | 2026-10-19T12:00:00.000Z |
 | 905 | 13.2 | unrun-verify | src/service/mailbox_archive.rs |  | 13.2-31.7 closed ledger 879 and changed two things the zip import says and reads. Held by cases in service::mailbox_archive and a reading through the whole import in application::importing_messages, on zips this project's own writer made and then edited; no zip from another tool has been imported and nobody has heard the new sentence. For the tester, on a build holding 13.2-31.7's merge, under NVDA: File, Import, a zip made by an older Windows zip tool whose folders have accented names, such as Entwürfe, and hear the folders under Imported said as those letters with the mail found in each; then a zip changed after it was made, one byte of a stored message altered, and hear once that it is damaged or was changed after it was made and that nothing was imported from it, not that it stops partway through. Closed when he has heard both | open |  | 2026-10-19T18:00:00.000Z |  |
+| 906 | 13.2 | deviation | src/application/importing_messages.rs |  | Measured by 13.2-31.7's planner on zip 9.0.4: a mailbox file in a zip holding more than the size the archive records for it, at 64 KB recorded or more, is read by an_archive_brought_in until zip stops it partway, and the stop was handed over as one more unreadable message. A file of about 400 KB recorded as 100,000 brought nothing in and was said as "1 message in the archive could not be read, because there was nothing in it a mail program recognises"; recorded as 300,000 beside an honest file, 892 of its 2,000 messages came in under the same sentence. Fixed 2026-10-19 by 13.2-31.8: the piece-by-piece reader keeps the kind of the read that stopped it and each_message_handed_over_piece_by_piece answers how the reading ended; an InvalidData stop, through WhyAnEntryWasNotRead, is counted on FoldersImported by whether any of the file's mail came in and said as the archive damaged or changed after it was made, the mail before the stop kept and the archive's other files brought in whole. Held by three reader cases, three readings through the whole import and a sentence case, red at 3d9fee8a and cfd40831, green at 5ca21d57 and c58d8a25, and three guard records | fixed |  | 2026-10-19T20:00:00.000Z | 2026-10-19T20:00:00.000Z |
+| 907 | 13.2 | unrun-verify | src/application/import_tree.rs |  | 13.2-31.8 closed ledger 906: a mailbox file in a zip holding more than the archive records is said at import to make the archive damaged or changed after it was made, with whether any of that file's mail came in. Held by readings through the whole import on zips this project's own writer made and then gave a smaller recorded size; nobody has heard the sentence. For the tester, on a build holding 13.2-31.8's merge, under NVDA: File, Import, a zip altered so one mailbox file holds more than the size recorded for it, and hear the new sentence once, saying whether any of that folder's mail came in, and nothing about a message holding nothing a mail program recognises or about fetching another copy. Closed when he has heard it | open |  | 2026-10-19T20:00:00.000Z |  |
+| 908 | 13.2 | todo | src/application/importing_messages.rs |  | 13.2-31.8 left two stops of a zip's mailbox file said as before. A read that stops for any kind but InvalidData is still counted by a_stop_counted as one message holding nothing a mail program recognises, though it is a file that stopped being readable and the reader's own sentence, THE_FILE_STOPPED_BEING_READABLE in message_files.rs, is never heard. And the whole-archive limit's own sentence, which one_entry_read_in_pieces answers when the archive reaches what it may unpack to (AsFarAsThereIsRoom in mailbox_archive.rs), is still dropped by the let _ = in an_archive_brought_in, so that stop too is said as one unreadable message. Both want their own sentences, as the size lie now has | open |  | 2026-10-19T20:00:00.000Z |  |
 
 ````json
 [
@@ -11781,6 +11784,42 @@ last_updated: 2026-10-19T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-19T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 906,
+    "kind": "deviation",
+    "phase": "13.2",
+    "file": "src/application/importing_messages.rs",
+    "line": null,
+    "description": "Measured by 13.2-31.7's planner on zip 9.0.4: a mailbox file in a zip holding more than the size the archive records for it, at 64 KB recorded or more, is read by an_archive_brought_in until zip stops it partway, and the stop was handed over as one more unreadable message. A file of about 400 KB recorded as 100,000 brought nothing in and was said as \"1 message in the archive could not be read, because there was nothing in it a mail program recognises\"; recorded as 300,000 beside an honest file, 892 of its 2,000 messages came in under the same sentence. Fixed 2026-10-19 by 13.2-31.8: the piece-by-piece reader keeps the kind of the read that stopped it and each_message_handed_over_piece_by_piece answers how the reading ended; an InvalidData stop, through WhyAnEntryWasNotRead, is counted on FoldersImported by whether any of the file's mail came in and said as the archive damaged or changed after it was made, the mail before the stop kept and the archive's other files brought in whole. Held by three reader cases, three readings through the whole import and a sentence case, red at 3d9fee8a and cfd40831, green at 5ca21d57 and c58d8a25, and three guard records",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-19T20:00:00.000Z",
+    "resolved_at": "2026-10-19T20:00:00.000Z"
+  },
+  {
+    "id": 907,
+    "kind": "unrun-verify",
+    "phase": "13.2",
+    "file": "src/application/import_tree.rs",
+    "line": null,
+    "description": "13.2-31.8 closed ledger 906: a mailbox file in a zip holding more than the archive records is said at import to make the archive damaged or changed after it was made, with whether any of that file's mail came in. Held by readings through the whole import on zips this project's own writer made and then gave a smaller recorded size; nobody has heard the sentence. For the tester, on a build holding 13.2-31.8's merge, under NVDA: File, Import, a zip altered so one mailbox file holds more than the size recorded for it, and hear the new sentence once, saying whether any of that folder's mail came in, and nothing about a message holding nothing a mail program recognises or about fetching another copy. Closed when he has heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-19T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 908,
+    "kind": "todo",
+    "phase": "13.2",
+    "file": "src/application/importing_messages.rs",
+    "line": null,
+    "description": "13.2-31.8 left two stops of a zip's mailbox file said as before. A read that stops for any kind but InvalidData is still counted by a_stop_counted as one message holding nothing a mail program recognises, though it is a file that stopped being readable and the reader's own sentence, THE_FILE_STOPPED_BEING_READABLE in message_files.rs, is never heard. And the whole-archive limit's own sentence, which one_entry_read_in_pieces answers when the archive reaches what it may unpack to (AsFarAsThereIsRoom in mailbox_archive.rs), is still dropped by the let _ = in an_archive_brought_in, so that stop too is said as one unreadable message. Both want their own sentences, as the size lie now has",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-19T20:00:00.000Z",
     "resolved_at": null
   }
 ]
