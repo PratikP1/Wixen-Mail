@@ -1709,16 +1709,7 @@ mod tests {
             ("Work/2024/one.eml", one_message()),
         ];
         let at = a_zip_of_stored_bytes(place.path(), &held);
-        let mut bytes = std::fs::read(&at).expect("read the test zip back");
-        // The first entry is stored rather than packed, so its own bytes are in
-        // the file as they were written. One of them changed is an entry whose
-        // check no longer matches, which is what a damaged archive gives.
-        let broken = bytes
-            .windows(4)
-            .position(|four| four == b"One.")
-            .expect("the first entry's own bytes are in the file");
-        bytes[broken] = b'X';
-        std::fs::write(&at, &bytes).expect("write the damaged zip");
+        damaged_at_its_first(&at, b"One.");
 
         let archive = opened(&at).expect("an archive with one damaged entry still opens");
 
@@ -1731,6 +1722,44 @@ mod tests {
             vec!["Work/Invoices.mbox", "Work/2024/one.eml"]
         );
         assert_eq!(archive.how_many_could_not_be_read(), 1);
+    }
+
+    /// Change one byte of a zip, at the first place these bytes are found.
+    ///
+    /// Asked of an entry that is stored rather than packed, so its own bytes
+    /// are in the file as they were written. One of them changed is an entry
+    /// whose check no longer matches, which is what a damaged archive gives.
+    fn damaged_at_its_first(at: &Path, these: &[u8]) {
+        let mut bytes = std::fs::read(at).expect("read the test zip back");
+        let broken = bytes
+            .windows(these.len())
+            .position(|found| found == these)
+            .expect("the entry's own bytes are in the file");
+        bytes[broken] = b'X';
+        std::fs::write(at, &bytes).expect("write the damaged zip");
+    }
+
+    #[test]
+    fn test_an_archive_whose_contents_do_not_match_what_it_records_says_so_and_not_that_it_stops_partway()
+     {
+        // An archive whose one entry fails its check when it is read is not
+        // cut short: it is all there, and what is in it is not what it
+        // records. Damaged on a disk, or changed after it was made. Told it
+        // stops partway through, somebody fetches another copy of a file they
+        // already have whole, and asks the program that wrote it for one when
+        // that program did nothing wrong.
+        let place = a_place_to_work();
+        let at = a_zip_of_stored_bytes(place.path(), &[("Work/Broken.mbox", a_folder_of_mail())]);
+        damaged_at_its_first(&at, b"One.");
+
+        let said = refused(&at);
+
+        assert!(said.contains(&at.display().to_string()), "{said}");
+        assert!(said.contains("is damaged"), "{said}");
+        assert!(said.contains("changed after it was made"), "{said}");
+        assert!(said.contains("nothing was imported"), "{said}");
+        assert!(!said.contains("stops partway through"), "{said}");
+        assert!(!said.contains("another copy"), "{said}");
     }
 
     /// One zip file whose entries are stored rather than packed, so a test can
@@ -2645,5 +2674,54 @@ mod checked_a_second_time {
             .expect("an ordinary entry was refused");
 
         assert_eq!(read.len(), 128 * 1024, "the entry came back short");
+    }
+}
+
+/// Archives another program wrote, for tests here and in the layers above.
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use std::io::Write as _;
+    use std::path::{Path, PathBuf};
+
+    /// One zip whose entry names are bytes this project's writer will not
+    /// write, the way an older zip tool wrote them.
+    ///
+    /// Each entry is given as the name it is written under, the bytes that
+    /// then replace that name wherever it occurs in the file, and what it
+    /// holds. The two names are the same length, so every offset recorded in
+    /// the file still points where it did. A name written in plain ASCII
+    /// carries no mark saying it is UTF-8, which is how an older Windows zip
+    /// tool wrote a name in the old DOS alphabet; one written with a letter
+    /// outside plain ASCII carries the mark, whatever replaces it.
+    pub(crate) fn a_zip_whose_names_another_program_wrote(
+        at: &Path,
+        entries: &[(&str, &[u8], &[u8])],
+    ) -> PathBuf {
+        let file = std::fs::File::create(at).expect("create the test zip");
+        let mut writing = zip::ZipWriter::new(file);
+        for (written_as, _, holding) in entries {
+            writing
+                .start_file(*written_as, zip::write::SimpleFileOptions::default())
+                .expect("start an entry");
+            writing.write_all(holding).expect("write an entry");
+        }
+        writing.finish().expect("finish the test zip");
+
+        let mut bytes = std::fs::read(at).expect("read the test zip back");
+        for (written_as, really, _) in entries {
+            let written_as = written_as.as_bytes();
+            assert_eq!(written_as.len(), really.len(), "a name changed its length");
+            let mut from = 0;
+            while let Some(found) = bytes[from..]
+                .windows(written_as.len())
+                .position(|name| name == written_as)
+            {
+                let starts = from + found;
+                bytes[starts..starts + really.len()].copy_from_slice(really);
+                from = starts + really.len();
+            }
+        }
+        std::fs::write(at, &bytes).expect("write the zip with the names replaced");
+        at.to_path_buf()
     }
 }
