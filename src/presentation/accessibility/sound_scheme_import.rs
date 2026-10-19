@@ -130,7 +130,10 @@ fn read_pack<R: Read + std::io::Seek>(
         let mut entry = archive
             .by_index(index)
             .map_err(|e| Error::Config(format!("{} is damaged: {e}", zip_path.display())))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| Error::Config(format!("{} is damaged: {e}", zip_path.display())))?
+            .into_owned();
         if !is_safe_entry_path(&name) {
             return Err(Error::Config(format!(
                 "{} names {name:?}, a path that would resolve outside the scheme's own folder; \

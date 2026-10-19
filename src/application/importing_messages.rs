@@ -2055,7 +2055,7 @@ mod tests {
     }
 
     /// Two messages in the format an archive of a whole mailbox uses.
-    fn an_archive() -> &'static str {
+    pub(super) fn an_archive() -> &'static str {
         concat!(
             "From ada@example.com Mon Jul 20 10:00:00 2026\r\n",
             "From: Ada Lovelace <ada@example.com>\r\n",
@@ -2082,7 +2082,7 @@ mod tests {
 /// really lands in a folder, and that opening it afterwards says what it says.
 #[cfg(test)]
 mod end_to_end {
-    use super::tests::one_message;
+    use super::tests::{an_archive, one_message};
     use super::*;
     use crate::application::checking_signatures::{SignatureCheck, for_message};
     use crate::common::temp_home::TempHome;
@@ -2596,6 +2596,36 @@ mod end_to_end {
             "Imported 1 folder, 1 message. 1 message was already in its folder and was left as \
              it is."
         );
+    }
+
+    #[test]
+    fn test_a_zip_whose_folder_names_were_written_in_the_old_dos_alphabet_is_brought_in_with_its_mail()
+     {
+        // An older Windows zip tool wrote a name in the old DOS alphabet, where
+        // the byte 0x81 is the letter u with two dots, and marked nothing as
+        // UTF-8. Somebody's folder of drafts in German arrives as Entw, that
+        // byte, rfe. Listed for the import and then not found when its mail is
+        // read, the folder would come in empty, so this is read through the
+        // whole import rather than at the archive alone.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at =
+            crate::service::mailbox_archive::for_tests::a_zip_whose_names_another_program_wrote(
+                &place.path().join("mail.zip"),
+                &[(
+                    "Entw?rfe.mbox",
+                    b"Entw\x81rfe.mbox",
+                    an_archive().as_bytes(),
+                )],
+            );
+
+        an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(
+            the_folders_under_imported(&cache),
+            vec![imported("Entw\u{fc}rfe")]
+        );
+        assert_eq!(how_many_in(&cache, &imported("Entw\u{fc}rfe")), 2);
     }
 
     // ── The files an imported message carried ───────────────────────────

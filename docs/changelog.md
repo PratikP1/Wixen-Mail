@@ -801,6 +801,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The zip reader moved from version 7.2.0 to 9.0.4 (2026-10-19, FOUND-23).** Three security
+  advisories were published in October 2026 against version 7.2.0 of the zip library Wixen Mail
+  uses to import a zip of mail and a sound scheme pack: RUSTSEC-2026-0367, RUSTSEC-2026-0368 and
+  RUSTSEC-2026-0369. All three are about unpacking an archive straight to disk, with its Unix
+  file permissions and links. Wixen Mail never asks the library to do that: it reads each file
+  in an archive itself and decides where it goes. So nothing you did was ever exposed. Version
+  9.0.4 fixes all three, and the security check this project runs on every change no longer
+  reports them.
+
 - **The warnings say sending was proven, and when.** Sending a message was proven on 18
   September 2026, from a Gmail account signed in with an app password, and every warning
   still said nothing that writes had been run against a real account. The warning beside
@@ -1436,6 +1445,31 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   last line alone, and before its window opens, the few lines waiting for it.
 
 ### Fixed
+
+- **A damaged zip of mail says it is damaged, not that it stops partway through (2026-10-19,
+  FOUND-11).** When a zip of mail had been damaged, or changed after it was made, so that what
+  is inside it does not match what the zip records about it, File, Import said the file "stops
+  partway through" and told you to ask the program that wrote it for another copy. The file was
+  all there, and another copy of it would say the same. Now the import says the file is
+  damaged or was changed after it was made, and that nothing was imported from it. A zip that
+  really is cut short still says it stops partway through. The new zip reader also notices a
+  file inside a zip that holds more than the zip says it does, which version 7.2.0 read
+  without noticing.
+
+- **Two folders in a zip whose names were not written as UTF-8 both come in (2026-10-19,
+  FOUND-11).** When two folders in a zip of mail had names written in letters other than
+  UTF-8, and the names differed only in those letters, the import brought in one folder and
+  left the other folder's mail out without a word. Both now come in.
+
+- **A folder name that is not UTF-8 reads as letters (2026-10-19, FOUND-11).** A zip can
+  say a name is written in UTF-8 when its bytes are not. Such a folder name used to arrive with
+  stand-in marks where those bytes were. It is now read in the old DOS alphabet that older
+  Windows zip tools wrote in, so it reads as letters, though they may not be the letters its
+  writer meant, and the log says so for each name read this way. Folder names those older
+  tools wrote, such as Entwürfe, still arrive as they did.
+
+  Known limits. Nobody has yet imported a zip made by another program with these changes, or
+  listened to the new sentence.
 
 - **A calendar feed you subscribe to can no longer change a meeting in your other calendars
   (2026-10-19, PIM-03).** Anyone can publish a calendar feed. When a feed moved or called off

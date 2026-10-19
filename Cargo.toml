@@ -142,8 +142,10 @@ rodio = "0.22.2"
 # method an ordinary zip tool writes by default, and the only one a handful
 # of short sound files and a manifest have any reason to need. No lzma, no
 # zstd, no bzip2: extra codecs a scheme pack would never use, not extra
-# safety.
-zip = { version = "7.2.0", default-features = false, features = ["deflate"] }
+# safety. Moved from 7.2.0 to 9.0.4 on 2026-10-19 (13.2-31.7, ledger 879),
+# which clears three advisories against 7.2.0's extraction, a call this
+# program never makes, and reads every entry from where it was found.
+zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
 
 # Packing cached message text. Mail compresses unusually well: measured on
 # real prose, a plain body goes to a third, a newsletter to a tenth, and a
