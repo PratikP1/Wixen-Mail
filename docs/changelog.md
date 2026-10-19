@@ -1437,6 +1437,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A calendar feed you subscribe to can no longer change a meeting in your other calendars
+  (2026-10-19, PIM-03).** Anyone can publish a calendar feed. When a feed moved or called off
+  one day of a repeating event, Wixen Mail looked for that event in all of your calendars, not
+  only in the feed's. So a feed naming a meeting you keep in another calendar, as somebody who
+  once sent you an invitation to it could, was able to move one of its days or call one off when
+  the feed refreshed. Now a feed's changes stay in the feed's own calendar, and the meeting in
+  your other calendar is left as it was. Two calendars on one calendar server that carry the
+  same meeting had the same fault: a day moved or called off in one changed the other's copy
+  too. Each now keeps its own.
+
+  Known limits. Nobody has yet refreshed a real feed or read a real calendar server with this
+  change.
+
+- **Refreshing a feed with a cancelled day no longer says "1 deleted" every time (2026-10-19,
+  PIM-03).** When a feed calls off one day of a repeating event, the first refresh takes that
+  day off and counts it. Until now every later refresh counted it again, so the status line said
+  "1 deleted" though nothing new had gone. The day is now counted once, the first time it goes.
+  A calendar server's read counts the same way.
+
 - **Add Account and Edit Account show why an address was refused, inside the window
   (2026-10-19, MAIL-04).** When you press OK on an address another account already uses, the
   window says why and comes back so you can change it. Until now the reason was shown only on
