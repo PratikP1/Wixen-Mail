@@ -12,6 +12,7 @@ pub mod calendars;
 mod contacts;
 pub mod correspondent_certificates;
 mod drafts;
+pub mod drafts_left_at_the_server;
 mod filters;
 mod folders;
 pub mod held_alerts;

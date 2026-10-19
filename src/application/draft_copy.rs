@@ -201,6 +201,35 @@ impl TakenAway {
     }
 }
 
+/// What a kept removal's second try, at the account's next check for mail,
+/// leaves to do (ledger 845).
+///
+/// Both answers forget the removal. A server that refuses for good is said
+/// once, at the check that tried again, and not at every check after it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterTheSecondTry {
+    /// The copy went, or none was there: nothing to say.
+    Forget,
+    /// The copy may still be there: say so once, with the server's words.
+    ForgetAndSay(String),
+}
+
+/// What the answer of a second try means.
+pub fn after_the_second_try(taken: &TakenAway) -> AfterTheSecondTry {
+    let _ = taken;
+    AfterTheSecondTry::ForgetAndSay(String::new())
+}
+
+/// The one sentence a check says for the sent messages whose copy is still
+/// in Drafts after a second try, or nothing when there are none.
+///
+/// `subjects` are those messages' subjects and `reason` the server's words
+/// for the first of them.
+pub fn still_in_drafts_after_a_second_try(subjects: &[String], reason: &str) -> Option<String> {
+    let _ = (subjects, reason);
+    Some(String::new())
+}
+
 /// Take a sent draft's copies out of the server's Drafts folder.
 ///
 /// Ask which copies the folder holds under the draft's identifier, then
@@ -763,6 +792,100 @@ mod tests {
             *server.asked.borrow(),
             vec![Asked::File, Asked::WhichCopies, Asked::Remove(vec![4])]
         );
+    }
+
+    #[test]
+    fn test_send_says_a_copy_left_behind_will_be_tried_again_at_the_next_check() {
+        // Ledger 845: the removal is kept and tried again, so the sentence
+        // Send says tells the person when.
+        let said = TakenAway::ACopyMayStillBeThere("the server could not be reached".to_string())
+            .what_happened();
+
+        assert!(said.contains("next check for mail"), "{said}");
+        assert!(
+            said.ends_with("the server could not be reached."),
+            "the server's words are no longer the end of the sentence: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_second_try_that_took_the_copy_away_or_found_none_says_nothing() {
+        for taken in [TakenAway::Gone, TakenAway::NothingWasFiled] {
+            assert_eq!(
+                after_the_second_try(&taken),
+                AfterTheSecondTry::Forget,
+                "{taken:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_second_try_that_failed_again_is_forgotten_and_said_with_the_servers_words() {
+        let taken = TakenAway::ACopyMayStillBeThere("the server would not do it".to_string());
+
+        assert_eq!(
+            after_the_second_try(&taken),
+            AfterTheSecondTry::ForgetAndSay("the server would not do it".to_string())
+        );
+    }
+
+    /// What a sentence about a sent message must never say, because it was
+    /// sent.
+    fn says_it_was_not_sent(said: &str) -> bool {
+        let said = said.to_lowercase();
+        ["not sent", "not been sent", "wasn't sent", "unsent"]
+            .iter()
+            .any(|words| said.contains(words))
+    }
+
+    #[test]
+    fn test_one_message_still_in_drafts_after_a_second_try_is_named_by_its_subject() {
+        let said = still_in_drafts_after_a_second_try(
+            &["Lunch on Friday".to_string()],
+            "the server would not do it",
+        )
+        .expect("a sentence for a copy still in Drafts");
+
+        assert!(said.contains("\"Lunch on Friday\""), "{said}");
+        assert!(said.contains("delete it from Drafts"), "{said}");
+        assert!(
+            said.ends_with("The server said: the server would not do it."),
+            "{said}"
+        );
+        assert!(!says_it_was_not_sent(&said), "{said}");
+
+        let without_a_subject =
+            still_in_drafts_after_a_second_try(&[String::new()], "the server would not do it")
+                .expect("a sentence for a copy with no subject");
+        assert!(
+            without_a_subject.contains("with no subject"),
+            "{without_a_subject}"
+        );
+        assert!(!without_a_subject.contains("\"\""), "{without_a_subject}");
+    }
+
+    #[test]
+    fn test_several_messages_still_in_drafts_after_a_second_try_are_said_with_their_number() {
+        let subjects = ["Lunch on Friday", "Minutes", "Rota"].map(String::from);
+
+        let said = still_in_drafts_after_a_second_try(&subjects, "over quota")
+            .expect("a sentence for the copies still in Drafts");
+
+        assert!(said.starts_with("3 messages you sent"), "{said}");
+        assert!(said.contains("delete them from Drafts"), "{said}");
+        assert!(said.ends_with("The server said: over quota."), "{said}");
+        assert!(
+            !subjects
+                .iter()
+                .any(|subject| said.contains(subject.as_str())),
+            "one sentence for several names none of them: {said}"
+        );
+        assert!(!says_it_was_not_sent(&said), "{said}");
+    }
+
+    #[test]
+    fn test_nothing_is_said_when_no_copy_failed_again() {
+        assert_eq!(still_in_drafts_after_a_second_try(&[], "over quota"), None);
     }
 
     #[test]
