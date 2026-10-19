@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 837 records have arrived since and have not been through it.
+# 842 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -1545,7 +1545,7 @@ red = [
     "application::caldav_sync::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -1569,7 +1569,7 @@ red = [
     "application::caldav_sync::tests::test_a_feeds_series_deleted_here_stays_deleted",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # A feed's series and its moved or cancelled days saved in one loop again,
@@ -1594,9 +1594,16 @@ red = [
     "application::caldav_sync::tests::test_a_moved_day_of_a_feed_deleted_here_stays_deleted",
     "application::caldav_sync::tests::test_a_series_an_earlier_refresh_folded_onto_its_moved_day_is_put_right_by_the_next",
     "application::caldav_sync::tests::test_refreshing_a_feed_again_leaves_its_series_and_moved_day_as_they_were",
+    # Added 2026-10-19 by 13.2-31.6's re-measure: two of its feed cases, each
+    # needing the feed's changed day folded rather than saved whole.
+    "application::caldav_sync::tests::test_a_day_a_feed_cancels_leaves_a_meeting_in_another_calendar_as_it_was",
+    "application::caldav_sync::tests::test_a_feeds_moved_day_leaves_a_meeting_in_another_calendar_as_it_was",
+    # Added 2026-10-19 by the same plan's second re-measure: ledger 878's case,
+    # whose cancelled day has to be folded to be counted once.
+    "application::caldav_sync::tests::test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # A changed day deleted here no longer kept off its series, so the series
@@ -1614,7 +1621,7 @@ red = [
     "application::caldav_sync::tests::test_a_moved_day_of_a_feed_deleted_here_stays_deleted",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # A calendar server's XML handed on with its escaping in it, so a title
@@ -1926,9 +1933,9 @@ red = [
     "data::message_cache::calendar::tests::test_forgetting_a_deletion_a_provider_could_still_hand_back_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -1944,9 +1951,9 @@ red = [
     "data::message_cache::calendar::tests::test_forgetting_a_deletion_no_provider_ever_held_lets_the_row_go",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -2090,7 +2097,7 @@ red = [
     "application::notes_sync::tests::test_a_removal_waits_for_the_copy_a_move_is_making",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/carddav_sync.rs", tests = 18 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
@@ -2393,7 +2400,7 @@ red = [
     "application::caldav_sync::tests::test_an_event_the_feed_never_carried_is_counted_as_one_that_cannot_be_saved",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # ── A move into a container that could never hold it ───────────────────────
@@ -2517,6 +2524,12 @@ red = [
     "application::caldav_sync::tests::test_a_caldav_series_and_its_moved_day_in_one_resource_leaves_two_linked_rows",
     "application::caldav_sync::tests::test_a_day_cancelled_at_a_calendar_server_is_taken_off_the_series_here",
     "application::caldav_sync::tests::test_a_day_moved_at_a_calendar_server_and_then_cancelled_leaves_nothing_behind",
+    # Added 2026-10-19 by 13.2-31.6's re-measure: the server case whose first
+    # calendar's own series must join the day it called off.
+    "application::caldav_sync::tests::test_a_day_one_server_calendar_calls_off_leaves_another_calendars_copy_as_it_was",
+    # Added 2026-10-19 by the same plan's second re-measure: ledger 878's case,
+    # whose second refresh finds the day off the series it held.
+    "application::caldav_sync::tests::test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once",
     "application::calendar::tests::test_a_day_called_off_is_written_the_way_the_start_it_came_from_is_written",
     "application::calendar::tests::test_a_day_cancelled_at_google_is_taken_off_the_series_here",
     "application::calendar::tests::test_a_day_cancelled_at_google_stays_off_when_the_next_read_names_only_the_series",
@@ -2540,7 +2553,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/meeting_changes.rs", tests = 39 },
     { file = "src/presentation/managers.rs", tests = 137 },
@@ -2931,7 +2944,7 @@ red = [
     "application::invitations::tests::test_what_answering_one_day_did_says_one_day",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/due.rs", tests = 46 },
     { file = "src/application/invitations.rs", tests = 70 },
@@ -3861,7 +3874,7 @@ red = [
     "service::caldav::tests::test_cancelled_days_in_two_zones_go_out_on_a_line_each",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
@@ -3902,7 +3915,7 @@ red = [
     "service::caldav::tests::test_a_written_document_read_back_through_our_own_reader_keeps_every_instant",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
@@ -3975,7 +3988,7 @@ red = [
     "service::caldav::writing_tests::test_a_zone_the_document_leaves_undefined_is_named_before_anything_is_sent",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/caldav.rs", tests = 176 },
@@ -4006,7 +4019,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/presentation/managers.rs", tests = 137 },
     { file = "src/service/vtimezone.rs", tests = 10 },
@@ -6549,7 +6562,7 @@ red = [
     "application::caldav_sync::tests::test_the_series_stays_waiting_when_the_server_refuses_the_replacement",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -6572,7 +6585,7 @@ red = [
     "application::caldav_sync::tests::test_a_series_that_comes_first_in_the_queue_still_waits_for_the_day_cut_out_of_it",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -6585,7 +6598,7 @@ red = [
     "application::caldav_sync::tests::test_reading_the_calendar_back_leaves_the_day_still_naming_the_series_it_came_from",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -9262,7 +9275,7 @@ red = [
     "application::caldav_sync::tests::test_an_event_stored_under_half_an_identifier_keeps_what_was_typed_on_it",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # ── A SASL response line has to be told apart from an ordinary one ──────────
@@ -9473,7 +9486,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_what_this_rows_calendar_allows_flags_a_row_whose_series_is_not_yet_resolved",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -9521,7 +9534,7 @@ red = [
     "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
@@ -9557,7 +9570,7 @@ red = [
     "application::caldav_sync::tests::test_deleting_a_caldav_occurrence_exception_never_sends_a_delete_for_the_whole_series",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
@@ -9606,7 +9619,7 @@ red = [
     "application::caldav_sync::tests::test_editing_a_caldav_occurrence_exception_whose_series_was_never_resolved_is_refused_before_it_can_loop_forever",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
 ]
 
@@ -11152,7 +11165,7 @@ after = """                note.so_far.still_owed()
                     || note.calendar_id.as_deref() == Some(calendar.id.as_str())"""
 red = ["application::caldav_sync::tests::test_deletions_waiting_counts_only_this_calendars_own_notes_still_owed"]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -11160,9 +11173,16 @@ name = "a cancelled caldav day only counts as deleted when something about it re
 file = "src/application/caldav_sync.rs"
 before = """            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;"""
 after = """            the_day_went &= went == crate::application::calendar::ADayWent::OffTheSeries;"""
-red = ["application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed"]
+red = [
+    "application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed",
+    # Added 2026-10-19 by 13.2-31.6's re-measure: a day is now counted against
+    # the series held before the read (ledger 878), so a moved day cancelled
+    # later counts its row alone, and a feed's second refresh counts nothing.
+    "application::caldav_sync::tests::test_a_day_moved_at_a_calendar_server_and_then_cancelled_leaves_nothing_behind",
+    "application::caldav_sync::tests::test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once",
+]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 [[guard]]
@@ -11170,9 +11190,14 @@ name = "a cancelled caldav day is counted deleted when it really left the series
 file = "src/application/caldav_sync.rs"
 before = """            the_day_went |= went == crate::application::calendar::ADayWent::OffTheSeries;"""
 after = """            the_day_went |= went != crate::application::calendar::ADayWent::OffTheSeries;"""
-red = ["application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed"]
+red = [
+    "application::caldav_sync::tests::test_a_cancelled_day_only_counts_as_deleted_when_something_about_it_really_changed",
+    # Added 2026-10-19 by 13.2-31.6's re-measure: the feed's second refresh,
+    # whose day was already off the series held before it (ledger 878).
+    "application::caldav_sync::tests::test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once",
+]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # ── imap.rs and oauth.rs, from the same scoped sweep ────────────────────────
@@ -16952,7 +16977,7 @@ red = [
     "application::calendar_conflict::tests::test_a_calendar_item_changed_here_and_at_the_server_is_held_rather_than_dropped",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar_conflict.rs", tests = 5 },
 ]
 
@@ -19833,7 +19858,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
@@ -32526,7 +32551,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -32733,7 +32758,7 @@ tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -32851,7 +32876,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -35558,7 +35583,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # A meeting made here that nobody answered taken for an answer's row, so a
@@ -35574,7 +35599,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The merge filing the provider's copy under its own identity, which is ledger
@@ -35733,7 +35758,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # An organiser's update for one day of a repeating meeting answered as a move
@@ -35842,7 +35867,7 @@ red = [
     "data::message_cache::calendar::tests::test_another_days_row_and_another_accounts_are_not_found",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # A window's lower bound compared whole, so an event made here, stored as
@@ -35860,7 +35885,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_day_made_here_with_no_times_on_the_months_first_day_is_in_the_month",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # Remove from Calendar on one cancelled day marking the whole series
@@ -41579,7 +41604,7 @@ red = [
     "application::caldav_sync::tests::test_an_event_moved_while_its_create_was_at_the_server_stays_where_it_was_put",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # The calendar server's settle for one day it split out of a series, the same
@@ -41608,7 +41633,7 @@ red = [
     "application::caldav_sync::tests::test_a_day_edited_while_its_change_was_at_the_server_keeps_the_edit_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/caldav_sync.rs", tests = 80 },
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]
 
 # A Google calendar is read whole only when Google says its marker expired;
@@ -42519,4 +42544,111 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_draft_left_at_the_server_goes_at_the_next_check.rs", tests = 10 },
+]
+
+# The one-calendar condition with the calendar taken out and every parameter
+# still bound, so a lookup or a delete in one calendar reaches the same name
+# in every calendar of the account, and a feed naming a meeting held
+# elsewhere finds and deletes it (13.2-31.6, the security review of
+# 2026-10-16). Measured by hand on 2026-10-19 against the whole library,
+# 9,311 tests: these two red and nothing else.
+[[guard]]
+name = "a lookup or a delete in one calendar names the calendar"
+file = "src/data/message_cache/calendar.rs"
+before = '''/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND calendar_id = ?2 AND provider_event_id = ?3";'''
+after = '''/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND ?2 = ?2 AND provider_event_id = ?3";'''
+red = [
+    "data::message_cache::calendar::tests::test_a_delete_in_one_calendar_leaves_the_same_name_in_another",
+    "data::message_cache::calendar::tests::test_a_lookup_in_one_calendar_finds_that_calendars_row_and_no_other",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
+]
+
+# The fold's series read put back across the account, so a feed's moved or
+# cancelled day, or one of another server calendar, takes a day off a meeting
+# held in another calendar (13.2-31.6, the security review of 2026-10-16).
+# Measured by hand on 2026-10-19 against the whole library, 9,316 tests:
+# these five red and nothing else.
+[[guard]]
+name = "a changed day finds its series in the calendar being read alone"
+file = "src/application/caldav_sync.rs"
+before = '''    // The series in this calendar alone, never another calendar's copy.
+    let series = cache.event_in_one_calendar(account_id, calendar_id, &changed.uid)?;'''
+after = '''    // The series in this calendar alone, never another calendar's copy.
+    let series = cache.get_event_by_provider_id(account_id, &changed.uid)?;'''
+red = [
+    "application::caldav_sync::tests::test_a_day_a_feed_cancels_leaves_a_meeting_in_another_calendar_as_it_was",
+    "application::caldav_sync::tests::test_a_day_one_server_calendar_calls_off_leaves_another_calendars_copy_as_it_was",
+    "application::caldav_sync::tests::test_a_feeds_moved_day_deleted_here_leaves_a_meeting_in_another_calendar_as_it_was",
+    "application::caldav_sync::tests::test_a_feeds_moved_day_leaves_a_meeting_in_another_calendar_as_it_was",
+    "application::caldav_sync::tests::test_a_moved_day_read_from_one_server_calendar_leaves_another_calendars_series_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/caldav_sync.rs", tests = 86 },
+]
+
+# The fold's read of the changed day's own row put back across the account,
+# so a feed's day takes over another calendar's moved row and moves it into
+# the feed, or counts a deletion it never made (13.2-31.6, T-13.2-31.6-02).
+# Measured by hand on 2026-10-19 against the whole library, 9,316 tests:
+# these two red and nothing else.
+[[guard]]
+name = "a changed day finds its own row in the calendar being read alone"
+file = "src/application/caldav_sync.rs"
+before = '''    // The day's own row in this calendar alone, never another calendar's.
+    let existing = cache.event_in_one_calendar(account_id, calendar_id, &compound_id)?;'''
+after = '''    // The day's own row in this calendar alone, never another calendar's.
+    let existing = cache.get_event_by_provider_id(account_id, &compound_id)?;'''
+red = [
+    "application::caldav_sync::tests::test_a_day_a_feed_cancels_leaves_a_meeting_in_another_calendar_as_it_was",
+    "application::caldav_sync::tests::test_a_feeds_moved_day_leaves_a_meeting_in_another_calendar_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/caldav_sync.rs", tests = 86 },
+]
+
+# The cancelled day's delete put back across the account, so a day one
+# server calendar calls off takes the moved row another calendar holds for
+# the same meeting (13.2-31.6). Measured by hand on 2026-10-19 against the
+# whole library, 9,316 tests: this one red and nothing else.
+[[guard]]
+name = "a cancelled day's row is deleted in the calendar being read alone"
+file = "src/application/caldav_sync.rs"
+before = '''            // The cancelled day's row in this calendar, and no other's.
+            cache.delete_event_in_one_calendar(account_id, calendar_id, &compound_id)?;'''
+after = '''            // The cancelled day's row in this calendar, and no other's.
+            cache.delete_calendar_event_by_provider_id(account_id, &compound_id)?;'''
+red = [
+    "application::caldav_sync::tests::test_a_day_one_server_calendar_calls_off_leaves_another_calendars_copy_as_it_was",
+]
+tests_last_seen = [
+    { file = "src/application/caldav_sync.rs", tests = 86 },
+]
+
+# A cancelled day counted against the series the read has just written down
+# again rather than the one held before it, so every refresh of a feed with a
+# cancelled day says "1 deleted" though nothing new went (ledger 878, on
+# Pratik's yes of 2026-10-17; 13.2-31.6). Measured by hand on 2026-10-19
+# against the whole library, 9,317 tests: this one red and nothing else.
+[[guard]]
+name = "a cancelled day is counted deleted against the series held before the read"
+file = "src/application/caldav_sync.rs"
+before = '''            // first time.
+            let as_it_was = held_rows
+                .iter()
+                .find(|row| row.provider_event_id.as_deref() == Some(changed.uid.as_str()))'''
+after = '''            // first time.
+            let as_it_was = held_rows
+                .iter()
+                .find(|_| false)'''
+red = [
+    "application::caldav_sync::tests::test_refreshing_a_feed_again_counts_its_cancelled_day_deleted_only_once",
+]
+tests_last_seen = [
+    { file = "src/application/caldav_sync.rs", tests = 86 },
 ]

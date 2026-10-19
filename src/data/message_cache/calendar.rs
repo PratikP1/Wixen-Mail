@@ -26,6 +26,17 @@ const A_ROW_ONE_CALENDARS_READ_OWNS: &str = "account_id = ?1 AND provider_event_
      AND (calendar_id = ?3 OR calendar_id IS NULL OR calendar_id NOT IN
           (SELECT id FROM calendars WHERE account_id = ?1 AND source_provider = ?4))";
 
+/// The row one calendar holds under a name, with the account, the calendar
+/// and the provider's name for the event as `?1` to `?3`.
+///
+/// Narrower than [`A_ROW_ONE_CALENDARS_READ_OWNS`]: that one also reaches a
+/// row of the account's in no calendar of the provider's, which a Google read
+/// wants. A read that must not reach past the calendar it reads, a feed that
+/// anyone can publish above all, wants this one. The key on account, calendar
+/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND calendar_id = ?2 AND provider_event_id = ?3";
+
 /// What an answer given on this computer last filed against one meeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnsweredHere {
@@ -1271,6 +1282,55 @@ impl MessageCache {
         Ok(())
     }
 
+    /// The event one calendar holds under the provider's name for it, and
+    /// never a row in another calendar or in none.
+    pub fn event_in_one_calendar(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        provider_event_id: &str,
+    ) -> Result<Option<CalendarEventEntry>> {
+        let sql = format!(
+            "SELECT {} FROM calendar_events WHERE {A_ROW_IN_ONE_CALENDAR}",
+            EVENT_COLS
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
+        let mut rows = stmt
+            .query_map(
+                params![account_id, calendar_id, provider_event_id],
+                map_event_row,
+            )
+            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete the event one calendar holds under the provider's name for it,
+    /// and never a row in another calendar or in none.
+    ///
+    /// Unguarded for the reason [`Self::delete_calendar_event_by_provider_id`]
+    /// gives.
+    pub fn delete_event_in_one_calendar(
+        &self,
+        account_id: &str,
+        calendar_id: &str,
+        provider_event_id: &str,
+    ) -> Result<()> {
+        self.conn
+            .execute(
+                &format!("DELETE FROM calendar_events WHERE {A_ROW_IN_ONE_CALENDAR}"),
+                params![account_id, calendar_id, provider_event_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete a cancelled event: {}", e)))?;
+        Ok(())
+    }
+
     // ── Sync State ──────────────────────────────────────────────────────
 
     /// Get sync state for a given account/type/provider.
@@ -1972,6 +2032,79 @@ mod tests {
             cache.get_events_for_calendar("cal-2").expect("cal-2").len(),
             1,
             "refreshing one calendar emptied the other",
+        );
+    }
+
+    /// One name held four ways: in two calendars of `acct`, in a row of `acct`
+    /// in no calendar, and in another account's row in the first calendar.
+    fn one_name_held_four_ways(cache: &MessageCache) {
+        for (id, account, calendar) in [
+            ("evt-feed", "acct", Some("cal-feed")),
+            ("evt-elsewhere", "acct", Some("cal-elsewhere")),
+            ("evt-nowhere", "acct", None),
+            ("evt-stranger", "stranger", Some("cal-feed")),
+        ] {
+            let mut event = make_event(id, account, "uid-1", id);
+            event.calendar_id = calendar.map(str::to_string);
+            cache.save_calendar_event(&event).expect("the row");
+        }
+    }
+
+    #[test]
+    fn test_a_lookup_in_one_calendar_finds_that_calendars_row_and_no_other() {
+        // A feed is anyone's to publish, and a name is not a secret: whoever
+        // sent an invitation knows its UID. So a read of one calendar must
+        // find only that calendar's row, never another calendar's copy of
+        // the same meeting, a row in no calendar, or another account's.
+        let cache = temp_cache("one_calendar_lookup");
+        one_name_held_four_ways(&cache);
+
+        let found = |calendar: &str| {
+            cache
+                .event_in_one_calendar("acct", calendar, "uid-1")
+                .expect("the lookup")
+                .map(|e| e.id)
+        };
+        assert_eq!(found("cal-feed"), Some("evt-feed".to_string()));
+        assert_eq!(found("cal-elsewhere"), Some("evt-elsewhere".to_string()));
+        assert_eq!(
+            found("cal-empty"),
+            None,
+            "a calendar holding nothing under the name found another's row",
+        );
+
+        cache
+            .delete_calendar_event_by_provider_id("acct", "uid-1")
+            .expect("the account's rows gone");
+        assert_eq!(
+            found("cal-feed"),
+            None,
+            "a lookup in one calendar found another account's row in it",
+        );
+    }
+
+    #[test]
+    fn test_a_delete_in_one_calendar_leaves_the_same_name_in_another() {
+        let cache = temp_cache("one_calendar_delete");
+        one_name_held_four_ways(&cache);
+
+        cache
+            .delete_event_in_one_calendar("acct", "cal-feed", "uid-1")
+            .expect("the delete");
+
+        let still_there = |id: &str| cache.get_event_by_id(id).expect("the read").is_some();
+        assert!(!still_there("evt-feed"), "the calendar's own row stayed");
+        assert!(
+            still_there("evt-elsewhere"),
+            "a delete in one calendar took another calendar's copy",
+        );
+        assert!(
+            still_there("evt-nowhere"),
+            "a delete in one calendar took the account's row in no calendar",
+        );
+        assert!(
+            still_there("evt-stranger"),
+            "a delete in one calendar took another account's row",
         );
     }
 

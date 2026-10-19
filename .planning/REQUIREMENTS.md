@@ -1126,6 +1126,15 @@ write path added by this milestone passes through that gate.
     off its series, for a feed and a calendar server alike. Held by five cases in
     `application::caldav_sync` and two new guard records; ledger 876 is the tester's half and
     878 the count it leaves. No `[D]` clause is added and the box stays open.
+  - 13.2-31.6 on 2026-10-19: the fold of a changed day, for a subscribed feed and for a
+    calendar server, now reads and deletes only in the calendar being read, through the
+    store's `event_in_one_calendar` and `delete_event_in_one_calendar`, so a feed naming a
+    meeting held in another calendar of the account, or a second server calendar carrying the
+    same meeting, leaves that calendar's copy as it was (ledger 904, the security review of
+    2026-10-16). A cancelled day is counted deleted once, against the series held before the
+    read, rather than on every read (ledger 878 fixed). Held by two store cases, six fold cases
+    in `application::caldav_sync` and five new guard records. No `[D]` clause is added and the
+    box stays open.
 
 - [ ] **PIM-04**: Sync notes somewhere instead of leaving them on this computer.
   - Evidence: **that paragraph stopped being true on 2026-09-10, when `05.1-03` created
@@ -8035,7 +8044,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-01 | Phase 5 | Pending |
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
-| PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause. Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
+| PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause; 13.2-31.6 merged 2026-10-19, a feed's or a calendar server's changed day is folded only into the calendar being read and a cancelled day is counted deleted once, adding no `[D]` clause. Until 13.2-31.6 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause". Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
