@@ -26,6 +26,17 @@ const A_ROW_ONE_CALENDARS_READ_OWNS: &str = "account_id = ?1 AND provider_event_
      AND (calendar_id = ?3 OR calendar_id IS NULL OR calendar_id NOT IN
           (SELECT id FROM calendars WHERE account_id = ?1 AND source_provider = ?4))";
 
+/// The row one calendar holds under a name, with the account, the calendar
+/// and the provider's name for the event as `?1` to `?3`.
+///
+/// Narrower than [`A_ROW_ONE_CALENDARS_READ_OWNS`]: that one also reaches a
+/// row of the account's in no calendar of the provider's, which a Google read
+/// wants. A read that must not reach past the calendar it reads, a feed that
+/// anyone can publish above all, wants this one. The key on account, calendar
+/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND calendar_id = ?2 AND provider_event_id = ?3";
+
 /// What an answer given on this computer last filed against one meeting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AnsweredHere {
@@ -1271,24 +1282,53 @@ impl MessageCache {
         Ok(())
     }
 
-    /// The event one calendar holds under the provider's name for it.
+    /// The event one calendar holds under the provider's name for it, and
+    /// never a row in another calendar or in none.
     pub fn event_in_one_calendar(
         &self,
         account_id: &str,
-        _calendar_id: &str,
+        calendar_id: &str,
         provider_event_id: &str,
     ) -> Result<Option<CalendarEventEntry>> {
-        self.get_event_by_provider_id(account_id, provider_event_id)
+        let sql = format!(
+            "SELECT {} FROM calendar_events WHERE {A_ROW_IN_ONE_CALENDAR}",
+            EVENT_COLS
+        );
+        let mut stmt = self
+            .conn
+            .prepare_cached(&sql)
+            .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
+        let mut rows = stmt
+            .query_map(
+                params![account_id, calendar_id, provider_event_id],
+                map_event_row,
+            )
+            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
+        match rows.next() {
+            Some(Ok(entry)) => Ok(Some(entry)),
+            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
+            None => Ok(None),
+        }
     }
 
-    /// Delete the event one calendar holds under the provider's name for it.
+    /// Delete the event one calendar holds under the provider's name for it,
+    /// and never a row in another calendar or in none.
+    ///
+    /// Unguarded for the reason [`Self::delete_calendar_event_by_provider_id`]
+    /// gives.
     pub fn delete_event_in_one_calendar(
         &self,
         account_id: &str,
-        _calendar_id: &str,
+        calendar_id: &str,
         provider_event_id: &str,
     ) -> Result<()> {
-        self.delete_calendar_event_by_provider_id(account_id, provider_event_id)
+        self.conn
+            .execute(
+                &format!("DELETE FROM calendar_events WHERE {A_ROW_IN_ONE_CALENDAR}"),
+                params![account_id, calendar_id, provider_event_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to delete a cancelled event: {}", e)))?;
+        Ok(())
     }
 
     // ── Sync State ──────────────────────────────────────────────────────

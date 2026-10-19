@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 837 records have arrived since and have not been through it.
+# 838 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -1928,7 +1928,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 80 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 [[guard]]
@@ -1946,7 +1946,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 80 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The same pair for tasks, which went without one for a round. A task's note
@@ -32526,7 +32526,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The answer to a meeting sent with no In-Reply-To and no References, which is
@@ -32733,7 +32733,7 @@ tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The answer looking its meeting up by the provider's identifier again, which
@@ -32851,7 +32851,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_called_off_is_marked_and_kept_and_waits_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # What opening a message changed folded in after the signature: in the bar,
@@ -35558,7 +35558,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_calendar_servers_row_answered_here_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # A meeting made here that nobody answered taken for an answer's row, so a
@@ -35574,7 +35574,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_meeting_made_here_that_nobody_answered_is_never_taken_for_an_answers_row",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # The merge filing the provider's copy under its own identity, which is ledger
@@ -35842,7 +35842,7 @@ red = [
     "data::message_cache::calendar::tests::test_another_days_row_and_another_accounts_are_not_found",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # A window's lower bound compared whole, so an event made here, stored as
@@ -35860,7 +35860,7 @@ red = [
     "data::message_cache::calendar::tests::test_a_day_made_here_with_no_times_on_the_months_first_day_is_in_the_month",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/calendar.rs", tests = 58 },
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
 
 # Remove from Calendar on one cancelled day marking the whole series
@@ -42519,4 +42519,27 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_draft_left_at_the_server_goes_at_the_next_check.rs", tests = 10 },
+]
+
+# The one-calendar condition with the calendar taken out and every parameter
+# still bound, so a lookup or a delete in one calendar reaches the same name
+# in every calendar of the account, and a feed naming a meeting held
+# elsewhere finds and deletes it (13.2-31.6, the security review of
+# 2026-10-16). Measured by hand on 2026-10-19 against the whole library,
+# 9,311 tests: these two red and nothing else.
+[[guard]]
+name = "a lookup or a delete in one calendar names the calendar"
+file = "src/data/message_cache/calendar.rs"
+before = '''/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND calendar_id = ?2 AND provider_event_id = ?3";'''
+after = '''/// and name makes the answer at most one row.
+const A_ROW_IN_ONE_CALENDAR: &str =
+    "account_id = ?1 AND ?2 = ?2 AND provider_event_id = ?3";'''
+red = [
+    "data::message_cache::calendar::tests::test_a_delete_in_one_calendar_leaves_the_same_name_in_another",
+    "data::message_cache::calendar::tests::test_a_lookup_in_one_calendar_finds_that_calendars_row_and_no_other",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/calendar.rs", tests = 60 },
 ]
