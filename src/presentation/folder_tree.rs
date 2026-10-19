@@ -946,6 +946,32 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
     chain
 }
 
+/// Which rows of the tree on screen read differently in a fresh reading of it,
+/// by position, or `None` when a row came, went or moved.
+///
+/// 13.2-31.2 (2026-10-18). A change made here moves a folder's unread count,
+/// and the tree says it at once by rewording the rows whose words changed
+/// where they stand, rather than by a rebuild, which moves nothing but says
+/// how many folders loaded. Rewording in place is only right when both
+/// readings hold the same rows in the same order, since the items on screen
+/// are paired with rows by position; otherwise the answer is `None` and the
+/// next rebuild draws the tree.
+pub fn rows_that_read_differently(held: &[TreeRow], fresh: &[TreeRow]) -> Option<Vec<usize>> {
+    let same_rows = held.len() == fresh.len()
+        && held
+            .iter()
+            .zip(fresh)
+            .all(|(was, now)| was.identity == now.identity && was.depth == now.depth);
+    same_rows.then(|| {
+        held.iter()
+            .zip(fresh)
+            .enumerate()
+            .filter(|(_, (was, now))| was.label != now.label)
+            .map(|(at, _)| at)
+            .collect()
+    })
+}
+
 /// The Favourites group: the heading, a branch per account that has a pin, and
 /// the pinned folders under it.
 ///
@@ -1370,6 +1396,84 @@ mod tests {
 
     fn labelled(rows: &[TreeRow]) -> Vec<String> {
         rows.iter().map(|row| row.label.clone()).collect()
+    }
+
+    // ── Rewording the rows whose counts moved (13.2-31.2) ─────────────────
+
+    /// One account with an Inbox holding `unread` and an Archive holding none.
+    fn one_account_with_an_inbox_holding(unread: i32) -> Vec<TreeRow> {
+        let mut inbox = folder("a", 1, "INBOX", None);
+        inbox.unread = unread;
+        tree(
+            &[account("a", "Ada")],
+            &[inbox, folder("a", 2, "Archive", None)],
+            &[],
+            &[],
+        )
+    }
+
+    fn where_the_row_is(rows: &[TreeRow], identity: &WhichRow) -> usize {
+        rows.iter()
+            .position(|row| &row.identity == identity)
+            .unwrap_or_else(|| panic!("no row {identity:?} in {:?}", labelled(rows)))
+    }
+
+    #[test]
+    fn test_a_folder_whose_count_moved_is_reworded_with_its_branch() {
+        let held = one_account_with_an_inbox_holding(5);
+        let fresh = one_account_with_an_inbox_holding(4);
+        let branch = where_the_row_is(&held, &WhichRow::Account("a".to_string()));
+        let inbox = where_the_row_is(
+            &held,
+            &WhichRow::Folder {
+                account: "a".to_string(),
+                path: "INBOX".to_string(),
+            },
+        );
+
+        assert_eq!(
+            rows_that_read_differently(&held, &fresh),
+            Some(vec![branch, inbox]),
+            "the Inbox whose count moved and the account branch summing it were not the rows \
+             reworded: {:?} against {:?}",
+            labelled(&held),
+            labelled(&fresh)
+        );
+    }
+
+    #[test]
+    fn test_rows_that_did_not_change_are_left_alone() {
+        let held = one_account_with_an_inbox_holding(5);
+        let fresh = one_account_with_an_inbox_holding(5);
+
+        assert_eq!(
+            rows_that_read_differently(&held, &fresh),
+            Some(Vec::new()),
+            "a tree that reads the same asked for a rewording or for a rebuild"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_that_came_or_went_waits_for_the_rebuild() {
+        let held = one_account_with_an_inbox_holding(5);
+        let mut inbox = folder("a", 1, "INBOX", None);
+        inbox.unread = 4;
+        let fresh = tree(
+            &[account("a", "Ada")],
+            &[
+                inbox,
+                folder("a", 2, "Archive", None),
+                folder("a", 3, "Receipts", None),
+            ],
+            &[],
+            &[],
+        );
+
+        assert_eq!(
+            rows_that_read_differently(&held, &fresh),
+            None,
+            "a tree whose rows changed was reworded in place rather than left for the rebuild"
+        );
     }
 
     fn row_for<'a>(rows: &'a [TreeRow], label: &str) -> &'a TreeRow {
