@@ -566,21 +566,43 @@ impl WhatToTakeBack {
     /// a message up, nothing here can see whether the connection has opened, so
     /// saying "it has gone" would be a guess and saying "it has not" would be a
     /// worse one. It says what it knows, which is that it cannot be promised
-    /// back, and points at the Outbox, where a row that is still there can
-    /// still be deleted.
+    /// back, and points at the Outbox, where a row that is still there and
+    /// that no pass of the send loop holds can still be deleted.
+    ///
+    /// Until 2026-10-15 the too-late refusal said Delete takes out any message
+    /// still there. The Outbox's Delete has refused a message being sent since
+    /// then (ledger 843), so that would have sent somebody to a key that says
+    /// no.
     pub fn why_not(&self) -> Option<&'static str> {
         match self {
             WhatToTakeBack::ThisOne(_) => None,
             WhatToTakeBack::NothingWaiting => Some("There is nothing waiting to send."),
             WhatToTakeBack::TooLateForEverything => Some(
                 "Too late to take that back. Look in the Outbox: if the message \
-                 is still there, Delete takes it out of the queue.",
+                 is still there and is not being sent, Delete takes it out of the queue.",
             ),
         }
     }
 }
 
 // ── What is said ────────────────────────────────────────────────────────────
+
+/// What the Outbox's Delete says about the chosen messages a pass of the send
+/// loop is sending, which it leaves where they are.
+///
+/// One sentence however many there are, with their number when there is more
+/// than one, because a pass claims every ready message at once and a refusal
+/// said per message would be the same words five times over. `None` when none
+/// was being sent.
+pub fn the_ones_being_sent_stay(count: usize) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("One message is being sent now, so it stays in the Outbox.".to_string()),
+        several => Some(format!(
+            "{several} messages are being sent now, so they stay in the Outbox."
+        )),
+    }
+}
 
 impl Readiness {
     /// What this row in the Outbox says it is doing.
@@ -1253,6 +1275,20 @@ mod what_undo_send_is_about {
     }
 
     #[test]
+    fn test_too_late_offers_delete_only_for_a_message_that_is_not_being_sent() {
+        // The Outbox's Delete refuses a message a pass holds (ledger 843), so
+        // a refusal that sent somebody to Delete for any message still listed
+        // would send them to a key that says no.
+        assert_eq!(
+            WhatToTakeBack::TooLateForEverything.why_not(),
+            Some(
+                "Too late to take that back. Look in the Outbox: if the message \
+                 is still there and is not being sent, Delete takes it out of the queue."
+            )
+        );
+    }
+
+    #[test]
     fn test_the_message_that_can_be_taken_back_gives_no_refusal() {
         let now = at("2026-08-24T09:00:00");
         let held = [waiting(
@@ -1265,6 +1301,52 @@ mod what_undo_send_is_about {
             None,
             "a message that can be caught should not be explaining itself"
         );
+    }
+}
+
+#[cfg(test)]
+mod what_delete_says_about_messages_being_sent {
+    use super::*;
+
+    #[test]
+    fn test_one_message_being_sent_is_said_in_one_sentence() {
+        assert_eq!(
+            the_ones_being_sent_stay(1).as_deref(),
+            Some("One message is being sent now, so it stays in the Outbox.")
+        );
+    }
+
+    #[test]
+    fn test_several_messages_being_sent_are_said_once_with_their_number() {
+        assert_eq!(
+            the_ones_being_sent_stay(3).as_deref(),
+            Some("3 messages are being sent now, so they stay in the Outbox.")
+        );
+    }
+
+    #[test]
+    fn test_nothing_is_said_when_no_message_was_being_sent() {
+        assert_eq!(the_ones_being_sent_stay(0), None);
+    }
+
+    #[test]
+    fn test_the_words_for_messages_being_sent_never_claim_they_have_gone() {
+        // Nothing here can see whether the server has taken them yet, the
+        // same limit as Undo Send's refusals.
+        for count in [1, 2, 7] {
+            let said = the_ones_being_sent_stay(count).expect("words for messages being sent");
+            let claimed = said.to_lowercase();
+            assert!(
+                !claimed.contains("has gone")
+                    && !claimed.contains("have gone")
+                    && !claimed.contains("was sent")
+                    && !claimed.contains("were sent")
+                    && !claimed.contains("has been sent")
+                    && !claimed.contains("have been sent")
+                    && !claimed.contains("delivered"),
+                "{count} being sent says they have gone, which nothing here knows: {said}"
+            );
+        }
     }
 }
 

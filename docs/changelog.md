@@ -1437,6 +1437,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Delete in the Outbox no longer says a message will not be sent while it is being sent
+  (2026-10-19).** When Wixen Mail was already sending a message, Delete in the Outbox took it
+  off the list and said "Taken out of the outbox. It will not be sent.", and the message went
+  out anyway. Now Delete leaves a message that is being sent where it is and says "One message
+  is being sent now, so it stays in the Outbox." When several of the messages you chose are
+  being sent, you hear one sentence with their number, not one sentence for each. A message
+  whose send failed is waiting again, and Delete takes it out as before. Undo Send's answer
+  when it is too late now says Delete takes the message out of the queue only if it is still
+  there and is not being sent.
+
+  Known limits. If a send fails in the instant between Delete asking and Delete answering, you
+  hear that the message is being sent when it is waiting again; pressing Delete once more takes
+  it out. Nothing here has run against a real mail server, and nobody has heard the new
+  sentence with a screen reader yet.
+
 - **The unread count beside a folder changes as soon as you change a message (2026-10-18).**
   The folder tree says how many unread messages each folder holds, as in "Inbox, 5 unread".
   Until now that number changed only at the next check for mail, so after you marked a message

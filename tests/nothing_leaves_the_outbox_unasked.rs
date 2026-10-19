@@ -562,6 +562,149 @@ fn test_the_reading_can_see_a_start_that_lets_go_whatever_the_marker_said() {
     assert_eq!(how_the_start_lets_go("let x = 1;\n"), TheStart::NeverLetsGo);
 }
 
+/// The words the Outbox's Delete says about the chosen messages a pass of the
+/// send loop is sending.
+const THE_WORDS_FOR_MESSAGES_BEING_SENT: &str = "the_ones_being_sent_stay(";
+
+/// The loop over the chosen messages in `fn delete_these(`.
+const THE_LOOP_OVER_THE_CHOSEN: &str = "for message in &chosen.messages {";
+
+/// The code of a top level function of the main window, from the shipping
+/// lines only, comments cut away.
+fn the_code_of_the_function(source: &str, opens_with: &str) -> String {
+    let shipping = the_shipping_lines_of(source)
+        .into_iter()
+        .map(|(_, line)| line)
+        .collect::<Vec<_>>()
+        .join("\n");
+    from_here_to_the_closing_brace(&shipping, opens_with, "")
+        .lines()
+        .map(code_of)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Where Delete says that the messages being sent stay, read from its code.
+#[derive(Debug, PartialEq)]
+enum WhereTheWordsAreSaid {
+    /// Once, after the loop over the chosen messages.
+    OnceAfterTheLoop,
+    /// Nowhere, so the person hears nothing about a message that stayed.
+    Nowhere,
+    /// Inside the loop, so a pass holding five says it five times.
+    InsideTheLoop,
+    /// Before the loop has asked the store anything.
+    BeforeTheLoop,
+    /// More than once after the loop.
+    MoreThanOnce,
+    /// In `cancel_if_queued`, which is once per message.
+    ByEachMessage,
+}
+
+fn where_delete_says_the_messages_being_sent_stay(
+    delete_these: &str,
+    cancel_if_queued: &str,
+) -> WhereTheWordsAreSaid {
+    if cancel_if_queued.contains(THE_WORDS_FOR_MESSAGES_BEING_SENT) {
+        return WhereTheWordsAreSaid::ByEachMessage;
+    }
+    let said: Vec<usize> = delete_these
+        .match_indices(THE_WORDS_FOR_MESSAGES_BEING_SENT)
+        .map(|(at, _)| at)
+        .collect();
+    let Some(&first) = said.first() else {
+        return WhereTheWordsAreSaid::Nowhere;
+    };
+    let Some(opens) = delete_these.find(THE_LOOP_OVER_THE_CHOSEN) else {
+        return WhereTheWordsAreSaid::BeforeTheLoop;
+    };
+    let closes = opens
+        + THE_LOOP_OVER_THE_CHOSEN.len()
+        + from_here_to_the_closing_brace(&delete_these[opens..], THE_LOOP_OVER_THE_CHOSEN, "    ")
+            .len();
+    match (first, said.len()) {
+        (at, _) if at < opens => WhereTheWordsAreSaid::BeforeTheLoop,
+        (at, _) if at < closes => WhereTheWordsAreSaid::InsideTheLoop,
+        (_, 1) => WhereTheWordsAreSaid::OnceAfterTheLoop,
+        _ => WhereTheWordsAreSaid::MoreThanOnce,
+    }
+}
+
+#[test]
+fn test_delete_says_once_that_the_messages_being_sent_stay() {
+    // Ledger 843. The Outbox's Delete refuses a message a pass of the send
+    // loop holds, and a pass claims every ready message at once, so Delete
+    // over five during a pass would say the same refusal five times
+    // (guardrail 5). The words are counted in the loop and said after it.
+    let source = the_main_window();
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay(
+            &the_code_of_the_function(&source, "fn delete_these("),
+            &the_code_of_the_function(&source, "fn cancel_if_queued("),
+        ),
+        WhereTheWordsAreSaid::OnceAfterTheLoop,
+        "Delete in the Outbox does not say once, after its loop over the chosen \
+         messages, that the ones being sent stay"
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_the_words_said_inside_the_loop() {
+    let inside = "fn delete_these(\n\
+        \x20   for message in &chosen.messages {\n\
+        \x20       if let Some(words) = the_ones_being_sent_stay(1) {\n\
+        \x20           send_refusal(tx, rt, &words);\n\
+        \x20       }\n\
+        \x20   }\n\
+        }\n";
+    let twice = "fn delete_these(\n\
+        \x20   for message in &chosen.messages {\n\
+        \x20       being_sent += 1;\n\
+        \x20   }\n\
+        \x20   say(the_ones_being_sent_stay(being_sent));\n\
+        \x20   say(the_ones_being_sent_stay(being_sent));\n\
+        }\n";
+    let right = "fn delete_these(\n\
+        \x20   for message in &chosen.messages {\n\
+        \x20       being_sent += 1;\n\
+        \x20   }\n\
+        \x20   say(the_ones_being_sent_stay(being_sent));\n\
+        }\n";
+
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay(inside, ""),
+        WhereTheWordsAreSaid::InsideTheLoop
+    );
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay(twice, ""),
+        WhereTheWordsAreSaid::MoreThanOnce
+    );
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay(right, ""),
+        WhereTheWordsAreSaid::OnceAfterTheLoop
+    );
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay("fn delete_these() {}\n", ""),
+        WhereTheWordsAreSaid::Nowhere
+    );
+}
+
+#[test]
+fn test_the_reading_can_see_cancel_if_queued_saying_them_itself() {
+    let each = "fn cancel_if_queued(\n\
+        \x20   Ok(CancelAnswer::BeingSent) => say(the_ones_being_sent_stay(1)),\n\
+        }\n";
+    let right = "fn delete_these(\n\
+        \x20   for message in &chosen.messages {}\n\
+        \x20   say(the_ones_being_sent_stay(being_sent));\n\
+        }\n";
+
+    assert_eq!(
+        where_delete_says_the_messages_being_sent_stay(right, each),
+        WhereTheWordsAreSaid::ByEachMessage
+    );
+}
+
 #[test]
 fn test_the_reading_finds_a_flush_that_is_really_written() {
     // The other direction of the companion above. A reading that finds nothing

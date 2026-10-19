@@ -27378,7 +27378,10 @@ fn spawn_subscription_writes(app: AppHandles<'_>, changed: Vec<(String, bool)>) 
 /// delete is made here.
 ///
 /// Answers how many of the chosen messages it reached: cancelled, deleted
-/// on this computer, or made here to be told to the server.
+/// on this computer, or made here to be told to the server. A message in the
+/// Outbox that a pass of the send loop is sending is not reached: it stays,
+/// and one sentence after the loop says so for all of them, with their
+/// number (ledger 843).
 fn delete_these(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
@@ -27396,15 +27399,25 @@ fn delete_these(
     let mut deleting_here_first: std::collections::BTreeMap<String, (Account, Vec<AnAskMadeHere>)> =
         std::collections::BTreeMap::new();
     let mut reached = 0;
+    let mut being_sent = 0;
     // Each message as it was, for Edit, Undo (13-08).
     let mut went: Vec<crate::application::undoing::WhereItWas> = Vec::new();
     for message in &chosen.messages {
         // In the outbox, delete means cancel the send. There is no server
         // copy to remove: the message has not been anywhere. Undo Send is its
-        // undo, so it is not remembered here.
-        if cancel_if_queued(app, cache, message.row_id) {
-            reached += 1;
-            continue;
+        // undo, so it is not remembered here. One a pass is sending stays,
+        // is not counted as reached, and is said once after the loop,
+        // because a pass claims every ready message at once.
+        match cancel_if_queued(app, cache, message.row_id) {
+            InTheOutbox::NotTheOutbox => {}
+            InTheOutbox::Answered => {
+                reached += 1;
+                continue;
+            }
+            InTheOutbox::BeingSent => {
+                being_sent += 1;
+                continue;
+            }
         }
         // A message on this computer. POP mail is all of it, and the route
         // below needs a session with a server this account has never had.
@@ -27458,6 +27471,9 @@ fn delete_these(
             }
             Err(why) => send_refusal(tx, rt, &why),
         }
+    }
+    if let Some(words) = crate::application::sending_later::the_ones_being_sent_stay(being_sent) {
+        send_refusal(tx, rt, &words);
     }
     let made = complete_here_then_tell_the_server(
         app,
@@ -27733,18 +27749,38 @@ fn the_messages_moving(
         .collect()
 }
 
+/// What the Outbox's Delete made of one chosen message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InTheOutbox {
+    /// Not the Outbox, so the ordinary delete goes on.
+    NotTheOutbox,
+    /// Taken out, or not there and said so: nothing more to do.
+    Answered,
+    /// A pass of the send loop holds it, so it stays. Said by the caller,
+    /// once for the whole set.
+    BeingSent,
+}
+
 /// Take a message out of the send queue, if that is what is being deleted.
 ///
-/// Returns whether it handled it. In the outbox the selected row is a queued
-/// message rather than one on a server, so the ordinary delete would ask a
-/// server about a message it has never seen.
+/// In the outbox the selected row is a queued message rather than one on a
+/// server, so the ordinary delete would ask a server about a message it has
+/// never seen.
 ///
 /// The one thing worth being able to do to mail that has not gone, and it could
 /// not be done at all before: the queue was a number on the status bar.
-fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_id: i64) -> bool {
+///
+/// A message a pass is sending stays, and nothing is said here about it:
+/// `delete_these` says it once for every such message it was handed.
+fn cancel_if_queued(
+    app: AppHandles<'_>,
+    cache: &Option<Arc<MessageCache>>,
+    row_id: i64,
+) -> InTheOutbox {
+    use crate::data::message_cache::CancelAnswer;
     let AppHandles { state, tx, rt } = app;
     let Some(cache) = cache.as_ref() else {
-        return false;
+        return InTheOutbox::NotTheOutbox;
     };
     // One lock, through the one place that resolves this. Written out here it
     // took the lock twice in a single statement: the guard from the first call
@@ -27753,15 +27789,15 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
     // message stopped the window repainting, answering the keyboard and
     // speaking.
     let Some(folder_id) = folder_on_screen(&lock_state(state)) else {
-        return false;
+        return InTheOutbox::NotTheOutbox;
     };
     if cache.folder_kind(folder_id).ok().flatten() != Some(crate::common::types::FolderType::Outbox)
     {
-        return false;
+        return InTheOutbox::NotTheOutbox;
     }
 
     match cache.cancel_queued(row_id) {
-        Ok(true) => {
+        Ok(CancelAnswer::TakenOut) => {
             send_status(tx, rt, "Taken out of the outbox. It will not be sent.");
             load_folder_messages(
                 &Some(cache.clone()),
@@ -27771,10 +27807,13 @@ fn cancel_if_queued(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>, row_
                 tx,
             );
         }
-        Ok(false) => send_refusal(tx, rt, "That message is no longer in the Outbox."),
+        Ok(CancelAnswer::BeingSent) => return InTheOutbox::BeingSent,
+        Ok(CancelAnswer::NotThere) => {
+            send_refusal(tx, rt, "That message is no longer in the Outbox.")
+        }
         Err(e) => send_refusal(tx, rt, &format!("It could not be cancelled: {e}.")),
     }
-    true
+    InTheOutbox::Answered
 }
 
 /// Take one row out of the message list on screen.
