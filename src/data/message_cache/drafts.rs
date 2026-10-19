@@ -135,7 +135,9 @@ impl MessageCache {
         Ok(removed > 0)
     }
 
-    /// Clear all drafts for an account
+    /// Clear all drafts for an account, and the removals of its sent drafts'
+    /// copies still waiting for its next check, which hold their subjects in
+    /// a file that is not encrypted (13.2-31.4).
     pub fn clear_drafts(&self, account_id: &str) -> Result<()> {
         self.conn
             .execute(
@@ -143,6 +145,12 @@ impl MessageCache {
                 params![account_id],
             )
             .map_err(|e| Error::Other(format!("Failed to clear drafts: {}", e)))?;
+        self.conn
+            .execute(
+                "DELETE FROM drafts_left_at_the_server WHERE account_id = ?1",
+                params![account_id],
+            )
+            .map_err(|e| Error::Other(format!("Failed to clear the kept removals: {}", e)))?;
 
         Ok(())
     }

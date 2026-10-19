@@ -38,6 +38,14 @@ pub(crate) trait KeepsTheDraft {
     async fn file_this_one(&self, folder: &str, raw: &[u8]) -> std::result::Result<(), String>;
     /// Take these ones out again, and say how many really went.
     async fn remove_these(&self, folder: &str, uids: &[u32]) -> std::result::Result<usize, String>;
+    /// The `Message-ID` the message under this number really carries, or
+    /// nothing when it carries none. What the search above cannot say: it
+    /// matches any identifier that contains the one asked for.
+    async fn identifier_at(
+        &self,
+        folder: &str,
+        uid: u32,
+    ) -> std::result::Result<Option<String>, String>;
 }
 
 /// What became of the copy of a draft at the server.
@@ -178,7 +186,8 @@ impl TakenAway {
             }
             Self::ACopyMayStillBeThere(reason) => format!(
                 "The message you sent may still be in Drafts on the server, so your other \
-                 devices could show it as a draft nobody has sent. The server said: {}",
+                 devices could show it as a draft nobody has sent. Wixen Mail tries to take it \
+                 out again at the next check for mail. The server said: {}",
                 ended(reason)
             ),
         }
@@ -193,6 +202,56 @@ impl TakenAway {
     }
 }
 
+/// What a kept removal's second try, at the account's next check for mail,
+/// leaves to do (ledger 845).
+///
+/// Both answers forget the removal. A server that refuses for good is said
+/// once, at the check that tried again, and not at every check after it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterTheSecondTry {
+    /// The copy went, or none was there: nothing to say.
+    Forget,
+    /// The copy may still be there: say so once, with the server's words.
+    ForgetAndSay(String),
+}
+
+/// What the answer of a second try means.
+pub fn after_the_second_try(taken: &TakenAway) -> AfterTheSecondTry {
+    match taken {
+        TakenAway::Gone | TakenAway::NothingWasFiled => AfterTheSecondTry::Forget,
+        TakenAway::ACopyMayStillBeThere(reason) => AfterTheSecondTry::ForgetAndSay(reason.clone()),
+    }
+}
+
+/// The one sentence a check says for the sent messages whose copy is still
+/// in Drafts after a second try, or nothing when there are none.
+///
+/// `subjects` are those messages' subjects and `reason` the server's words
+/// for the first of them.
+pub fn still_in_drafts_after_a_second_try(subjects: &[String], reason: &str) -> Option<String> {
+    let reason = ended(reason);
+    match subjects {
+        [] => None,
+        [subject] => {
+            let which = match subject.trim() {
+                "" => "A message you sent with no subject".to_string(),
+                named => format!("The message \"{named}\" you sent"),
+            };
+            Some(format!(
+                "{which} is still in Drafts on the server, so your other devices could show it \
+                 as a draft nobody has sent. Taking it out failed again, so delete it from \
+                 Drafts yourself. The server said: {reason}"
+            ))
+        }
+        several => Some(format!(
+            "{} messages you sent are still in Drafts on the server, so your other devices \
+             could show them as drafts nobody has sent. Taking them out failed again, so \
+             delete them from Drafts yourself. The server said: {reason}",
+            several.len()
+        )),
+    }
+}
+
 /// Take a sent draft's copies out of the server's Drafts folder.
 ///
 /// Ask which copies the folder holds under the draft's identifier, then
@@ -204,7 +263,11 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     folder: &str,
     message_id: &str,
 ) -> TakenAway {
-    let there = match server.copies_already_there(folder, message_id).await {
+    let found = match server.copies_already_there(folder, message_id).await {
+        Ok(found) => found,
+        Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
+    };
+    let there = match the_ones_carrying_it_exactly(server, folder, message_id, found).await {
         Ok(there) => there,
         Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
     };
@@ -216,6 +279,35 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
         Ok(_) => TakenAway::ACopyMayStillBeThere(CANNOT_REMOVE_ONE.to_string()),
         Err(refused) => TakenAway::ACopyMayStillBeThere(refused),
     }
+}
+
+/// The numbers the search found whose message carries the draft's identifier
+/// exactly (ledger 854).
+///
+/// The search behind [`KeepsTheDraft::copies_already_there`], `HEADER
+/// MESSAGE-ID`, matches any message whose header contains the text asked for
+/// (RFC 3501, section 6.4.4), so a message in Drafts whose identifier merely
+/// holds the draft's would be removed with it. Each number is read first and
+/// kept only when the renumbering decision's own comparison,
+/// [`crate::application::renumbered::the_number_confirmed`], says it is the
+/// same identifier. A number whose message cannot be read is an answer nobody
+/// has, so it stops the removal rather than being guessed either way.
+async fn the_ones_carrying_it_exactly<K: KeepsTheDraft>(
+    server: &K,
+    folder: &str,
+    message_id: &str,
+    found: Vec<u32>,
+) -> std::result::Result<Vec<u32>, String> {
+    let mut exactly = Vec::with_capacity(found.len());
+    for uid in found {
+        let held = server.identifier_at(folder, uid).await?;
+        exactly.extend(crate::application::renumbered::the_number_confirmed(
+            message_id,
+            uid,
+            held.as_deref(),
+        ));
+    }
+    Ok(exactly)
 }
 
 /// The lock behind [`one_filing_at_a_time`]. One for the whole process.
@@ -283,6 +375,17 @@ impl KeepsTheDraft for DraftAtTheServer<'_> {
             .await
             .map_err(|e| e.to_string())
     }
+
+    async fn identifier_at(
+        &self,
+        folder: &str,
+        uid: u32,
+    ) -> std::result::Result<Option<String>, String> {
+        self.session
+            .message_id_at(folder, uid)
+            .await
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -303,8 +406,14 @@ mod tests {
         already_there: std::result::Result<Vec<u32>, String>,
         filing: std::result::Result<(), String>,
         removal: std::result::Result<usize, String>,
+        /// What reading a number answers, where it is not the draft's own
+        /// identifier, [`THE_DRAFTS_IDENTIFIER`].
+        carrying: std::collections::HashMap<u32, std::result::Result<Option<String>, String>>,
         asked: RefCell<Vec<Asked>>,
     }
+
+    /// The identifier every removal and filing here is asked about.
+    const THE_DRAFTS_IDENTIFIER: &str = "<d@x>";
 
     impl Scripted {
         fn holding(uids: Vec<u32>) -> Self {
@@ -313,6 +422,7 @@ mod tests {
                 already_there: Ok(uids),
                 filing: Ok(()),
                 removal: Ok(count),
+                carrying: std::collections::HashMap::new(),
                 asked: RefCell::new(Vec::new()),
             }
         }
@@ -344,6 +454,17 @@ mod tests {
         ) -> std::result::Result<usize, String> {
             self.asked.borrow_mut().push(Asked::Remove(uids.to_vec()));
             self.removal.clone()
+        }
+
+        async fn identifier_at(
+            &self,
+            _folder: &str,
+            uid: u32,
+        ) -> std::result::Result<Option<String>, String> {
+            self.carrying
+                .get(&uid)
+                .cloned()
+                .unwrap_or_else(|| Ok(Some(THE_DRAFTS_IDENTIFIER.to_string())))
         }
     }
 
@@ -539,6 +660,66 @@ mod tests {
         take_away_the_filed_copy(server, "Drafts", "<d@x>").await
     }
 
+    /// An identifier that holds the draft's, so the server's search answers
+    /// its number too, and is another message's.
+    const ONE_THAT_ONLY_CONTAINS_IT: &str = "<re.<d@x>>";
+
+    #[tokio::test]
+    async fn test_a_message_whose_identifier_only_contains_the_drafts_stays_in_drafts() {
+        // Ledger 854. The search matches any Message-ID that contains the
+        // text asked for (RFC 3501, section 6.4.4), so a message in Drafts
+        // whose identifier holds the draft's was removed with the sent copy.
+        let mut server = Scripted::holding(vec![4, 9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+        server.removal = Ok(1);
+
+        let taken = sending(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::Remove(vec![4])],
+            "the removal named a message that is not the sent draft's copy"
+        );
+        assert_eq!(taken, TakenAway::Gone);
+    }
+
+    #[tokio::test]
+    async fn test_a_search_that_found_only_another_message_removes_nothing() {
+        let mut server = Scripted::holding(vec![9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+
+        let taken = sending(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies],
+            "something was removed although no message carried the draft's identifier"
+        );
+        assert_eq!(taken, TakenAway::NothingWasFiled);
+    }
+
+    #[tokio::test]
+    async fn test_a_message_the_server_will_not_let_be_read_is_not_removed() {
+        // Not knowing what a message carries is not knowing it is the copy,
+        // so it stays, and the person hears that a copy may still be there.
+        let mut server = Scripted::holding(vec![4]);
+        server
+            .carrying
+            .insert(4, Err("the fetch was refused".to_string()));
+
+        let taken = sending(&server).await;
+
+        assert_eq!(*server.asked.borrow(), vec![Asked::WhichCopies]);
+        assert_eq!(
+            taken,
+            TakenAway::ACopyMayStillBeThere("the fetch was refused".to_string())
+        );
+    }
+
     #[tokio::test]
     async fn test_sending_takes_away_exactly_the_copies_the_server_named() {
         // Finding #35: Send took the draft out of the list on this computer
@@ -633,6 +814,100 @@ mod tests {
             *server.asked.borrow(),
             vec![Asked::File, Asked::WhichCopies, Asked::Remove(vec![4])]
         );
+    }
+
+    #[test]
+    fn test_send_says_a_copy_left_behind_will_be_tried_again_at_the_next_check() {
+        // Ledger 845: the removal is kept and tried again, so the sentence
+        // Send says tells the person when.
+        let said = TakenAway::ACopyMayStillBeThere("the server could not be reached".to_string())
+            .what_happened();
+
+        assert!(said.contains("next check for mail"), "{said}");
+        assert!(
+            said.ends_with("the server could not be reached."),
+            "the server's words are no longer the end of the sentence: {said}"
+        );
+    }
+
+    #[test]
+    fn test_a_second_try_that_took_the_copy_away_or_found_none_says_nothing() {
+        for taken in [TakenAway::Gone, TakenAway::NothingWasFiled] {
+            assert_eq!(
+                after_the_second_try(&taken),
+                AfterTheSecondTry::Forget,
+                "{taken:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_second_try_that_failed_again_is_forgotten_and_said_with_the_servers_words() {
+        let taken = TakenAway::ACopyMayStillBeThere("the server would not do it".to_string());
+
+        assert_eq!(
+            after_the_second_try(&taken),
+            AfterTheSecondTry::ForgetAndSay("the server would not do it".to_string())
+        );
+    }
+
+    /// What a sentence about a sent message must never say, because it was
+    /// sent.
+    fn says_it_was_not_sent(said: &str) -> bool {
+        let said = said.to_lowercase();
+        ["not sent", "not been sent", "wasn't sent", "unsent"]
+            .iter()
+            .any(|words| said.contains(words))
+    }
+
+    #[test]
+    fn test_one_message_still_in_drafts_after_a_second_try_is_named_by_its_subject() {
+        let said = still_in_drafts_after_a_second_try(
+            &["Lunch on Friday".to_string()],
+            "the server would not do it",
+        )
+        .expect("a sentence for a copy still in Drafts");
+
+        assert!(said.contains("\"Lunch on Friday\""), "{said}");
+        assert!(said.contains("delete it from Drafts"), "{said}");
+        assert!(
+            said.ends_with("The server said: the server would not do it."),
+            "{said}"
+        );
+        assert!(!says_it_was_not_sent(&said), "{said}");
+
+        let without_a_subject =
+            still_in_drafts_after_a_second_try(&[String::new()], "the server would not do it")
+                .expect("a sentence for a copy with no subject");
+        assert!(
+            without_a_subject.contains("with no subject"),
+            "{without_a_subject}"
+        );
+        assert!(!without_a_subject.contains("\"\""), "{without_a_subject}");
+    }
+
+    #[test]
+    fn test_several_messages_still_in_drafts_after_a_second_try_are_said_with_their_number() {
+        let subjects = ["Lunch on Friday", "Minutes", "Rota"].map(String::from);
+
+        let said = still_in_drafts_after_a_second_try(&subjects, "over quota")
+            .expect("a sentence for the copies still in Drafts");
+
+        assert!(said.starts_with("3 messages you sent"), "{said}");
+        assert!(said.contains("delete them from Drafts"), "{said}");
+        assert!(said.ends_with("The server said: over quota."), "{said}");
+        assert!(
+            !subjects
+                .iter()
+                .any(|subject| said.contains(subject.as_str())),
+            "one sentence for several names none of them: {said}"
+        );
+        assert!(!says_it_was_not_sent(&said), "{said}");
+    }
+
+    #[test]
+    fn test_nothing_is_said_when_no_copy_failed_again() {
+        assert_eq!(still_in_drafts_after_a_second_try(&[], "over quota"), None);
     }
 
     #[test]

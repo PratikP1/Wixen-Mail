@@ -1437,6 +1437,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A sent message left in Drafts on the server is taken out at the next check (2026-10-19,
+  FOUND-04).** When you send a message you wrote as a draft, Wixen Mail takes the draft's copy
+  out of the account's Drafts folder on the mail server, so your phone and webmail do not show
+  it as a draft nobody has sent. If the server could not be reached, or refused, the copy
+  stayed there for good. Now Wixen Mail remembers it and tries again at that account's next
+  check for mail. The status line at Send says so: "Wixen Mail tries to take it out again at the
+  next check for mail." When the second try works, nothing more is said. When it fails again,
+  you hear one sentence naming the message, or the number of messages, and asking you to delete
+  it from Drafts yourself; it is not tried a third time. A message you took back and saved as a
+  draft again is never taken out. Removing an account forgets what it was waiting to take out.
+  And the copy taken out is now only the draft's own: the server's search also finds a message
+  whose identifier merely contains the draft's, and until now that message was taken out too.
+
+  Known limits. Saving a newer copy of a draft still takes out the older copies the same search
+  finds without that check. Nothing here has run against a real mail server, and nobody has
+  heard the new sentences with a screen reader yet.
+
 - **Delete in the Outbox no longer says a message will not be sent while it is being sent
   (2026-10-19).** When Wixen Mail was already sending a message, Delete in the Outbox took it
   off the list and said "Taken out of the outbox. It will not be sent.", and the message went
@@ -1851,7 +1868,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   what it holds, or will not remove the copy, the status line says the message may still be in
   Drafts and gives the server's own words. Undo Send, pressed too late to stop a message, used
   to leave a copy of that message in Drafts; it now puts the draft in Drafts only once it has
-  really taken the message back. A copy that could not be removed is not tried again later.
+  really taken the message back. A copy that could not be removed was not tried again later;
+  since 2026-10-19 it is, at the account's next check for mail (see the entry above).
   Nothing here has been tried against a real mail server yet. The version does not move.
 - **A message is no longer sent twice, and Undo Send no longer says it took back a message
   that was already going (2026-10-14, FOUND-04).** Two held messages coming due a few seconds
