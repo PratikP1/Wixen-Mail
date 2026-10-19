@@ -715,6 +715,11 @@ pub struct WxUIState {
     /// whole folder and speaking its count.
     pub reading_the_open_folder_again:
         crate::application::bringing_everything_down::ReadingTheOpenFolderAgain,
+    /// Whether a `UIUpdate::FolderCountsMoved` is already on its way, so a
+    /// change over many messages rewords the folder tree once rather than
+    /// once per message (13.2-31.2). Set by `the_folder_counts_moved`,
+    /// cleared by the arm that rewords.
+    pub a_rewording_of_the_tree_is_on_its_way: bool,
 }
 
 /// Where the download of everything stands.
@@ -854,6 +859,7 @@ impl Default for WxUIState {
             calendar_showing: CalendarShowing::agenda_now(),
             downloading: Downloading::default(),
             reading_the_open_folder_again: Default::default(),
+            a_rewording_of_the_tree_is_on_its_way: false,
         }
     }
 }
@@ -13120,7 +13126,11 @@ fn as_they_were(
 ///
 /// The write is the one it always was: the row in state, the list told, the
 /// server told. Nothing is announced, because this is not something somebody
-/// did, and the count in the folder tree is where it shows.
+/// did, and the count in the folder tree is where it shows. Corrected by
+/// dating, 2026-10-18 (13.2-31.2, ledger 836): until then the tree's count
+/// showed it only at the next check, because nothing but a check wrote that
+/// count; the store now moves it with the row and the tree rewords the row at
+/// once, saying nothing.
 ///
 /// The wait is the state's, read under the lock this already takes, and not
 /// a parameter: a parameter is handed a value the caller read once, and
@@ -14707,7 +14717,10 @@ pub fn folder_tree_updates(
     // Selecting a folder looks its id up by the text of the tree item, so the
     // map has to be keyed on the same label the tree shows. Keyed on the bare
     // name it would miss every folder that had unread mail, which is the set
-    // somebody is most likely to open.
+    // somebody is most likely to open. Corrected by dating, 2026-10-18
+    // (13.2-31.2): the map is keyed on each row's identity, as
+    // `FolderIdsLoaded` below says, so a row reworded in place when its count
+    // moves breaks no lookup.
     // Labels first: the sidebar draws folders and labels in one pass, so they
     // have to be in hand by the time FoldersLoaded rebuilds the tree.
     //
@@ -21269,6 +21282,94 @@ fn say_the_row_again(
     }
 }
 
+/// Ask the folder tree to reword its counts, because a change made here moved
+/// a folder's unread mail (13.2-31.2, ledger 836).
+///
+/// The store moves the count itself, through its triggers; this is how the
+/// window learns of it, since the tree is reachable only where updates are
+/// handled. One request on its way at a time: a change over twenty messages
+/// sends one, and the rewording reads the counts as they stand when it runs.
+/// A send that fails clears the flag again, so the next change asks anew.
+fn the_folder_counts_moved(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdate>) {
+    let already_on_its_way = std::mem::replace(
+        &mut lock_state(state).a_rewording_of_the_tree_is_on_its_way,
+        true,
+    );
+    if !already_on_its_way && tx.try_send(UIUpdate::FolderCountsMoved).is_err() {
+        lock_state(state).a_rewording_of_the_tree_is_on_its_way = false;
+    }
+}
+
+/// Reword the folder tree's rows whose counts moved, where they stand, and say
+/// nothing (13.2-31.2, ledger 836).
+///
+/// Pratik, 2026-10-14: a change the announcement confirms and the screen does
+/// not show "is confusing". The tree is read again the way a rebuild reads it,
+/// and only the rows whose words changed are written, to the control and to
+/// the rows held beside it together, the way [`say_the_row_again`] writes
+/// both, because a row is paired back to its identity by its words. Nothing is
+/// spoken and the cursor is not touched: the rebuild's "N folders loaded"
+/// after every M would be a sentence nobody asked for, and the new count is
+/// heard when the row is reached.
+///
+/// A tree whose rows came, went or moved since it was drawn, or whose items do
+/// not line up with the rows held, is left as it is for the next rebuild, with
+/// a line in the log.
+fn say_the_folder_counts_again(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    tree: &TreeCtrl,
+) {
+    let looked_at = lock_state(state)
+        .active_account_id
+        .clone()
+        .unwrap_or_default();
+    let fresh = match folder_tree_updates(cache, &looked_at) {
+        Ok(updates) => updates.into_iter().find_map(|update| match update {
+            UIUpdate::FoldersLoaded(rows) => Some(rows),
+            _ => None,
+        }),
+        Err(why) => {
+            tracing::warn!("The folder tree's counts could not be read again: {why}");
+            None
+        }
+    };
+    let Some(fresh) = fresh else {
+        return;
+    };
+    let held = lock_state(state).tree_rows.clone();
+    let Some(changed) = folder_tree::rows_that_read_differently(&held, &fresh) else {
+        tracing::info!("The folder tree's rows changed, so its counts wait for the next rebuild");
+        return;
+    };
+    if changed.is_empty() {
+        return;
+    }
+    let Some(root) = tree.get_root_item() else {
+        return;
+    };
+    let mut items = Vec::new();
+    let mut on_screen = Vec::new();
+    collect_rows(tree, &root, &mut items, &mut on_screen);
+    if items.len() != fresh.len() {
+        tracing::info!(
+            "The folder tree shows {} rows against {} read, so its counts wait for the next \
+             rebuild",
+            items.len(),
+            fresh.len()
+        );
+        return;
+    }
+    for at in changed {
+        if let (Some(item), Some(row)) = (items.get(at), fresh.get(at)) {
+            tree.set_item_text(item, &row.label);
+        }
+    }
+    let mut held = lock_state(state);
+    held.folders = fresh.iter().map(|row| row.label.clone()).collect();
+    held.tree_rows = fresh;
+}
+
 /// Which row of the folder tree an item is.
 ///
 /// Found by position: the rebuild appends depth first and `collect_rows` walks
@@ -22499,6 +22600,11 @@ fn move_back_or_again(
             )
         });
     back.done += made.len();
+    // Undone or redone here, so the counts of the folders involved moved in
+    // the store; the tree says them at once (13.2-31.2).
+    if back.done > 0 {
+        the_folder_counts_moved(state, tx);
+    }
     for changed in &made {
         let asked = &changed.ask.asked;
         if let Some(into) = asked.what.destination() {
@@ -23538,6 +23644,13 @@ fn write_flags_or_put_the_row_back(
 ) -> bool {
     let (read, starred) = wanted;
     let Err(e) = cache.update_message_flags(cache_id, read, starred) else {
+        // The store moved the folder's unread count with the row; the tree
+        // says it at once (13.2-31.2). After every write that stuck, not only
+        // when `read` differs from `was`: under conversation view a row not
+        // on screen gives `was` as it stood before the change being undone,
+        // so that test would miss Undo there. A star rewords nothing, since
+        // no row's words change, and costs one reading of the tree.
+        the_folder_counts_moved(state, tx);
         return true;
     };
     tracing::error!("Failed to update flags for message {cache_id}: {e}");
@@ -23689,6 +23802,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::FolderIdsLoaded(pairs) => {
             let mut s = lock_state(state);
             s.folder_ids = pairs.iter().cloned().collect();
+        }
+        UIUpdate::FolderCountsMoved => {
+            // Cleared before the reading, so a change made while it runs
+            // asks again rather than being lost behind this one.
+            lock_state(state).a_rewording_of_the_tree_is_on_its_way = false;
+            if let Some(cache) = message_cache.as_deref() {
+                say_the_folder_counts_again(state, cache, folder_tree);
+            }
         }
         UIUpdate::LabelsLoaded(labels) => {
             lock_state(state).labels = labels.clone();
@@ -24367,6 +24488,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     waiting.message_row_id
                 );
             }
+            // The row back where it was, or the copy gone, moved the counts
+            // of both folders in the store (13.2-31.2).
+            the_folder_counts_moved(state, tx);
             // The folder the row is back in, or the copy left, read again
             // when it is the one on screen, so the list shows the message
             // where it is. The destination is the other account's for a
@@ -24930,11 +25054,15 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             if let Some(cache) = message_cache.as_deref() {
                 take_row_out_of_the_list(state, msg_list, cache, *cache_id);
             }
+            the_folder_counts_moved(state, tx);
         }
         UIUpdate::MessageLeftTheFolder(cache_id) => {
             if let Some(cache) = message_cache.as_deref() {
                 take_row_out_of_the_list(state, msg_list, cache, *cache_id);
             }
+            // A delete of mail kept here arrives this way; the store moved
+            // the folder's count (13.2-31.2).
+            the_folder_counts_moved(state, tx);
         }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
             // The row on screen as well as the row in the database. Writing
@@ -26646,6 +26774,9 @@ fn complete_here_then_tell_the_server(
     if changed.is_empty() {
         return changed;
     }
+    // What left a folder or reached one here moved their unread counts in
+    // the store; the tree says them at once (13.2-31.2).
+    the_folder_counts_moved(state, tx);
 
     // The push: once per account told, in the background, on the session
     // that account is signed in with, and for a crossing on the other

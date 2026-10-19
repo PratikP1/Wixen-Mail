@@ -946,9 +946,30 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
     chain
 }
 
-/// Which rows of the tree on screen read differently in a fresh reading of it.
-pub fn rows_that_read_differently(_held: &[TreeRow], _fresh: &[TreeRow]) -> Option<Vec<usize>> {
-    None
+/// Which rows of the tree on screen read differently in a fresh reading of it,
+/// by position, or `None` when a row came, went or moved.
+///
+/// 13.2-31.2 (2026-10-18). A change made here moves a folder's unread count,
+/// and the tree says it at once by rewording the rows whose words changed
+/// where they stand, rather than by a rebuild, which moves nothing but says
+/// how many folders loaded. Rewording in place is only right when both
+/// readings hold the same rows in the same order, since the items on screen
+/// are paired with rows by position; otherwise the answer is `None` and the
+/// next rebuild draws the tree.
+pub fn rows_that_read_differently(held: &[TreeRow], fresh: &[TreeRow]) -> Option<Vec<usize>> {
+    let same_rows = held.len() == fresh.len()
+        && held
+            .iter()
+            .zip(fresh)
+            .all(|(was, now)| was.identity == now.identity && was.depth == now.depth);
+    same_rows.then(|| {
+        held.iter()
+            .zip(fresh)
+            .enumerate()
+            .filter(|(_, (was, now))| was.label != now.label)
+            .map(|(at, _)| at)
+            .collect()
+    })
 }
 
 /// The Favourites group: the heading, a branch per account that has a pin, and

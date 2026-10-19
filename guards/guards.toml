@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 787 records were swept that day.
-# 823 records have arrived since and have not been through it.
+# 825 records have arrived since and have not been through it.
 #
 # 787 rather than 791 since 2026-10-18: the four swept records on the second
 # translation registry in `service::spellcheck` were retired by 13.2-30 with
@@ -13834,7 +13834,7 @@ red = [
     "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]
 
 [[guard]]
@@ -13889,7 +13889,7 @@ red = [
     "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -14170,7 +14170,7 @@ red = [
     "presentation::folder_tree::tests::test_unpinning_leaves_the_account_branchs_row_untouched",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]
 
 [[guard]]
@@ -15172,7 +15172,7 @@ red = [
     "presentation::folder_tree::tests::test_two_accounts_with_searches_give_one_heading_and_a_branch_each",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]
 
 # ── A saved search run against the account somebody was last looking at ──────
@@ -15956,7 +15956,7 @@ red = [
     "presentation::folder_tree::which_menu::test_rows_that_want_different_commands_do_not_share_a_menu",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]
 
 # ── A stored condition this build cannot show, opened anyway ─────────────────
@@ -35981,7 +35981,7 @@ red = [
     "presentation::folder_tree::tests::test_the_gesture_moves_an_account_on_an_account_row_and_a_pin_on_a_pinned_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 97 },
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]
 
 # A seventh saved search given a key, Alt and a tenth digit that does not
@@ -42225,4 +42225,43 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/folders.rs", tests = 71 },
+]
+
+# The flag write that stuck no longer asking the tree to reword its counts
+# (13.2-31.2, ledger 836): M, the automatic mark, Undo of a mark and a
+# refusal put back would move the count in the store and leave the tree
+# saying the old one until the next rebuild. Anchored on the last line of the
+# comment above the call and the call. Measured by hand on 2026-10-18: the
+# whole library 9,283 passed, and in the target exactly this one failed.
+[[guard]]
+name = "a flag write that stuck asks the tree to reword its counts"
+file = "src/presentation/wx_app.rs"
+suite = "the_folder_tree_counts_follow_a_change_made_here"
+before = '''        // no row's words change, and costs one reading of the tree.
+        the_folder_counts_moved(state, tx);'''
+after = '''        // no row's words change, and costs one reading of the tree.'''
+red = [
+    "test_each_change_made_here_asks_the_tree_to_reword_its_counts",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_folder_tree_counts_follow_a_change_made_here.rs", tests = 7 },
+]
+
+# The answer to which rows read differently made `None` always (13.2-31.2):
+# every rewording would leave the tree as it was for the next rebuild, so a
+# change made here would show only at the next check again. Anchored on the
+# line that answers. Measured by hand on 2026-10-18: the whole library 9,281
+# passed and exactly these two failed; the target passed.
+[[guard]]
+name = "a tree whose rows are the same is reworded where it stands"
+file = "src/presentation/folder_tree.rs"
+before = '''    same_rows.then(|| {'''
+after = '''    false.then(|| {'''
+red = [
+    "presentation::folder_tree::tests::test_a_folder_whose_count_moved_is_reworded_with_its_branch",
+    "presentation::folder_tree::tests::test_rows_that_did_not_change_are_left_alone",
+]
+tests_last_seen = [
+    { file = "src/presentation/folder_tree.rs", tests = 100 },
 ]

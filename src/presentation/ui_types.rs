@@ -434,6 +434,15 @@ pub enum UIUpdate {
     /// Each row carries its own identity, its depth, and whether anything hangs
     /// under it.
     FoldersLoaded(Vec<crate::presentation::folder_tree::TreeRow>),
+    /// A change made here moved a folder's unread count, so the tree's rows
+    /// are read again and the ones whose words changed reworded where they
+    /// stand, saying nothing (13.2-31.2, ledger 836).
+    ///
+    /// Sent by `the_folder_counts_moved` in the window after a mark, a
+    /// delete, a move or a copy made here, and after any of them is undone,
+    /// redone or put back, at most one on its way at a time, so a mark over
+    /// twenty messages rewords the tree once.
+    FolderCountsMoved,
     /// The rows of the list, and why they were read, which decides whether
     /// the count they come to is spoken. See [`WhyTheRowsWereRead`].
     MessagesLoaded(Vec<MessageItem>, WhyTheRowsWereRead),
