@@ -396,6 +396,16 @@ impl FoldersImported {
         self.from_saved_outlook_messages = mail.from_saved_outlook_messages;
     }
 
+    /// Count one mailbox file that stopped matching what the archive records
+    /// about it, by whether any of its mail had come in before it did.
+    pub fn one_mailbox_file_did_not_match(&mut self, some_of_its_mail_came_in: bool) {
+        if some_of_its_mail_came_in {
+            self.did_not_match_and_some_came_in += 1;
+        } else {
+            self.did_not_match_and_none_came_in += 1;
+        }
+    }
+
     /// Whether the archive held nothing at all: no folder filled, and no file
     /// or message counted for any reason.
     ///
@@ -564,6 +574,7 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
         imported.could_not_be_read,
         imported.not_written_down,
     );
+    what_mailbox_files_that_did_not_match_left(&mut said, imported);
     what_files_too_large_to_keep_left(&mut said, imported.files_too_large_to_keep);
     // An archive nothing at all was found in. "No folders were imported" on its
     // own is what a broken import says too, and somebody who cannot tell those
@@ -575,6 +586,44 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
     // imports cannot come to word one fact two ways.
     what_saved_outlook_messages_left(&mut said, &imported.from_saved_outlook_messages);
     said.spoken()
+}
+
+/// What mailbox files holding more than the archive records about them left
+/// behind, in the words an archive refused whole for the same fault is told
+/// in.
+///
+/// Never as a message holding nothing a mail program recognises: a file
+/// stopped partway was once said as "1 message" while most of a folder was
+/// missing. How much is missing is not said, because nothing knows it; and
+/// nobody is sent for another copy, because the archive is what it is.
+fn what_mailbox_files_that_did_not_match_left(said: &mut SummingUp, imported: &FoldersImported) {
+    if imported.did_not_match_and_none_came_in > 0 {
+        said.sentence(match imported.did_not_match_and_none_came_in {
+            1 => "1 mailbox file in the archive does not match what the archive records about \
+                  it, so the archive is damaged or was changed after it was made, and none of \
+                  that file's mail was imported"
+                .to_string(),
+            many => format!(
+                "{many} mailbox files in the archive do not match what the archive records \
+                 about them, so the archive is damaged or was changed after it was made, and \
+                 none of their mail was imported"
+            ),
+        });
+    }
+    if imported.did_not_match_and_some_came_in > 0 {
+        said.sentence(match imported.did_not_match_and_some_came_in {
+            1 => "1 mailbox file in the archive does not match what the archive records about \
+                  it, so the archive is damaged or was changed after it was made. Its mail up \
+                  to the point where it stopped matching was imported, and the rest was left out"
+                .to_string(),
+            many => format!(
+                "{many} mailbox files in the archive do not match what the archive records \
+                 about them, so the archive is damaged or was changed after it was made. Their \
+                 mail up to the point where each stopped matching was imported, and the rest \
+                 was left out"
+            ),
+        });
+    }
 }
 
 /// What somebody pointed at when they asked to import.

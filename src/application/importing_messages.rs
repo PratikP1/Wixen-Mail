@@ -1065,9 +1065,20 @@ pub fn an_archive_brought_in(
             // somebody is allowed to bring, it was about what one call could
             // hold. Read this way nothing grows with the size of the file, so
             // there is nothing left to refuse.
+            //
+            // What the archive answers is still dropped, and with it the
+            // sentence for reaching what the whole archive may unpack to; the
+            // file's stop is counted below like any other (ledger 908).
             let _ = archive.one_entry_read_in_pieces(&entry.named, |reading| {
-                for read in message_files::each_message_read_piece_by_piece(reading) {
-                    into.one_read_filed(&read, &mut brought_in);
+                let before = brought_in.brought_in;
+                let ended =
+                    message_files::each_message_handed_over_piece_by_piece(reading, |read| {
+                        into.one_read_filed(&read, &mut brought_in);
+                    });
+                if let message_files::HowTheReadingEnded::TheFileStoppedBeingReadable(kind) = ended
+                {
+                    let some_came_in = brought_in.brought_in > before;
+                    a_stop_counted(kind, some_came_in, &mut counted, &mut brought_in);
                 }
                 Ok(())
             });
@@ -1083,6 +1094,30 @@ pub fn an_archive_brought_in(
     }
     counted.carry_the_mail_counts(&brought_in);
     import_tree::what_the_folder_import_did(&counted)
+}
+
+/// Count a mailbox file in an archive that stopped being readable partway
+/// through, by the kind of the read that stopped it.
+///
+/// One that stopped matching what the archive records about it is its own
+/// fault, counted by whether any of its mail had come in before it did. Any
+/// other stop is counted as a stretch that held no mail, which is how every
+/// stop was said before the kind was kept, so nothing else changes.
+fn a_stop_counted(
+    kind: std::io::ErrorKind,
+    some_came_in: bool,
+    counted: &mut crate::application::import_tree::FoldersImported,
+    brought_in: &mut MessagesImported,
+) {
+    use crate::service::mailbox_archive::WhyAnEntryWasNotRead;
+    match WhyAnEntryWasNotRead::from(kind) {
+        WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords => {
+            counted.one_mailbox_file_did_not_match(some_came_in);
+        }
+        WhyAnEntryWasNotRead::ItCouldNotBeRead => {
+            brought_in.count_one(WhatToDoWithIt::ItCouldNotBeRead);
+        }
+    }
 }
 
 // ── Writing messages out ────────────────────────────────────────────────────

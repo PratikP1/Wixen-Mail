@@ -487,7 +487,16 @@ pub enum WhyAnEntryWasNotRead {
 
 impl From<&std::io::Error> for WhyAnEntryWasNotRead {
     fn from(why: &std::io::Error) -> Self {
-        match why.kind() {
+        why.kind().into()
+    }
+}
+
+/// The one rule, for a reader that kept the kind of a failure rather than the
+/// failure: the import reading a mailbox file a piece at a time, stopped
+/// partway through it.
+impl From<std::io::ErrorKind> for WhyAnEntryWasNotRead {
+    fn from(kind: std::io::ErrorKind) -> Self {
+        match kind {
             std::io::ErrorKind::InvalidData => Self::ItDoesNotMatchWhatTheArchiveRecords,
             _ => Self::ItCouldNotBeRead,
         }
