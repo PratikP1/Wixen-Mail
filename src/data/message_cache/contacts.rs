@@ -2675,6 +2675,53 @@ mod tests {
             unfolded,
             ["BEGIN:VCARD", "NOTE:the beginningand the rest", "END:VCARD"]
         );
+
+        // Three folds real producers write, held here so the reading is pinned
+        // on cards and not only on lone lines. A picture is the longest value
+        // a card carries and is always folded, a tab is the other character
+        // RFC 6350 allows, and a card ends with a line break after its END.
+        let photo = MessageCache::unfold_vcard_lines(
+            "BEGIN:VCARD\r\nVERSION:3.0\r\nPHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRg\r\n ABAQEASABIAAD/2wBD\r\n AAYEBQYFBAYG\r\nEND:VCARD\r\n",
+        );
+        assert_eq!(
+            photo,
+            [
+                "BEGIN:VCARD",
+                "VERSION:3.0",
+                "PHOTO;ENCODING=b;TYPE=JPEG:/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAYEBQYFBAYG",
+                "END:VCARD"
+            ],
+            "a folded picture did not come back as one value"
+        );
+
+        let tab = MessageCache::unfold_vcard_lines(
+            "BEGIN:VCARD\r\nFN:Ada Lovelace\r\nNOTE:written \r\n\tby hand\r\nEND:VCARD\r\n",
+        );
+        assert_eq!(
+            tab,
+            [
+                "BEGIN:VCARD",
+                "FN:Ada Lovelace",
+                "NOTE:written by hand",
+                "END:VCARD"
+            ],
+            "a value carried on with a tab was not joined on"
+        );
+
+        let crlf = MessageCache::unfold_vcard_lines(
+            "BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Grace\r\n  Hopper\r\nEMAIL:grace@exam\r\n ple.com\r\nEND:VCARD\r\n",
+        );
+        assert_eq!(
+            crlf,
+            [
+                "BEGIN:VCARD",
+                "VERSION:4.0",
+                "FN:Grace Hopper",
+                "EMAIL:grace@example.com",
+                "END:VCARD"
+            ],
+            "a card folded at its CRLF line ends came back with a line too many or too few"
+        );
     }
 
     #[test]
