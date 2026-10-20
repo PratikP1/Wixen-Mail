@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 853 records have arrived since and have not been through it.
+# 854 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -4764,7 +4764,7 @@ red = [
     "application::draft_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
 ]
 
 [[guard]]
@@ -4850,7 +4850,7 @@ red = [
     "test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
     { file = "tests/house_style.rs", tests = 78 },
 ]
 
@@ -5054,13 +5054,17 @@ after = """    let older = asked.clone().unwrap_or_default();
     if let Err(refused) = server.file_this_one(folder, raw).await {"""
 red = [
     "application::draft_copy::tests::test_a_draft_the_server_will_not_take_leaves_the_older_copy_alone",
+    "application::draft_copy::tests::test_a_first_save_reads_nothing",
+    "application::draft_copy::tests::test_a_save_whose_older_copy_cannot_be_read_files_the_new_one_and_leaves_it",
+    "application::draft_copy::tests::test_a_save_whose_search_found_only_another_message_removes_nothing",
+    "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
     "application::draft_copy::tests::test_the_new_copy_is_filed_before_the_old_one_is_removed",
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_refuses_to_take_leaves_the_older_copy_on_the_server",
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -7127,7 +7131,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -7137,15 +7141,15 @@ file = "src/application/draft_copy.rs"
 before = """    match server.remove_these(folder, &older).await {"""
 after = """    match server.remove_these(folder, &[]).await {"""
 red = [
+    "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
     "application::draft_copy::tests::test_the_new_copy_is_filed_before_the_old_one_is_removed",
     "application::draft_copy::tests::test_the_removal_only_names_the_copies_that_were_there_before_the_new_one",
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
     "application::mail_controller::against_a_server_that_answers::test_a_server_that_cannot_remove_one_message_leaves_the_older_copy_and_says_so",
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
-    "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
     { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
@@ -40443,7 +40447,7 @@ red = [
     "application::draft_copy::tests::test_sending_takes_away_exactly_the_copies_the_server_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
 ]
 
 # A sent draft's copy on this computer found and left where it is: the
@@ -40481,7 +40485,7 @@ red = [
     "application::draft_copy::tests::test_a_removal_waits_for_a_filing_that_began_before_it",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
 ]
 
 # The Send arm reading the sent draft and taking nothing away: the row goes
@@ -41150,19 +41154,29 @@ tests_last_seen = [
 # each taken by hand against the whole library: the comparison that accepts
 # an identifier merely containing the kept one left it at 9,139 passed and 4
 # failed, and the decision that never reads the message at the number found
-# at 9,139 and 4, each the ones named.
+# at 9,139 and 4, each the ones named. The comparison's break measured again
+# by hand on 2026-10-20 by 14-08.1, since the draft's removal at Send
+# (13.2-31.4) and at a save (14-08.1) read through it too and its red list had
+# named neither: the whole library 9,344 passed and 9 failed, the four above
+# and five in `draft_copy.rs`, which `tests_last_seen` now names.
 [[guard]]
 name = "a number the search found is sent to only when its message carries the kept identifier"
 file = "src/application/renumbered.rs"
 before = '''    (!kept.is_empty() && held.map(bare) == Some(kept)).then_some(candidate)'''
 after = '''    (!kept.is_empty() && held.is_some_and(|held| held.contains(kept))).then_some(candidate)'''
 red = [
+    "application::draft_copy::tests::test_a_first_save_refused_after_finding_only_another_message_says_the_draft_is_only_here",
+    "application::draft_copy::tests::test_a_message_whose_identifier_only_contains_the_drafts_stays_in_drafts",
+    "application::draft_copy::tests::test_a_save_whose_search_found_only_another_message_removes_nothing",
+    "application::draft_copy::tests::test_a_search_that_found_only_another_message_removes_nothing",
+    "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
     "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
     "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
     "application::renumbered::tests::test_a_message_whose_identifier_only_holds_the_kept_one_is_put_back",
     "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 29 },
     { file = "src/application/moves_waiting.rs", tests = 71 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
@@ -42648,11 +42662,39 @@ after = '''            message_id,
             uid,
             Some(message_id),'''
 red = [
+    "application::draft_copy::tests::test_a_first_save_refused_after_finding_only_another_message_says_the_draft_is_only_here",
     "application::draft_copy::tests::test_a_message_whose_identifier_only_contains_the_drafts_stays_in_drafts",
+    "application::draft_copy::tests::test_a_save_whose_search_found_only_another_message_removes_nothing",
     "application::draft_copy::tests::test_a_search_that_found_only_another_message_removes_nothing",
+    "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
+]
+
+# A saved draft's older copies taken from the server's search alone, so a
+# message whose Message-ID only contains the draft's is removed at the next
+# automatic save (ledger 902, 14-08.1). Measured by hand on 2026-10-20: the
+# whole library 9,348 passed and 5 failed, these five, all new.
+[[guard]]
+name = "a saved draft's older copies are read for its identifier before they are removed"
+file = "src/application/draft_copy.rs"
+before = '''    // The draft's own copies, each read, never the search's answer alone: that
+    // also names a message whose identifier merely contains the draft's.
+    let asked = the_drafts_own_copies(server, folder, message_id).await;'''
+after = '''    // The draft's own copies, each read, never the search's answer alone: that
+    // also names a message whose identifier merely contains the draft's.
+    let asked = server.copies_already_there(folder, message_id).await;'''
+red = [
+    "application::draft_copy::tests::test_a_first_save_refused_after_finding_only_another_message_says_the_draft_is_only_here",
+    "application::draft_copy::tests::test_a_save_whose_older_copy_cannot_be_read_files_the_new_one_and_leaves_it",
+    "application::draft_copy::tests::test_a_save_whose_search_found_only_another_message_removes_nothing",
+    "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
+    "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/mail_controller.rs", tests = 71 },
 ]
 
 # Removing an account leaving its sent drafts' kept removals behind, each
@@ -42685,7 +42727,7 @@ red = [
     "application::draft_copy::tests::test_a_second_try_that_failed_again_is_forgotten_and_said_with_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 24 },
+    { file = "src/application/draft_copy.rs", tests = 29 },
 ]
 
 # The check no longer trying the kept removals: the call in spawn_mail_sync

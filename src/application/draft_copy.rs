@@ -27,7 +27,12 @@
 /// step is refused, and what to say afterwards are all decisions, and none of
 /// them could be reached before without a server.
 pub(crate) trait KeepsTheDraft {
-    /// The copies of this draft the folder already holds.
+    /// The numbers the folder's search answers for this draft's identifier.
+    ///
+    /// Its copies, and any message whose identifier merely contains the
+    /// draft's, since the search matches on containing (ledger 902). So each
+    /// number is a candidate until [`Self::identifier_at`] has read it, which
+    /// [`the_drafts_own_copies`] does before anything is removed.
     async fn copies_already_there(
         &self,
         folder: &str,
@@ -117,16 +122,21 @@ fn ended(reason: &str) -> String {
 
 /// Put the newer copy of a draft at the server in place of the older one.
 ///
-/// Ask, file, then remove what the asking found. A failure at the first step
-/// does not stop the filing: it only means the old copy cannot be named
-/// afterwards, which leaves two copies rather than none.
+/// Ask which older copies are there, file, then remove what the asking found.
+/// The asking reads each number the search answers and keeps only the draft's
+/// own copies (ledger 902), the reading Send's removal uses. A failure at the
+/// first step, the search or a read, does not stop the filing: it only means
+/// the old copy cannot be named afterwards, which leaves two copies rather
+/// than none.
 pub(crate) async fn replace_the_filed_copy<K: KeepsTheDraft>(
     server: &K,
     folder: &str,
     message_id: &str,
     raw: &[u8],
 ) -> Filed {
-    let asked = server.copies_already_there(folder, message_id).await;
+    // The draft's own copies, each read, never the search's answer alone: that
+    // also names a message whose identifier merely contains the draft's.
+    let asked = the_drafts_own_copies(server, folder, message_id).await;
     let older = asked.clone().unwrap_or_default();
 
     if let Err(refused) = server.file_this_one(folder, raw).await {
@@ -140,8 +150,8 @@ pub(crate) async fn replace_the_filed_copy<K: KeepsTheDraft>(
             Filed::NotFiledAndTheOlderOneIsStillThere(refused)
         };
     }
-    // A search that failed leaves an older copy unnamed rather than absent, so
-    // the newer one is filed and the doubt is said out loud.
+    // A search or a read that failed leaves an older copy unnamed rather than
+    // absent, so the newer one is filed and the doubt is said out loud.
     if let Err(refused) = asked {
         return Filed::FiledAndAnOlderCopyMayStillBeThere(refused);
     }
@@ -263,11 +273,7 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     folder: &str,
     message_id: &str,
 ) -> TakenAway {
-    let found = match server.copies_already_there(folder, message_id).await {
-        Ok(found) => found,
-        Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
-    };
-    let there = match the_ones_carrying_it_exactly(server, folder, message_id, found).await {
+    let there = match the_drafts_own_copies(server, folder, message_id).await {
         Ok(there) => there,
         Err(refused) => return TakenAway::ACopyMayStillBeThere(refused),
     };
@@ -281,17 +287,37 @@ pub(crate) async fn take_away_the_filed_copy<K: KeepsTheDraft>(
     }
 }
 
-/// The numbers the search found whose message carries the draft's identifier
-/// exactly (ledger 854).
+/// The draft's own copies in a folder: the numbers its search answers whose
+/// message carries the draft's identifier exactly.
 ///
-/// The search behind [`KeepsTheDraft::copies_already_there`], `HEADER
-/// MESSAGE-ID`, matches any message whose header contains the text asked for
-/// (RFC 3501, section 6.4.4), so a message in Drafts whose identifier merely
-/// holds the draft's would be removed with it. Each number is read first and
-/// kept only when the renumbering decision's own comparison,
-/// [`crate::application::renumbered::the_number_confirmed`], says it is the
-/// same identifier. A number whose message cannot be read is an answer nobody
-/// has, so it stops the removal rather than being guessed either way.
+/// The one place both callers take their numbers from, the save in
+/// [`replace_the_filed_copy`] (ledger 902) and Send in
+/// [`take_away_the_filed_copy`] (ledger 854), so the rule that a number the
+/// search answers is a candidate until its message is read lives here and
+/// nowhere else. The search behind [`KeepsTheDraft::copies_already_there`],
+/// `HEADER MESSAGE-ID`, matches any message whose header contains the text
+/// asked for (RFC 3501, section 6.4.4). A refusal of the search or of a read
+/// is answered as the server gave it, and each caller decides what it means.
+async fn the_drafts_own_copies<K: KeepsTheDraft>(
+    server: &K,
+    folder: &str,
+    message_id: &str,
+) -> std::result::Result<Vec<u32>, String> {
+    let found = server.copies_already_there(folder, message_id).await?;
+    the_ones_carrying_it_exactly(server, folder, message_id, found).await
+}
+
+/// The numbers the search found whose message carries the draft's identifier
+/// exactly (ledgers 854 and 902).
+///
+/// A message in Drafts whose identifier merely holds the draft's would
+/// otherwise be removed with the draft's copies, at Send and at every save.
+/// Each number is read first and kept only when the renumbering decision's
+/// own comparison, [`crate::application::renumbered::the_number_confirmed`],
+/// says it is the same identifier. A number whose message cannot be read is
+/// an answer nobody has, so it stops the removal rather than being guessed
+/// either way. A search that found nothing reads nothing, so a first save
+/// costs no extra round trip.
 async fn the_ones_carrying_it_exactly<K: KeepsTheDraft>(
     server: &K,
     folder: &str,
