@@ -150,8 +150,8 @@ what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scri
 #
 #     check.sh --records-in <registry>
 #
-# prints them, one record to a line and `|` between the three, for comparing
-# with a TOML reader by hand.
+# prints them, one record to a line and `|` between the three, which the check
+# suite compares with a TOML reader.
 #
 # **This is a line scan, not a TOML parse.** A shell script has no TOML reader,
 # and the file is written one key per line. So the scan keys on a `[[guard]]`
@@ -177,11 +177,19 @@ what_no_suite_reads=(scripts/guards.py scripts/guards.sh scripts/mutants.sh scri
 # 2026-10-18, against half a second for the scan this replaced, and the check
 # suite asks the question dozens of times.
 #
-# What it would still miss: a record spelled as an inline table, a key sharing a
-# line with another, or a value quoted some other way. A record this misses is
-# a guard that does not run on the commit that could break it, which is the
-# defect the two readers below exist to fix, so the limit is written down here
-# rather than left to be found.
+# Since 2026-10-20 (13.3-01, review item 30) a red name is read at any
+# indentation, with a comment after it, and a one-line list or a bare `red = [`
+# with a comment after its bracket. Until then a name was read only on a line of
+# exactly four spaces and no comment, and the review's checkers planted a
+# two-space name and two comments that the scan read as no red name at all.
+#
+# What it would still miss: a list opened on the line of its first name, a
+# record spelled as an inline table, a key sharing a line with another, or a
+# value quoted some other way. A record this misses is a guard that does not run
+# on the commit that could break it, which is the defect the two readers below
+# exist to fix. So `scripts/check.test.sh` compares this scan with Python's TOML
+# reader over the real registry on every commit that stages it, and refuses the
+# commit that adds a record the scan would misread.
 record_files=()
 record_suites=()
 record_reds=()
@@ -198,7 +206,7 @@ read_the_records_in() {
     set -f
 
     pieces=($(grep -oE \
-        "^(\[\[guard\]\]|file = \".*\"|suite = \".*\"|red = \[.*|\]|    \"[A-Za-z0-9_:]+\",?)\$|^[a-z_]+ = (\"\"\"|''')|\"\"\"|'''" \
+        "^(\[\[guard\]\]|file = \".*\"|suite = \".*\"|red = \[.*|\]|[[:blank:]]*\"[A-Za-z0-9_:]+\",?[[:blank:]]*(#.*)?)\$|^[a-z_]+ = (\"\"\"|''')|\"\"\"|'''" \
         "$registry" || true))
     for piece in "${pieces[@]+"${pieces[@]}"}"; do
         if [ -n "$closing" ]; then
@@ -221,25 +229,40 @@ read_the_records_in() {
                 name="${piece#suite = \"}"
                 suite="${name%\"}"
                 ;;
-            'red = [')
-                listing=yes
-                ;;
-            'red = ['*']')
-                name="${piece#red = [}"
-                name="${name%]}"
-                name="${name//[\" ]/}"
-                for name in ${name//,/$'\n'}; do
-                    reds+="${reds:+ }$name"
-                done
+            'red = ['*)
+                # A comment after the bracket, and the spaces before it, are
+                # not part of the list. No red name holds a `#`.
+                name="${piece%%#*}"
+                name="${name%"${name##*[![:blank:]]}"}"
+                case "$name" in
+                    'red = [')
+                        listing=yes
+                        ;;
+                    *']')
+                        name="${name#red = [}"
+                        name="${name%]}"
+                        name="${name//[\" ]/}"
+                        for name in ${name//,/$'\n'}; do
+                            reds+="${reds:+ }$name"
+                        done
+                        ;;
+                esac
                 ;;
             ']')
                 listing=""
                 ;;
-            '    "'*)
-                [ -n "$listing" ] && reds+="${reds:+ }${piece//[\" ,]/}"
-                ;;
             *' = """' | *" = '''")
                 closing="${piece: -3}"
+                ;;
+            '"""' | "'''")
+                ;;
+            *'"'*)
+                # A red name, at any indentation, with its comma and any
+                # comment after it taken off.
+                if [ -n "$listing" ]; then
+                    name="${piece%%#*}"
+                    reds+="${reds:+ }${name//[[:blank:]\",]/}"
+                fi
                 ;;
         esac
     done
