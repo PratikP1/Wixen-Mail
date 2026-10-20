@@ -17,8 +17,15 @@
 //! The arm that does the rewording calls `say_the_folder_counts_again(`, and
 //! neither it, that function nor the helper that sends it says anything: a
 //! rewording after every M must not become a sentence nobody asked for.
-//! Each reading has a planted companion, a small source built here, that it
-//! is seen to refuse.
+//! That function changes the rows held beside the tree in place and compares
+//! the items on screen with them, never putting a fresh reading in their
+//! place (13.3-03). Each reading has a planted companion, a small source
+//! built here, that it is seen to refuse.
+//!
+//! One case runs the pairing over a store of two accounts, one with a label,
+//! with the tree held as a check of the labelled account drew it and a
+//! reading taken for the other: the other's Inbox is still reworded (13.3-03,
+//! item 2 of the review of 2026-10-20).
 //!
 //! Ignored timings, run by hand with `--release` for
 //! `docs/development/measurements.md`, of what the triggers add to the
@@ -42,8 +49,8 @@ use std::fs;
 use std::time::{Duration, Instant};
 
 use wixen_mail::common::what_ships::what_ships;
-use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
-use wixen_mail::presentation::folder_tree::rows_that_read_differently;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache, Tag};
+use wixen_mail::presentation::folder_tree::{TreeRow, WhichRow, rows_that_read_differently};
 use wixen_mail::presentation::ui_types::UIUpdate;
 use wixen_mail::presentation::wx_app::folder_tree_updates;
 use wixen_mail::service::safety::Verdict;
@@ -233,6 +240,67 @@ fn test_the_reading_can_see_a_rewording_that_speaks() {
     }
 }
 
+/// What would put the fresh reading in place of the rows held beside the
+/// tree. An item on screen is paired with a held row by position, through the
+/// words above it, so a held row replaced by a reading for another account is
+/// an item paired with somebody else's row (13.3-03, item 2).
+const REPLACES_THE_ROWS_HELD: &str = "tree_rows = ";
+/// The comparison that keeps the rewording to a tree whose items are the
+/// rows held.
+const COMPARES_WITH_THE_ROWS_HELD: &str = "items.len() != held.len()";
+
+/// The rewording changes the rows held in place and compares the items on
+/// screen with them, never with the fresh reading.
+fn the_rewording_keeps_the_rows_held(source: &str) -> Result<(), String> {
+    let body = the_place(source, THE_REWORDING)?;
+    if body.contains(REPLACES_THE_ROWS_HELD) {
+        return Err(format!(
+            "{THE_REWORDING:?} writes {REPLACES_THE_ROWS_HELD:?}, so the rows held beside the \
+             tree can become a reading of another account's tree"
+        ));
+    }
+    if !body.contains(COMPARES_WITH_THE_ROWS_HELD) {
+        return Err(format!(
+            "{THE_REWORDING:?} never compares the items on screen with the rows held, \
+             {COMPARES_WITH_THE_ROWS_HELD:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn a_planted_rewording(body: &str) -> String {
+    format!("{THE_REWORDING}) {{\n{body}}}\n")
+}
+
+#[test]
+fn test_the_rewording_never_replaces_the_rows_held() {
+    if let Err(why) = the_rewording_keeps_the_rows_held(&the_main_window()) {
+        panic!("{why}");
+    }
+}
+
+#[test]
+fn test_the_reading_can_see_a_rewording_that_replaces_the_rows_held() {
+    let in_place = "    if items.len() != held.len() {\n        return;\n    }\n    \
+                    row.label = words;\n";
+    assert_eq!(
+        the_rewording_keeps_the_rows_held(&a_planted_rewording(in_place)),
+        Ok(()),
+        "the reading refused a rewording that changes the rows held in place"
+    );
+    for planted in [
+        "    if items.len() != held.len() {\n        return;\n    }\n    \
+         held.tree_rows = fresh;\n",
+        "    if items.len() != fresh.len() {\n        return;\n    }\n    \
+         row.label = words;\n",
+    ] {
+        assert!(
+            the_rewording_keeps_the_rows_held(&a_planted_rewording(planted)).is_err(),
+            "the reading passed a rewording that runs {planted:?}"
+        );
+    }
+}
+
 // ── The fixture ─────────────────────────────────────────────────────────────
 
 const ARRIVALS: u32 = 5_000;
@@ -373,6 +441,109 @@ fn the_rows_in(updates: Vec<UIUpdate>) -> Vec<wixen_mail::presentation::folder_t
         .expect("a reading of the tree holds its rows")
 }
 
+/// An account's row written with SQL, as the store's own account tests write
+/// one, rather than through `save_account`, which keeps a credential.
+fn an_account_row(sql: &rusqlite::Connection, id: &str) {
+    sql.execute(
+        "INSERT INTO accounts (id, name, email, imap_server, imap_port, imap_use_tls, \
+         smtp_server, smtp_port, smtp_use_tls, username, password, enabled, \
+         check_interval_minutes, color, created_at, updated_at) VALUES (?1, ?1, \
+         ?1 || '@example.com', 'imap.example.com', '993', 1, 'smtp.example.com', '465', \
+         1, ?1, '', 1, 5, '', '', '')",
+        rusqlite::params![id],
+    )
+    .expect("an account");
+}
+
+fn an_inbox_for(cache: &MessageCache, account: &str, unread: usize) -> i64 {
+    let inbox = cache
+        .save_folder(&CachedFolder {
+            id: 0,
+            account_id: account.to_string(),
+            name: "INBOX".to_string(),
+            path: "INBOX".to_string(),
+            folder_type: "Inbox".to_string(),
+            unread_count: 0,
+            total_count: 0,
+        })
+        .expect("an Inbox");
+    cache
+        .set_folder_counts(inbox, unread, 10)
+        .expect("its counts");
+    inbox
+}
+
+#[test]
+fn test_a_tree_drawn_for_another_accounts_labels_still_rewords_the_count() {
+    // 13.3-03, item 2 of the review of 2026-10-20. Work has a label and Home
+    // has none; a check of Work drew the tree last, so it shows Work's Labels
+    // branch. A mark in Home's Inbox moves its count, and a reading of the
+    // tree for Home, which has no Labels branch, still rewords Home's Inbox
+    // and its branch where they stand.
+    let home = tempfile::tempdir().expect("a home");
+    let cache = MessageCache::new(home.path().to_path_buf(), None).expect("a store");
+    let sql =
+        rusqlite::Connection::open(home.path().join("message_cache.db")).expect("the same store");
+    an_account_row(&sql, "home");
+    an_account_row(&sql, "work");
+    let homes_inbox = an_inbox_for(&cache, "home", 3);
+    an_inbox_for(&cache, "work", 1);
+    cache
+        .create_tag(&Tag {
+            id: "work-urgent".to_string(),
+            account_id: "work".to_string(),
+            name: "Urgent".to_string(),
+            color: String::new(),
+            created_at: String::new(),
+            keyword: None,
+        })
+        .expect("Work's label");
+    let held = the_rows_in(folder_tree_updates(&cache, "work").expect("the tree for Work"));
+    assert!(
+        held.iter()
+            .any(|row| row.identity == WhichRow::Label("work-urgent".to_string())),
+        "the tree drawn for Work does not show Work's label, so this case asks nothing"
+    );
+
+    cache
+        .set_folder_counts(homes_inbox, 2, 10)
+        .expect("Home's Inbox count moved");
+    let fresh = the_rows_in(folder_tree_updates(&cache, "home").expect("the tree for Home"));
+
+    let answered = rows_that_read_differently(&held, &fresh);
+    let the_row = |rows: &[TreeRow], identity: &WhichRow| {
+        rows.iter()
+            .position(|row| &row.identity == identity)
+            .unwrap_or_else(|| panic!("no row {identity:?} in the reading"))
+    };
+    let inbox = the_row(
+        &held,
+        &WhichRow::Folder {
+            account: "home".to_string(),
+            path: "INBOX".to_string(),
+        },
+    );
+    assert!(
+        answered
+            .iter()
+            .any(|(row, words)| *row == inbox && words.ends_with("2 unread")),
+        "Home's Inbox was not reworded with its new count: {answered:?}"
+    );
+    // Whether the branch says a count depends on the setting the reading
+    // loads, D-24, so it is expected exactly when its words changed.
+    let branch = WhichRow::Account("home".to_string());
+    let (branch_held, branch_fresh) = (the_row(&held, &branch), the_row(&fresh, &branch));
+    let mut expected = vec![inbox];
+    if held[branch_held].label != fresh[branch_fresh].label {
+        expected.insert(0, branch_held);
+    }
+    assert_eq!(
+        answered.iter().map(|(row, _)| *row).collect::<Vec<_>>(),
+        expected,
+        "the rows reworded were not Home's Inbox and its branch: {answered:?}"
+    );
+}
+
 #[test]
 #[ignore = "a timing, run by hand with --release for docs/development/measurements.md"]
 fn test_what_rewording_the_tree_costs_at_three_accounts_of_forty_folders() {
@@ -437,7 +608,7 @@ fn test_what_rewording_the_tree_costs_at_three_accounts_of_forty_folders() {
         let fresh = the_rows_in(folder_tree_updates(&cache, "acct-1").expect("the tree"));
         let changed = rows_that_read_differently(&held, &fresh);
         each.push(started.elapsed());
-        reworded = changed.map_or(0, |rows| rows.len());
+        reworded = changed.len();
         held = fresh;
     }
     println!(

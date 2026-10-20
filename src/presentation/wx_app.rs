@@ -21507,10 +21507,7 @@ fn say_the_folder_counts_again(
         return;
     };
     let held = lock_state(state).tree_rows.clone();
-    let Some(changed) = folder_tree::rows_that_read_differently(&held, &fresh) else {
-        tracing::info!("The folder tree's rows changed, so its counts wait for the next rebuild");
-        return;
-    };
+    let changed = folder_tree::rows_that_read_differently(&held, &fresh);
     if changed.is_empty() {
         return;
     }
@@ -21529,9 +21526,9 @@ fn say_the_folder_counts_again(
         );
         return;
     }
-    for at in changed {
-        if let (Some(item), Some(row)) = (items.get(at), fresh.get(at)) {
-            tree.set_item_text(item, &row.label);
+    for (at, words) in changed {
+        if let Some(item) = items.get(at) {
+            tree.set_item_text(item, &words);
         }
     }
     let mut held = lock_state(state);

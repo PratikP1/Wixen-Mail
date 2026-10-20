@@ -947,7 +947,7 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
 }
 
 /// Which rows of the tree on screen read differently in a fresh reading of it,
-/// by position, or `None` when a row came, went or moved.
+/// as each row's position and its new words.
 ///
 /// 13.2-31.2 (2026-10-18). A change made here moves a folder's unread count,
 /// and the tree says it at once by rewording the rows whose words changed
@@ -956,20 +956,27 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
 /// readings hold the same rows in the same order, since the items on screen
 /// are paired with rows by position; otherwise the answer is `None` and the
 /// next rebuild draws the tree.
-pub fn rows_that_read_differently(held: &[TreeRow], fresh: &[TreeRow]) -> Option<Vec<usize>> {
+pub fn rows_that_read_differently(held: &[TreeRow], fresh: &[TreeRow]) -> Vec<(usize, String)> {
     let same_rows = held.len() == fresh.len()
         && held
             .iter()
             .zip(fresh)
             .all(|(was, now)| was.identity == now.identity && was.depth == now.depth);
-    same_rows.then(|| {
-        held.iter()
-            .zip(fresh)
-            .enumerate()
-            .filter(|(_, (was, now))| was.label != now.label)
-            .map(|(at, _)| at)
-            .collect()
-    })
+    if !same_rows {
+        return Vec::new();
+    }
+    held.iter()
+        .zip(fresh)
+        .enumerate()
+        .filter(|(_, (was, now))| was.label != now.label)
+        .map(|(at, (_, now))| (at, now.label.clone()))
+        .collect()
+}
+
+/// The id of the first label the tree shows, or `None` when it shows no
+/// Labels branch.
+pub fn the_first_label_shown(_rows: &[TreeRow]) -> Option<&str> {
+    None
 }
 
 /// The Favourites group: the heading, a branch per account that has a pin, and
@@ -1418,22 +1425,61 @@ mod tests {
             .unwrap_or_else(|| panic!("no row {identity:?} in {:?}", labelled(rows)))
     }
 
+    fn a_folder_of(account: &str, path: &str) -> WhichRow {
+        WhichRow::Folder {
+            account: account.to_string(),
+            path: path.to_string(),
+        }
+    }
+
+    fn the_inbox_of(account: &str) -> WhichRow {
+        a_folder_of(account, "INBOX")
+    }
+
+    /// Account `a` holding these folders, each with its unread count, in the
+    /// order given.
+    fn one_account_holding(folders: &[(&str, i32)]) -> Vec<TreeRow> {
+        let folders: Vec<FolderInTheTree> = folders
+            .iter()
+            .zip(1..)
+            .map(|((path, unread), id)| FolderInTheTree {
+                unread: *unread,
+                ..folder("a", id, path, None)
+            })
+            .collect();
+        tree(&[account("a", "Ada")], &folders, &[], &[])
+    }
+
+    /// The answer a rewording should give for these rows of the held tree:
+    /// each one's position there and the words the fresh reading gives it.
+    fn reworded_as_in(
+        held: &[TreeRow],
+        fresh: &[TreeRow],
+        identities: &[WhichRow],
+    ) -> Vec<(usize, String)> {
+        identities
+            .iter()
+            .map(|identity| {
+                (
+                    where_the_row_is(held, identity),
+                    fresh[where_the_row_is(fresh, identity)].label.clone(),
+                )
+            })
+            .collect()
+    }
+
     #[test]
     fn test_a_folder_whose_count_moved_is_reworded_with_its_branch() {
         let held = one_account_with_an_inbox_holding(5);
         let fresh = one_account_with_an_inbox_holding(4);
-        let branch = where_the_row_is(&held, &WhichRow::Account("a".to_string()));
-        let inbox = where_the_row_is(
-            &held,
-            &WhichRow::Folder {
-                account: "a".to_string(),
-                path: "INBOX".to_string(),
-            },
-        );
 
         assert_eq!(
             rows_that_read_differently(&held, &fresh),
-            Some(vec![branch, inbox]),
+            reworded_as_in(
+                &held,
+                &fresh,
+                &[WhichRow::Account("a".to_string()), the_inbox_of("a")]
+            ),
             "the Inbox whose count moved and the account branch summing it were not the rows \
              reworded: {:?} against {:?}",
             labelled(&held),
@@ -1448,31 +1494,157 @@ mod tests {
 
         assert_eq!(
             rows_that_read_differently(&held, &fresh),
-            Some(Vec::new()),
-            "a tree that reads the same asked for a rewording or for a rebuild"
+            Vec::new(),
+            "a tree that reads the same asked for a rewording"
         );
     }
 
     #[test]
-    fn test_a_folder_that_came_or_went_waits_for_the_rebuild() {
-        let held = one_account_with_an_inbox_holding(5);
-        let mut inbox = folder("a", 1, "INBOX", None);
-        inbox.unread = 4;
-        let fresh = tree(
+    fn test_a_folder_that_came_is_left_alone_and_the_others_are_reworded() {
+        // 13.3-03, item 2 of the review of 2026-10-20: a row only in the fresh
+        // reading has no item on screen to reword, and the rows that have one
+        // still say their new count. The new folder stands above the one whose
+        // count moved, so a pairing by position would give Receipts' item the
+        // words of the Archive.
+        let held = one_account_holding(&[("INBOX", 0), ("Receipts", 5)]);
+        let fresh = one_account_holding(&[("INBOX", 0), ("Archive", 0), ("Receipts", 4)]);
+
+        let answered = rows_that_read_differently(&held, &fresh);
+
+        assert_eq!(
+            answered,
+            reworded_as_in(
+                &held,
+                &fresh,
+                &[
+                    WhichRow::Account("a".to_string()),
+                    a_folder_of("a", "Receipts")
+                ]
+            ),
+            "a fresh reading holding a folder the tree does not stopped the others' counts: {:?} \
+             against {:?}",
+            labelled(&held),
+            labelled(&fresh)
+        );
+        assert!(
+            answered
+                .iter()
+                .any(|(_, words)| words.as_str() == "Receipts, 4 unread"),
+            "Receipts was not given its new count: {answered:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_folder_that_went_is_left_alone_and_the_others_are_reworded() {
+        // The folder that went stood above the one whose count moved, so a
+        // pairing by position would give Receipts' item nothing to say.
+        let held = one_account_holding(&[("INBOX", 0), ("Archive", 0), ("Receipts", 5)]);
+        let fresh = one_account_holding(&[("INBOX", 0), ("Receipts", 4)]);
+
+        assert_eq!(
+            rows_that_read_differently(&held, &fresh),
+            reworded_as_in(
+                &held,
+                &fresh,
+                &[
+                    WhichRow::Account("a".to_string()),
+                    a_folder_of("a", "Receipts")
+                ]
+            ),
+            "a held row the fresh reading lacks stopped the others' counts: {:?} against {:?}",
+            labelled(&held),
+            labelled(&fresh)
+        );
+    }
+
+    #[test]
+    fn test_another_accounts_labels_on_screen_do_not_stop_the_counts() {
+        // Item 2: the tree on screen carries the Labels branch of whichever
+        // account a check drew it for, and a reading for an account with no
+        // labels has none. The Inbox and its branch are still reworded, and
+        // the label rows, which the fresh reading does not hold, are left.
+        let urgent = [LabelInTheTree {
+            id: "t1".to_string(),
+            name: "Urgent".to_string(),
+        }];
+        let mut was = folder("a", 1, "INBOX", None);
+        was.unread = 5;
+        let held = tree(&[account("a", "Ada")], &[was], &urgent, &[]);
+        let mut now = folder("a", 1, "INBOX", None);
+        now.unread = 4;
+        let fresh = tree(&[account("a", "Ada")], &[now], &[], &[]);
+
+        let answered = rows_that_read_differently(&held, &fresh);
+
+        assert_eq!(
+            answered,
+            reworded_as_in(
+                &held,
+                &fresh,
+                &[WhichRow::Account("a".to_string()), the_inbox_of("a")]
+            ),
+            "a Labels branch only on screen stopped the counts: {:?} against {:?}",
+            labelled(&held),
+            labelled(&fresh)
+        );
+        assert!(
+            answered
+                .iter()
+                .any(|(_, words)| words.as_str() == "INBOX, 4 unread"),
+            "the Inbox was not given its new count: {answered:?}"
+        );
+    }
+
+    #[test]
+    fn test_a_repeated_identity_pairs_first_with_first() {
+        let held = [
+            plain_row(WhichRow::Labels, "Labels, was".to_string(), 0, true),
+            plain_row(WhichRow::Labels, "Labels, same".to_string(), 0, true),
+        ];
+        let fresh = [
+            plain_row(WhichRow::Labels, "Labels, now".to_string(), 0, true),
+            plain_row(WhichRow::Labels, "Labels, same".to_string(), 0, true),
+        ];
+
+        assert_eq!(
+            rows_that_read_differently(&held, &fresh),
+            vec![(0, "Labels, now".to_string())],
+            "two rows of one identity were not paired in the order they stand"
+        );
+    }
+
+    #[test]
+    fn test_the_first_label_shown_is_read_from_the_rows() {
+        let labels = [
+            LabelInTheTree {
+                id: "t1".to_string(),
+                name: "Urgent".to_string(),
+            },
+            LabelInTheTree {
+                id: "t2".to_string(),
+                name: "Later".to_string(),
+            },
+        ];
+        let rows = tree(
             &[account("a", "Ada")],
-            &[
-                inbox,
-                folder("a", 2, "Archive", None),
-                folder("a", 3, "Receipts", None),
-            ],
-            &[],
+            &[folder("a", 1, "INBOX", None)],
+            &labels,
             &[],
         );
 
         assert_eq!(
-            rows_that_read_differently(&held, &fresh),
-            None,
-            "a tree whose rows changed was reworded in place rather than left for the rebuild"
+            the_first_label_shown(&rows),
+            Some("t1"),
+            "the first label the tree shows was not found: {:?}",
+            labelled(&rows)
+        );
+    }
+
+    #[test]
+    fn test_a_tree_with_no_labels_shows_no_first_label() {
+        assert_eq!(
+            the_first_label_shown(&one_account_with_an_inbox_holding(5)),
+            None
         );
     }
 
