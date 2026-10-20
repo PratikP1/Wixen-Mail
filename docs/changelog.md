@@ -1446,6 +1446,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Saving a draft no longer takes another message out of Drafts on the server (2026-10-20,
+  FOUND-04).** Each time a draft is saved, by you or by the automatic save that runs once a
+  minute while you write, Wixen Mail puts the newer copy in the account's Drafts folder on the
+  mail server and takes the older copies out. It found the older copies with the server's
+  search for the draft's identifier, and that search also finds a message whose identifier
+  merely contains the draft's, so such a message was taken out too. Now each message the search
+  finds is read first, and only the draft's own older copies are taken out, the same check Send
+  has made since 2026-10-19. Reading an older copy is one more short request to the server at
+  each save that finds one; the first save of a draft finds none and costs nothing more.
+
+  Known limits. Nothing here has run against a real mail server yet. If the server will not
+  let an older copy be read, the newer copy is still saved, nothing is taken out, and the status
+  line says an older copy may still be on the server.
+
 - **A message's page is named after the message, not after its own text (2026-10-19).** The
   window a message opens in and the preview pane show a message through the Edge browser
   engine, which names its panes after the page's title. The page had no title, so the engine
@@ -1561,8 +1575,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   whose identifier merely contains the draft's, and until now that message was taken out too.
 
   Known limits. Saving a newer copy of a draft still takes out the older copies the same search
-  finds without that check. Nothing here has run against a real mail server, and nobody has
-  heard the new sentences with a screen reader yet.
+  finds without that check. That was true until 2026-10-20, when saving a draft began making
+  the same check. Nothing here has run against a real mail server, and nobody has heard the new
+  sentences with a screen reader yet.
 
 - **Delete in the Outbox no longer says a message will not be sent while it is being sent
   (2026-10-19).** When Wixen Mail was already sending a message, Delete in the Outbox took it

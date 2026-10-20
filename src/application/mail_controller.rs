@@ -2080,6 +2080,50 @@ mod against_a_server_that_answers {
         crate::application::draft_copy::DraftAtTheServer { session }
     }
 
+    /// A server holding one older copy of the draft, at 4, for a save to find,
+    /// read and remove: the search answers 4, and the message there carries
+    /// the draft's identifier, `<d@x>`.
+    ///
+    /// Built for these cases rather than by widening the shared script, which
+    /// answers a read of any number with no message, so 4 would never be
+    /// confirmed as the draft's copy (ledger 902). It takes the capabilities and
+    /// the one command to refuse that each case passes, as the shared script
+    /// does.
+    async fn a_server_holding_the_drafts_copy(
+        capabilities: &'static str,
+        refusing: Option<&'static str>,
+    ) -> Conversation {
+        a_server_answering(move |said, tag| {
+            if refusing.is_some_and(|refusing| said.contains(&refusing.to_uppercase())) {
+                return Some(Turn::Say(format!(
+                    "{tag} NO the server would not do it\r\n"
+                )));
+            }
+            if said.contains("SEARCH") {
+                return Some(Turn::Say(format!("* SEARCH 4\r\n{tag} OK done\r\n")));
+            }
+            if said.contains("UID FETCH") {
+                let headers = "Message-ID: <d@x>\r\nSubject: Draft\r\n\r\n";
+                return Some(Turn::Say(format!(
+                    "* 1 FETCH (UID 4 FLAGS (\\Draft \\Seen) RFC822.SIZE 120 \
+                     BODY[HEADER.FIELDS (SUBJECT MESSAGE-ID)] {{{}}}\r\n{headers})\r\n\
+                     {tag} OK done\r\n",
+                    headers.len()
+                )));
+            }
+            match said.split_whitespace().nth(1).unwrap_or_default() {
+                "CAPABILITY" => Some(Turn::Say(format!(
+                    "* CAPABILITY IMAP4rev1 {capabilities}\r\n{tag} OK done\r\n"
+                ))),
+                "APPEND" => Some(Turn::TakingALiteral {
+                    done: format!("{tag} OK saved\r\n"),
+                }),
+                _ => None,
+            }
+        })
+        .await
+    }
+
     /// A draft to save, and what its bytes are.
     fn a_draft() -> &'static [u8] {
         b"From: me@example.com\r\nSubject: Draft\r\n\r\nnot finished\r\n"
@@ -2135,7 +2179,7 @@ mod against_a_server_that_answers {
         // removal naming what the search found is the only thing stopping that,
         // and this is where it is measured on the wire rather than against a
         // fake.
-        let server = a_server_that_can("UIDPLUS").await;
+        let server = a_server_holding_the_drafts_copy("UIDPLUS", None).await;
         let controller = allowed_on(&server).await;
 
         let filed = saving_the_draft_at(&controller).await;
@@ -2183,7 +2227,7 @@ mod against_a_server_that_answers {
         // message anybody flagged in that mailbox. On a shared or a busy
         // mailbox that is other people's mail, so the old copy is flagged and
         // left, and the person is told there may be two.
-        let server = a_server_that_can("").await;
+        let server = a_server_holding_the_drafts_copy("", None).await;
         let controller = allowed_on(&server).await;
 
         let filed = saving_the_draft_at(&controller).await;
@@ -2215,7 +2259,7 @@ mod against_a_server_that_answers {
         // A refusal at the last step is not a lost draft. The newer copy is
         // already on the server, so what is left is two copies rather than
         // none, and that is what the person hears.
-        let server = a_server_that_refuses("UIDPLUS", "UID STORE").await;
+        let server = a_server_holding_the_drafts_copy("UIDPLUS", Some("UID STORE")).await;
         let controller = allowed_on(&server).await;
 
         let filed = saving_the_draft_at(&controller).await;
@@ -2320,7 +2364,7 @@ mod against_a_server_that_answers {
         // to be untouched: removing it first is what used to leave a person
         // with no copy of their draft anywhere but this computer, and nothing
         // said a word about it.
-        let server = a_server_that_refuses("UIDPLUS", "APPEND").await;
+        let server = a_server_holding_the_drafts_copy("UIDPLUS", Some("APPEND")).await;
         let controller = allowed_on(&server).await;
 
         let filed = saving_the_draft_at(&controller).await;
@@ -2350,7 +2394,7 @@ mod against_a_server_that_answers {
     async fn test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed() {
         // The order on the wire, which is the whole of the fix. At no point in
         // this sequence is there no copy of the draft on the server.
-        let server = a_server_that_can("UIDPLUS").await;
+        let server = a_server_holding_the_drafts_copy("UIDPLUS", None).await;
         let controller = allowed_on(&server).await;
 
         let filed = saving_the_draft_at(&controller).await;
@@ -2361,6 +2405,22 @@ mod against_a_server_that_answers {
             .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\"")
             .await
             .unwrap_or_else(|| panic!("nothing was searched for: {transcript:?}"));
+        // Ledger 902: the copy the search found is read before anything is
+        // filed, once, which is the one round trip the exact reading costs.
+        let reads: Vec<usize> = transcript
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.to_uppercase().contains("UID FETCH"))
+            .map(|(at, _)| at)
+            .collect();
+        let [read] = reads[..] else {
+            panic!("the older copy was not read exactly once: {transcript:?}");
+        };
+        assert_eq!(
+            server.when_told("UID FETCH 4").await,
+            Some(read),
+            "the read was not of the copy the search found: {transcript:?}"
+        );
         let saved = server
             .when_told("APPEND \"Drafts\"")
             .await
@@ -2370,9 +2430,9 @@ mod against_a_server_that_answers {
             .await
             .unwrap_or_else(|| panic!("the old copy was never flagged: {transcript:?}"));
         assert!(
-            searched < saved && saved < flagged,
-            "the old copy was taken away before the newer one was on the server: \
-             {transcript:?}"
+            searched < read && read < saved && saved < flagged,
+            "the old copy was taken away before the newer one was on the server, \
+             or read anywhere but between the search and the filing: {transcript:?}"
         );
     }
 

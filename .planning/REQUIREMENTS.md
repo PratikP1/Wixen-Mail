@@ -2719,6 +2719,17 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     `tests/a_draft_left_at_the_server_goes_at_the_next_check.rs`, and five new records.
     Seeing and hearing it on a real account is ledger 901; the same exact reading for a saved
     draft's older copies is ledger 902. No `[D]` clause is added and the box stays ticked.
+  - 14-08.1 on 2026-10-20: closes ledger 902, which 13.2-31.4 recorded here, on Pratik's
+    approval of that day. Saving a draft reads each number the server's search answers and
+    takes out of Drafts only the older copies whose Message-ID is the draft's exactly, through
+    the one function in `src/application/draft_copy.rs` that Send's removal now shares. A first
+    save reads nothing; a save that finds an older copy reads it once. Held by five cases in
+    `src/application/draft_copy.rs`, five loopback cases in `src/application/mail_controller.rs`
+    moved to a server holding the draft's copy, one new record and one corrected. It opens
+    ledger 911, the single copy in Gmail's Drafts for the tester's eye, and 912, a server
+    without UIDPLUS, where each save flags and reads every copy flagged before. The removal
+    and the save of a draft's copy still sit under no requirement. No `[D]` clause is added and
+    the box stays ticked.
 
 - [x] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
   the organiser has been told only once it has gone.
@@ -8102,7 +8113,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
 | FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause; 13.2-12 done 2026-10-15, an HTML-only message nested past 512 levels is saved with its words as its snippet and index row instead of overflowing the worker's stack (ledger 857) |
-| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, and 2026-10-15: 13.2-31.3 and 13.2-31.4, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845); 13.2-31.3 done 2026-10-19, the Outbox's own Delete leaves a message being sent and says so once, and Undo Send's too-late answer offers Delete only for a message not being sent (ledger 843 fixed, 900 opened); 13.2-31.4 done 2026-10-19, a sent draft's copy Send could not take out of Drafts is kept and tried again at the account's next check, said once if that fails too, and the removal takes only the draft's exact identifier, under no requirement as 13.2-05's was (ledger 845 and 854 fixed, 901 and 902 opened) |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, and 2026-10-15: 13.2-31.3 and 13.2-31.4, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845); 13.2-31.3 done 2026-10-19, the Outbox's own Delete leaves a message being sent and says so once, and Undo Send's too-late answer offers Delete only for a message not being sent (ledger 843 fixed, 900 opened); 13.2-31.4 done 2026-10-19, a sent draft's copy Send could not take out of Drafts is kept and tried again at the account's next check, said once if that fails too, and the removal takes only the draft's exact identifier, under no requirement as 13.2-05's was (ledger 845 and 854 fixed, 901 and 902 opened); phase 14, 14-08.1 done 2026-10-20, a saved draft's older copies read for the draft's exact identifier before they are taken out, as Send's removal does, adding no `[D]` clause (ledger 902 fixed, 911 and 912 opened) |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
