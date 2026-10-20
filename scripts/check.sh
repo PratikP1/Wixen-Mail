@@ -13,6 +13,15 @@
 # where the touch is.
 set -euo pipefail
 
+# The folder this script is in, worked out once without a process, for the
+# questions `scripts/check.test.sh` asks dozens of times a run. `$(dirname
+# "$0")` is a process, about a tenth of a second from bash on this machine on
+# 2026-10-20 (13.3-01), and a `$0` holding no slash means this folder.
+case "$0" in
+    */*) the_scripts_folder="${0%/*}" ;;
+    *) the_scripts_folder=. ;;
+esac
+
 # The targets every scoped run ends with, whatever changed, because they read
 # across the whole tree and a change anywhere can redden one. Named once, here,
 # because two things decide about them: the scoped run, which always adds them,
@@ -554,10 +563,10 @@ the_scoped_runs() {
     if [ "$#" -gt 0 ]; then
         while IFS= read -r source; do
             [ -n "$source" ] && paths+=("$source")
-        done < <("$(dirname "$0")/which-checks.sh" --sources-compiling "$@")
+        done < <("$the_scripts_folder/which-checks.sh" --sources-compiling "$@")
     fi
     if [ -n "$merging" ] && [ "$#" -gt 0 ] &&
-        [ -n "$("$(dirname "$0")/which-checks.sh" --documents-among "$@")" ]; then
+        [ -n "$("$the_scripts_folder/which-checks.sh" --documents-among "$@")" ]; then
         for module in "${the_modules_that_read_documents[@]}"; do
             filters[$module]=1
         done
@@ -725,10 +734,10 @@ the_shell_suites_owed() {
     case "$the_mode" in
         red)
             [ -z "$message_file" ] ||
-                failing="$("$(dirname "$0")/red-commit.sh" names "$message_file")"
+                failing="$("$the_scripts_folder/red-commit.sh" names "$message_file")"
             ;;
     esac
-    for candidate in "$(dirname "$0")"/*.test.sh; do
+    for candidate in "$the_scripts_folder"/*.test.sh; do
         [ -e "$candidate" ] || continue
         name="${candidate##*/}"
         name="${name%.test.sh}"
