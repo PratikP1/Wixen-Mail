@@ -26154,7 +26154,7 @@ fn move_or_copy_message(
 
     // A copy takes no row out, so only a move remembers the set leaving.
     if !copying {
-        remember_the_set_leaving(state, &moving);
+        remember_the_set_leaving(state, &cache, &moving);
     }
 
     // One word at the key and the fuller line for the eye (#83), the shape
@@ -26750,7 +26750,7 @@ fn move_what_was_reported(
         account_id: ready.account_id.clone(),
         depth: 0,
     };
-    remember_the_set_leaving(state, &moving);
+    remember_the_set_leaving(state, cache, &moving);
     // Spoken rather than shown: nothing at the key said what came of the
     // command, and this is the answer. Only once something was made here; a
     // set refused whole has had its refusal said.
@@ -26772,15 +26772,27 @@ fn move_what_was_reported(
 /// The set's rows on screen, remembered so the cursor lands once, after the
 /// last of them has left (#30, on #76's rule). Under conversation view the
 /// set's messages, so its rows are brought up to date once (13.2-02).
-fn remember_the_set_leaving(state: &Arc<StdMutex<WxUIState>>, moving: &[AMessageMoving]) {
+fn remember_the_set_leaving(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    moving: &[AMessageMoving],
+) {
     let rows: Vec<i64> = moving.iter().map(|message| message.row_id).collect();
-    remember_these_rows_leaving(state, &rows);
+    remember_these_rows_leaving(state, Some(cache), &rows);
 }
 
 /// The rows of a set about to leave, by message, remembered the same way
 /// whether a move or a delete takes them: the runner's delete has no
 /// messages moving to hand over (13-24.1).
-fn remember_these_rows_leaving(state: &Arc<StdMutex<WxUIState>>, leaving: &[i64]) {
+///
+/// Public, with the store, so
+/// `tests/a_change_made_here_reaches_the_conversation_rows.rs` can remember
+/// a set the way the window does (13.3-02).
+pub fn remember_these_rows_leaving(
+    state: &Arc<StdMutex<WxUIState>>,
+    _cache: Option<&MessageCache>,
+    leaving: &[i64],
+) {
     let mut s = lock_state(state);
     let set = the_set_leaving(&s, leaving);
     s.a_set_leaving = set;
@@ -27731,7 +27743,7 @@ fn run_these_actions_over(
         match &work.then {
             Some((Then::MoveTo { path, name }, those)) => {
                 let moving = the_messages_moving(app.state, cache, those, &account);
-                remember_the_set_leaving(app.state, &moving);
+                remember_the_set_leaving(app.state, cache, &moving);
                 let into = crate::application::destinations::Destination {
                     name: name.clone(),
                     id: path.clone(),
@@ -27748,7 +27760,7 @@ fn run_these_actions_over(
                     .iter()
                     .map(|message| message.row_id)
                     .collect();
-                remember_these_rows_leaving(app.state, &rows);
+                remember_these_rows_leaving(app.state, Some(cache.as_ref()), &rows);
                 let reached = delete_these(app, &held, list, those, Deleting::ToTrash);
                 done.went(Went::Deleted, reached);
             }
@@ -28120,7 +28132,10 @@ pub fn bring_the_conversation_rows_up_to_date(
 /// refused one message of five does not leave the cursor waiting for a row
 /// that will never go. Under conversation view the messages that did leave
 /// bring their rows up to date instead (13.2-02).
-fn a_refusal_ends_the_wait_for_a_set(
+///
+/// Public so `tests/a_change_made_here_reaches_the_conversation_rows.rs` can
+/// end a set's wait on a list it built (13.3-02).
+pub fn a_refusal_ends_the_wait_for_a_set(
     state: &Arc<StdMutex<WxUIState>>,
     msg_list: &ListCtrl,
     cache: Option<&MessageCache>,
