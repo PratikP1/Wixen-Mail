@@ -543,24 +543,54 @@ pub fn whose_folders_a_move_is_about<'a>(
         .or(the_account_that_is_open)
 }
 
-/// Whose message a command aimed at one reaches.
+/// Whose message a command aimed at one reaches: a mark, a star, a label, a
+/// delete, a move, a receipt, an attachment fetched.
+///
+/// `on_the_list` is the account the loaded row records, `None` when the list
+/// does not hold the row; `filed_under` is the account the store files the
+/// message under. Asked in that order, and the open account last, only for a
+/// loaded row that records none, which is the ordinary case outside All
+/// Inboxes, where every row belongs to the account being looked at.
+///
+/// A row the list never loaded came from the store, a conversation's reply in
+/// Sent for example, and the store knows where it is filed. When it cannot
+/// say, nothing is answered: the open account's server holds a different
+/// message under the same folder path and number, and a change sent there
+/// marks it. That fallback was item 3 of the review of 2026-10-20.
 pub fn whose_message_a_command_reaches<'a>(
     on_the_list: Option<&'a str>,
-    _filed_under: Option<&'a str>,
+    filed_under: Option<&'a str>,
     open: Option<&'a str>,
 ) -> Option<&'a str> {
-    on_the_list.filter(|account| !account.is_empty()).or(open)
+    let recorded = |account: Option<&'a str>| account.filter(|account| !account.is_empty());
+    recorded(on_the_list)
+        .or(recorded(filed_under))
+        .or(on_the_list.and(open))
 }
 
-/// [`whose_message_a_command_reaches`], with the store asked where the
-/// message is filed.
+/// [`whose_message_a_command_reaches`], with the store asked where the message
+/// is filed when the loaded row records no account.
+///
+/// One indexed read, and only for a row the list does not hold or holds with
+/// no account. A store that cannot answer is logged and read as not knowing,
+/// which refuses a row the list does not hold rather than guessing.
 pub fn the_account_a_command_reaches(
     on_the_list: Option<&str>,
-    _row_id: i64,
-    _store: Option<&crate::data::message_cache::MessageCache>,
+    row_id: i64,
+    store: Option<&crate::data::message_cache::MessageCache>,
     open: Option<&str>,
 ) -> Option<String> {
-    whose_message_a_command_reaches(on_the_list, None, open).map(str::to_string)
+    let recorded = on_the_list.is_some_and(|account| !account.is_empty());
+    let filed_under = store.filter(|_| !recorded).and_then(|store| {
+        match store.the_account_a_message_is_in(row_id) {
+            Ok(account) => account,
+            Err(e) => {
+                tracing::error!("Could not read which account message {row_id} is in: {e}");
+                None
+            }
+        }
+    });
+    whose_message_a_command_reaches(on_the_list, filed_under.as_deref(), open).map(str::to_string)
 }
 
 /// What to say when there is nowhere to put it.

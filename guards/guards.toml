@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 859 records have arrived since and have not been through it.
+# 860 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -19196,7 +19196,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
 ]
 
 [[guard]]
@@ -19225,7 +19225,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
 ]
 
 [[guard]]
@@ -19276,7 +19276,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
 ]
 
 [[guard]]
@@ -19462,7 +19462,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
-    { file = "tests/one_hierarchy_two_views.rs", tests = 12 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
 ]
 
 # ── A window that opens every account it is given ────────────────────────────
@@ -43070,4 +43070,26 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+]
+
+# The store's answer left out of whose message a command reaches (13.3-04,
+# review item 3): a conversation's reply in Sent, which All Inboxes never
+# loads, would be marked, starred or labelled at the open account's server
+# under the other account's folder path and number. Anchored on the line that
+# asks the store only for a row recording no account. Measured 2026-10-20 by
+# hand, the break applied and the target run: these two red, the library's
+# destinations cases all passing.
+[[guard]]
+name = "a message the list never loaded is asked of the store before any account is named"
+file = "src/application/destinations.rs"
+suite = "one_hierarchy_two_views"
+before = '''    let filed_under = store.filter(|_| !recorded).and_then(|store| {'''
+after = '''    let filed_under = store.filter(|_| false && !recorded).and_then(|store| {'''
+red = [
+    "test_a_loaded_row_recording_no_account_asks_the_store_before_the_one_on_screen",
+    "test_a_reply_in_another_accounts_sent_reaches_that_account",
+]
+tests_last_seen = [
+    { file = "src/application/destinations.rs", tests = 37 },
+    { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
 ]
