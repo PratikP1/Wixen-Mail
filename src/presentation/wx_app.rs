@@ -25178,14 +25178,6 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             }
             the_folder_counts_moved(state, tx);
         }
-        UIUpdate::MessageLeftTheFolder(cache_id) => {
-            if let Some(cache) = message_cache.as_deref() {
-                take_row_out_of_the_list(state, msg_list, cache, *cache_id);
-            }
-            // A delete of mail kept here arrives this way; the store moved
-            // the folder's count (13.2-31.2).
-            the_folder_counts_moved(state, tx);
-        }
         UIUpdate::MessageReadToggled(cache_id, new_read) => {
             // The row on screen as well as the row in the database. Writing
             // only the database leaves the list showing the old state until
@@ -27551,6 +27543,13 @@ fn delete_these(
             DeletedHere::NotHere => {}
             DeletedHere::Stayed => continue,
             DeletedHere::Left { account_id } => {
+                // The row leaves now, in the same call as the delete: the
+                // conversation window runs Delete and reads the rows again
+                // before the event loop turns, so a row left for the next
+                // tick was listed there still, and a second Delete found the
+                // message in the Trash here and erased it unasked (13.3-02).
+                take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);
+                the_folder_counts_moved(state, tx);
                 reached += 1;
                 went.extend(
                     was_in.map(|folder_path| crate::application::undoing::WhereItWas {
@@ -28301,7 +28300,10 @@ enum DeletedHere {
 /// Take the message off this computer, if that is where it lives.
 ///
 /// Answers whether it handled it and, when it did, whether the message left
-/// its folder, which is what Edit, Undo is told (13-08).
+/// its folder, which is what Edit, Undo is told (13-08). The row of a message
+/// that left is the caller's to take out of the list, in the same call, and
+/// the database is left alone there: a message moved to the Trash here is
+/// still a message (13.3-02).
 ///
 /// This runs on the interface thread deliberately, the way `cancel_if_queued`
 /// beside it does. There is no network work here at all: a folder lookup by
@@ -28342,13 +28344,7 @@ fn delete_if_local(
         Ok(None) => DeletedHere::NotHere,
         Ok(Some(outcome)) => {
             if outcome.message_left_the_folder {
-                let tx_now = tx.clone();
-                rt.spawn(async move {
-                    // The row goes and the database is left alone: a message
-                    // moved to the Trash here is still a message, and the
-                    // other variant would mark it deleted where it landed.
-                    let _ = tx_now.send(UIUpdate::MessageLeftTheFolder(row_id)).await;
-                });
+                // The caller takes the row out, in the same call (13.3-02).
                 // Shown and not said (#83): the row the cursor lands on is
                 // what is heard, the same as when a server agreed.
                 send_shown(tx, rt, &format!("{}: {subject}.", outcome.said));

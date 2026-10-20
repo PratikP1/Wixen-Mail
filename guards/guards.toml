@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 854 records have arrived since and have not been through it.
+# 855 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -28125,7 +28125,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The undo dropped from the arm a refusal arrives on: the server said no,
@@ -28151,7 +28151,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # A check wired into the arm that runs when the network comes back, which
@@ -28182,7 +28182,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The activation binding dropped from the Move dialog's tree, which is the
@@ -28210,7 +28210,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The bytes not kept before the append goes out, as the first step of a
@@ -37946,7 +37946,7 @@ red = [
     "the_built_tree::test_the_built_tree_is_read_on_a_desktop_made_for_this_run",
 ]
 tests_last_seen = [
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The key census stops asking that a desktop be named for its run, so a
@@ -42935,4 +42935,24 @@ red = [
 tests_last_seen = [
     { file = "src/application/import_tree.rs", tests = 41 },
     { file = "src/application/importing_messages.rs", tests = 55 },
+]
+
+# The row of a message deleted on this computer left for later again: the
+# conversation window reads the rows in the same call as Delete, so it lists
+# the message still, and a second Delete erases it from the Trash here
+# without a question (13.3-02, review item 1). Measured 2026-10-20 by hand,
+# the call taken out and the target run: one test red.
+[[guard]]
+name = "a delete on this computer takes its row out in the same call, not at the next tick"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """                // message in the Trash here and erased it unasked (13.3-02).
+                take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);"""
+after = """                // message in the Trash here and erased it unasked (13.3-02)."""
+red = [
+    "test_a_delete_on_this_computer_takes_its_row_out_in_the_same_call",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
