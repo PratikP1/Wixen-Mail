@@ -1,6 +1,7 @@
 //! Folder persistence operations
 
 use super::{CachedFolder, MessageCache};
+use crate::application::flag_changes_waiting::WhichFlag;
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
@@ -131,11 +132,35 @@ impl MessageCache {
     /// stored here: only part of a large folder is cached, so counting locally
     /// would tell somebody their inbox holds five hundred messages when it
     /// holds forty thousand.
+    ///
+    /// The unread count leaves out each message read here whose change to
+    /// read is still waiting to reach the server, and stops at nought
+    /// (13.3-03, item 7 of the review of 2026-10-20). A change kept waiting
+    /// wins over what the server says, as the flag pass already makes it win
+    /// for the row, and the server, never told, still counts that message
+    /// unread: without this, every check while changes at the server are off
+    /// put back the count of every mark made since. A waiting change to unread
+    /// adds nothing, since the server still counts that message unread too.
+    /// One case remains: a message already read at the server, on a phone,
+    /// and marked read here while its change waits, is taken off once too
+    /// often until the change is sent.
     pub fn set_folder_counts(&self, folder_id: i64, unread: usize, total: usize) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE folders SET unread_count = ?1, total_count = ?2 WHERE id = ?3",
-                params![unread as i64, total as i64, folder_id],
+                "UPDATE folders SET unread_count = MAX(?1 - (
+                     SELECT COUNT(*) FROM waiting_flag_changes w
+                     JOIN messages m ON m.id = w.message_row_id
+                     WHERE w.which_flag = ?4 AND w.changed_to = ?5
+                       AND m.folder_id = ?3 AND m.read = 1 AND m.deleted = 0
+                 ), 0), total_count = ?2
+                 WHERE id = ?3",
+                params![
+                    unread as i64,
+                    total as i64,
+                    folder_id,
+                    WhichFlag::Read.as_stored(),
+                    true
+                ],
             )
             .map_err(|e| Error::Other(format!("Failed to record folder counts: {}", e)))?;
         Ok(())
@@ -2173,6 +2198,140 @@ mod tests {
             unread_of(&cache, folder),
             7,
             "the server's count at the next check did not replace the one kept here"
+        );
+    }
+
+    // ── A check's count and the changes still waiting (13.3-03, item 7) ──
+    //
+    // With changes at the server off, which is the default, a mark is kept
+    // waiting and the row stays read, while the server, never told, still
+    // counts the message unread. Each case keeps its changes the way the
+    // window keeps them, through `keep_a_flag_change_waiting`.
+
+    /// A flag change to a message in `path` of account `acc`, kept waiting.
+    fn a_change_waiting(
+        cache: &MessageCache,
+        message: i64,
+        path: &str,
+        which_flag: WhichFlag,
+        changed_to: bool,
+    ) {
+        cache
+            .keep_a_flag_change_waiting(
+                &crate::data::message_cache::waiting_flag_changes::AWaitingFlagChange {
+                    message_row_id: message,
+                    account_id: "acc".to_string(),
+                    folder_path: path.to_string(),
+                    uid: u32::try_from(message).expect("a small row id"),
+                    which_flag,
+                    changed_to,
+                    changed_at: "2026-10-20T09:00:00Z".to_string(),
+                },
+            )
+            .expect("the change kept waiting");
+    }
+
+    /// A message marked read here whose change to read is kept waiting.
+    fn marked_read_and_waiting(cache: &MessageCache, message: i64, path: &str) {
+        cache.update_message_flags(message, true, false).unwrap();
+        a_change_waiting(cache, message, path, WhichFlag::Read, true);
+    }
+
+    #[test]
+    fn test_a_checks_count_leaves_out_a_mark_to_read_still_waiting() {
+        let cache = fresh("count_waiting_read");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let messages: Vec<i64> = (1..=5).map(|uid| a_message(&cache, folder, uid)).collect();
+        cache.set_folder_counts(folder, 5, 10).unwrap();
+        for message in &messages[..3] {
+            marked_read_and_waiting(&cache, *message, "INBOX");
+        }
+
+        cache.set_folder_counts(folder, 5, 10).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            2,
+            "a check put back the count of three marks to read still waiting"
+        );
+    }
+
+    #[test]
+    fn test_a_waiting_mark_to_unread_adds_nothing_to_a_checks_count() {
+        // M and M again: the waiting change is now to unread, for a message
+        // the server never heard was read and still counts unread.
+        let cache = fresh("count_waiting_unread");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        marked_read_and_waiting(&cache, message, "INBOX");
+        cache.update_message_flags(message, false, false).unwrap();
+        a_change_waiting(&cache, message, "INBOX", WhichFlag::Read, false);
+
+        cache.set_folder_counts(folder, 5, 10).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            5,
+            "a waiting change to unread moved the server's count"
+        );
+    }
+
+    #[test]
+    fn test_a_waiting_mark_elsewhere_or_on_a_deleted_row_takes_nothing_off() {
+        let cache = fresh("count_waiting_elsewhere");
+        let inbox = a_folder(&cache, "acc", "INBOX");
+        let archive = a_folder(&cache, "acc", "Archive");
+        let filed = a_message(&cache, archive, 1);
+        marked_read_and_waiting(&cache, filed, "Archive");
+        let deleted = a_message(&cache, inbox, 2);
+        marked_read_and_waiting(&cache, deleted, "INBOX");
+        cache.delete_message(deleted).unwrap();
+        // A change to read kept for a row that reads unread here.
+        let unread_here = a_message(&cache, inbox, 3);
+        a_change_waiting(&cache, unread_here, "INBOX", WhichFlag::Read, true);
+
+        cache.set_folder_counts(inbox, 5, 10).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, inbox),
+            5,
+            "a waiting change in another folder, on a deleted row or on a row unread here \
+             took something off the Inbox's count"
+        );
+    }
+
+    #[test]
+    fn test_a_checks_count_less_what_waits_stops_at_nought() {
+        let cache = fresh("count_waiting_nought");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        for uid in 1..=3 {
+            let message = a_message(&cache, folder, uid);
+            marked_read_and_waiting(&cache, message, "INBOX");
+        }
+
+        cache.set_folder_counts(folder, 1, 10).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            0,
+            "a count smaller than the changes waiting did not stop at nought"
+        );
+    }
+
+    #[test]
+    fn test_a_waiting_star_takes_nothing_off_a_checks_count() {
+        let cache = fresh("count_waiting_star");
+        let folder = a_folder(&cache, "acc", "INBOX");
+        let message = a_message(&cache, folder, 1);
+        cache.update_message_flags(message, true, true).unwrap();
+        a_change_waiting(&cache, message, "INBOX", WhichFlag::Starred, true);
+
+        cache.set_folder_counts(folder, 5, 10).unwrap();
+
+        assert_eq!(
+            unread_of(&cache, folder),
+            5,
+            "a waiting star took something off the count"
         );
     }
 

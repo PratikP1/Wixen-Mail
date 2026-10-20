@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 857 records have arrived since and have not been through it.
+# 859 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -7105,7 +7105,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/types.rs", tests = 28 },
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # ── The adapter that saves a draft at the server had never run ──────────────
@@ -7577,7 +7577,7 @@ red = [
     "data::message_cache::folders::tests::test_the_tree_reads_folders_in_the_order_the_folder_type_gives",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # ── The order somebody asked the message list to be in ──────────────────────
@@ -13900,7 +13900,7 @@ red = [
     "presentation::folder_tree::tests::test_where_a_row_sits_names_every_row_above_it_and_itself_last",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 [[guard]]
@@ -13955,7 +13955,7 @@ red = [
     "presentation::folder_tree::nothing_hangs_off_the_control::test_no_row_of_a_tree_hangs_its_identity_off_the_control",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -14166,7 +14166,7 @@ red = [
     "data::message_cache::folders::tests::test_a_renamed_folder_keeps_its_pin_under_its_new_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14194,7 +14194,7 @@ red = [
     "data::message_cache::folders::tests::test_a_folder_that_is_really_gone_takes_its_pin_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14236,7 +14236,7 @@ red = [
     "presentation::folder_tree::tests::test_unpinning_leaves_the_account_branchs_row_untouched",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 [[guard]]
@@ -14354,7 +14354,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
@@ -14389,7 +14389,7 @@ red = [
     "data::message_cache::folders::tests::test_one_accounts_gone_folders_are_not_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 [[guard]]
@@ -15238,7 +15238,7 @@ red = [
     "presentation::folder_tree::tests::test_two_accounts_with_searches_give_one_heading_and_a_branch_each",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 # ── A saved search run against the account somebody was last looking at ──────
@@ -16022,7 +16022,7 @@ red = [
     "presentation::folder_tree::which_menu::test_rows_that_want_different_commands_do_not_share_a_menu",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 # ── A stored condition this build cannot show, opened anyway ─────────────────
@@ -29940,7 +29940,7 @@ red = [
     "presentation::view_state::tests::test_a_folder_left_flat_comes_back_flat_whatever_the_setting_says",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
@@ -36144,7 +36144,7 @@ red = [
     "presentation::folder_tree::tests::test_the_gesture_moves_an_account_on_an_account_row_and_a_pin_on_a_pinned_row",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 # A seventh saved search given a key, Alt and a tenth digit that does not
@@ -42523,7 +42523,7 @@ red = [
     "data::message_cache::folders::tests::test_the_next_checks_count_replaces_the_one_kept_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -42546,7 +42546,7 @@ red = [
     "data::message_cache::folders::tests::test_a_mark_that_changes_nothing_moves_no_count",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -42567,7 +42567,25 @@ red = [
     "data::message_cache::folders::tests::test_a_server_folder_is_never_counted_from_the_rows_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
+]
+
+# The marks to read still waiting left out of a check's count (13.3-03, item 7
+# of the review of 2026-10-20): with changes at the server off, every check
+# would put back the count of every mark made since, "Inbox, 2 unread" going
+# back to 5 while three rows read as read. Anchored on the statement's first
+# line. Measured on 2026-10-20 with `scripts/guards.sh`.
+[[guard]]
+name = "a check's count leaves out the marks to read still waiting"
+file = "src/data/message_cache/folders.rs"
+before = '''                "UPDATE folders SET unread_count = MAX(?1 - ('''
+after = '''                "UPDATE folders SET unread_count = MAX(?1 + 0 * ('''
+red = [
+    "data::message_cache::folders::tests::test_a_checks_count_leaves_out_a_mark_to_read_still_waiting",
+    "data::message_cache::folders::tests::test_a_checks_count_less_what_waits_stops_at_nought",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # The flag write that stuck no longer asking the tree to reword its counts
@@ -42588,25 +42606,47 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_folder_tree_counts_follow_a_change_made_here.rs", tests = 7 },
+    { file = "tests/the_folder_tree_counts_follow_a_change_made_here.rs", tests = 10 },
 ]
 
-# The answer to which rows read differently made `None` always (13.2-31.2):
+# The answer to which rows read differently made empty always (13.2-31.2):
 # every rewording would leave the tree as it was for the next rebuild, so a
-# change made here would show only at the next check again. Anchored on the
-# line that answers. Measured by hand on 2026-10-18: the whole library 9,281
-# passed and exactly these two failed; the target passed.
+# change made here would show only at the next check again. Rewritten by
+# 13.3-03 on 2026-10-20, when the function came to pair rows by identity and
+# answer each row's new words: anchored on the line that answers for one held
+# row. Measured on 2026-10-20 with `scripts/guards.sh`.
 [[guard]]
 name = "a tree whose rows are the same is reworded where it stands"
 file = "src/presentation/folder_tree.rs"
-before = '''    same_rows.then(|| {'''
-after = '''    false.then(|| {'''
+before = '''            (now.label != was.label).then(|| (at, now.label.clone()))'''
+after = '''            false.then(|| (at, now.label.clone()))'''
 red = [
     "presentation::folder_tree::tests::test_a_folder_whose_count_moved_is_reworded_with_its_branch",
-    "presentation::folder_tree::tests::test_rows_that_did_not_change_are_left_alone",
+    "presentation::folder_tree::tests::test_a_folder_that_came_is_left_alone_and_the_others_are_reworded",
+    "presentation::folder_tree::tests::test_a_folder_that_went_is_left_alone_and_the_others_are_reworded",
+    "presentation::folder_tree::tests::test_another_accounts_labels_on_screen_do_not_stop_the_counts",
+    "presentation::folder_tree::tests::test_a_repeated_identity_pairs_first_with_first",
 ]
 tests_last_seen = [
-    { file = "src/presentation/folder_tree.rs", tests = 100 },
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
+]
+
+# The rows paired by position again (13.3-03, item 2 of the review of
+# 2026-10-20): a folder that came or went above the one whose count moved
+# would give its item another row's words, or none. Anchored on the line that
+# finds a held row's fresh row by identity. Measured on 2026-10-20 with
+# `scripts/guards.sh`.
+[[guard]]
+name = "a held row is paired with the fresh row of its own identity"
+file = "src/presentation/folder_tree.rs"
+before = '''            let now = fresh_by_identity.get_mut(&was.identity)?.pop_front()?;'''
+after = '''            let now = fresh.get(at)?;'''
+red = [
+    "presentation::folder_tree::tests::test_a_folder_that_came_is_left_alone_and_the_others_are_reworded",
+    "presentation::folder_tree::tests::test_a_folder_that_went_is_left_alone_and_the_others_are_reworded",
+]
+tests_last_seen = [
+    { file = "src/presentation/folder_tree.rs", tests = 105 },
 ]
 
 # The Outbox's Delete without the claim condition (13.2-31.3, ledger 843): it

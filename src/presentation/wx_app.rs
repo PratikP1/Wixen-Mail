@@ -21481,19 +21481,24 @@ fn the_folder_counts_moved(state: &Arc<StdMutex<WxUIState>>, tx: &Sender<UIUpdat
 /// after every M would be a sentence nobody asked for, and the new count is
 /// heard when the row is reached.
 ///
-/// A tree whose rows came, went or moved since it was drawn, or whose items do
-/// not line up with the rows held, is left as it is for the next rebuild, with
-/// a line in the log.
+/// The rows held are changed in place and never replaced by the fresh reading
+/// (13.3-03, item 2 of the review of 2026-10-20). An item on screen is paired
+/// with a held row by position, through the words above it, and the tree on
+/// screen carries the Labels branch of whichever account a check drew it for,
+/// while the open account may be another: a reading put in place of the rows
+/// held would pair items with rows they are not. So the tree is read again for
+/// the account whose labels it shows, each held row is paired with the fresh
+/// row of the same identity, and only the held words change. A row only in one
+/// reading, and a tree whose items do not line up with the rows held, wait for
+/// the next rebuild, the second with a line in the log.
 fn say_the_folder_counts_again(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &MessageCache,
     tree: &TreeCtrl,
 ) {
-    let looked_at = lock_state(state)
-        .active_account_id
-        .clone()
-        .unwrap_or_default();
-    let fresh = match folder_tree_updates(cache, &looked_at) {
+    let held = lock_state(state).tree_rows.clone();
+    let read_for = the_account_whose_labels_are_shown(state, cache, &held);
+    let fresh = match folder_tree_updates(cache, &read_for) {
         Ok(updates) => updates.into_iter().find_map(|update| match update {
             UIUpdate::FoldersLoaded(rows) => Some(rows),
             _ => None,
@@ -21506,11 +21511,7 @@ fn say_the_folder_counts_again(
     let Some(fresh) = fresh else {
         return;
     };
-    let held = lock_state(state).tree_rows.clone();
-    let Some(changed) = folder_tree::rows_that_read_differently(&held, &fresh) else {
-        tracing::info!("The folder tree's rows changed, so its counts wait for the next rebuild");
-        return;
-    };
+    let changed = folder_tree::rows_that_read_differently(&held, &fresh);
     if changed.is_empty() {
         return;
     }
@@ -21520,23 +21521,56 @@ fn say_the_folder_counts_again(
     let mut items = Vec::new();
     let mut on_screen = Vec::new();
     collect_rows(tree, &root, &mut items, &mut on_screen);
-    if items.len() != fresh.len() {
+    if items.len() != held.len() {
         tracing::info!(
-            "The folder tree shows {} rows against {} read, so its counts wait for the next \
+            "The folder tree shows {} rows against {} held, so its counts wait for the next \
              rebuild",
             items.len(),
-            fresh.len()
+            held.len()
         );
         return;
     }
-    for at in changed {
-        if let (Some(item), Some(row)) = (items.get(at), fresh.get(at)) {
-            tree.set_item_text(item, &row.label);
+    for (at, words) in &changed {
+        if let Some(item) = items.get(*at) {
+            tree.set_item_text(item, words);
         }
     }
-    let mut held = lock_state(state);
-    held.folders = fresh.iter().map(|row| row.label.clone()).collect();
-    held.tree_rows = fresh;
+    let mut kept = lock_state(state);
+    for (at, words) in changed {
+        if let Some(row) = kept.tree_rows.get_mut(at) {
+            row.label = words.clone();
+        }
+        if let Some(shown) = kept.folders.get_mut(at) {
+            *shown = words;
+        }
+    }
+}
+
+/// Whose labels the folder tree on screen shows: the account of its first
+/// label row, or the open account when it shows none.
+///
+/// Each check draws the tree with its own account's labels, and landing on
+/// another account's row does not draw it again, so the open account is not
+/// always the one whose Labels branch is on screen (13.3-03). A label that
+/// cannot be read falls back to the open account, and the failure is logged.
+fn the_account_whose_labels_are_shown(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    held: &[TreeRow],
+) -> String {
+    let owner = folder_tree::the_first_label_shown(held).and_then(|id| match cache.get_tag(id) {
+        Ok(tag) => tag.map(|tag| tag.account_id),
+        Err(why) => {
+            tracing::warn!("Whose labels the folder tree shows could not be read: {why}");
+            None
+        }
+    });
+    owner.unwrap_or_else(|| {
+        lock_state(state)
+            .active_account_id
+            .clone()
+            .unwrap_or_default()
+    })
 }
 
 /// Which row of the folder tree an item is.
