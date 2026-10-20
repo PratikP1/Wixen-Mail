@@ -410,6 +410,9 @@ mod tests {
         /// identifier, [`THE_DRAFTS_IDENTIFIER`].
         carrying: std::collections::HashMap<u32, std::result::Result<Option<String>, String>>,
         asked: RefCell<Vec<Asked>>,
+        /// The numbers whose message was read, in order. Kept apart from
+        /// `asked` so the sequences the cases above compare are untouched.
+        read: RefCell<Vec<u32>>,
     }
 
     /// The identifier every removal and filing here is asked about.
@@ -424,6 +427,7 @@ mod tests {
                 removal: Ok(count),
                 carrying: std::collections::HashMap::new(),
                 asked: RefCell::new(Vec::new()),
+                read: RefCell::new(Vec::new()),
             }
         }
     }
@@ -461,6 +465,7 @@ mod tests {
             _folder: &str,
             uid: u32,
         ) -> std::result::Result<Option<String>, String> {
+            self.read.borrow_mut().push(uid);
             self.carrying
                 .get(&uid)
                 .cloned()
@@ -623,6 +628,102 @@ mod tests {
             "{filed:?}"
         );
         assert!(filed.needs_saying());
+    }
+
+    #[tokio::test]
+    async fn test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts() {
+        // Ledger 902. The save's search is Send's search, so it answers a
+        // message whose identifier merely holds the draft's as well, and the
+        // automatic save, once a minute, took it out of Drafts.
+        let mut server = Scripted::holding(vec![4, 9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+        server.removal = Ok(1);
+
+        let filed = saving(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::File, Asked::Remove(vec![4])],
+            "the removal named a message that is not an older copy of the draft"
+        );
+        assert_eq!(*server.read.borrow(), vec![4, 9]);
+        assert_eq!(filed, Filed::Replaced);
+    }
+
+    #[tokio::test]
+    async fn test_a_save_whose_search_found_only_another_message_removes_nothing() {
+        let mut server = Scripted::holding(vec![9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+
+        let filed = saving(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::File],
+            "something was removed although no message carried the draft's identifier"
+        );
+        assert_eq!(filed, Filed::Replaced);
+    }
+
+    #[tokio::test]
+    async fn test_a_first_save_refused_after_finding_only_another_message_says_the_draft_is_only_here()
+     {
+        // The search found a number, but not a copy of this draft, so there is
+        // no older copy for the person's other devices to show.
+        let mut server = Scripted::holding(vec![9]);
+        server
+            .carrying
+            .insert(9, Ok(Some(ONE_THAT_ONLY_CONTAINS_IT.to_string())));
+        server.filing = Err("the mailbox is over quota".to_string());
+
+        let filed = saving(&server).await;
+
+        assert_eq!(
+            filed,
+            Filed::NotFiledAndThereIsNoCopyThere("the mailbox is over quota".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_save_whose_older_copy_cannot_be_read_files_the_new_one_and_leaves_it() {
+        // Not knowing what a message carries is not knowing it is an older
+        // copy, so it stays, the newer copy is still filed, and the doubt is
+        // said with the server's words.
+        let mut server = Scripted::holding(vec![4]);
+        server
+            .carrying
+            .insert(4, Err("the fetch was refused".to_string()));
+
+        let filed = saving(&server).await;
+
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::File]
+        );
+        assert_eq!(
+            filed,
+            Filed::FiledAndAnOlderCopyMayStillBeThere("the fetch was refused".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_first_save_reads_nothing() {
+        // The reading costs one round trip per number the search found, so a
+        // first save, which finds none, costs nothing more than it did.
+        let server = Scripted::holding(vec![]);
+
+        let filed = saving(&server).await;
+
+        assert_eq!(filed, Filed::Replaced);
+        assert_eq!(*server.read.borrow(), Vec::<u32>::new());
+        assert_eq!(
+            *server.asked.borrow(),
+            vec![Asked::WhichCopies, Asked::File]
+        );
     }
 
     #[tokio::test]
