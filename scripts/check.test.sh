@@ -1828,24 +1828,34 @@ expect_fixture_silent_about "every case in this suite ran" \
 # case costs a fork and one failed cargo call rather than a build.
 #
 # Any path given after the repository is staged as a new file beside it.
+#
+# Each is a copy of one repository built once, holding the start committed and
+# the branch cut, since 2026-10-20 (13.3-01). Built per case it was eight
+# processes before the case asked anything, and a process from this suite's
+# bash cost about a tenth of a second that day, so fourteen builds were about
+# a quarter of a minute of every run. A copy is one process, and every case
+# still gets a repository nothing else touches.
+a_commit_template="$work/a-commit-template"
+a_repository_of_its_own "$a_commit_template"
+mkdir -p "$a_commit_template/src" "$a_commit_template/tests" "$a_commit_template/locales" \
+    "$a_commit_template/docs" "$a_commit_template/.planning" "$a_commit_template/guards"
+for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
+    printf 'the start\n' > "$a_commit_template/$kept"
+done
+git -C "$a_commit_template" add --all
+git -C "$a_commit_template" commit --quiet -m "the start"
+git -C "$a_commit_template" checkout --quiet -b a-branch
+
 a_commit_being_made() {
-    local repo="$1" kept staged
+    local repo="$1" staged
     shift
-    a_repository_of_its_own "$repo"
-    mkdir -p "$repo/src" "$repo/tests" "$repo/locales" "$repo/docs" "$repo/.planning" "$repo/guards"
-    for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
-        printf 'the start\n' > "$repo/$kept"
-    done
-    git -C "$repo" add --all
-    git -C "$repo" commit --quiet -m "the start"
-    git -C "$repo" checkout --quiet -b a-branch
+    cp -R "$a_commit_template" "$repo"
     printf 'the staged change\n' >> "$repo/src/lib.rs"
-    git -C "$repo" add src/lib.rs
     for staged in "$@"; do
-        mkdir -p "$repo/${staged%/*}"
+        [ -d "$repo/${staged%/*}" ] || mkdir -p "$repo/${staged%/*}"
         printf 'the staged change\n' > "$repo/$staged"
-        git -C "$repo" add "$staged"
     done
+    git -C "$repo" add src/lib.rs "$@"
 }
 
 the_message="$work/the-message"
