@@ -1446,6 +1446,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The unread count beside a folder changes at once for people with more than one account
+  (2026-10-20, LIST-04, FOLDER-01).** Since 2026-10-18 the folder tree's count, as in "Inbox,
+  5 unread", changes as soon as you mark, delete, move or copy a message. With two or more
+  accounts whose labels differ, it did not: the tree shows the labels of whichever account was
+  checked last, and when that was not the account you were working in, the count waited for
+  the next check. Now it changes at once whichever account was checked last, and a label's
+  count follows too.
+
+  Also fixed: the count no longer goes back to the old number at each check while a change is
+  waiting to reach the server. Changing mail at the server is off unless you turn it on, so
+  every M was such a change: the tree said "Inbox, 2 unread" after three marks and "Inbox, 5
+  unread" again after the next check, while the three messages still read as read. A check now
+  leaves out each message you read here whose change is still waiting.
+
+  Known limits. A message already read at the server, for example on your phone, and marked
+  read here while its change waits, is counted off twice until the change is sent, so the count
+  can read one lower than it should; it never goes below nought. Nobody has heard either fix
+  with a screen reader yet.
+
 - **A message deleted on this computer leaves the conversation at once (2026-10-20, LIST-05,
   LIST-21).** This is about mail kept only on this computer: a POP account's mail, and the
   folders on this computer. Inside an opened conversation, `Delete` on such a message moved
@@ -1623,7 +1642,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limits. A change made while that folder is being checked shows again only at the
   following check, because the check writes the count it read from the server before your
   change. Nothing is spoken when a count changes: you hear the new count when you reach the
-  folder's row. Nobody has heard this with a screen reader yet.
+  folder's row. Nobody has heard this with a screen reader yet. Added 2026-10-20: a message
+  already read at the server and marked read here while its change waits to reach the server
+  is counted off twice until the change is sent, so the count can read one lower than it
+  should, never below nought (see the entry of 2026-10-20 above).
 
 - **M and Delete on a conversation no longer hold the window in a large mailbox
   (2026-10-18).** Under conversation view, marking a conversation read or unread with M, or
