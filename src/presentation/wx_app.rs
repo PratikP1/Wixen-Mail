@@ -361,7 +361,8 @@ menu_ids!(
 ///
 /// Under conversation view a message is not a row, so it has no index here;
 /// the set's messages are what the conversation rows are brought up to date
-/// from, once, after the last of them (13.2-02).
+/// from, once, after the last of them (13.2-02), through the conversations
+/// they belonged to before the change (13.3-02).
 #[derive(Debug, Default)]
 pub struct ASetLeaving {
     /// Row id to the row's index at the key, when the list shows messages.
@@ -370,6 +371,10 @@ pub struct ASetLeaving {
     pub left: Vec<usize>,
     /// Every message of the set, by row id.
     pub messages: Vec<i64>,
+    /// The conversations the set's messages were in at the key, read before
+    /// the change could erase them; nothing under the message view, or when
+    /// the store could not be read, and then the catch-up reads after.
+    pub conversations: Option<Vec<crate::application::conversations::WhoseConversation>>,
 }
 
 impl ASetLeaving {
@@ -381,6 +386,7 @@ impl ASetLeaving {
             messages: still_to_leave.keys().copied().collect(),
             still_to_leave,
             left: Vec::new(),
+            conversations: None,
         }
     }
 
@@ -407,10 +413,26 @@ impl ASetLeaving {
 /// The set a command over `leaving` is taking out of the list, when it is a
 /// set: by row under the message view, by message under conversation view,
 /// where the rows that leave are worked out from the store (13.2-02).
-fn the_set_leaving(s: &WxUIState, leaving: &[i64]) -> Option<ASetLeaving> {
+///
+/// Under conversation view one message is a set as well, carrying the
+/// conversations it was in before the change, so its row is brought up to
+/// date from those (13.3-02); under the message view one row lands as it
+/// always did. The store is read before the state is locked.
+fn the_set_leaving(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+    leaving: &[i64],
+) -> Option<ASetLeaving> {
+    let conversations = the_conversations_before_the_change(state, cache, leaving);
+    let s = lock_state(state);
     let by_message = s.showing.showing_conversations();
-    (leaving.len() > 1).then(|| {
-        ASetLeaving::of(leaving.iter().filter_map(|row_id| {
+    let a_set = match by_message {
+        true => !leaving.is_empty(),
+        false => leaving.len() > 1,
+    };
+    a_set.then(|| ASetLeaving {
+        conversations,
+        ..ASetLeaving::of(leaving.iter().filter_map(|row_id| {
             let row = s.messages.iter().position(|row| row.message_id == *row_id);
             match by_message {
                 true => Some((*row_id, None)),
@@ -418,6 +440,33 @@ fn the_set_leaving(s: &WxUIState, leaving: &[i64]) -> Option<ASetLeaving> {
             }
         }))
     })
+}
+
+/// The conversations `leaving` is in, read from the store before a change
+/// that may erase what it says (13.3-02, review item 15). A take-off writes
+/// the row back with no conversation, and a move into another account's
+/// folder, or into the Trash this computer keeps, files the message under an
+/// account whose conversations are not the rows on screen, so a reading
+/// after the change names nothing the list holds.
+///
+/// Nothing under the message view, whose rows are the messages themselves,
+/// and nothing when the store cannot be read, which is logged; the catch-up
+/// then reads after the change, as it did before.
+fn the_conversations_before_the_change(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+    leaving: &[i64],
+) -> Option<Vec<crate::application::conversations::WhoseConversation>> {
+    if !lock_state(state).showing.showing_conversations() {
+        return None;
+    }
+    match cache?.conversations_holding(leaving) {
+        Ok(named) => Some(named),
+        Err(why) => {
+            tracing::warn!("The conversations a change touches were not read before it: {why}");
+            None
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -5750,9 +5799,9 @@ impl WxMailApp {
                             {
                                 let leaving: Vec<i64> =
                                     chosen.messages.iter().map(|message| message.row_id).collect();
-                                let mut s = lock_state(&state);
-                                let set = the_set_leaving(&s, &leaving);
-                                s.a_set_leaving = set;
+                                let set =
+                                    the_set_leaving(&state, message_cache.as_deref(), &leaving);
+                                lock_state(&state).a_set_leaving = set;
                             }
                             // One word at the key and the fuller line for
                             // the eye (#83). The subject was just read on
@@ -26790,12 +26839,11 @@ fn remember_the_set_leaving(
 /// a set the way the window does (13.3-02).
 pub fn remember_these_rows_leaving(
     state: &Arc<StdMutex<WxUIState>>,
-    _cache: Option<&MessageCache>,
+    cache: Option<&MessageCache>,
     leaving: &[i64],
 ) {
-    let mut s = lock_state(state);
-    let set = the_set_leaving(&s, leaving);
-    s.a_set_leaving = set;
+    let set = the_set_leaving(state, cache, leaving);
+    lock_state(state).a_set_leaving = set;
 }
 
 /// One change to make here first: what to do with which message, and the
@@ -27973,7 +28021,9 @@ fn cancel_if_queued(
 /// message leaving does to them is read from `cache`, which already holds the
 /// change, once for a set (13.2-02). Until 2026-10-14 this returned there and
 /// a conversation row stayed until the next check, with nothing landing when
-/// it went.
+/// it went. Which conversations those are is what the set was given at the
+/// key, when it was given them, because the store read after a take-off or a
+/// move to another account no longer names them (13.3-02).
 ///
 /// Public, with the store it reads, so
 /// `tests/a_change_made_here_reaches_the_conversation_rows.rs` can take a row
@@ -28013,17 +28063,17 @@ pub fn take_row_out_of_the_list(
     let (idx, len_after, showing, of_a_set) = removed;
     tell_the_list_how_many(state, msg_list);
     msg_list.refresh(true, None);
-    let (removed, messages): (Vec<usize>, Vec<i64>) = match of_a_set {
+    let (removed, messages, named) = match of_a_set {
         // Not of a set: one row, landed after as it always was.
-        None => (idx.into_iter().collect(), vec![cache_id]),
+        None => (idx.into_iter().collect(), vec![cache_id], None),
         // Of a set with rows still to leave: nothing lands yet.
         Some(None) => return,
-        // The last of the set: the set's rows, numbered as they were, and
-        // its messages.
+        // The last of the set: the set's rows, numbered as they were, its
+        // messages, and the conversations they were in at the key.
         Some(Some(set)) => {
-            let mut rows = set.left;
+            let mut rows: Vec<usize> = set.left;
             rows.sort_unstable();
-            (rows, set.messages)
+            (rows, set.messages, set.conversations)
         }
     };
     match showing {
@@ -28031,9 +28081,14 @@ pub fn take_row_out_of_the_list(
             let landed = land_the_cursor_after(msg_list, &removed, len_after);
             lock_state(state).selected_message_index = landed;
         }
-        view_state::Showing::Conversations => {
-            bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages);
-        }
+        // Named at the key when the set was, since a take-off or a move to
+        // another account erases what a reading after would name (13.3-02).
+        view_state::Showing::Conversations => match named {
+            Some(named) => {
+                bring_the_named_conversation_rows_up_to_date(state, cache, msg_list, &named)
+            }
+            None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages),
+        },
     }
 }
 
@@ -28085,26 +28140,40 @@ pub fn bring_the_conversation_rows_up_to_date(
     list: &ListCtrl,
     touched: &[i64],
 ) {
+    if the_conversations_on_screen(&lock_state(state)).is_none() {
+        return;
+    }
+    match cache.conversations_holding(touched) {
+        Ok(named) => bring_the_named_conversation_rows_up_to_date(state, cache, list, &named),
+        Err(why) => tracing::warn!("The conversation rows were not brought up to date: {why}"),
+    }
+}
+
+/// Bring the rows of the conversations `named` up to date, the listing half
+/// of the catch-up, for a change whose conversations were named before it was
+/// made: a take-off or a move to another account leaves the store naming
+/// nothing the list holds (13.3-02).
+fn bring_the_named_conversation_rows_up_to_date(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: &MessageCache,
+    list: &ListCtrl,
+    named: &[crate::application::conversations::WhoseConversation],
+) {
     let Some(on_screen) = the_conversations_on_screen(&lock_state(state)) else {
         return;
     };
-    let named = match cache.conversations_holding(touched) {
-        Ok(named) if named.is_empty() => return,
-        Ok(named) => named,
-        Err(why) => {
-            tracing::warn!("The conversation rows were not brought up to date: {why}");
-            return;
-        }
-    };
+    if named.is_empty() {
+        return;
+    }
     let reach = the_conversation_reach();
     let order = the_sort_as(view_state::Showing::Conversations);
     let fresh = match &on_screen {
         ConversationsOnScreen::Folder {
             folder_id,
             account_id,
-        } => cache.conversations_named_in(*folder_id, account_id, reach, order.as_deref(), &named),
+        } => cache.conversations_named_in(*folder_id, account_id, reach, order.as_deref(), named),
         ConversationsOnScreen::EveryInbox => {
-            cache.conversations_named_in_every_inbox(reach, order.as_deref(), &named)
+            cache.conversations_named_in_every_inbox(reach, order.as_deref(), named)
         }
     };
     let fresh = match fresh {
@@ -28116,7 +28185,7 @@ pub fn bring_the_conversation_rows_up_to_date(
     };
     let (repainting, left, len_after) = {
         let mut s = lock_state(state);
-        let brought = view_state::bring_rows_up_to_date(&s.conversations, &named, &fresh);
+        let brought = view_state::bring_rows_up_to_date(&s.conversations, named, &fresh);
         s.conversations = brought.rows;
         (brought.repainting, brought.left, s.conversations.len())
     };
@@ -28158,12 +28227,19 @@ pub fn a_refusal_ends_the_wait_for_a_set(
             let landed = land_the_cursor_after(msg_list, &rows, len_after);
             lock_state(state).selected_message_index = landed;
         }
+        // The conversations named at the key, when they were, since a
+        // take-off erases what a reading after would name (13.3-02). Those of
+        // messages that stayed are read again too, and come back as they were.
         view_state::Showing::Conversations => {
             let gone = set.the_messages_that_left();
-            if let Some(cache) = cache
-                && !gone.is_empty()
-            {
-                bring_the_conversation_rows_up_to_date(state, cache, msg_list, &gone);
+            let Some(cache) = cache.filter(|_| !gone.is_empty()) else {
+                return;
+            };
+            match &set.conversations {
+                Some(named) => {
+                    bring_the_named_conversation_rows_up_to_date(state, cache, msg_list, named)
+                }
+                None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &gone),
             }
         }
     }
