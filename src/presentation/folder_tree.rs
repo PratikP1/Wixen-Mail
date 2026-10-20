@@ -32,6 +32,8 @@
 //! could not place is put at the top of its branch rather than dropped: a
 //! folder nobody can reach is worse than a folder in the wrong place.
 
+use std::collections::{HashMap, VecDeque};
+
 use crate::application::folder_settings::UnreadOnAParent;
 use crate::application::folders_underneath::AS_DEEP_AS_A_TREE_GOES;
 use crate::application::local_folders::is_this_computer;
@@ -947,36 +949,47 @@ pub fn where_a_row_sits(rows: &[TreeRow], at: usize) -> Vec<String> {
 }
 
 /// Which rows of the tree on screen read differently in a fresh reading of it,
-/// as each row's position and its new words.
+/// as each row's position among the rows held and its new words.
 ///
 /// 13.2-31.2 (2026-10-18). A change made here moves a folder's unread count,
 /// and the tree says it at once by rewording the rows whose words changed
 /// where they stand, rather than by a rebuild, which moves nothing but says
-/// how many folders loaded. Rewording in place is only right when both
-/// readings hold the same rows in the same order, since the items on screen
-/// are paired with rows by position; otherwise the answer is `None` and the
-/// next rebuild draws the tree.
+/// how many folders loaded.
+///
+/// Each held row is paired with the fresh row of the same identity, never by
+/// position, and where an identity repeats the first held pairs with the
+/// first fresh (13.3-03, item 2 of the review of 2026-10-20). The tree on
+/// screen carries the Labels branch of whichever account a check drew it for,
+/// so a reading for another account holds other rows, and a pairing by
+/// position either gave up or gave an item another row's words. A row only in
+/// one reading is left out: the next rebuild draws it or takes it away.
 pub fn rows_that_read_differently(held: &[TreeRow], fresh: &[TreeRow]) -> Vec<(usize, String)> {
-    let same_rows = held.len() == fresh.len()
-        && held
-            .iter()
-            .zip(fresh)
-            .all(|(was, now)| was.identity == now.identity && was.depth == now.depth);
-    if !same_rows {
-        return Vec::new();
+    let mut fresh_by_identity: HashMap<&WhichRow, VecDeque<&TreeRow>> = HashMap::new();
+    for row in fresh {
+        fresh_by_identity
+            .entry(&row.identity)
+            .or_default()
+            .push_back(row);
     }
     held.iter()
-        .zip(fresh)
         .enumerate()
-        .filter(|(_, (was, now))| was.label != now.label)
-        .map(|(at, (_, now))| (at, now.label.clone()))
+        .filter_map(|(at, was)| {
+            let now = fresh_by_identity.get_mut(&was.identity)?.pop_front()?;
+            (now.label != was.label).then(|| (at, now.label.clone()))
+        })
         .collect()
 }
 
 /// The id of the first label the tree shows, or `None` when it shows no
 /// Labels branch.
-pub fn the_first_label_shown(_rows: &[TreeRow]) -> Option<&str> {
-    None
+///
+/// A tree holds one account's labels, the account a check drew it for, so
+/// this is how the window learns whose labels are on screen (13.3-03).
+pub fn the_first_label_shown(rows: &[TreeRow]) -> Option<&str> {
+    rows.iter().find_map(|row| match &row.identity {
+        WhichRow::Label(id) => Some(id.as_str()),
+        _ => None,
+    })
 }
 
 /// The Favourites group: the heading, a branch per account that has a pin, and
