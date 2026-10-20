@@ -19334,6 +19334,9 @@ tests_last_seen = [
 # on the sentence about destinations chosen on one server and the command sent
 # to another. The red list is unchanged, because the test that notices is the
 # same test.
+#
+# Rewritten 2026-10-20 by 13.3-04, when `owner_of` gained the window's store as
+# a fifth argument; the break is the one it was.
 name = "the move window builds its folder list from the account on screen"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
@@ -19342,6 +19345,7 @@ before = """        owner_of(
             &s.accounts,
             row_id,
             s.active_account_id.as_deref(),
+            Some(cache.as_ref()),
         )
     }) else {
         return send_refusal(
@@ -27554,16 +27558,17 @@ tests_last_seen = [
 # `scripts/guards.sh --remeasure`, the target named. Rewritten 2026-09-19 by
 # 11-07 onto the cursor handler, which is on the focus event and hands the
 # refresh the list; the break is the one it was, and it reddened the same
-# one test.
+# one test. Rewritten again 2026-10-20 by 13.3-04, when the receipt line above
+# the refresh began handing the window's store; the break is the one it was.
 [[guard]]
 name = "landing on a row makes mark as read say which way it will go, not leave the last row's words"
 file = "src/presentation/wx_app.rs"
 suite = "mark_as_read_says_which_way_it_will_go"
-before = """                    receipt_for_the_open_message(app);
+before = """                    receipt_for_the_open_message(app, body_cache.as_deref());
                     // Mark as Read says which way it will go for the rows
                     // selected (#27, #30): the item, the tool and its tip.
                     refresh_mark_read_wording(&frame, toolbar_handle, &state, &list);"""
-after = """                    receipt_for_the_open_message(app);
+after = """                    receipt_for_the_open_message(app, body_cache.as_deref());
                     let _ = &list;"""
 red = [
     "test_the_wording_is_refreshed_on_selection_after_the_toggle_and_when_a_flag_lands",
@@ -36481,6 +36486,8 @@ tests_last_seen = [
 # A Quick Step run over messages of another account, into a folder of the
 # same path there, which is somebody else's mail. Written 2026-09-30 by
 # 13-42, measured through `scripts/guards.sh --remeasure` against the target.
+# Rewritten 2026-10-20 by 13.3-04, when `owner_of` gained the window's store
+# as a fifth argument; the break is the one it was.
 [[guard]]
 name = "a Quick Step refuses messages of another account"
 file = "src/presentation/wx_app.rs"
@@ -36496,6 +36503,7 @@ before = '''    let elsewhere = {
                     &s.accounts,
                     message.row_id,
                     s.active_account_id.as_deref(),
+                    cache.as_deref(),
                 )
                 .is_none_or(|owner| owner.id != account.id)
             })
@@ -36754,7 +36762,9 @@ tests_last_seen = [
 # message is in, so in All Inboxes the rule, the junk folder and the mail
 # it moves belong to another account (ledger 691, D2, T-13-44.1-06).
 # Written 2026-10-01 by 13-44.1, measured through `scripts/guards.sh
-# --remeasure` against the target.
+# --remeasure` against the target. Rewritten 2026-10-20 by 13.3-04, when
+# `owner_of` gained the window's store as a fifth argument; the break is the
+# one it was.
 [[guard]]
 name = "a block is written to the account the message is in"
 file = "src/presentation/wx_app.rs"
@@ -36765,6 +36775,7 @@ before = '''        let account = message.as_ref().and_then(|message| {
                 &held.accounts,
                 message.message_id,
                 held.active_account_id.as_deref(),
+                Some(cache.as_ref()),
             )
         });'''
 after = '''        let account = held

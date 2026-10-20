@@ -515,36 +515,17 @@ pub fn where_this_message_can_go(
     )
 }
 
-/// Whose folders a move or copy is about.
+/// Whose message a command aimed at one reaches: a mark, a star, a label, a
+/// delete, a move and the folders it offers, a receipt, an attachment fetched.
 ///
-/// The account the chosen message is in, not the account that happens to be
-/// open. All Inboxes reads every account's inbox as one list, so those differ
+/// The account the message is in, not the account that happens to be open.
+/// All Inboxes reads every account's inbox as one list, so those differ
 /// routinely, and the two halves of a move used to answer this question
 /// separately: the folders offered came from the account on screen and the
 /// command went to the account the row belongs to. So the path was chosen on
 /// one server and sent to another, where a mailbox of that name is a different
 /// mailbox and a message that happens to share a UID is a different message.
-///
 /// Asked once here and passed to both halves, rather than each half deciding.
-///
-/// A row that records no account of its own falls back to the one on screen,
-/// which is the ordinary case outside All Inboxes, where every row belongs to
-/// the account being looked at. Whether the answer then names an account this
-/// program knows is the caller's question, and the caller refuses rather than
-/// reaching for another: the shape this replaces fell back to whichever account
-/// came first in the list, so a command aimed at nothing in particular still
-/// reached a real server.
-pub fn whose_folders_a_move_is_about<'a>(
-    the_message_is_in: Option<&'a str>,
-    the_account_that_is_open: Option<&'a str>,
-) -> Option<&'a str> {
-    the_message_is_in
-        .filter(|account| !account.is_empty())
-        .or(the_account_that_is_open)
-}
-
-/// Whose message a command aimed at one reaches: a mark, a star, a label, a
-/// delete, a move, a receipt, an attachment fetched.
 ///
 /// `on_the_list` is the account the loaded row records, `None` when the list
 /// does not hold the row; `filed_under` is the account the store files the
@@ -557,6 +538,11 @@ pub fn whose_folders_a_move_is_about<'a>(
 /// say, nothing is answered: the open account's server holds a different
 /// message under the same folder path and number, and a change sent there
 /// marks it. That fallback was item 3 of the review of 2026-10-20.
+///
+/// Whether the answer then names an account this program knows is the
+/// caller's question, and the caller refuses rather than reaching for another:
+/// an older shape fell back to whichever account came first in the list, so a
+/// command aimed at nothing in particular still reached a real server.
 pub fn whose_message_a_command_reaches<'a>(
     on_the_list: Option<&'a str>,
     filed_under: Option<&'a str>,
