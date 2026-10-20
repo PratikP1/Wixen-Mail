@@ -308,7 +308,87 @@ fn the_network_coming_back_replays_nothing(app: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Where `delete_these` handles a message deleted on this computer, and the
+/// statement that ends that arm.
+const THE_LOCAL_ARM: &str = "DeletedHere::Left {";
+const THE_LOCAL_ARM_ENDS: &str = "continue;";
+
+/// A message deleted on this computer, POP mail or a folder here, leaves the
+/// list in the same call as the delete (13.3-02, item 1). The conversation
+/// window runs Delete and reads the rows again with no turn of the event loop
+/// between, so a row left for an update at the next tick was still listed
+/// there, with the cursor on it, and a second Delete found the message in the
+/// Trash here and erased it without a question.
+fn a_local_delete_takes_its_row_out_at_once(app: &str) -> Result<(), String> {
+    let made: String = body_of(app, THE_DELETE_MADE_HERE)?
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let arm = between(&made, THE_LOCAL_ARM, THE_LOCAL_ARM_ENDS)?;
+    if !arm.contains(TAKES_THE_ROW_OUT) {
+        return Err(format!(
+            "delete_these's arm for a message deleted on this computer does not reach \
+             {TAKES_THE_ROW_OUT}, so its row stays until the next tick and a conversation \
+             reopened in the same call still lists it"
+        ));
+    }
+    Ok(())
+}
+
 // ── The readings over the window ───────────────────────────────────────────
+
+#[test]
+fn test_a_delete_on_this_computer_takes_its_row_out_in_the_same_call() {
+    a_local_delete_takes_its_row_out_at_once(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// `delete_these` as it should be: the local arm takes its row out and asks
+/// for the counts before it moves on.
+fn a_delete_these_as_it_should_be() -> String {
+    format!(
+        "{THE_DELETE_MADE_HERE}) {{\n    for message in &chosen.messages {{\n        \
+         match delete_if_local(app, cache, message.row_id, &message.subject, asked) {{\n            \
+         DeletedHere::NotHere => {{}}\n            DeletedHere::Stayed => continue,\n            \
+         DeletedHere::Left {{ account_id }} => {{\n                \
+         // The row leaves here, before continue; the window reads it.\n                \
+         take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);\n                \
+         the_folder_counts_moved(state, tx);\n                continue;\n            }}\n        \
+         }}\n    }}\n    complete_here_then_tell_the_server(app, asks);\n}}\n"
+    )
+}
+
+#[test]
+fn test_the_reading_can_see_a_local_delete_that_leaves_its_row_for_later() {
+    let as_it_should_be = a_delete_these_as_it_should_be();
+    a_local_delete_takes_its_row_out_at_once(&as_it_should_be)
+        .unwrap_or_else(|why| panic!("the reading refused a delete that takes its row out: {why}"));
+
+    let left_for_later = as_it_should_be.replacen(
+        "                take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);\n",
+        "",
+        1,
+    );
+    assert_ne!(left_for_later, as_it_should_be, "nothing was planted");
+    let why = a_local_delete_takes_its_row_out_at_once(&left_for_later)
+        .expect_err("a local arm that takes nothing out was passed");
+    assert!(
+        why.contains("does not reach take_row_out_of_the_list("),
+        "{why}"
+    );
+
+    // The call only in a comment is not the call.
+    let only_said = as_it_should_be.replacen(
+        "                take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);\n",
+        "                // take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);\n",
+        1,
+    );
+    assert!(
+        a_local_delete_takes_its_row_out_at_once(&only_said).is_err(),
+        "a call written only in a comment was read as the call"
+    );
+}
 
 #[test]
 fn test_a_move_within_the_account_completes_here_first() {
