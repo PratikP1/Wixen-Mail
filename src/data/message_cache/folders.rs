@@ -1,6 +1,7 @@
 //! Folder persistence operations
 
 use super::{CachedFolder, MessageCache};
+use crate::application::flag_changes_waiting::WhichFlag;
 use crate::common::{Error, Result};
 use rusqlite::{OptionalExtension, params};
 
@@ -131,11 +132,35 @@ impl MessageCache {
     /// stored here: only part of a large folder is cached, so counting locally
     /// would tell somebody their inbox holds five hundred messages when it
     /// holds forty thousand.
+    ///
+    /// The unread count leaves out each message read here whose change to
+    /// read is still waiting to reach the server, and stops at nought
+    /// (13.3-03, item 7 of the review of 2026-10-20). A change kept waiting
+    /// wins over what the server says, as the flag pass already makes it win
+    /// for the row, and the server, never told, still counts that message
+    /// unread: without this, every check while changes at the server are off
+    /// put back the count of every mark made since. A waiting change to unread
+    /// adds nothing, since the server still counts that message unread too.
+    /// One case remains: a message already read at the server, on a phone,
+    /// and marked read here while its change waits, is taken off once too
+    /// often until the change is sent.
     pub fn set_folder_counts(&self, folder_id: i64, unread: usize, total: usize) -> Result<()> {
         self.conn
             .execute(
-                "UPDATE folders SET unread_count = ?1, total_count = ?2 WHERE id = ?3",
-                params![unread as i64, total as i64, folder_id],
+                "UPDATE folders SET unread_count = MAX(?1 - (
+                     SELECT COUNT(*) FROM waiting_flag_changes w
+                     JOIN messages m ON m.id = w.message_row_id
+                     WHERE w.which_flag = ?4 AND w.changed_to = ?5
+                       AND m.folder_id = ?3 AND m.read = 1 AND m.deleted = 0
+                 ), 0), total_count = ?2
+                 WHERE id = ?3",
+                params![
+                    unread as i64,
+                    total as i64,
+                    folder_id,
+                    WhichFlag::Read.as_stored(),
+                    true
+                ],
             )
             .map_err(|e| Error::Other(format!("Failed to record folder counts: {}", e)))?;
         Ok(())
@@ -2188,7 +2213,7 @@ mod tests {
         cache: &MessageCache,
         message: i64,
         path: &str,
-        which_flag: crate::application::flag_changes_waiting::WhichFlag,
+        which_flag: WhichFlag,
         changed_to: bool,
     ) {
         cache
@@ -2209,13 +2234,7 @@ mod tests {
     /// A message marked read here whose change to read is kept waiting.
     fn marked_read_and_waiting(cache: &MessageCache, message: i64, path: &str) {
         cache.update_message_flags(message, true, false).unwrap();
-        a_change_waiting(
-            cache,
-            message,
-            path,
-            crate::application::flag_changes_waiting::WhichFlag::Read,
-            true,
-        );
+        a_change_waiting(cache, message, path, WhichFlag::Read, true);
     }
 
     #[test]
@@ -2246,13 +2265,7 @@ mod tests {
         let message = a_message(&cache, folder, 1);
         marked_read_and_waiting(&cache, message, "INBOX");
         cache.update_message_flags(message, false, false).unwrap();
-        a_change_waiting(
-            &cache,
-            message,
-            "INBOX",
-            crate::application::flag_changes_waiting::WhichFlag::Read,
-            false,
-        );
+        a_change_waiting(&cache, message, "INBOX", WhichFlag::Read, false);
 
         cache.set_folder_counts(folder, 5, 10).unwrap();
 
@@ -2275,13 +2288,7 @@ mod tests {
         cache.delete_message(deleted).unwrap();
         // A change to read kept for a row that reads unread here.
         let unread_here = a_message(&cache, inbox, 3);
-        a_change_waiting(
-            &cache,
-            unread_here,
-            "INBOX",
-            crate::application::flag_changes_waiting::WhichFlag::Read,
-            true,
-        );
+        a_change_waiting(&cache, unread_here, "INBOX", WhichFlag::Read, true);
 
         cache.set_folder_counts(inbox, 5, 10).unwrap();
 
@@ -2317,13 +2324,7 @@ mod tests {
         let folder = a_folder(&cache, "acc", "INBOX");
         let message = a_message(&cache, folder, 1);
         cache.update_message_flags(message, true, true).unwrap();
-        a_change_waiting(
-            &cache,
-            message,
-            "INBOX",
-            crate::application::flag_changes_waiting::WhichFlag::Starred,
-            true,
-        );
+        a_change_waiting(&cache, message, "INBOX", WhichFlag::Starred, true);
 
         cache.set_folder_counts(folder, 5, 10).unwrap();
 

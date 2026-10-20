@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 858 records have arrived since and have not been through it.
+# 859 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -7105,7 +7105,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/types.rs", tests = 28 },
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # ── The adapter that saves a draft at the server had never run ──────────────
@@ -7577,7 +7577,7 @@ red = [
     "data::message_cache::folders::tests::test_the_tree_reads_folders_in_the_order_the_folder_type_gives",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # ── The order somebody asked the message list to be in ──────────────────────
@@ -14166,7 +14166,7 @@ red = [
     "data::message_cache::folders::tests::test_a_renamed_folder_keeps_its_pin_under_its_new_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14194,7 +14194,7 @@ red = [
     "data::message_cache::folders::tests::test_a_folder_that_is_really_gone_takes_its_pin_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -14354,7 +14354,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
 ]
 
@@ -14389,7 +14389,7 @@ red = [
     "data::message_cache::folders::tests::test_one_accounts_gone_folders_are_not_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 [[guard]]
@@ -29940,7 +29940,7 @@ red = [
     "presentation::view_state::tests::test_a_folder_left_flat_comes_back_flat_whatever_the_setting_says",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/presentation/view_state.rs", tests = 62 },
 ]
 
@@ -42523,7 +42523,7 @@ red = [
     "data::message_cache::folders::tests::test_the_next_checks_count_replaces_the_one_kept_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -42546,7 +42546,7 @@ red = [
     "data::message_cache::folders::tests::test_a_mark_that_changes_nothing_moves_no_count",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -42567,7 +42567,25 @@ red = [
     "data::message_cache::folders::tests::test_a_server_folder_is_never_counted_from_the_rows_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/folders.rs", tests = 71 },
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
+]
+
+# The marks to read still waiting left out of a check's count (13.3-03, item 7
+# of the review of 2026-10-20): with changes at the server off, every check
+# would put back the count of every mark made since, "Inbox, 2 unread" going
+# back to 5 while three rows read as read. Anchored on the statement's first
+# line. Measured on 2026-10-20 with `scripts/guards.sh`.
+[[guard]]
+name = "a check's count leaves out the marks to read still waiting"
+file = "src/data/message_cache/folders.rs"
+before = '''                "UPDATE folders SET unread_count = MAX(?1 - ('''
+after = '''                "UPDATE folders SET unread_count = MAX(?1 + 0 * ('''
+red = [
+    "data::message_cache::folders::tests::test_a_checks_count_leaves_out_a_mark_to_read_still_waiting",
+    "data::message_cache::folders::tests::test_a_checks_count_less_what_waits_stops_at_nought",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/folders.rs", tests = 76 },
 ]
 
 # The flag write that stuck no longer asking the tree to reword its counts
