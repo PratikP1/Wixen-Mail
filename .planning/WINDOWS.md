@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 763
+open_count: 764
 waived_count: 0
 fixed_count: 149
-total_count: 912
-last_updated: 2026-10-20T18:00:00.000Z
+total_count: 913
+last_updated: 2026-10-20T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -927,6 +927,7 @@ last_updated: 2026-10-20T18:00:00.000Z
 | 910 | 13.2 | unrun-verify | src/presentation/html_renderer.rs |  | 13.2-32 closed ledger 872: the document the formatted message window and the preview pane are given now carries a title, a conversation's subject or No subject, and Message for the preview, so WebView2 names its Chrome_WidgetWin_1 pane and the page root after it rather than after the page's data: address. Held by two cases reading the built documents' heads, two guard records and the Accessibility run's page and page-window targets, which can see only that the names are short. For the tester, on a build holding 13.2-32's merge, under NVDA: open a message in the formatted message window and move into its page, then into the preview pane beside the message list, and hear each named after the subject or as Message, never a run of letters and numbers. Closed when he has heard both | open |  | 2026-10-19T23:30:00.000Z |  |
 | 911 | 14 | unrun-verify | src/application/draft_copy.rs |  | 14-08.1 closed ledger 902: a saved draft's older copies at the server are read for the draft's exact Message-ID before they are removed. Held by cases on the Scripted stand-in and on the loopback, which reads and confirms the header through the adapter that runs; nothing has met a real server. For the tester, on a build holding 14-08.1's merge, the one 14-08.2 makes, in a phase 14 sitting: a message to himself titled "Wixen proof draft", written in for three minutes or more so it is saved more than once, and then Gmail's Drafts on the web and on his phone show one copy of it, with the latest words. Closed when he has seen it | open |  | 2026-10-20T12:00:00.000Z |  |
 | 912 | 14 | todo | src/application/draft_copy.rs |  | 14-08.1, read in the code on 2026-10-20 and never run: on a server without UIDPLUS, remove_these flags an older draft copy and leaves it, and the search has no UNDELETED, so each automatic save finds every copy flagged before, flags them all again with one UID STORE each, removes none, and answers that an older copy may still be on the server, which spawn_draft_append says at every save; since 14-08.1 each of those copies is also read once per save. Recommended: decide whether such a server is told once per draft rather than at every save, and whether copies already flagged are left out of the search; Pratik's to schedule | open |  | 2026-10-20T12:00:00.000Z |  |
+| 913 | 13.3 | unrun-verify | src/presentation/wx_app.rs | 27605 | 13.3-02, review items 1 and 15, heard under NVDA on the tester's POP account in conversation view on a build holding 13.3-02's merge: Delete on a message inside an opened conversation, the window coming back without it and the cursor on its neighbour; a Delete in the POP Inbox and a move to another account heard changing the conversation's row at once. Built lists hold all of it in tests/a_change_made_here_reaches_the_conversation_rows.rs and a reading in tests/a_move_completes_here_first.rs. Closed when he has heard them on his own mailbox | open |  | 2026-10-20T20:00:00.000Z |  |
 
 ````json
 [
@@ -11872,6 +11873,18 @@ last_updated: 2026-10-20T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-20T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 913,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": 27605,
+    "description": "13.3-02, review items 1 and 15, heard under NVDA on the tester's POP account in conversation view on a build holding 13.3-02's merge: Delete on a message inside an opened conversation, the window coming back without it and the cursor on its neighbour; a Delete in the POP Inbox and a move to another account heard changing the conversation's row at once. Built lists hold all of it in tests/a_change_made_here_reaches_the_conversation_rows.rs and a reading in tests/a_move_completes_here_first.rs. Closed when he has heard them on his own mailbox",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-20T20:00:00.000Z",
     "resolved_at": null
   }
 ]

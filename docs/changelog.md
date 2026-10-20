@@ -1446,6 +1446,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message deleted on this computer leaves the conversation at once (2026-10-20, LIST-05,
+  LIST-21).** This is about mail kept only on this computer: a POP account's mail, and the
+  folders on this computer. Inside an opened conversation, `Delete` on such a message moved
+  it to the Trash, but the conversation came back still listing it, with the cursor on it. A
+  second `Delete` then found it in the Trash and removed it from the computer without asking,
+  and that was the only copy. Now the message leaves the conversation as soon as you delete
+  it, so the conversation comes back without it.
+
+  Also fixed, under conversation view: a conversation's row now changes at once after you
+  delete a message from a POP account or a folder on this computer, after `Shift+Del` there,
+  and after you move a message into another account's folder. Before, the row stayed as it
+  was until the folder was read again. This holds for one message and for several chosen
+  together, and when a server refuses part of a set, the rows of what did leave still change.
+
+  Known limits. Nobody has heard this with a screen reader yet. The tests run on a list built
+  for them, not in a running Wixen Mail with a POP account.
+
 - **Saving a draft no longer takes another message out of Drafts on the server (2026-10-20,
   FOUND-04).** Each time a draft is saved, by you or by the automatic save that runs once a
   minute while you write, Wixen Mail puts the newer copy in the account's Drafts folder on the

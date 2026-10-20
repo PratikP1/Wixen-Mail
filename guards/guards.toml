@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 854 records have arrived since and have not been through it.
+# 857 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -28125,7 +28125,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The undo dropped from the arm a refusal arrives on: the server said no,
@@ -28151,7 +28151,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # A check wired into the arm that runs when the network comes back, which
@@ -28182,7 +28182,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The activation binding dropped from the Move dialog's tree, which is the
@@ -28210,7 +28210,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_destination.rs", tests = 6 },
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The bytes not kept before the append goes out, as the first step of a
@@ -37946,7 +37946,7 @@ red = [
     "the_built_tree::test_the_built_tree_is_read_on_a_desktop_made_for_this_run",
 ]
 tests_last_seen = [
-    { file = "tests/a_move_completes_here_first.rs", tests = 16 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
 ]
 
 # The key census stops asking that a desktop be named for its run, so a
@@ -40068,6 +40068,12 @@ tests_last_seen = [
 # the two reaches). That half is held by those cases on every commit that
 # touches `messages.rs`; the whole library under the break: 9,264 passed and
 # 6 failed.
+#
+# Corrected 2026-10-20 by 13.3-02, whose re-measure found one more red: the
+# refusal case, where the set's two conversations are both named, so the
+# negated list answers neither and B's row leaves as well. The other five
+# cases name one conversation, and the negated list answers the rest, which
+# leaves the named row out as the right list would.
 [[guard]]
 name = "a change made here reads only the conversations it touched"
 file = "src/data/message_cache/messages.rs"
@@ -40084,10 +40090,11 @@ red = [
     "test_mark_as_read_offers_mark_as_unread_once_a_conversation_is_marked",
     "test_a_conversation_deleted_here_leaves_the_list_at_once",
     "test_the_cursor_lands_on_the_next_conversation_after_a_delete",
+    "test_a_refusal_partway_brings_the_rows_that_left_up_to_date",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 20 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
 ]
 
 # The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
@@ -40194,7 +40201,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 20 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
 ]
 
 # The catch-up taken out of the removal under conversation view: a delete or
@@ -40204,24 +40211,42 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-10-14: the target, the removal's other readers,
 # and the whole library at 9,028 passed and 0 failed.
+#
+# Rewritten 2026-10-20 by 13.3-02, when the arm became a choice between the
+# conversations a set was given at the key and those read after the change;
+# the break now empties the whole arm, anchored on the comment above it.
+# Measured by hand that day: the target red in the three cases above and the
+# five of 13.3-02 that take a row out at the last of a set; the refusal case
+# stays green, since a refusal ends the wait elsewhere. The removal's other
+# readers, every_command_acts_on_the_selection,
+# deleting_a_message_lands_on_the_next_one and
+# all_inboxes_keeps_a_view_of_its_own, stayed green.
 [[guard]]
 name = "a conversation row a change made here emptied leaves at once and the cursor lands"
 file = "src/presentation/wx_app.rs"
 suite = "a_change_made_here_reaches_the_conversation_rows"
-before = '''        view_state::Showing::Conversations => {
-            bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages);
-        }'''
-after = '''        view_state::Showing::Conversations => {
-            drop(messages);
-        }'''
+before = '''        // another account erases what a reading after would name (13.3-02).
+        view_state::Showing::Conversations => match named {
+            Some(named) => {
+                bring_the_named_conversation_rows_up_to_date(state, cache, msg_list, &named)
+            }
+            None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages),
+        },'''
+after = '''        // another account erases what a reading after would name (13.3-02).
+        view_state::Showing::Conversations => drop((named, messages)),'''
 red = [
     "test_every_change_made_here_reaches_the_catch_up",
     "test_a_conversation_deleted_here_leaves_the_list_at_once",
     "test_the_cursor_lands_on_the_next_conversation_after_a_delete",
+    "test_a_conversation_taken_off_this_computer_changes_its_row_at_once",
+    "test_a_message_moved_to_another_account_changes_its_conversation_s_row_at_once",
+    "test_a_pop_delete_into_the_trash_here_changes_its_conversation_s_row_at_once",
+    "test_a_set_taken_off_this_computer_changes_its_conversation_s_row_at_once",
+    "test_a_set_moved_to_another_account_changes_its_conversation_s_row_at_once",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 20 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
 ]
 
 # The target that ignores the message an opened conversation named: Delete,
@@ -42935,4 +42960,74 @@ red = [
 tests_last_seen = [
     { file = "src/application/import_tree.rs", tests = 41 },
     { file = "src/application/importing_messages.rs", tests = 55 },
+]
+
+# The row of a message deleted on this computer left for later again: the
+# conversation window reads the rows in the same call as Delete, so it lists
+# the message still, and a second Delete erases it from the Trash here
+# without a question (13.3-02, review item 1). Measured 2026-10-20 by hand,
+# the call taken out and the target run: one test red.
+[[guard]]
+name = "a delete on this computer takes its row out in the same call, not at the next tick"
+file = "src/presentation/wx_app.rs"
+suite = "a_move_completes_here_first"
+before = """                // message in the Trash here and erased it unasked (13.3-02).
+                take_row_out_of_the_list(state, list, &cache_for_deleting, message.row_id);"""
+after = """                // message in the Trash here and erased it unasked (13.3-02)."""
+red = [
+    "test_a_delete_on_this_computer_takes_its_row_out_in_the_same_call",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_move_completes_here_first.rs", tests = 18 },
+]
+
+# The conversations a set was given at the key left unused when its last row
+# leaves, so the catch-up reads the store after the change, and after a
+# take-off, or a move into another account or into the Trash here, it names
+# nothing the list holds and the row stays (13.3-02, review item 15).
+# Measured 2026-10-20 by hand, the break applied and the target run: the five
+# cases that end at the last of a set red, the refusal case green.
+[[guard]]
+name = "the last row of a set brings its rows up to date from the conversations named at the key"
+file = "src/presentation/wx_app.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''            Some(named) => {
+                bring_the_named_conversation_rows_up_to_date(state, cache, msg_list, &named)
+            }
+            None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages),'''
+after = '''            Some(_) | None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &messages),'''
+red = [
+    "test_a_conversation_taken_off_this_computer_changes_its_row_at_once",
+    "test_a_message_moved_to_another_account_changes_its_conversation_s_row_at_once",
+    "test_a_pop_delete_into_the_trash_here_changes_its_conversation_s_row_at_once",
+    "test_a_set_taken_off_this_computer_changes_its_conversation_s_row_at_once",
+    "test_a_set_moved_to_another_account_changes_its_conversation_s_row_at_once",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+]
+
+# The same names left unused when a refusal ends a set's wait, so the rows of
+# the messages that did leave are read after a change that erased them
+# (13.3-02, review item 15). Measured 2026-10-20 by hand, the break applied
+# and the target run: the refusal case alone red.
+[[guard]]
+name = "a refusal partway brings the rows that left up to date from the conversations named at the key"
+file = "src/presentation/wx_app.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''            match &set.conversations {
+                Some(named) => {
+                    bring_the_named_conversation_rows_up_to_date(state, cache, msg_list, named)
+                }
+                None => bring_the_conversation_rows_up_to_date(state, cache, msg_list, &gone),
+            }'''
+after = '''            bring_the_conversation_rows_up_to_date(state, cache, msg_list, &gone)'''
+red = [
+    "test_a_refusal_partway_brings_the_rows_that_left_up_to_date",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
 ]

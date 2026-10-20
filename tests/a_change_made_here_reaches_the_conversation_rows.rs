@@ -33,6 +33,13 @@
 //! under the message view a mark shows on its row and a delete takes its row
 //! out, as they always did.
 //!
+//! Since 13.3-02, on lists of their own: a message taken off this computer,
+//! moved into another account's folder, or moved into the Trash this computer
+//! keeps, each erase what the store says about the message's conversation, so
+//! each is run the way the window runs it, the set remembered at the key and
+//! the row taken out after the change, for one message and for a set, and a
+//! refusal partway brings up to date the rows of what did leave.
+//!
 //! A reading over the window's shipping text holds every path that changes
 //! a message here to reaching the catch-up: the mark, star and label
 //! do-halves' callers, the runner after its labels, Undo after its marks,
@@ -71,6 +78,7 @@ use std::time::{Duration, Instant};
 use wixen_mail::application::conversations::{
     AConversationReaches, ConversationItem, WhoseConversation,
 };
+use wixen_mail::application::local_folders::THIS_COMPUTER;
 use wixen_mail::application::moves_waiting::what_happens_here;
 use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
@@ -82,7 +90,8 @@ use wixen_mail::presentation::ui_types::MessageItem;
 use wixen_mail::presentation::view_state::{Showing, bring_rows_up_to_date};
 use wixen_mail::presentation::virtual_rows;
 use wixen_mail::presentation::wx_app::{
-    WxUIState, apply_threading, bring_the_conversation_rows_up_to_date, take_row_out_of_the_list,
+    WxUIState, a_refusal_ends_the_wait_for_a_set, apply_threading,
+    bring_the_conversation_rows_up_to_date, remember_these_rows_leaving, take_row_out_of_the_list,
     the_chosen_rows_have_unread,
 };
 use wixen_mail::service::safety::Verdict;
@@ -891,11 +900,41 @@ struct UnderMessages {
     count_after_a_delete: i32,
 }
 
+/// What the conversation rows showed after a change that erases what the
+/// store says about a message afterwards (13.3-02, review item 15).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AfterAChange {
+    count: i32,
+    a_held: bool,
+    b_held: bool,
+    b_thread: String,
+}
+
+/// The changes that erase it, each taken on a list of its own.
+#[derive(Debug, Clone)]
+struct ErasingChanges {
+    /// a1 taken off this computer: its row written back with no conversation.
+    one_taken_off: AfterAChange,
+    /// a1 moved into a folder of the other account.
+    one_moved_to_the_other_account: AfterAChange,
+    /// a1 moved into the Trash here, filed under this computer's account, as
+    /// Delete in a POP Inbox moves it.
+    one_moved_into_the_trash_here: AfterAChange,
+    /// b1 and b2 taken off this computer together.
+    a_set_taken_off: AfterAChange,
+    /// b1 and b2 moved into a folder of the other account together.
+    a_set_moved_to_the_other_account: AfterAChange,
+    /// a1 and b1 remembered, a1 taken off, and a refusal for b1 ending the
+    /// wait.
+    a_set_refused_partway: AfterAChange,
+}
+
 /// What the built lists answered.
 #[derive(Debug, Clone)]
 struct Harvest {
     conversations: UnderConversations,
     messages: UnderMessages,
+    erasing: ErasingChanges,
 }
 
 fn locked(state: &Arc<Mutex<WxUIState>>) -> Result<std::sync::MutexGuard<'_, WxUIState>, String> {
@@ -1020,6 +1059,116 @@ fn under_the_message_view(frame: &Frame) -> Result<UnderMessages, String> {
     })
 }
 
+/// A change to one message in the store, made the way the window's own path
+/// makes it.
+type AChange = fn(&MessageCache, i64) -> Result<(), String>;
+
+/// Take a message off this computer, as Delete in the Trash here and
+/// Shift+Delete in a folder here do through `local_delete::perform`.
+fn taken_off(cache: &MessageCache, id: i64) -> Result<(), String> {
+    cache
+        .take_off_this_computer(id)
+        .map_err(|why| format!("the message was not taken off: {why}"))
+}
+
+/// Move a message into a folder `account` keeps, made on first use.
+fn moved_into(
+    cache: &MessageCache,
+    id: i64,
+    account: &str,
+    name: &str,
+    kind: FolderType,
+) -> Result<(), String> {
+    let folder = a_folder(cache, account, name, kind);
+    cache
+        .move_message(id, folder)
+        .map_err(|why| format!("the message was not moved: {why}"))
+}
+
+/// Move a message into the other account's INBOX, as a move across accounts
+/// files it there before its row is taken out.
+fn moved_to_the_other_account(cache: &MessageCache, id: i64) -> Result<(), String> {
+    moved_into(cache, id, THE_OTHER_ACCOUNT, "INBOX", FolderType::Inbox)
+}
+
+/// Move a message into the Trash this computer keeps for every account, as
+/// Delete in a POP Inbox moves it.
+fn moved_into_the_trash_here(cache: &MessageCache, id: i64) -> Result<(), String> {
+    moved_into(cache, id, THIS_COMPUTER, "Trash", FolderType::Trash)
+}
+
+/// Run a change the way the window runs it under conversation view: the set
+/// remembered at the key, then for each of the first `leaving` messages the
+/// store changed and its row taken out, and, when some of the set stays, a
+/// refusal ending the wait.
+fn the_rows_after(
+    frame: &Frame,
+    chosen: fn(&Mailbox) -> Vec<i64>,
+    change: AChange,
+    leaving: usize,
+) -> Result<AfterAChange, String> {
+    let mailbox = the_mailbox();
+    let state = the_window_after_opening(&mailbox, Showing::Conversations);
+    let list = a_list_over(frame, &state);
+    let set = chosen(&mailbox);
+    remember_these_rows_leaving(&state, Some(&mailbox.cache), &set);
+    for id in set.iter().take(leaving) {
+        change(&mailbox.cache, *id)?;
+        take_row_out_of_the_list(&state, &list, &mailbox.cache, *id);
+    }
+    if leaving < set.len() {
+        a_refusal_ends_the_wait_for_a_set(&state, &list, Some(&mailbox.cache));
+    }
+    let b_thread = match the_row_of(&state, CONVERSATION_B) {
+        Ok(b) => cell(&list, b, Column::Thread),
+        Err(_) => String::new(),
+    };
+    Ok(AfterAChange {
+        count: list.get_item_count(),
+        a_held: the_row_of(&state, CONVERSATION_A).is_ok(),
+        b_held: the_row_of(&state, CONVERSATION_B).is_ok(),
+        b_thread,
+    })
+}
+
+fn just_a1(mailbox: &Mailbox) -> Vec<i64> {
+    vec![mailbox.a1]
+}
+
+fn b1_and_b2(mailbox: &Mailbox) -> Vec<i64> {
+    vec![mailbox.b1, mailbox.b2]
+}
+
+fn a1_then_b1(mailbox: &Mailbox) -> Vec<i64> {
+    vec![mailbox.a1, mailbox.b1]
+}
+
+fn under_the_changes_that_erase(frame: &Frame) -> Result<ErasingChanges, String> {
+    Ok(ErasingChanges {
+        one_taken_off: the_rows_after(frame, just_a1, taken_off, 1)?,
+        one_moved_to_the_other_account: the_rows_after(
+            frame,
+            just_a1,
+            moved_to_the_other_account,
+            1,
+        )?,
+        one_moved_into_the_trash_here: the_rows_after(
+            frame,
+            just_a1,
+            moved_into_the_trash_here,
+            1,
+        )?,
+        a_set_taken_off: the_rows_after(frame, b1_and_b2, taken_off, 2)?,
+        a_set_moved_to_the_other_account: the_rows_after(
+            frame,
+            b1_and_b2,
+            moved_to_the_other_account,
+            2,
+        )?,
+        a_set_refused_partway: the_rows_after(frame, a1_then_b1, taken_off, 1)?,
+    })
+}
+
 fn take_the_harvest() -> Result<Harvest, String> {
     a_desktop_of_its_own()?;
     let data = tempfile::tempdir().map_err(|e| format!("a data directory: {e}"))?;
@@ -1044,10 +1193,12 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 frame.show(true);
                 let conversations = under_conversation_view(&frame)?;
                 let messages = under_the_message_view(&frame)?;
+                let erasing = under_the_changes_that_erase(&frame)?;
                 frame.destroy();
                 Ok(Harvest {
                     conversations,
                     messages,
+                    erasing,
                 })
             })();
             if let Ok(mut slot) = outcome.lock() {
@@ -1157,6 +1308,86 @@ fn test_companion_a_delete_under_the_message_view_takes_the_row_out() {
     let harvest = &the_harvest().messages;
     assert_eq!(harvest.count_before_a_delete, 3);
     assert_eq!(harvest.count_after_a_delete, 2);
+}
+
+// ── Changes that erase what the store says afterwards (13.3-02) ────────────
+//
+// The catch-up named the touched conversations by reading the store after
+// the change, and three changes erase what it reads: a take-off writes the
+// row back with no conversation, and a move into another account's folder,
+// or into the Trash this computer keeps, files the message under an account
+// whose conversations are not the rows on screen. So the row stayed until
+// the folder was read again. The conversations are named where the set is
+// remembered, before the change, for one message as well as for several.
+
+/// A's row gone and B's as it was: what a change to a1 alone leaves.
+fn a_gone_and_b_as_it_was() -> AfterAChange {
+    AfterAChange {
+        count: 1,
+        a_held: false,
+        b_held: true,
+        b_thread: "2 messages, 2 unread".to_string(),
+    }
+}
+
+/// B's row gone and A's left: what a change to both of B's messages leaves.
+fn b_gone_and_a_left() -> AfterAChange {
+    AfterAChange {
+        count: 1,
+        a_held: true,
+        b_held: false,
+        b_thread: String::new(),
+    }
+}
+
+#[test]
+fn test_a_conversation_taken_off_this_computer_changes_its_row_at_once() {
+    // Delete in the Trash here, or Shift+Delete in a folder here.
+    assert_eq!(
+        the_harvest().erasing.one_taken_off,
+        a_gone_and_b_as_it_was()
+    );
+}
+
+#[test]
+fn test_a_message_moved_to_another_account_changes_its_conversation_s_row_at_once() {
+    assert_eq!(
+        the_harvest().erasing.one_moved_to_the_other_account,
+        a_gone_and_b_as_it_was()
+    );
+}
+
+#[test]
+fn test_a_pop_delete_into_the_trash_here_changes_its_conversation_s_row_at_once() {
+    // The commonest of the three: Delete in a POP Inbox files the message
+    // under this computer's account, not the POP account's.
+    assert_eq!(
+        the_harvest().erasing.one_moved_into_the_trash_here,
+        a_gone_and_b_as_it_was()
+    );
+}
+
+#[test]
+fn test_a_set_taken_off_this_computer_changes_its_conversation_s_row_at_once() {
+    assert_eq!(the_harvest().erasing.a_set_taken_off, b_gone_and_a_left());
+}
+
+#[test]
+fn test_a_set_moved_to_another_account_changes_its_conversation_s_row_at_once() {
+    assert_eq!(
+        the_harvest().erasing.a_set_moved_to_the_other_account,
+        b_gone_and_a_left()
+    );
+}
+
+#[test]
+fn test_a_refusal_partway_brings_the_rows_that_left_up_to_date() {
+    // a1 left and b1 was refused: A's row goes at the refusal, and B's,
+    // whose message stayed, reads as it did.
+    assert_eq!(
+        the_harvest().erasing.a_set_refused_partway,
+        a_gone_and_b_as_it_was()
+    );
 }
 
 // ── The reading: every change made here reaches the catch-up ───────────────

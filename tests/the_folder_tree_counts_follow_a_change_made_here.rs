@@ -65,7 +65,9 @@ const THE_PLACES_THAT_CHANGE_A_COUNT: [&str; 6] = [
     "fn move_back_or_again(",
     "UIUpdate::MovePutBack { waiting, reason } => {",
     "UIUpdate::MessageDeletedFromCache(cache_id) => {",
-    "UIUpdate::MessageLeftTheFolder(cache_id) => {",
+    // A delete of mail kept on this computer, whose row leaves in the same
+    // call since 13.3-02 rather than on an update at the next tick.
+    "fn delete_these(",
 ];
 
 const THE_REWORDING_ARM: &str = "UIUpdate::FolderCountsMoved => {";
@@ -146,7 +148,12 @@ fn the_rewording_says_nothing(source: &str) -> Result<(), String> {
 /// doing what `body` says.
 fn a_planted_window(asks_in: &[&str], the_arm_says: &str) -> String {
     let mut source = String::new();
-    for heading in THE_PLACES_THAT_CHANGE_A_COUNT {
+    // The functions first: an arm is read to the next arm, so a function
+    // planted after one would be read as part of it (13.3-02).
+    let (functions, arms): (Vec<&str>, Vec<&str>) = THE_PLACES_THAT_CHANGE_A_COUNT
+        .into_iter()
+        .partition(|heading| heading.starts_with("fn "));
+    for heading in functions.into_iter().chain(arms) {
         let asks = match asks_in.contains(&heading) {
             true => "    the_folder_counts_moved(state, tx);\n",
             false => "    write_the_row(state);\n",
