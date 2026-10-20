@@ -276,6 +276,25 @@ keep_the_record() {
     record_reds+=("$3")
 }
 
+# The records of a registry, or none when it cannot be read. The readers below
+# add to what a commit earns, so a missing registry costs the extra targets and
+# nothing else: it must never be the reason a commit cannot be made, and it says
+# nothing, since `grep` would complain on its way to an empty answer.
+#
+# Read once by whoever asks, since 2026-10-20 (13.3-01, review item 36). The two
+# readers below each read it for themselves until then, inside a process
+# substitution whose arrays died with it, so a scoped run paid two scans of a
+# registry of 1,640 records, about a second each on this machine that day.
+read_the_registry_if_it_is_there() {
+    record_files=()
+    record_suites=()
+    record_reds=()
+    if [ -r "$1" ]; then
+        read_the_records_in "$1"
+    fi
+    return 0
+}
+
 if [ "${1:-}" = "--records-in" ]; then
     read_the_records_in "$2"
     for index in "${!record_files[@]}"; do
@@ -303,21 +322,15 @@ fi
 # Its suite is `scripts/check.test.sh`, which this script runs in every mode.
 # In every mode until 2026-09-23; since then, on the commits that stage one of
 # that suite's inputs, this file among them, and in `all` and `all_but_slow`.
+#
+# Reads the records `read_the_registry_if_it_is_there` left, so a caller reads
+# the registry first:
+#
+#     the_suites_that_guard_what_changed [changed-file ...]
 the_suites_that_guard_what_changed() {
-    local registry="$1"
-    shift
-
-    # A registry that is not there costs the extra targets and nothing else.
-    # This mapping adds to what a commit earns, so it must never be the reason a
-    # commit cannot be made.
-    if [ ! -r "$registry" ]; then
-        return 0
-    fi
-
     local -a couplings=() answers=()
     local index coupling path candidate already seen
 
-    read_the_records_in "$registry"
     for index in "${!record_files[@]}"; do
         if [ -n "${record_suites[$index]}" ]; then
             couplings+=("${record_files[$index]}|${record_suites[$index]}")
@@ -378,7 +391,9 @@ the_suites_that_guard_what_changed() {
 # file and name no suite, one `a::b::tests::` filter to a line, unsorted and
 # possibly repeated.
 #
-#     the_modules_that_guard_what_changed <registry> [changed-path ...]
+#     the_modules_that_guard_what_changed [changed-path ...]
+#
+# Like the reader above, it reads the records a caller has already read.
 #
 # A record with no `suite` reddens library tests, and they need not live in the
 # module of the file it breaks. Read 2026-10-18 with Python's TOML reader over
@@ -394,17 +409,11 @@ the_suites_that_guard_what_changed() {
 # in `scripts/guards.py` uses for the sweep. A name with no `::` has no module a
 # filter could name and is skipped; none of the 1,612 records held one that day.
 the_modules_that_guard_what_changed() {
-    local registry="$1"
-    shift
-    if [ ! -r "$registry" ]; then
-        return 0
-    fi
     local index name path
     local -A changed=()
     for path in "$@"; do
         changed[$path]=1
     done
-    read_the_records_in "$registry"
     for index in "${!record_files[@]}"; do
         [ -z "${record_suites[$index]}" ] &&
             [ -n "${changed[${record_files[$index]}]-}" ] || continue
@@ -424,6 +433,8 @@ the_modules_that_guard_what_changed() {
 # suite again.
 if [ "${1:-}" = "--suites-for" ]; then
     shift
+    read_the_registry_if_it_is_there "${1-}"
+    shift || true
     the_suites_that_guard_what_changed "$@"
     exit 0
 fi
@@ -439,13 +450,41 @@ the_staged_paths() {
     git diff --cached --name-only --no-renames 2>/dev/null || true
 }
 
+# The one library line for the filters given, in any order and each once:
+# sorted, a filter inside a module another filter already names left out, and
+# nothing at all for none. Sorted in place rather than through `sort`, because a
+# process costs tens of milliseconds here and the list is a handful of words.
+the_library_line_for() {
+    local filter kept index
+    local -a sorted=() line=()
+    for filter in "$@"; do
+        index=${#sorted[@]}
+        while [ "$index" -gt 0 ] && [[ "${sorted[index - 1]}" > "$filter" ]]; do
+            sorted[index]="${sorted[index - 1]}"
+            index=$((index - 1))
+        done
+        sorted[index]="$filter"
+    done
+    for filter in "${sorted[@]+"${sorted[@]}"}"; do
+        for kept in "${line[@]+"${line[@]}"}"; do
+            case "$filter" in
+                "$kept"*) continue 2 ;;
+            esac
+        done
+        line+=("$filter")
+    done
+    if [ "${#line[@]}" -gt 0 ]; then
+        echo "--lib -- --test-threads=4 ${line[*]}"
+    fi
+}
+
 # What the scoped run hands cargo, one invocation's arguments to a line.
 #
 #     the_scoped_runs <registry> [changed-path ...]
 #
-# One `--lib <module>:: -- --test-threads=4` line per changed source module,
-# since `cargo test` takes one `--lib` filter, and at most one line of `--test`
-# pairs naming every integration target the change reaches, each once: a
+# At most one `--lib -- --test-threads=4 <filter> ...` line naming every library
+# filter the change earns, and one line of `--test` pairs naming every
+# integration target the change reaches, each once: a
 # changed test file that is still there, every target the registry couples a
 # changed file to, and every target that reads the whole tree, which is why
 # the line is always there. Added 2026-09-23 by 12-03.2: the targets used to be
@@ -456,9 +495,29 @@ the_staged_paths() {
 # and in one call cargo would refuse the whole line over it before any target
 # ran, so a branch that deleted a target could not be committed or merged.
 #
-# Since 2026-10-18 (13.2-26) a `--lib` line also goes to each module that holds
-# the red tests of a record breaking a changed file and naming no suite, from
-# `the_modules_that_guard_what_changed`, unless a module already run holds it.
+# Since 2026-10-18 (13.2-26) a library filter also goes to each module that
+# holds the red tests of a record breaking a changed file and naming no suite,
+# from `the_modules_that_guard_what_changed`.
+#
+# One library line since 2026-10-20 (13.3-01, review item 35). Until then it
+# was one line per filter, "since `cargo test` takes one `--lib` filter", which
+# is true of cargo and not of libtest: cargo refuses a second `--lib` and a
+# second test name before `--`, and libtest takes several filters after it,
+# `[FILTERS...]` in its usage, the way `scripts/guards.py` already passes them.
+# So a change whose guards reached three modules paid cargo's start and the
+# library's start three times. Now the filters are gathered, sorted, each named
+# once, and a filter inside a module already named is left out, since the
+# shorter filter already runs its tests and libtest runs a test matching two
+# filters once. A change reaching no module answers no library line at all,
+# because `cargo test --lib` given no filter runs the whole library.
+#
+# The trade, said rather than found: in one process, a library test that
+# aborts the program hides the modules after it, where separate calls ran
+# them. The gate is refused either way, `red-commit.sh` counts the test
+# programs started against those that reported, and the whole suite already
+# runs every library test in one process. The integration targets stay a call
+# of their own, because filters after `--` in a call naming `--test` targets
+# would filter those targets' tests too.
 #
 # No line holds `--no-fail-fast`. The runner's line owns it, because cargo
 # refuses the flag given twice.
@@ -475,7 +534,7 @@ the_staged_paths() {
 # At a merge, `--merge` first, whose paths hold a document by
 # `which-checks.sh --documents-among`, the document-reading list joins as well:
 # each of `the_targets_that_read_documents` in the one `--test` line and each
-# of `the_modules_that_read_documents` as a library run of its own. Added
+# of `the_modules_that_read_documents` among the library filters. Added
 # 2026-09-23 (12-03.2): the merge stopped being the whole gate that day, and a
 # branch mixing code and documents answers `affected`, which runs no
 # document-reading target. Only at a merge, because on a branch nearly every
@@ -487,10 +546,11 @@ the_scoped_runs() {
         merging=yes
         shift
     fi
-    local registry="$1" path module target source filter covered line=""
+    local registry="$1" path module target source filter line=""
     shift
     local -a paths=("$@") targets=()
-    local -A named=() modules=()
+    local -A named=() filters=()
+    read_the_registry_if_it_is_there "$registry"
     if [ "$#" -gt 0 ]; then
         while IFS= read -r source; do
             [ -n "$source" ] && paths+=("$source")
@@ -499,8 +559,7 @@ the_scoped_runs() {
     if [ -n "$merging" ] && [ "$#" -gt 0 ] &&
         [ -n "$("$(dirname "$0")/which-checks.sh" --documents-among "$@")" ]; then
         for module in "${the_modules_that_read_documents[@]}"; do
-            modules[${module%::}]=1
-            echo "--lib $module -- --test-threads=4"
+            filters[$module]=1
         done
         targets+=("${the_targets_that_read_documents[@]}")
     fi
@@ -512,9 +571,7 @@ the_scoped_runs() {
                 module="${module%/mod}"
                 module="${module//\//::}"
                 [ "$module" = "lib" ] && continue
-                [ -n "${modules[$module]-}" ] && continue
-                modules[$module]=1
-                echo "--lib ${module}:: -- --test-threads=4"
+                filters[${module}::]=1
                 ;;
             tests/*.rs)
                 [ -f "$path" ] || continue
@@ -523,21 +580,13 @@ the_scoped_runs() {
                 ;;
         esac
     done
-    # Sorted, so a module comes before the modules inside it and covers them.
     while IFS= read -r filter; do
-        covered=""
-        for module in "${!modules[@]}"; do
-            case "$filter" in
-                "$module::"*) covered=yes ;;
-            esac
-        done
-        [ -n "$covered" ] && continue
-        modules[${filter%::}]=1
-        echo "--lib $filter -- --test-threads=4"
-    done < <(the_modules_that_guard_what_changed "$registry" "${paths[@]+"${paths[@]}"}" | sort -u)
+        filters[$filter]=1
+    done < <(the_modules_that_guard_what_changed "${paths[@]+"${paths[@]}"}")
+    the_library_line_for "${!filters[@]}"
     while IFS= read -r target; do
         [ -n "$target" ] && targets+=("$target")
-    done < <(the_suites_that_guard_what_changed "$registry" "${paths[@]+"${paths[@]}"}")
+    done < <(the_suites_that_guard_what_changed "${paths[@]+"${paths[@]}"}")
     targets+=("${guards_that_read_the_whole_tree[@]}")
     for target in "${targets[@]}"; do
         [ -n "${named[$target]-}" ] && continue
@@ -1066,9 +1115,11 @@ if [ "$mode" = "docs_only" ]; then
     # What reads documents, and why each is on the list, is above
     # `the_targets_that_read_documents`, where the list has been held once since
     # 2026-09-23: a merge whose diff holds a document runs it too.
-    for module in "${the_modules_that_read_documents[@]}"; do
-        cargo test --lib "$module"
-    done
+    #
+    # Every module in one call since 2026-10-20 (13.3-01, review item 35):
+    # libtest takes several filters after `--`, and a call per module paid
+    # cargo's start and the library's start once each.
+    cargo test --lib -- "${the_modules_that_read_documents[@]}"
     document_targets=()
     for target in "${the_targets_that_read_documents[@]}"; do
         document_targets+=(--test "$target")
@@ -1100,15 +1151,16 @@ fi
 # because they read across the whole tree and a change anywhere can redden one:
 # that is how a guard record was found stale four times in one phase.
 #
-# Returns non-zero if any scoped run did. Never aborts on one, so a failure in
-# the first module does not hide the rest, for the same reason the whole-suite
-# run passes `--no-fail-fast`.
+# Returns non-zero if either call did. Never aborts on the library call, so a
+# failure there does not hide the integration targets, for the same reason the
+# whole-suite run passes `--no-fail-fast`.
 #
 # Runs exactly what `the_scoped_runs` answers, the lines read into an array
 # first so no test a cargo call runs can read the rest of them from standard
 # input. Since 2026-09-23 (12-03.2) the integration targets are one cargo call
 # rather than one each, so a change coupled to 25 targets pays cargo's start
-# once; `red-commit.sh` reads the same `test NAME ... ok|FAILED` lines from the
+# once, and since 2026-10-20 (13.3-01) every library filter is one call as
+# well; `red-commit.sh` reads the same `test NAME ... ok|FAILED` lines from the
 # log either way.
 run_the_tests_that_reach_what_changed() {
     local status=0 line word
@@ -1120,9 +1172,15 @@ run_the_tests_that_reach_what_changed() {
         read -ra arguments <<< "$line"
         case "${arguments[0]-}" in
             --lib)
-                echo "-- ${arguments[1]%::}"
+                for word in "${arguments[@]:3}"; do
+                    echo "-- ${word%::}"
+                done
                 # A filter matching nothing exits zero, so a module with no
                 # tests of its own is not a pass, it is a run that said nothing.
+                #
+                # Every filter in one call since 2026-10-20 (13.3-01): the line
+                # is `--lib -- --test-threads=4` and then the filters, and why
+                # one call is the reasoning above `the_scoped_runs`.
                 #
                 # Four threads, not the harness default of one per core.
                 # Measured 2026-09-09 at `10effea` on 24 cores against
@@ -1136,7 +1194,7 @@ run_the_tests_that_reach_what_changed() {
                 # The `--all-targets` run further down is deliberately left
                 # alone: the same setting was measured there and the gate did
                 # not move.
-                cargo test --lib "${arguments[1]}" -- --test-threads=4 >> "$run_log" 2>&1 || status=1
+                cargo test --lib "${arguments[@]:1}" >> "$run_log" 2>&1 || status=1
                 ;;
             --test)
                 for word in "${arguments[@]}"; do
