@@ -543,6 +543,26 @@ pub fn whose_folders_a_move_is_about<'a>(
         .or(the_account_that_is_open)
 }
 
+/// Whose message a command aimed at one reaches.
+pub fn whose_message_a_command_reaches<'a>(
+    on_the_list: Option<&'a str>,
+    _filed_under: Option<&'a str>,
+    open: Option<&'a str>,
+) -> Option<&'a str> {
+    on_the_list.filter(|account| !account.is_empty()).or(open)
+}
+
+/// [`whose_message_a_command_reaches`], with the store asked where the
+/// message is filed.
+pub fn the_account_a_command_reaches(
+    on_the_list: Option<&str>,
+    _row_id: i64,
+    _store: Option<&crate::data::message_cache::MessageCache>,
+    open: Option<&str>,
+) -> Option<String> {
+    whose_message_a_command_reaches(on_the_list, None, open).map(str::to_string)
+}
+
 /// What to say when there is nowhere to put it.
 pub fn nothing_to_offer(moving: Moving) -> &'static str {
     match moving {
