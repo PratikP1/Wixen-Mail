@@ -194,6 +194,21 @@ pub(crate) async fn one_check_at_a_time(account_id: &str) -> AnAccountsTurn {
     turn.lock_owned().await
 }
 
+/// An account's turn to send a read or star change to its server.
+pub(crate) type AnAccountsFlagTurn = tokio::sync::OwnedMutexGuard<()>;
+
+/// Wait for this account's turn to send a read or star change, and hold it.
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "the red half of 13.3-04: nothing takes the turn yet"
+    )
+)]
+pub(crate) async fn one_flag_change_at_a_time(_account_id: &str) -> AnAccountsFlagTurn {
+    Arc::new(Mutex::new(())).lock_owned().await
+}
+
 /// The accounts set up on this computer, as a crossing's replay opens their
 /// sessions.
 ///
@@ -863,6 +878,94 @@ mod tests {
         assert!(
             again.is_ok(),
             "the account's turn was kept by a check that panicked"
+        );
+    }
+
+    // ── One read or star change of an account at a time (13.3-04) ──────────
+    //
+    // Item 18 of the review of 2026-10-20: a check replaying the changes kept
+    // waiting read its list, a fresh M reached the server and let the older
+    // change go, and the replay then sent the older one. Each case names an
+    // account of its own, as above.
+
+    #[tokio::test]
+    async fn test_a_flag_change_waits_for_the_replay_of_its_account() {
+        let replaying = one_flag_change_at_a_time("flag-turn-waits").await;
+        let mut pushing = tokio::spawn(one_flag_change_at_a_time("flag-turn-waits"));
+
+        assert!(
+            tokio::time::timeout(A_SHORT_WAIT, &mut pushing)
+                .await
+                .is_err(),
+            "a read or star change reached the server while the account's replay held the turn"
+        );
+
+        drop(replaying);
+        assert!(
+            tokio::time::timeout(LONG_ENOUGH, pushing).await.is_ok(),
+            "the change never had its turn after the replay let go of it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_accounts_flag_changes_go_side_by_side() {
+        let _work = one_flag_change_at_a_time("flag-turn-side-by-side-work").await;
+
+        let home = tokio::time::timeout(
+            LONG_ENOUGH,
+            one_flag_change_at_a_time("flag-turn-side-by-side-home"),
+        )
+        .await;
+
+        assert!(
+            home.is_ok(),
+            "one account's flag change waited for another account's"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_flag_change_that_panics_gives_its_turn_back() {
+        let dying = tokio::spawn(async {
+            let _turn = one_flag_change_at_a_time("flag-turn-after-a-panic").await;
+            panic!("a push that fails part way through");
+        });
+        assert!(dying.await.is_err(), "the push was meant to panic");
+
+        let again = tokio::time::timeout(
+            LONG_ENOUGH,
+            one_flag_change_at_a_time("flag-turn-after-a-panic"),
+        )
+        .await;
+
+        assert!(
+            again.is_ok(),
+            "the account's flag turn was kept by a push that panicked"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_accounts_flag_turn_and_check_turn_do_not_wait_on_each_other() {
+        // A check holds its turn for the whole check, downloads included, and
+        // a push waiting on that would wait for the download. The replay takes
+        // the flag turn inside a check, so a check turn waiting on a flag turn
+        // could never be let go.
+        let _checking = one_check_at_a_time("flag-turn-beside-a-check").await;
+        let pushing = tokio::time::timeout(
+            LONG_ENOUGH,
+            one_flag_change_at_a_time("flag-turn-beside-a-check"),
+        )
+        .await;
+        assert!(
+            pushing.is_ok(),
+            "a flag change waited for the account's check"
+        );
+
+        let _pushing = one_flag_change_at_a_time("flag-turn-beside-a-push").await;
+        let checking =
+            tokio::time::timeout(LONG_ENOUGH, one_check_at_a_time("flag-turn-beside-a-push")).await;
+        assert!(
+            checking.is_ok(),
+            "a check waited for the account's flag change"
         );
     }
 }

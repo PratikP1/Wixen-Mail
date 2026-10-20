@@ -19016,10 +19016,12 @@ fn send_the_flag_changes_that_were_waiting(
         // change whose row cannot be read stays waiting rather than going to
         // a number nobody checked.
         let (Ok(numbering), Ok(message)) = (
-            cache.the_numbering_a_flag_change_was_kept_under(
-                change.message_row_id,
-                change.which_flag,
-            ),
+            cache
+                .the_numbering_a_flag_change_was_kept_under(
+                    change.message_row_id,
+                    change.which_flag,
+                )
+                .map(Option::flatten),
             cache.get_message(change.message_row_id),
         ) else {
             continue;
