@@ -8,7 +8,12 @@ eight on what the sittings prove. The sittings resume at 14-10 after 13.2-32's m
 build that holds phase 13.2, and each sheet is corrected against that build before its
 sitting. Since 2026-10-20 14-08.2 makes that build, after 14-08.1 closes ledger 902; both were
 inserted that day, after phase 13.2 closed. Until then this paragraph ended "No plan makes
-that build yet; the Handover below says what it needs."
+that build yet; the Handover below says what it needs." **Waiting from later on 2026-10-20 for
+phase 13.3 as well,** the review's fixes, twenty-five plans in
+`.planning/phases/13.3-the-review-s-fixes/`, on Pratik's yes that day to fixing the review of
+phase 13.2's changes before the build he installs. 14-08.2 had made build 1403 at 14-08.1's
+merge and committed its page on branch `14-08.2-the-new-build`, and stopped before he
+installed it; it builds again at 13.3-25's merge, and the page is redone for that build.
 
 Thirteen plans, one per wave, written on 2026-10-05 against `main` at `01ef4589`, version
 `1.0.0-alpha.1`, from `PROPOSAL.md` and its three research files in this folder, on Pratik's
@@ -25,7 +30,8 @@ Two plans were inserted on 2026-10-20 against `main` at `0b781473`, 13.2-32's me
 Pratik's approval of that day, which makes fifteen, still one per wave: 14-08.1 runs a saved
 draft's older copies through the exact reading Send's removal uses before they are removed
 (ledger 902), and 14-08.2 makes the new build at 14-08.1's merge and has him install it over
-the build he has. The sittings after them moved two waves later.
+the build he has. The sittings after them moved two waves later. Since phase 13.3 was planned
+later the same day, 14-08.2 makes the build at 13.3-25's merge instead.
 
 The directory is named the way `gsd-tools generate-slug "The real-account proofs"` answers,
 `the-real-account-proofs`.
@@ -92,7 +98,7 @@ changes what is spoken or shown. Every plan merges with `git merge --no-ff`, and
 | 14-07 | 7 | True words before the build: sending proven on 2026-09-18, what Gmail did to the download, the first-run sentence about the provider, the shortcuts page's crossing sentence; the records put straight and #63's comment corrected to the app password | REAL-02 | The executor; the edit on #63 rests on answer 4 | 148 fixed; 191 rewritten; 11, 64, 65, 67, 72, 523, 525 and 546 amended; two new (the Trash unreadable on 18 and 20 September, Refresh's help sentence) | yes |
 | 14-08 | 8 | The build at 14-07's merge, the install page and the four sitting sheets | REAL-01, REAL-02 | The executor builds and writes; Pratik installs and places his key | None | no |
 | 14-08.1 | 9 | Saving a draft takes out of the server's Drafts folder only the older copies whose Message-ID is the draft's exactly, through the reading Send's removal has used since 13.2-31.4; one header read per older copy found, none on a first save | FOUND-04, where ledger 902 is filed | The executor | 902 fixed; two opened, the single copy in Gmail's Drafts for the tester's eye and a `todo` for a server without UIDPLUS | no |
-| 14-08.2 | 10 | The new build at 14-08.1's merge, holding phase 13.2; the one install page rewritten for it, installing over the build he has and never uninstalling first | REAL-01, REAL-02 | The executor builds and writes; Pratik installs, 5 to 10 minutes | None | no |
+| 14-08.2 | 10 | The new build at 13.3-25's merge, holding phases 13.2 and 13.3 (at 14-08.1's merge until 2026-10-20, when its first run made build 1403, set aside uninstalled); the one install page rewritten for it, installing over the build he has and never uninstalling first | REAL-01, REAL-02 | The executor builds and writes; Pratik installs, 5 to 10 minutes | None | no |
 | 14-09 | 13 | Sitting 1, done third: the browser sign-in, the three syncs and F5 in each module, one event, contact and task read back in Google's own apps; recorded on #22 | REAL-01 | Pratik sits, 40 to 60 minutes, and gives his word; the executor reads before and after, drafts and posts | Dated lines on 154, 194, 203, 216, 218, 434, 435, 543, 597, 628, 671, 727 and 732; one per defect found | no |
 | 14-10 | 11 | Sitting 2, done first: the first start and the two waiting deletes; copy and move within Gmail, online, offline and back, across a restart, one message changed in Gmail meanwhile, undo at the server and of a mark; recorded on #63 | REAL-02 | Pratik, 45 to 60 minutes; the executor as above | 523, 525, 544, 546, 623 and 625; Refresh's sentence if 14-07 did not open it; one per defect | no |
 | 14-11 | 12 | Sitting 3, done second: delete within Gmail online, offline and across a restart, Delete Permanently against his own expunge setting, a delete held by the account's box, undo; recorded on #63 | REAL-02 | Pratik, 25 to 35 minutes; the executor as above | 376, 377, 544, 546 and 625; one per defect | no |
@@ -118,7 +124,8 @@ plans that share no file, and these share those. Each plan depends on the one be
 - **14-08** makes the build at 14-07's merge and writes the install page and the four sheets.
 - **14-08.1 and 14-08.2,** inserted on 2026-10-20 after phase 13.2 closed: ledger 902's fix
   first, since it is code and the build should hold it, then the new build at its merge and
-  the install page written again for it. 14-10 depends on 14-08.2.
+  the install page written again for it. 14-10 depends on 14-08.2. Since later on 2026-10-20
+  phase 13.3 runs between them, and 14-08.2 builds at 13.3-25's merge.
 - **14-09 to 14-12** are the four sittings. Since 2026-10-06 they run 14-10, 14-11, 14-09,
   14-12, each depending on the one before it; the plans kept their numbers and the sheets
   their names. Since 2026-10-20 they are waves 11 to 14 in that order; until then 9 to 12.
@@ -285,7 +292,10 @@ In the order the plans meet them.
    2026-10-06: "installed, key later".** The registry reads `1.0.0-alpha.1+1118.gd3455792`.
 5. **14-08.2: installing the new build himself,** over the build he has and never uninstalling
    first, since the uninstaller of the build he has stops at an error and one that works would
-   clear his mail and settings; 5 to 10 minutes, and one line back. Added 2026-10-20.
+   clear his mail and settings; 5 to 10 minutes, and one line back. Added 2026-10-20. Since
+   later that day the build is made at 13.3-25's merge, after phase 13.3; build 1403, made at
+   14-08.1's merge by this plan's first run, was never installed and is not to be. Phase 13.3's
+   own questions for him are in its README, "What waits on Pratik", ship-shape's first.
 6. **The four sittings, in the order of 2026-10-06:** 14-10, 45 to 60 minutes, the first start
    included; 14-11, 25 to 35, starting with reading his own Gmail IMAP expunge setting; 14-09,
    40 to 60, once his key is placed; 14-12, 60 to 80, after adding the accounts he has, then
@@ -308,6 +318,17 @@ In the order the plans meet them.
 - The listening items each sheet carries.
 
 ## Handover
+
+**Added 2026-10-20, when phase 13.3 was planned.** 14-08.2's first run that day made build
+`1.0.0-alpha.1+1403.g6fd465c6` at 14-08.1's merge, committed its install page on branch
+`14-08.2-the-new-build` (`36baca49`), not merged, and stopped at its install checkpoint before
+Pratik installed anything. The same day he said yes to fixing the review of phase 13.2's
+changes as one phase before the build he installs, so phase 13.3 runs first, and 14-08.2 runs
+again after 13.3-25's merge: it builds at that merge, renames the old branch
+`14-08.2-build-1403-superseded` and keeps it unmerged as the record of build 1403's page, cuts
+`14-08.2-the-new-build` again and redoes the page for the new build, reading the old page with
+`git show` as a draft (14-08.2's premise 10). The setup file for build 1403 stays in `dist` and
+is never installed. Then Pratik installs the new build, and 14-10 follows as below.
 
 **Added 2026-10-14, when phase 13.2 was planned.** The sittings wait for phase 13.2 and a new
 build. 14-10's precondition reads the build named by "the latest summary that made a build",
