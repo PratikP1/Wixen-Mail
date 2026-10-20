@@ -575,6 +575,39 @@ the_targets_named() {
         grep -v '^--$' | sort | tr '\n' ' ' | sed 's/ *$//'
 }
 
+# The library filters an answer holds, one a line, read from the words of every
+# `--lib` line with cargo's and libtest's own words left out. Since 2026-10-20
+# (13.3-01, review item 35) the answer holds one such line, `--lib --
+# --test-threads=4` and then every filter; until then it held one line per
+# filter, and this reads both, so a case asking about a filter says the same
+# thing of either and none can pass on an answer with no library line.
+the_library_filters() {
+    local line word
+    while IFS= read -r line; do
+        case "$line" in
+            --lib*) ;;
+            *) continue ;;
+        esac
+        for word in $line; do
+            case "$word" in
+                --lib | -- | --test-threads=4) ;;
+                *) echo "$word" ;;
+            esac
+        done
+    done <<< "$1"
+}
+
+# How many lines of an answer are library lines.
+library_lines_in() {
+    local line count=0
+    while IFS= read -r line; do
+        case "$line" in
+            --lib*) count=$((count + 1)) ;;
+        esac
+    done <<< "$1"
+    echo "$count"
+}
+
 # The targets check.sh ends every scoped run with, read from its one-line array.
 whole_tree_targets="$(sed -n 's/^guards_that_read_the_whole_tree=(\(.*\))$/\1/p' "$subject")"
 
@@ -657,11 +690,23 @@ runs="$(scoped_runs src/presentation/wx_managers.rs)"
 target_line="$(the_one_target_line "$runs")"
 if [ "${target_line%%:*}" = shape ]; then
     suite_case_failed "a changed source module is still its own library run" "$target_line"
-elif printf '%s\n' "$runs" | grep -qxF -- '--lib presentation::wx_managers:: -- --test-threads=4'; then
+elif the_library_filters "$runs" | grep -qxF -- 'presentation::wx_managers::'; then
     suite_case_passed "a changed source module is still its own library run"
 else
     suite_case_failed "a changed source module is still its own library run" \
-        "no line '--lib presentation::wx_managers:: -- --test-threads=4' in: $runs"
+        "no library filter 'presentation::wx_managers::' in: $runs"
+fi
+
+# A change reaching no module answers no library line at all, because a
+# `cargo test --lib` given no filter runs the whole library.
+runs="$(scoped_runs tests/house_style.rs docs/x.md)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a change reaching no module answers no library line" "$target_line"
+elif [ "$(library_lines_in "$runs")" -ne 0 ]; then
+    suite_case_failed "a change reaching no module answers no library line" "answered: $runs"
+else
+    suite_case_passed "a change reaching no module answers no library line"
 fi
 
 runs="$(scoped_runs src/lib.rs)"
@@ -700,10 +745,10 @@ expect_a_library_run() {
     target_line="$(the_one_target_line "$runs")"
     if [ "${target_line%%:*}" = shape ]; then
         suite_case_failed "$desc" "$target_line"
-    elif printf '%s\n' "$runs" | grep -qxF -- "--lib $module -- --test-threads=4"; then
+    elif the_library_filters "$runs" | grep -qxF -- "$module"; then
         suite_case_passed "$desc"
     else
-        suite_case_failed "$desc" "no line '--lib $module -- --test-threads=4' in: $runs"
+        suite_case_failed "$desc" "no library filter '$module' in: $runs"
     fi
 }
 
@@ -723,8 +768,8 @@ expect_a_library_run application::sent_copy:: \
 # now adds a library run per module a coupled record's red tests live in, read
 # from both ways a record writes its list.
 #
-# The library runs a made-up registry answers for a change, one per line, and
-# how many lines name exactly one filter.
+# The library lines a made-up registry answers for a change, and how many times
+# their filters name one filter.
 library_runs_from() {
     local reg="$1"
     shift
@@ -732,7 +777,11 @@ library_runs_from() {
 }
 
 times_run() {
-    printf '%s\n' "$2" | grep -cxF -- "--lib $1 -- --test-threads=4"
+    local filter count=0
+    while IFS= read -r filter; do
+        [ "$filter" = "$1" ] && count=$((count + 1))
+    done < <(the_library_filters "$2")
+    echo "$count"
 }
 
 elsewhere="$work/red-tests-elsewhere.toml"
@@ -806,7 +855,7 @@ if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
     suite_case_passed "a guard's red test in another module reaches its library run"
 else
     suite_case_failed "a guard's red test in another module reaches its library run" \
-        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+        "wanted the library filter a::b::tests:: once in: $runs"
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/z.rs)"
@@ -818,8 +867,47 @@ else
         "wanted a::b::tests:: and c::d::tests:: once each in: $runs"
 fi
 
+# Every library filter a change earns goes to one cargo call, since 2026-10-20
+# (13.3-01, review item 35): libtest takes several filters after `--`, and each
+# call of its own paid cargo's start and the library's start again. So the
+# change above, whose guards reach two other modules, answers one library line
+# holding its own module's filter and both guard modules', each once, sorted.
+if [ "$(library_lines_in "$runs")" -eq 1 ] &&
+    [ "$(the_library_filters "$runs" | tr '\n' ' ')" = "a::b::tests:: c::d::tests:: x::z:: " ]; then
+    suite_case_passed "a change whose guards reach two other modules answers one library line"
+else
+    suite_case_failed "a change whose guards reach two other modules answers one library line" \
+        "wanted one line holding a::b::tests:: c::d::tests:: x::z:: in: $runs"
+fi
+
+# And the registry is read once for it. `the_scoped_runs` asks the registry two
+# questions, which suites and which modules guard the change, and each used to
+# read it again inside a subshell of its own. A stand-in `grep` first on the
+# path writes down each call naming the registry and runs the real one.
+counting_grep_bin="$work/counting-grep"
+mkdir -p "$counting_grep_bin"
+cat > "$counting_grep_bin/grep" <<'SH'
+#!/usr/bin/env bash
+for argument in "$@"; do
+    [ "$argument" = "$GREP_WATCHED" ] && echo read >> "$GREP_CALLS"
+done
+exec "$REAL_GREP" "$@"
+SH
+chmod +x "$counting_grep_bin/grep"
+grep_calls="$work/grep-calls"
+: > "$grep_calls"
+GREP_WATCHED="$elsewhere" GREP_CALLS="$grep_calls" REAL_GREP="$(command -v grep)" \
+    PATH="$counting_grep_bin:$PATH" ask_from_the_tree --scoped-runs-for "$elsewhere" src/x/z.rs > /dev/null 2>&1
+registry_reads="$(wc -l < "$grep_calls")"
+if [ "$registry_reads" -eq 1 ]; then
+    suite_case_passed "a scoped question reads the registry once"
+else
+    suite_case_failed "a scoped question reads the registry once" \
+        "the stand-in grep saw the registry named $registry_reads times"
+fi
+
 runs="$(library_runs_from "$elsewhere" src/x/w.rs)"
-if [ "$runs" = "--lib x::w:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::w::" ]; then
     suite_case_passed "a red test in the changed file's own module adds no library run"
 else
     suite_case_failed "a red test in the changed file's own module adds no library run" \
@@ -827,7 +915,7 @@ else
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/v.rs)"
-if [ "$runs" = "--lib x::v:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::v::" ]; then
     suite_case_passed "a record with a suite adds no library run for its red tests"
 else
     suite_case_failed "a record with a suite adds no library run for its red tests" \
@@ -835,7 +923,7 @@ else
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/u.rs)"
-if [ "$runs" = "--lib x::u:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::u::" ]; then
     suite_case_passed "a red name with no module adds no library run"
 else
     suite_case_failed "a red name with no module adds no library run" "answered: $runs"
@@ -846,7 +934,7 @@ fi
 runs="$(library_runs_from "$elsewhere" src/x/t.rs)"
 if [ "$(times_run k::l::tests:: "$runs")" -eq 1 ] &&
     ! printf '%s\n' "$runs" | grep -q ghost &&
-    ! printf '%s\n' "$runs" | grep -qE -- '--lib (p::q|r::s|m::n)::'; then
+    ! the_library_filters "$runs" | grep -qE -- '^(p::q|r::s|m::n)::'; then
     suite_case_passed "a red list inside a record's break text is not read"
 else
     suite_case_failed "a red list inside a record's break text is not read" \
@@ -858,17 +946,17 @@ if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
     suite_case_passed "a merge reaches the library runs of its guards' red tests"
 else
     suite_case_failed "a merge reaches the library runs of its guards' red tests" \
-        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+        "wanted the library filter a::b::tests:: once in: $runs"
 fi
 
 # Against the real registry, the acceptance line of 13.2-26: two records break
 # the sent copy's flag and name tests in the controller's module.
 runs="$(scoped_runs src/application/sent_copy.rs)"
-if printf '%s\n' "$runs" | grep -q -- '^--lib application::mail_controller::'; then
+if the_library_filters "$runs" | grep -q -- '^application::mail_controller::'; then
     suite_case_passed "a change to the sent copy runs the controller's tests that guard it"
 else
     suite_case_failed "a change to the sent copy runs the controller's tests that guard it" \
-        "no '--lib application::mail_controller::' line in: $runs"
+        "no library filter application::mail_controller:: in: $runs"
 fi
 
 # Read out of `check.sh`: no line that is not a comment hands cargo one
@@ -1738,8 +1826,11 @@ expect_fixture_silent_about "every case in this suite ran" \
 # change to `src/lib.rs` staged. A run that is not refused goes on to its first
 # stage and stops at rustfmt, since the repository holds no `Cargo.toml`, so a
 # case costs a fork and one failed cargo call rather than a build.
+#
+# Any path given after the repository is staged as a new file beside it.
 a_commit_being_made() {
-    local repo="$1" kept
+    local repo="$1" kept staged
+    shift
     a_repository_of_its_own "$repo"
     mkdir -p "$repo/src" "$repo/tests" "$repo/locales" "$repo/docs" "$repo/.planning" "$repo/guards"
     for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
@@ -1750,6 +1841,11 @@ a_commit_being_made() {
     git -C "$repo" checkout --quiet -b a-branch
     printf 'the staged change\n' >> "$repo/src/lib.rs"
     git -C "$repo" add src/lib.rs
+    for staged in "$@"; do
+        mkdir -p "$repo/${staged%/*}"
+        printf 'the staged change\n' > "$repo/$staged"
+        git -C "$repo" add "$staged"
+    done
 }
 
 the_message="$work/the-message"
@@ -1885,6 +1981,55 @@ if printf '%s\n' "$code_calls" | grep -qxF 'clippy --all-targets --all-features 
 else
     suite_case_failed "a run for changed code still touches and calls clippy" \
         "the stand-in saw:" "$code_calls"
+fi
+
+# ── Every library filter in one cargo call ───────────────────────────────────
+# Added 2026-10-20 by 13.3-01 (review item 35). The run made one `cargo test
+# --lib` call per filter, and libtest takes several after `--`, so each call
+# paid cargo's start and the library's start for nothing. Proved through the
+# stand-in `cargo`, because no commit of this plan stages a source file and so
+# none of its own hook runs makes a library call at all.
+#
+# A commit staging the sent copy, with its mode left to `which-checks.sh` so
+# the staged list is read: the real registry couples it to the controller's
+# tests, so the one library call holds both filters, and the integration
+# targets are a call of their own.
+sent_copy_commit="$work/sent-copy-commit"
+a_commit_being_made "$sent_copy_commit" src/application/sent_copy.rs
+sent_copy_calls="$(commit_with_the_stand_in "$sent_copy_commit" "")"
+library_calls="$(printf '%s\n' "$sent_copy_calls" | grep -c '^test --lib' || true)"
+library_call="$(printf '%s\n' "$sent_copy_calls" | grep '^test --lib' || true)"
+target_calls="$(printf '%s\n' "$sent_copy_calls" | grep -c '^test --no-fail-fast --test ' || true)"
+if [ "$library_calls" -eq 1 ] && [ "$target_calls" -eq 1 ] &&
+    [ "$(times_run application::sent_copy:: "${library_call#test }")" -eq 1 ] &&
+    [ "$(times_run application::mail_controller::against_a_server_that_answers:: "${library_call#test }")" -eq 1 ]; then
+    suite_case_passed "an affected commit makes one library call for every filter it earns"
+else
+    suite_case_failed "an affected commit makes one library call for every filter it earns" \
+        "wanted one test --lib call holding application::sent_copy:: and" \
+        "application::mail_controller::against_a_server_that_answers:: and one" \
+        "test --no-fail-fast --test call; the stand-in saw:" "$sent_copy_calls"
+fi
+
+# The documents-only run's library modules likewise, in one call naming every
+# module on `check.sh`'s list, read from its one-line array.
+documents_modules=""
+while IFS= read -r line; do
+    case "$line" in
+        'the_modules_that_read_documents=('*')')
+            documents_modules="${line#*=(}"
+            documents_modules="${documents_modules%)}"
+            ;;
+    esac
+done < "$subject"
+documents_library_calls="$(printf '%s\n' "$documents_calls" | grep -c '^test --lib' || true)"
+documents_library_call="$(printf '%s\n' "$documents_calls" | grep '^test --lib' || true)"
+if [ -n "$documents_modules" ] && [ "$documents_library_calls" -eq 1 ] &&
+    [ "$(sorted_words $(the_library_filters "${documents_library_call#test }"))" = "$(sorted_words $documents_modules)" ]; then
+    suite_case_passed "a documents-only commit makes one library call"
+else
+    suite_case_failed "a documents-only commit makes one library call" \
+        "the stand-in saw:" "$documents_calls"
 fi
 
 # And the refusal still comes before any of it in the documents-only mode.
