@@ -354,6 +354,17 @@ break them, nor at a merge after 2026-09-23. `check.sh` now adds a `--lib` run
 for each module a changed file's records name in `red`, reading the list in
 both the ways the registry writes it (13.2-26, audit finding #38).
 
+**Since 2026-10-20 those modules and the changed file's own are one call**
+(13.3-01, review item 35). The sentence above said "a `--lib` run for each
+module", and that is what it was: one `cargo test --lib` per filter, each
+paying cargo's start and the library's start again. A changed file's guard
+records now reach their library tests through the one library call the scoped
+run makes, `cargo test --lib -- --test-threads=4` with every filter after it,
+and the registry is read once for the whole question rather than once per
+reader. The scan that reads it is compared with Python's TOML reader over the
+real registry on every commit that stages it, so a record spelled in a way the
+scan misreads is refused at the commit that adds it (review item 30).
+
 **Read those two numbers as warm, and as a floor.** The same documents-only
 path took 2m56s on 2026-09-02, because it followed two commits that had changed
 test files and so paid for a clippy rebuild, and because the document-reading
@@ -482,6 +493,16 @@ Several module paths need several runs, joined so a failure stops the line:
 cargo test --lib application::sending_later:: && cargo test --lib data::config::
 ```
 
+**Corrected 2026-10-20 (13.3-01): several module paths can also be one run.**
+Cargo refuses a second `--lib` and a second test name before `--`, which is what
+the paragraph above found. libtest takes several filters after `--`,
+`[FILTERS...]` in its usage, so `cargo test --lib -- a::b:: c::d::` runs both
+modules in one program and pays cargo's start once. Measured that day at
+`59c22359`: `cargo test --lib -- --test-threads=4 help_page::
+presentation::what_the_scans_can_judge::` ran 20 tests from both modules in one
+`Running` line. The `&&` form above is still right, and still says which module
+failed first; the one-call form is what `scripts/check.sh` uses for a scoped run.
+
 What it cost was not the typo. It is that a plan's verification command is
 written as evidence the plan can be checked, and for a year none of these could
 be run at all. **A command in a plan is a claim about that plan, and an untested
@@ -553,6 +574,18 @@ at `d5c3483e` after them, `which-checks.test.sh` going from 14 to 17 for two
 cases that each start a `bash` and build a repository. Less than half the
 figure above on the same machine, with nothing in the suites removed between
 the two days; what moved is not diagnosed, so quote neither without its date.
+
+**Corrected 2026-10-20 (13.3-01): read the check suite's cost from the
+measurements page and ledger 803, not from a figure in this file.** The 7
+seconds above is the check suite at `342b019f` on 2026-09-23, before 12-03.2
+added 40 cases to it, and the same file at `c4798dba` that evening took 31.8 s.
+Extracted from history with `git archive` and timed three times on 2026-10-20,
+that unchanged file took 74 to 111 s, because starting a program from Git's bash
+cost about a tenth of a second on this machine that day against 15 to 40 ms from
+PowerShell. The suite as 13.3-01 found it at `a72d4b41`, with 24 more cases,
+took 193 to 219 s, and after the plan's cuts at `1e5fdf3b` 158 to 193 s. The
+rows, with their commands and conditions, are on
+`docs/development/measurements.md`, and ledger 803 carries the machine's half.
 
 Where the figure came from is worth knowing, because the same mistake is
 available to the next person. These suites did once cost milliseconds. They grew
