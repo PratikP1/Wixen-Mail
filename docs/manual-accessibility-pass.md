@@ -98,7 +98,7 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-One hundred and eighty-three items. Walk them in order; the first ones are the
+Two hundred and twenty-five items. Walk them in order; the first ones are the
 ground the rest stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57
 the same day, for what phase 10 built; this line said forty-one until then.
 Items 58 to 83 were added on 2026-09-20 for what phase 11 built; this line said
@@ -106,7 +106,9 @@ fifty-seven until then. Items 84 to 95 were added on 2026-09-24 for what phase
 12 built; this line said eighty-three until then. Items 96 to 181 were added on
 2026-10-03 for what phase 13 built; this line said ninety-five until then.
 Items 182 and 183 were added on 2026-10-04 for what phase 13.1 changed; this
-line said one hundred and eighty-one until then.
+line said one hundred and eighty-one until then. Items 184 to 225 were added on
+2026-10-19 for what phase 13.2 changed; this line said one hundred and
+eighty-three until then.
 
 ### The main window
 
@@ -1204,6 +1206,178 @@ were proved by tests and neither has been heard.
     document counted as a file that was not mail with no empty folder left
     under Imported, and the message already there said in its folder's words.
     **NVDA, and a person with Outlook.** [ledger 805]
+
+### Phase 13.2: the audit's fixes
+
+Added 2026-10-19 by 13.2-32 for what phase 13.2 changed, one item for each
+ledger entry its plans opened for an ear, an eye or a real account. Each item
+belongs with a group above and is here so the numbers run in order. Every one
+was proved by tests and none has been heard or met on a real account. Items
+marked **A sitting** wait for one of phase 14's sittings on your own account.
+
+184. **In your Inbox under conversation view, press Enter on a row whose
+    message is alone in its conversation, then on a row whose reply is filed in
+    Sent.** The reader opening on the row's own message each time: the Inbox
+    message when nothing is read, the reply when it is the first unread.
+    **NVDA.** [ledger 831]
+185. **Under conversation view, press M on an unread conversation, arrow away
+    and back, open the Action menu, then press Delete on a conversation.** The
+    row heard without Unread, the menu offering Mark as Unread, and the row
+    leaving with the next conversation read, each at once. **NVDA.**
+    [ledger 834]
+186. **Open a conversation of three and, on one message, press the menu key,
+    then Delete, then M, then Delete on the last message left.** That message's
+    own menu; the window coming back on its neighbour with no second
+    Conversation sentence; read or unread said; and the list on the next
+    conversation after the last one goes. **NVDA.** [ledger 839]
+187. **In the same kind of conversation, press Ctrl+R on a message, then Ctrl+1,
+    then open a message other than the row's own and come back after the wait.**
+    A reply to that message, the label put on it with no second Conversation
+    sentence, and the opened message heard as read. **NVDA.** [ledger 841]
+188. **Press Undo Send in the last second of the hold, then press Send Queued
+    Mail twice quickly with a message waiting.** Either "Taken back" with
+    nothing arriving, or "Too late to take that back" with one copy arriving and
+    none in Drafts; then "The Outbox is already being sent." on the second press
+    with one copy sent. **NVDA, and your account.** [ledger 842]
+189. **Write a message for more than two minutes so a copy is saved to Drafts,
+    then send it; do the same on a POP account; then press Undo Send too late.**
+    Drafts holding no copy of it in Gmail's web view, on your phone and here
+    after the next check. **A sitting.** [ledger 844]
+190. **In the Account Manager, add an account with an address another account
+    already uses, then change the order with Alt+Shift+Up and Alt+Shift+Down,
+    then switch an account off.** The refusal naming the account and saying
+    Edit it instead, the Add window coming back with what you typed; the order
+    the same after a restart; and nothing checked or announced for the account
+    switched off. **NVDA.** [ledger 846]
+191. **Delete a message on your account, and keep a folder of your own named
+    Deleted or Bin.** The message in the server's own Trash, your folder left an
+    ordinary folder, and Empty Folder stopping at a message the server only
+    marked or copied and saying so. **A sitting.** [ledger 849]
+192. **Let a rule file mail into another folder, and check after more than 500
+    messages arrived.** Each filed message once in that folder, the whole count
+    said, and the rules run over every message. **A sitting.** [ledger 850]
+193. **Open a large folder that is still downloading, in the flat view and then
+    in conversation view.** The count heard once and not per chunk, the list
+    growing about every ten seconds, and keys answered throughout. **NVDA, and
+    a sitting for the text that will not come.** [ledger 851]
+194. **With one new message waiting, press F9 during the start-up check, then
+    F9 twice in a row.** One announcement and one new-mail sound each time, and
+    the rules run once. **NVDA, and a sitting for a large folder's check.**
+    [ledger 852]
+195. **Read a message with Allow Changes off, turn changes on, mark it unread
+    and check.** Still unread here and on your phone. **A sitting.**
+    [ledger 853]
+196. **Open a message whose layout nests thousands of levels deep in the text
+    reader.** "This message's layout is nested too deeply to show as a page, so
+    only its words follow" before its words, and the program still open.
+    **NVDA.** [ledger 858]
+197. **Reply to a real newsletter that carries a tracking picture, with a
+    network log watching, then forward it.** Nothing fetched while the editor is
+    open, and the forward still pointing at the original's pictures. **A
+    person, with a network log.** [ledger 860]
+198. **Open a meeting update in a message the list shows as Phishing or Spam.**
+    "Your calendar was not changed, because this message is marked as
+    phishing", and the meeting where it was. **NVDA.** [ledger 861]
+199. **Follow a webcal link to a real published calendar from a web page.**
+    "Fetching that calendar." and keys answered while it comes. **NVDA.**
+    [ledger 862]
+200. **Check a POP account whose server holds an empty message.** The message
+    kept in the Inbox with no subject, the mail after it arriving, and neither
+    fetched again. **A sitting, on a POP account.** [ledger 863]
+201. **Sign in for Calendars, Contacts and Tasks on a Gmail account and choose a
+    second Google account in the browser.** Google signed in as that address
+    and nothing was kept, and no credential stored for it. **NVDA, and your
+    account.** [ledger 866]
+202. **Sign in the same way choosing the right account, then with the address
+    typed with different dots or as googlemail.com.** The browser offering your
+    address first, and the sign-in kept and synced as before. **A sitting.**
+    [ledger 867]
+203. **Type a Gmail account's IMAP server as imap.gmial.com and sign in again,
+    then check mail.** Both saying the server is not one of Google's and
+    nothing was sent; corrected, everything signing in as before. **NVDA, and
+    your account.** [ledger 868]
+204. **Save a .docm and a .js attachment with Save Attachment and with File,
+    Save As, and open each.** Word's Protected View, a question before the
+    script runs, and Unblock in the file's Properties. **A person.**
+    [ledger 871]
+205. **Add a contact here on a Gmail and an Outlook account after their first
+    sync, and keep a Gmail account unsynced for more than seven days.** Each
+    contact once at Google and Outlook after the next sync, and the old
+    account's contacts still arriving. **A sitting.** [ledger 873]
+206. **On an Outlook account synced for more than 30 days, book a meeting more
+    than a year ahead at Outlook and here, and delete one at Outlook.** The
+    first arriving, the second staying, the third taken off. **A sitting.**
+    [ledger 874]
+207. **Make an event on a Monday and an all-day event on the first of a month,
+    and open that Week and that Month.** Each heard once on its own day.
+    **NVDA.** [ledger 875]
+208. **Subscribe to a real calendar with a weekly event that has one day moved
+    and one called off, and refresh twice.** Every week shown, the moved day
+    once at its new time, the cancelled day not at all. **A sitting.**
+    [ledger 876]
+209. **Read a Nextcloud, ownCloud or Baïkal calendar with an event titled with
+    an `&`, edit it here, and read it at the server.** The `&` shown as
+    written and no `&amp;` at the server. **A sitting, on such a server.** [ledger 877]
+210. **Tick a task in the Tasks window while a sync says it is sending, move a
+    new task to another list during its first sync, and edit and save a note.**
+    Each change found at Google Tasks, Outlook or the notes backend after the
+    next sync. **A sitting.** [ledger 880]
+211. **Change an event's title while a sync is sending it, and delete a new
+    event during its first sync.** The new title kept and found at the
+    provider, and the deleted event gone there. **A sitting.** [ledger 882]
+212. **After more than seven days without a sync, cancel a meeting in Google
+    Calendar and delete a contact in Google Contacts and in Outlook.** All of
+    them gone here after the next sync, and a meeting a year and a half ahead
+    kept. **A sitting.** [ledger 884]
+213. **Send from the Outbox on a POP account with a wrong outgoing password.**
+    One line, "Message not sent" with the server's reason, then
+    "Disconnected", then the Outbox's count, and the status bar showing the
+    failure first. **NVDA.** [ledger 886]
+214. **Dispatch Release and Other platforms once.** The release check and the
+    Linux and macOS jobs getting past the history test to an answer. **Pratik,
+    on GitHub.** [ledger 891]
+215. **Install for all users, use Wixen Mail from a second Windows account, then
+    uninstall from the first.** The message naming the account it cleared and
+    saying the other account keeps its mail folder and its Credential Manager
+    entries, which the second account then finds. **NVDA.** [ledger 895]
+216. **Uninstall a per-user install, and an all-users install with the Windows
+    Search task chosen.** Each finishing, and Indexing Options no longer
+    listing Wixen Mail's location. **A person.** [ledger 896]
+217. **Start Wixen Mail.** "Wixen Mail is ready", with no line about focus
+    beyond what the screen reader says itself. **NVDA.** [ledger 897]
+218. **Press M on a message, then on a conversation row, then move to the Inbox
+    in the folder tree.** Its unread count one lower each time, and nothing
+    said at the key beyond the command's own word. **NVDA.** [ledger 899]
+219. **Put two messages in the Outbox, press Send Queued Mail, and while they
+    go choose both and press Delete.** "2 messages are being sent now, so they
+    stay in the Outbox." once, and not "It will not be sent." **NVDA.**
+    [ledger 900]
+220. **Save a draft long enough to reach Drafts, turn the network off, send it,
+    then turn the network on and check.** The status line saying it may still
+    be in Drafts, then the copy gone at the next check with nothing said.
+    **NVDA, and a sitting.** [ledger 901]
+221. **Add Account with the address of an account you already have, at normal
+    size and at 200% text size.** The reason on a line under the address box,
+    heard once and not again in the box, gone after one character typed, and
+    wrapping inside the window when large. **NVDA, and your eyes.**
+    [ledger 903]
+222. **Import a zip made by an older Windows zip tool whose folders have
+    accented names, then a zip with one byte of a message altered.** The folder
+    names said as written with their mail, then once that the zip is damaged
+    or was changed after it was made and nothing came in. **NVDA.**
+    [ledger 905]
+223. **Import a zip where one mailbox file holds more than the zip records for
+    it.** The new sentence once, saying whether any of that folder's mail came
+    in, and nothing about a message holding nothing a mail program recognises.
+    **NVDA.** [ledger 907]
+224. **Close Wixen Mail, break `app_config.json` by hand, start it, then open
+    Settings.** The first-run question, then the sentence once naming the kept
+    file and its folder, and Settings opening on the fresh settings. **NVDA.**
+    [ledger 909]
+225. **Open a message in the formatted message window, then move into the
+    preview pane beside the message list.** The window's page named after the
+    message's subject, or "No subject", and the preview named "Message", never
+    a long run of letters and numbers. **NVDA.** [ledger 910]
 
 ## B. Low vision and colour
 

@@ -860,7 +860,7 @@ impl HtmlRenderer {
             }
             MessageBody::Plain(text) => plain_text_as_a_page(text),
         };
-        self.wrap_prepared(&content, "Back to message list (Escape)")
+        self.wrap_prepared(&content, "Message", "Back to message list (Escape)")
     }
 
     /// Put the document shell around markup that is already safe.
@@ -878,12 +878,17 @@ impl HtmlRenderer {
     /// a window and closes. One label for both told half of everybody something
     /// that was not true about the button they were on.
     ///
+    /// `title` is what WebView2 names its window pane and the root of the page
+    /// after. A string handed to the engine is loaded as a data: address, and
+    /// a document with no title is named after its address, so both panes
+    /// were the whole page in base64 (ledger 872).
+    ///
     /// The document's language is fetched here and is not a parameter, so a
     /// caller cannot leave it out. It was a parameter for one release and the
     /// reading window was handed `None` by hand; see
     /// [`Self::wrap_prepared_in_language`].
-    fn wrap_prepared(&self, content: &str, way_out: &str) -> String {
-        self.wrap_prepared_in_language(content, way_out, document_language().as_deref())
+    fn wrap_prepared(&self, content: &str, title: &str, way_out: &str) -> String {
+        self.wrap_prepared_in_language(content, title, way_out, document_language().as_deref())
     }
 
     /// The same shell, built in a language the caller names.
@@ -904,10 +909,12 @@ impl HtmlRenderer {
     fn wrap_prepared_in_language(
         &self,
         content: &str,
+        title: &str,
         way_out: &str,
         machine_language: Option<&str>,
     ) -> String {
         let language = language_attribute(machine_language);
+        let title = html_escape::encode_text(title);
         // Asked of the settings and of Windows together, so a machine set to
         // reduce animation gets an immediate scroll whatever this application
         // was told. The rule and the reason are in `application::scrolling`.
@@ -920,7 +927,7 @@ impl HtmlRenderer {
         .css_scroll_behavior();
         format!(
             r#"<!DOCTYPE html>
-<html{language}><head><meta charset="utf-8"><style>
+<html{language}><head><meta charset="utf-8"><title>{title}</title><style>
 html {{ scroll-behavior: {scrolling}; }}
 @media (prefers-reduced-motion: reduce) {{
     html {{ scroll-behavior: auto; }}
@@ -1000,12 +1007,12 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
             }
             body.push_str("</section>\n");
         }
-        let title = html_escape::encode_text(if subject.trim().is_empty() {
+        let named = if subject.trim().is_empty() {
             "No subject"
         } else {
             subject.trim()
-        });
-        body.push_str(&format!("<h1>{title}</h1>\n"));
+        };
+        body.push_str(&format!("<h1>{}</h1>\n", html_escape::encode_text(named)));
         // Every message opens through here now, not only threads, so one part
         // is the common case rather than the odd one. Counting it out loud
         // gets the number agreement wrong and says the wrong thing about what
@@ -1081,7 +1088,7 @@ table {{ border-collapse: collapse; }} td, th {{ padding: 4px 8px; }}
         // already been through the sanitiser, and sanitising the assembled
         // document again would escape the headings this whole surface exists
         // to produce whenever the plain-text setting is on.
-        self.wrap_prepared(&body, "Close this window (Escape)")
+        self.wrap_prepared(&body, named, "Close this window (Escape)")
     }
 
     /// The only URLs this application will hand to the operating system.
@@ -2136,6 +2143,58 @@ mod tests {
         );
     }
 
+    /// What sits between `<head>` and `</head>`, or the whole page when it has
+    /// no head, so a failing assertion prints what was there.
+    fn the_head_of(page: &str) -> &str {
+        page.split_once("<head>")
+            .and_then(|(_, rest)| rest.split_once("</head>"))
+            .map_or(page, |(head, _)| head)
+    }
+
+    #[test]
+    fn test_a_conversation_document_is_titled_with_its_subject_so_its_panes_are_not_named_after_its_address()
+     {
+        // WebView2 names its window and the root of the page after the
+        // document's title, and a document with no title after its address.
+        // This page is handed over as a string, which the engine loads as a
+        // data: address, so the name was the whole page in base64: the scans
+        // from 2026-10-16 found two panes of the formatted message window named
+        // that way, past 512 characters, one of them holding the keyboard
+        // (ledger 872). The subject is what names the page, as its h1 does.
+        let renderer = HtmlRenderer::new();
+
+        let titled = renderer.render_thread("Bell & Ross <notes>", &[part("Ada", 0, "Body")]);
+        let untitled = renderer.render_thread("  ", &[part("Ada", 0, "Body")]);
+
+        assert!(
+            the_head_of(&titled).contains("<title>Bell &amp; Ross &lt;notes&gt;</title>"),
+            "{}",
+            the_head_of(&titled)
+        );
+        assert!(
+            the_head_of(&untitled).contains("<title>No subject</title>"),
+            "{}",
+            the_head_of(&untitled)
+        );
+    }
+
+    #[test]
+    fn test_a_preview_document_has_a_title_so_its_panes_are_not_named_after_its_address() {
+        // The same engine and the same fallback, on the document the preview
+        // pane is given. The scan's page-window target opens this document
+        // too, and that window takes its own title from the page's, so the
+        // scan read the address there as well, on the window and both panes.
+        let renderer = HtmlRenderer::new();
+
+        let page = renderer.wrap_body(&MessageBody::Plain("Hello".into()));
+
+        assert!(
+            the_head_of(&page).contains("<title>Message</title>"),
+            "{}",
+            the_head_of(&page)
+        );
+    }
+
     #[test]
     fn test_a_document_carries_the_language_it_was_handed_into_its_opening_tag() {
         // A real document, rendered twice, read for the tag that came out.
@@ -2143,8 +2202,9 @@ mod tests {
         // machine and there is no shared function on both sides of it.
         let renderer = HtmlRenderer::new();
 
-        let german = renderer.wrap_prepared_in_language("<p>Hallo</p>", "Escape", Some("de-DE"));
-        let unknown = renderer.wrap_prepared_in_language("<p>Hello</p>", "Escape", None);
+        let german =
+            renderer.wrap_prepared_in_language("<p>Hallo</p>", "Message", "Escape", Some("de-DE"));
+        let unknown = renderer.wrap_prepared_in_language("<p>Hello</p>", "Message", "Escape", None);
 
         assert!(german.contains("<html lang=\"de-DE\">"), "{german}");
         assert!(unknown.contains("<html>"), "{unknown}");

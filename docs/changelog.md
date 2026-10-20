@@ -1446,6 +1446,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message's page is named after the message, not after its own text (2026-10-19).** The
+  window a message opens in and the preview pane show a message through the Edge browser
+  engine, which names its panes after the page's title. The page had no title, so the engine
+  named those panes after the page's address, and that address was the whole page, hundreds of
+  characters of encoded text. A screen reader that reached one of those panes could read it
+  aloud. Now the page carries a title: a
+  conversation's subject, or "No subject" when it has none, and "Message" for the preview
+  pane.
+
+  Known limits. Nobody has heard the new names yet. The automated scan can only check that the
+  names are short.
+
 - **Settings that cannot be read are kept, and you are told (2026-10-19).** When the settings
   file had been damaged, by a disk fault or by editing it by hand, Wixen Mail started on its
   built-in settings without a word, synced no account, and OK in Settings then wrote those
@@ -1630,7 +1642,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
   Known limitation: a settings file that cannot be read for another reason, such as a disk
   fault or a hand edit, is still reported only in the log. Settings then opens on the
-  defaults and saving writes over the file, and nothing on screen says so.
+  defaults and saving writes over the file, and nothing on screen says so. That held until
+  2026-10-19, when such a file began to be kept and said, and Settings stopped writing over it
+  (see that day's entry).
 - **Things said at the same moment are heard together (2026-10-17).** When several things
   happened at once, such as a message that could not be sent, the connection dropping and the
   Outbox finishing, each sentence was written over the one before it, so a screen reader spoke
@@ -1712,7 +1726,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   brings the event back on that day at its old time.
 
   Known limitation: a feed with a cancelled day says "1 deleted" on every refresh, though
-  nothing new went. Not yet tried against a real published calendar.
+  nothing new went. Not yet tried against a real published calendar. The first of these held
+  until 2026-10-19, when the cancelled day began to be counted once (see that day's entry).
 - **Titles and names from a calendar server read as written (2026-10-16).** A calendar server
   answers in XML, which writes "&" as "&amp;", and the calendar's reader kept the escape. So
   an event titled "Dinner & drinks" was stored and read out as "Dinner &amp; drinks", and
@@ -2030,7 +2045,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   folder is read again, even when the list is sorted by unread, so nothing moves under the
   cursor, and nothing more is said than the word you heard when you pressed the key. Known
   limitations: the unread count beside a folder in the folder tree still changes at the next
-  check; and All Inboxes shown as conversations is not read again after a check, so new mail
+  check, which held until 2026-10-18, when it began changing at once (see that day's entry);
+  and All Inboxes shown as conversations is not read again after a check, so new mail
   there waits until you leave All Inboxes and come back. The version does not move.
 - **Enter opens a message again when messages are shown as conversations (2026-10-14,
   LIST-06).** On a conversation row whose message is the only one of its conversation in the
