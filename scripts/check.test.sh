@@ -62,12 +62,47 @@ ask_from_the_tree() {
     ( cd "$a_tree" && bash "$subject" "$@" )
 }
 
+# The words given, empty ones dropped, sorted and joined by one space.
+#
+# Written without a process per step, as are the helpers that use it, because
+# every case here runs them and a fork costs tens of milliseconds on Windows:
+# measured 2026-09-23, the first spelling of a helper further down, `basename`,
+# `sort` and `sed` in a pipeline, cost about a second a case and took this
+# suite from 9 seconds to 31. And about a tenth of a second on 2026-10-20, when
+# 13.3-01 took the pipelines out of `answer` and the readings of the `--test`
+# line, which every question about a scoped run passes through.
+sorted_words() {
+    local -a words=()
+    local word index
+    for word in "$@"; do
+        [ -n "$word" ] || continue
+        index=${#words[@]}
+        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
+            words[index]="${words[$((index - 1))]}"
+            index=$((index - 1))
+        done
+        words[index]="$word"
+    done
+    echo "${words[*]}"
+}
+
+# The same, each word once.
+sorted_unique_words() {
+    local word previous=""
+    local -a kept=()
+    for word in $(sorted_words "$@"); do
+        [ "$word" = "$previous" ] || kept+=("$word")
+        previous="$word"
+    done
+    echo "${kept[*]}"
+}
+
 # The mapping's answer as one line, so a case reads as a sentence.
 #
 # Sorted before comparing, because order is not part of the contract: a record
 # added to the registry above another must not redden a case here.
 answer() {
-    ask_from_the_tree --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
+    sorted_words $(ask_from_the_tree --suites-for "$@" 2>/dev/null)
 }
 
 expect() {
@@ -560,19 +595,45 @@ scoped_runs() {
 }
 
 the_one_target_line() {
-    local runs="$1" lines
-    lines="$(printf '%s\n' "$runs" | grep -E -- '(^| )--test( |$)')"
-    if [ "$(printf '%s\n' "$runs" | grep -cE -- '(^| )--test( |$)')" -ne 1 ]; then
+    local runs="$1" line found="" count=0
+    while IFS= read -r line; do
+        case " $line " in
+            *" --test "*)
+                found="$line"
+                count=$((count + 1))
+                ;;
+        esac
+    done <<< "$runs"
+    if [ "$count" -ne 1 ]; then
         echo "shape: not one --test line in: $runs"
     else
-        echo "$lines"
+        echo "$found"
     fi
 }
 
-# The targets a `--test` line names, sorted, one space between.
+# The targets a `--test` line names, sorted, one space between: each word that
+# follows a `--test` and is neither `--test` nor `--`.
 the_targets_named() {
-    printf '%s\n' "$1" | tr ' ' '\n' | grep -A1 -x -- '--test' | grep -vx -- '--test' |
-        grep -v '^--$' | sort | tr '\n' ' ' | sed 's/ *$//'
+    local word after_a_test=""
+    local -a targets=()
+    for word in $1; do
+        if [ -n "$after_a_test" ] && [ "$word" != --test ] && [ "$word" != -- ]; then
+            targets+=("$word")
+        fi
+        after_a_test=""
+        [ "$word" = --test ] && after_a_test=yes
+    done
+    sorted_words "${targets[@]+"${targets[@]}"}"
+}
+
+# Whether a word is one of the words of a space-separated list, and how many
+# times it is.
+times_named() {
+    local word count=0
+    for word in $2; do
+        [ "$word" = "$1" ] && count=$((count + 1))
+    done
+    echo "$count"
 }
 
 # The library filters an answer holds, one a line, read from the words of every
@@ -631,13 +692,13 @@ esac
 # target, every target the real registry couples the source to, and every
 # target that reads the whole tree, compared as sets.
 coupled="$(answer "$registry" src/presentation/wx_managers.rs)"
-wanted_targets="$(printf '%s\n' checkbox_labels $coupled $whole_tree_targets | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+wanted_targets="$(sorted_unique_words checkbox_labels $coupled $whole_tree_targets)"
 case "$target_line" in
     shape:*)
         suite_case_failed "every target the scoped run reached before is still reached" "$target_line"
         ;;
     *)
-        named_targets="$(the_targets_named "$target_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+        named_targets="$(sorted_unique_words $(the_targets_named "$target_line"))"
         if [ "$named_targets" = "$wanted_targets" ]; then
             suite_case_passed "every target the scoped run reached before is still reached"
         else
@@ -660,8 +721,7 @@ case "$target_line" in
         suite_case_failed "a code commit anywhere runs the reading of mail taken off" "$target_line"
         ;;
     *)
-        if the_targets_named "$target_line" | tr ' ' '\n' |
-            grep -qx mail_taken_off_leaves_no_words_behind; then
+        if [ "$(times_named mail_taken_off_leaves_no_words_behind "$(the_targets_named "$target_line")")" -gt 0 ]; then
             suite_case_passed "a code commit anywhere runs the reading of mail taken off"
         else
             suite_case_failed "a code commit anywhere runs the reading of mail taken off" \
@@ -676,7 +736,7 @@ target_line="$(the_one_target_line "$(scoped_runs tests/house_style.rs)")"
 case "$target_line" in
     shape:*) suite_case_failed "a target named twice is run once" "$target_line" ;;
     *)
-        times="$(the_targets_named "$target_line" | tr ' ' '\n' | grep -cx house_style)"
+        times="$(times_named house_style "$(the_targets_named "$target_line")")"
         if [ "$times" -eq 1 ]; then
             suite_case_passed "a target named twice is run once"
         else
@@ -1291,31 +1351,16 @@ fi
 # suite's reach over every suite is the rule that check's list holds every
 # other list, not a read of one file.
 #
-# Written without a process per step, as are the two helpers below it, because
-# every case here runs them and a fork costs tens of milliseconds on Windows:
-# measured 2026-09-23, the first spelling, `basename`, `sort` and `sed` in a
-# pipeline, cost about a second a case and took this suite from 9 seconds to 31.
+# Written without a process per step, as is the helper below it and
+# `sorted_words` at the top, because every case here runs them and a fork costs
+# tens of milliseconds on Windows: measured 2026-09-23, the first spelling,
+# `basename`, `sort` and `sed` in a pipeline, cost about a second a case and
+# took this suite from 9 seconds to 31.
 every_suite=()
 for suite_file in "$root"/scripts/*.test.sh; do
     suite_file="${suite_file##*/}"
     every_suite+=("${suite_file%.test.sh}")
 done
-
-# The words given, empty ones dropped, sorted and joined by one space.
-sorted_words() {
-    local -a words=()
-    local word index
-    for word in "$@"; do
-        [ -n "$word" ] || continue
-        index=${#words[@]}
-        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
-            words[index]="${words[$((index - 1))]}"
-            index=$((index - 1))
-        done
-        words[index]="$word"
-    done
-    echo "${words[*]}"
-}
 
 # The question's answer, checked for its shape, then the names answered yes.
 # Prints `shape: <why>` instead when the answer is not one line per suite.
