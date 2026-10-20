@@ -6,7 +6,9 @@ the same day, runs before the rest of this phase: thirty-five plans in
 `.planning/phases/13.2-the-audit-s-fixes/`, the first four on the regressions and the next
 eight on what the sittings prove. The sittings resume at 14-10 after 13.2-32's merge, on a new
 build that holds phase 13.2, and each sheet is corrected against that build before its
-sitting. No plan makes that build yet; the Handover below says what it needs.
+sitting. Since 2026-10-20 14-08.2 makes that build, after 14-08.1 closes ledger 902; both were
+inserted that day, after phase 13.2 closed. Until then this paragraph ended "No plan makes
+that build yet; the Handover below says what it needs."
 
 Thirteen plans, one per wave, written on 2026-10-05 against `main` at `01ef4589`, version
 `1.0.0-alpha.1`, from `PROPOSAL.md` and its three research files in this folder, on Pratik's
@@ -18,6 +20,12 @@ whole gate was phase 13.1's, 10,566 tests at `0bc790d0`; and
 build Pratik has installed is `1.0.0-alpha.1+351.g5f363255`, 720 commits behind `01ef4589`
 (research 3, `git rev-list --count 5f363255..HEAD`), and `git rev-list --count 01ff57bf..HEAD`
 answered 1,071, the build counter the phase's build starts above.
+
+Two plans were inserted on 2026-10-20 against `main` at `0b781473`, 13.2-32's merge, on
+Pratik's approval of that day, which makes fifteen, still one per wave: 14-08.1 runs a saved
+draft's older copies through the exact reading Send's removal uses before they are removed
+(ledger 902), and 14-08.2 makes the new build at 14-08.1's merge and has him install it over
+the build he has. The sittings after them moved two waves later.
 
 The directory is named the way `gsd-tools generate-slug "The real-account proofs"` answers,
 `the-real-account-proofs`.
@@ -31,8 +39,9 @@ The phase closes on its own full gate.
 
 **Requirements.** REAL-01 and REAL-02. No requirement is added and the coverage stays at 123.
 Each plan adds a dated line under the requirement it serves and ticks no box; 14-13's closing
-read ticks a box only if every line it carries is proven. Two readings follow from the
-answers below, and the plans carry both:
+read ticks a box only if every line it carries is proven. 14-08.1 is the one exception to the
+pair: ledger 902 is filed under FOUND-04, in 13.2-31.4's line, so 14-08.1's line goes there.
+Two readings follow from the answers below, and the plans carry both:
 
 - REAL-02's last `[D]` clause names "`application::allowed`'s default moved per proven path".
   On answer 7 the switch's starting position does not move in this phase and only the
@@ -82,11 +91,13 @@ changes what is spoken or shown. Every plan merges with `git merge --no-ff`, and
 | 14-06 | 6 | `scripts/read-a-proof.py`, the tested way to read a proof from his profile without printing his mail; one crash writer naming the build; the page window's test out of his `crash.log` | REAL-01, REAL-02 | The executor | One, the test that wrote into his `crash.log` | no |
 | 14-07 | 7 | True words before the build: sending proven on 2026-09-18, what Gmail did to the download, the first-run sentence about the provider, the shortcuts page's crossing sentence; the records put straight and #63's comment corrected to the app password | REAL-02 | The executor; the edit on #63 rests on answer 4 | 148 fixed; 191 rewritten; 11, 64, 65, 67, 72, 523, 525 and 546 amended; two new (the Trash unreadable on 18 and 20 September, Refresh's help sentence) | yes |
 | 14-08 | 8 | The build at 14-07's merge, the install page and the four sitting sheets | REAL-01, REAL-02 | The executor builds and writes; Pratik installs and places his key | None | no |
-| 14-09 | 11 | Sitting 1, done third: the browser sign-in, the three syncs and F5 in each module, one event, contact and task read back in Google's own apps; recorded on #22 | REAL-01 | Pratik sits, 40 to 60 minutes, and gives his word; the executor reads before and after, drafts and posts | Dated lines on 154, 194, 203, 216, 218, 434, 435, 543, 597, 628, 671, 727 and 732; one per defect found | no |
-| 14-10 | 9 | Sitting 2, done first: the first start and the two waiting deletes; copy and move within Gmail, online, offline and back, across a restart, one message changed in Gmail meanwhile, undo at the server and of a mark; recorded on #63 | REAL-02 | Pratik, 45 to 60 minutes; the executor as above | 523, 525, 544, 546, 623 and 625; Refresh's sentence if 14-07 did not open it; one per defect | no |
-| 14-11 | 10 | Sitting 3, done second: delete within Gmail online, offline and across a restart, Delete Permanently against his own expunge setting, a delete held by the account's box, undo; recorded on #63 | REAL-02 | Pratik, 25 to 35 minutes; the executor as above | 376, 377, 544, 546 and 625; one per defect | no |
-| 14-12 | 12 | Sitting 4, done last: copy and move across two accounts, ledger 187's three questions and 547's, a second Google account added, the Trash emptied at a non-Gmail IMAP server, the POP lines; recorded on #63 and #22 | REAL-01, REAL-02 | Pratik adds his accounts and sits, 60 to 80 minutes and two-minute looks later; the executor as above | 183, 187, 188, 191, 547, 770, 771, 784, 787 and 804, with due dates; one per defect | no |
-| 14-13 | 13 | The warnings per proven path on his word, the switch left where it is and its split ledgered, the closing read, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | REAL-01, REAL-02 | The executor drafts and runs the gate; Pratik says yes per path and close or leave open for #22 and #63, about 10 minutes | One per changed spoken sentence; the switch's split, a `todo`; the ride-along entries read | yes |
+| 14-08.1 | 9 | Saving a draft takes out of the server's Drafts folder only the older copies whose Message-ID is the draft's exactly, through the reading Send's removal has used since 13.2-31.4; one header read per older copy found, none on a first save | FOUND-04, where ledger 902 is filed | The executor | 902 fixed; two opened, the single copy in Gmail's Drafts for the tester's eye and a `todo` for a server without UIDPLUS | no |
+| 14-08.2 | 10 | The new build at 14-08.1's merge, holding phase 13.2; the one install page rewritten for it, installing over the build he has and never uninstalling first | REAL-01, REAL-02 | The executor builds and writes; Pratik installs, 5 to 10 minutes | None | no |
+| 14-09 | 13 | Sitting 1, done third: the browser sign-in, the three syncs and F5 in each module, one event, contact and task read back in Google's own apps; recorded on #22 | REAL-01 | Pratik sits, 40 to 60 minutes, and gives his word; the executor reads before and after, drafts and posts | Dated lines on 154, 194, 203, 216, 218, 434, 435, 543, 597, 628, 671, 727 and 732; one per defect found | no |
+| 14-10 | 11 | Sitting 2, done first: the first start and the two waiting deletes; copy and move within Gmail, online, offline and back, across a restart, one message changed in Gmail meanwhile, undo at the server and of a mark; recorded on #63 | REAL-02 | Pratik, 45 to 60 minutes; the executor as above | 523, 525, 544, 546, 623 and 625; Refresh's sentence if 14-07 did not open it; one per defect | no |
+| 14-11 | 12 | Sitting 3, done second: delete within Gmail online, offline and across a restart, Delete Permanently against his own expunge setting, a delete held by the account's box, undo; recorded on #63 | REAL-02 | Pratik, 25 to 35 minutes; the executor as above | 376, 377, 544, 546 and 625; one per defect | no |
+| 14-12 | 14 | Sitting 4, done last: copy and move across two accounts, ledger 187's three questions and 547's, a second Google account added, the Trash emptied at a non-Gmail IMAP server, the POP lines; recorded on #63 and #22 | REAL-01, REAL-02 | Pratik adds his accounts and sits, 60 to 80 minutes and two-minute looks later; the executor as above | 183, 187, 188, 191, 547, 770, 771, 784, 787 and 804, with due dates; one per defect | no |
+| 14-13 | 15 | The warnings per proven path on his word, the switch left where it is and its split ledgered, the closing read, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | REAL-01, REAL-02 | The executor drafts and runs the gate; Pratik says yes per path and close or leave open for #22 and #63, about 10 minutes | One per changed spoken sentence; the switch's split, a `todo`; the ride-along entries read | yes |
 
 The times are the proposal's estimates, not measurements.
 
@@ -105,9 +116,12 @@ plans that share no file, and these share those. Each plan depends on the one be
   reader that every sitting is read from. 14-07 is last of the code, so the build says only
   true things.
 - **14-08** makes the build at 14-07's merge and writes the install page and the four sheets.
+- **14-08.1 and 14-08.2,** inserted on 2026-10-20 after phase 13.2 closed: ledger 902's fix
+  first, since it is code and the build should hold it, then the new build at its merge and
+  the install page written again for it. 14-10 depends on 14-08.2.
 - **14-09 to 14-12** are the four sittings. Since 2026-10-06 they run 14-10, 14-11, 14-09,
-  14-12, in waves 9 to 12 in that order, each depending on the one before it; the plans kept
-  their numbers and the sheets their names.
+  14-12, each depending on the one before it; the plans kept their numbers and the sheets
+  their names. Since 2026-10-20 they are waves 11 to 14 in that order; until then 9 to 12.
 - **14-13 last,** at the highest wave: the wording per proven path, the closing read and the
   phase's full gate.
 
@@ -269,16 +283,19 @@ In the order the plans meet them.
    that the key is placed.
 4. **14-08: installing the build himself,** 5 to 10 minutes, and one line back. **Answered
    2026-10-06: "installed, key later".** The registry reads `1.0.0-alpha.1+1118.gd3455792`.
-5. **The four sittings, in the order of 2026-10-06:** 14-10, 45 to 60 minutes, the first start
+5. **14-08.2: installing the new build himself,** over the build he has and never uninstalling
+   first, since the uninstaller of the build he has stops at an error and one that works would
+   clear his mail and settings; 5 to 10 minutes, and one line back. Added 2026-10-20.
+6. **The four sittings, in the order of 2026-10-06:** 14-10, 45 to 60 minutes, the first start
    included; 14-11, 25 to 35, starting with reading his own Gmail IMAP expunge setting; 14-09,
    40 to 60, once his key is placed; 14-12, 60 to 80, after adding the accounts he has, then
    about two minutes on the days the 15-day Trash emptying and the one-day POP removal fall
    due. Each ends with his one-line word on the drafted record.
-6. **14-13: his word per path** on the drafted warning sentences, and "close" or "leave open"
+7. **14-13: his word per path** on the drafted warning sentences, and "close" or "leave open"
    for #22 and #63, about 10 minutes.
-7. **Any fix plan a sitting names** (14-09.1 and so on) is inserted with him; each costs an
+8. **Any fix plan a sitting names** (14-09.1 and so on) is inserted with him; each costs an
    install and that line taken again.
-8. **Pushing `main`** stays his word.
+9. **Pushing `main`** stays his word.
 
 ## What only a person or a real provider can settle
 
@@ -296,8 +313,9 @@ In the order the plans meet them.
 build. 14-10's precondition reads the build named by "the latest summary that made a build",
 14-08's today, so the new build is made by a plan of its own after 13.2-32's merge, the way
 14-08 made the last with `scripts/build-installer.sh` on Pratik's ruling of 2026-10-06, and
-Pratik installs it from an install page written for it. No plan carries that build yet; it is
-added before 14-10 resumes. Branch `14-10-sitting-2` holds 14-10's before reading,
+Pratik installs it from an install page written for it. Since 2026-10-20 that plan is 14-08.2,
+after 14-08.1; until then this read "No plan carries that build yet; it is added before 14-10
+resumes." Branch `14-10-sitting-2` holds 14-10's before reading,
 `14-10-BEFORE-READING.md`, and sheet 2 corrected against build 1118 (commit `0eea8aec`);
 14-10's executor takes both from there and corrects the sheet again against the new build.
 The paragraphs below are the handover of 2026-10-06 and still give the order of the sittings.
