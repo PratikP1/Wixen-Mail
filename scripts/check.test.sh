@@ -233,6 +233,144 @@ expect_not_among manager_dialog_labels "taking the suite line off that record le
 expect_among manager_dialog_labels "the real registry still answers after the copy was made" \
     "$registry" src/presentation/wx_managers.rs
 
+# ── The scan read the way a TOML reader reads it ────────────────────────────
+# Added 2026-10-20 by 13.3-01 (review item 30). `check.sh` reads the registry
+# with a line scan, because a shell script has no TOML reader, and a record the
+# scan misreads is a guard that runs on none of the commits that could break
+# it. The review's checkers planted a red name indented two spaces, one with a
+# comment after it and a one-line list with a comment after it, and the scan
+# read no red name in any of them while Python's `tomllib` read every one. So
+# the scan is compared with `tomllib` here, over the real registry, on every
+# commit that stages it, and a record the scan would misread is refused at the
+# commit that adds it rather than found by a review.
+#
+# Python reads the registry the way `--records-in` prints it: `file|suite|red`
+# per record in order, red names joined by one space, a record with no `file`
+# left out as the scan leaves it out, written through `sys.stdout.buffer` so no
+# carriage return enters. `-I` so nothing in the directory it runs from is
+# imported. Python is already a dependency of the gate: `tests/house_style.rs`
+# calls it. On 2026-10-14 a Store alias made `python` stop answering on this
+# machine, so a Python that does not answer is said, never read as agreement.
+the_toml_reading='
+import sys, tomllib
+with open(sys.argv[1], "rb") as registry:
+    records = tomllib.load(registry).get("guard", [])
+lines = [
+    "|".join([record["file"], record.get("suite", ""), " ".join(record.get("red", []))])
+    for record in records
+    if record.get("file")
+]
+sys.stdout.buffer.write("".join(line + "\n" for line in lines).encode("utf-8"))
+'
+
+# The records the two readers disagree on, `<` before the scan's reading and
+# `>` before the TOML reader's, nothing when they agree; or one line starting
+# `python:` when Python did not answer.
+the_scan_against_a_toml_reader() {
+    local reg="$1" scanned read_by_toml
+    scanned="$(bash "$subject" --records-in "$reg" 2>&1)"
+    if ! read_by_toml="$(python -I -c "$the_toml_reading" "$reg" 2>&1)"; then
+        echo "python: did not answer, so the scan cannot be compared: $read_by_toml"
+        return
+    fi
+    diff <(printf '%s\n' "$scanned") <(printf '%s\n' "$read_by_toml") | grep '^[<>]'
+}
+
+expect_the_scan_agrees() {
+    local reg="$1" desc="$2" differences
+    differences="$(the_scan_against_a_toml_reader "$reg")"
+    if [ -z "$differences" ]; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "the scan and tomllib disagree (< scan, > tomllib):" \
+            "$differences"
+    fi
+}
+
+unusual_spellings="$work/unusual-spellings.toml"
+cat > "$unusual_spellings" <<'TOML'
+[[guard]]
+name = "a red list indented two spaces"
+file = "src/x/two.rs"
+before = """a"""
+after = """b"""
+red = [
+  "a::b::tests::test_two_spaces",
+  "a::b::tests::test_two_spaces_again",
+]
+
+[[guard]]
+name = "a red name with a comment after it"
+file = "src/x/comment.rs"
+suite = "alpha"
+before = """c"""
+after = """d"""
+red = [
+    "c::d::tests::test_commented", # why it reddens
+    "c::d::tests::test_last" # and the last one
+]
+
+[[guard]]
+name = "a one-line red list with a comment after it"
+file = "src/x/one_line.rs"
+before = """e"""
+after = """f"""
+red = ["e::f::tests::test_one", "e::f::tests::test_two"] # both of them
+TOML
+expect_the_scan_agrees "$unusual_spellings" \
+    "the scan reads red names indented or commented as a TOML reader does"
+
+expect_the_scan_agrees "$registry" "the scan reads the real registry as a TOML reader does"
+
+# The companion: a list opened on the line of its first name is a spelling the
+# scan does not read, and the comparison has to name that record and no other,
+# or the two cases above could be passing on a comparison that sees nothing.
+opened_on_its_first_name="$work/opened-on-its-first-name.toml"
+cat > "$opened_on_its_first_name" <<'TOML'
+[[guard]]
+name = "a red list the scan reads"
+file = "src/x/read.rs"
+before = """a"""
+after = """b"""
+red = [
+    "a::b::tests::test_read",
+]
+
+[[guard]]
+name = "a red list opened on the line of its first name"
+file = "src/x/opened.rs"
+before = """c"""
+after = """d"""
+red = ["c::d::tests::test_first",
+    "c::d::tests::test_second",
+]
+TOML
+differences="$(the_scan_against_a_toml_reader "$opened_on_its_first_name")"
+if [ -n "$differences" ] &&
+    ! printf '%s\n' "$differences" | grep -qv 'src/x/opened\.rs|' &&
+    printf '%s\n' "$differences" | grep -qxF '> src/x/opened.rs||c::d::tests::test_first c::d::tests::test_second'; then
+    suite_case_passed "the comparison names a record spelled a way the scan does not read"
+else
+    suite_case_failed "the comparison names a record spelled a way the scan does not read" \
+        "wanted src/x/opened.rs and only it in: $differences"
+fi
+
+# And a Python that does not answer is a failing comparison that says so. A
+# stand-in `python` first on the path answers as the Store alias did, with
+# nothing on its standard output and a failing status.
+no_python_bin="$work/no-python"
+mkdir -p "$no_python_bin"
+printf '#!/usr/bin/env bash\necho "Python was not found" >&2\nexit 9009\n' > "$no_python_bin/python"
+chmod +x "$no_python_bin/python"
+differences="$(PATH="$no_python_bin:$PATH" the_scan_against_a_toml_reader "$unusual_spellings")"
+case "$differences" in
+    "python: did not answer"*) suite_case_passed "a Python that does not answer fails the comparison and says so" ;;
+    *)
+        suite_case_failed "a Python that does not answer fails the comparison and says so" \
+            "answered: $differences"
+        ;;
+esac
+
 # ── Made-up registries, for the shapes the real one does not hold today ─────
 
 two_suites="$work/two-suites.toml"
