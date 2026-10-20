@@ -62,12 +62,47 @@ ask_from_the_tree() {
     ( cd "$a_tree" && bash "$subject" "$@" )
 }
 
+# The words given, empty ones dropped, sorted and joined by one space.
+#
+# Written without a process per step, as are the helpers that use it, because
+# every case here runs them and a fork costs tens of milliseconds on Windows:
+# measured 2026-09-23, the first spelling of a helper further down, `basename`,
+# `sort` and `sed` in a pipeline, cost about a second a case and took this
+# suite from 9 seconds to 31. And about a tenth of a second on 2026-10-20, when
+# 13.3-01 took the pipelines out of `answer` and the readings of the `--test`
+# line, which every question about a scoped run passes through.
+sorted_words() {
+    local -a words=()
+    local word index
+    for word in "$@"; do
+        [ -n "$word" ] || continue
+        index=${#words[@]}
+        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
+            words[index]="${words[$((index - 1))]}"
+            index=$((index - 1))
+        done
+        words[index]="$word"
+    done
+    echo "${words[*]}"
+}
+
+# The same, each word once.
+sorted_unique_words() {
+    local word previous=""
+    local -a kept=()
+    for word in $(sorted_words "$@"); do
+        [ "$word" = "$previous" ] || kept+=("$word")
+        previous="$word"
+    done
+    echo "${kept[*]}"
+}
+
 # The mapping's answer as one line, so a case reads as a sentence.
 #
 # Sorted before comparing, because order is not part of the contract: a record
 # added to the registry above another must not redden a case here.
 answer() {
-    ask_from_the_tree --suites-for "$@" 2>/dev/null | sort | tr '\n' ' ' | sed 's/ *$//'
+    sorted_words $(ask_from_the_tree --suites-for "$@" 2>/dev/null)
 }
 
 expect() {
@@ -232,6 +267,144 @@ expect_not_among manager_dialog_labels "taking the suite line off that record le
 # than about the mapping having stopped working between the two.
 expect_among manager_dialog_labels "the real registry still answers after the copy was made" \
     "$registry" src/presentation/wx_managers.rs
+
+# ── The scan read the way a TOML reader reads it ────────────────────────────
+# Added 2026-10-20 by 13.3-01 (review item 30). `check.sh` reads the registry
+# with a line scan, because a shell script has no TOML reader, and a record the
+# scan misreads is a guard that runs on none of the commits that could break
+# it. The review's checkers planted a red name indented two spaces, one with a
+# comment after it and a one-line list with a comment after it, and the scan
+# read no red name in any of them while Python's `tomllib` read every one. So
+# the scan is compared with `tomllib` here, over the real registry, on every
+# commit that stages it, and a record the scan would misread is refused at the
+# commit that adds it rather than found by a review.
+#
+# Python reads the registry the way `--records-in` prints it: `file|suite|red`
+# per record in order, red names joined by one space, a record with no `file`
+# left out as the scan leaves it out, written through `sys.stdout.buffer` so no
+# carriage return enters. `-I` so nothing in the directory it runs from is
+# imported. Python is already a dependency of the gate: `tests/house_style.rs`
+# calls it. On 2026-10-14 a Store alias made `python` stop answering on this
+# machine, so a Python that does not answer is said, never read as agreement.
+the_toml_reading='
+import sys, tomllib
+with open(sys.argv[1], "rb") as registry:
+    records = tomllib.load(registry).get("guard", [])
+lines = [
+    "|".join([record["file"], record.get("suite", ""), " ".join(record.get("red", []))])
+    for record in records
+    if record.get("file")
+]
+sys.stdout.buffer.write("".join(line + "\n" for line in lines).encode("utf-8"))
+'
+
+# The records the two readers disagree on, `<` before the scan's reading and
+# `>` before the TOML reader's, nothing when they agree; or one line starting
+# `python:` when Python did not answer.
+the_scan_against_a_toml_reader() {
+    local reg="$1" scanned read_by_toml
+    scanned="$(bash "$subject" --records-in "$reg" 2>&1)"
+    if ! read_by_toml="$(python -I -c "$the_toml_reading" "$reg" 2>&1)"; then
+        echo "python: did not answer, so the scan cannot be compared: $read_by_toml"
+        return
+    fi
+    diff <(printf '%s\n' "$scanned") <(printf '%s\n' "$read_by_toml") | grep '^[<>]'
+}
+
+expect_the_scan_agrees() {
+    local reg="$1" desc="$2" differences
+    differences="$(the_scan_against_a_toml_reader "$reg")"
+    if [ -z "$differences" ]; then
+        suite_case_passed "$desc"
+    else
+        suite_case_failed "$desc" "the scan and tomllib disagree (< scan, > tomllib):" \
+            "$differences"
+    fi
+}
+
+unusual_spellings="$work/unusual-spellings.toml"
+cat > "$unusual_spellings" <<'TOML'
+[[guard]]
+name = "a red list indented two spaces"
+file = "src/x/two.rs"
+before = """a"""
+after = """b"""
+red = [
+  "a::b::tests::test_two_spaces",
+  "a::b::tests::test_two_spaces_again",
+]
+
+[[guard]]
+name = "a red name with a comment after it"
+file = "src/x/comment.rs"
+suite = "alpha"
+before = """c"""
+after = """d"""
+red = [
+    "c::d::tests::test_commented", # why it reddens
+    "c::d::tests::test_last" # and the last one
+]
+
+[[guard]]
+name = "a one-line red list with a comment after it"
+file = "src/x/one_line.rs"
+before = """e"""
+after = """f"""
+red = ["e::f::tests::test_one", "e::f::tests::test_two"] # both of them
+TOML
+expect_the_scan_agrees "$unusual_spellings" \
+    "the scan reads red names indented or commented as a TOML reader does"
+
+expect_the_scan_agrees "$registry" "the scan reads the real registry as a TOML reader does"
+
+# The companion: a list opened on the line of its first name is a spelling the
+# scan does not read, and the comparison has to name that record and no other,
+# or the two cases above could be passing on a comparison that sees nothing.
+opened_on_its_first_name="$work/opened-on-its-first-name.toml"
+cat > "$opened_on_its_first_name" <<'TOML'
+[[guard]]
+name = "a red list the scan reads"
+file = "src/x/read.rs"
+before = """a"""
+after = """b"""
+red = [
+    "a::b::tests::test_read",
+]
+
+[[guard]]
+name = "a red list opened on the line of its first name"
+file = "src/x/opened.rs"
+before = """c"""
+after = """d"""
+red = ["c::d::tests::test_first",
+    "c::d::tests::test_second",
+]
+TOML
+differences="$(the_scan_against_a_toml_reader "$opened_on_its_first_name")"
+if [ -n "$differences" ] &&
+    ! printf '%s\n' "$differences" | grep -qv 'src/x/opened\.rs|' &&
+    printf '%s\n' "$differences" | grep -qxF '> src/x/opened.rs||c::d::tests::test_first c::d::tests::test_second'; then
+    suite_case_passed "the comparison names a record spelled a way the scan does not read"
+else
+    suite_case_failed "the comparison names a record spelled a way the scan does not read" \
+        "wanted src/x/opened.rs and only it in: $differences"
+fi
+
+# And a Python that does not answer is a failing comparison that says so. A
+# stand-in `python` first on the path answers as the Store alias did, with
+# nothing on its standard output and a failing status.
+no_python_bin="$work/no-python"
+mkdir -p "$no_python_bin"
+printf '#!/usr/bin/env bash\necho "Python was not found" >&2\nexit 9009\n' > "$no_python_bin/python"
+chmod +x "$no_python_bin/python"
+differences="$(PATH="$no_python_bin:$PATH" the_scan_against_a_toml_reader "$unusual_spellings")"
+case "$differences" in
+    "python: did not answer"*) suite_case_passed "a Python that does not answer fails the comparison and says so" ;;
+    *)
+        suite_case_failed "a Python that does not answer fails the comparison and says so" \
+            "answered: $differences"
+        ;;
+esac
 
 # ── Made-up registries, for the shapes the real one does not hold today ─────
 
@@ -422,19 +595,78 @@ scoped_runs() {
 }
 
 the_one_target_line() {
-    local runs="$1" lines
-    lines="$(printf '%s\n' "$runs" | grep -E -- '(^| )--test( |$)')"
-    if [ "$(printf '%s\n' "$runs" | grep -cE -- '(^| )--test( |$)')" -ne 1 ]; then
+    local runs="$1" line found="" count=0
+    while IFS= read -r line; do
+        case " $line " in
+            *" --test "*)
+                found="$line"
+                count=$((count + 1))
+                ;;
+        esac
+    done <<< "$runs"
+    if [ "$count" -ne 1 ]; then
         echo "shape: not one --test line in: $runs"
     else
-        echo "$lines"
+        echo "$found"
     fi
 }
 
-# The targets a `--test` line names, sorted, one space between.
+# The targets a `--test` line names, sorted, one space between: each word that
+# follows a `--test` and is neither `--test` nor `--`.
 the_targets_named() {
-    printf '%s\n' "$1" | tr ' ' '\n' | grep -A1 -x -- '--test' | grep -vx -- '--test' |
-        grep -v '^--$' | sort | tr '\n' ' ' | sed 's/ *$//'
+    local word after_a_test=""
+    local -a targets=()
+    for word in $1; do
+        if [ -n "$after_a_test" ] && [ "$word" != --test ] && [ "$word" != -- ]; then
+            targets+=("$word")
+        fi
+        after_a_test=""
+        [ "$word" = --test ] && after_a_test=yes
+    done
+    sorted_words "${targets[@]+"${targets[@]}"}"
+}
+
+# Whether a word is one of the words of a space-separated list, and how many
+# times it is.
+times_named() {
+    local word count=0
+    for word in $2; do
+        [ "$word" = "$1" ] && count=$((count + 1))
+    done
+    echo "$count"
+}
+
+# The library filters an answer holds, one a line, read from the words of every
+# `--lib` line with cargo's and libtest's own words left out. Since 2026-10-20
+# (13.3-01, review item 35) the answer holds one such line, `--lib --
+# --test-threads=4` and then every filter; until then it held one line per
+# filter, and this reads both, so a case asking about a filter says the same
+# thing of either and none can pass on an answer with no library line.
+the_library_filters() {
+    local line word
+    while IFS= read -r line; do
+        case "$line" in
+            --lib*) ;;
+            *) continue ;;
+        esac
+        for word in $line; do
+            case "$word" in
+                --lib | -- | --test-threads=4) ;;
+                *) echo "$word" ;;
+            esac
+        done
+    done <<< "$1"
+}
+
+# How many lines of an answer are library lines.
+library_lines_in() {
+    local line count=0
+    while IFS= read -r line; do
+        case "$line" in
+            --lib*) count=$((count + 1)) ;;
+        esac
+    done <<< "$1"
+    echo "$count"
 }
 
 # The targets check.sh ends every scoped run with, read from its one-line array.
@@ -460,13 +692,13 @@ esac
 # target, every target the real registry couples the source to, and every
 # target that reads the whole tree, compared as sets.
 coupled="$(answer "$registry" src/presentation/wx_managers.rs)"
-wanted_targets="$(printf '%s\n' checkbox_labels $coupled $whole_tree_targets | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+wanted_targets="$(sorted_unique_words checkbox_labels $coupled $whole_tree_targets)"
 case "$target_line" in
     shape:*)
         suite_case_failed "every target the scoped run reached before is still reached" "$target_line"
         ;;
     *)
-        named_targets="$(the_targets_named "$target_line" | tr ' ' '\n' | sort -u | tr '\n' ' ' | sed 's/ *$//')"
+        named_targets="$(sorted_unique_words $(the_targets_named "$target_line"))"
         if [ "$named_targets" = "$wanted_targets" ]; then
             suite_case_passed "every target the scoped run reached before is still reached"
         else
@@ -489,8 +721,7 @@ case "$target_line" in
         suite_case_failed "a code commit anywhere runs the reading of mail taken off" "$target_line"
         ;;
     *)
-        if the_targets_named "$target_line" | tr ' ' '\n' |
-            grep -qx mail_taken_off_leaves_no_words_behind; then
+        if [ "$(times_named mail_taken_off_leaves_no_words_behind "$(the_targets_named "$target_line")")" -gt 0 ]; then
             suite_case_passed "a code commit anywhere runs the reading of mail taken off"
         else
             suite_case_failed "a code commit anywhere runs the reading of mail taken off" \
@@ -505,7 +736,7 @@ target_line="$(the_one_target_line "$(scoped_runs tests/house_style.rs)")"
 case "$target_line" in
     shape:*) suite_case_failed "a target named twice is run once" "$target_line" ;;
     *)
-        times="$(the_targets_named "$target_line" | tr ' ' '\n' | grep -cx house_style)"
+        times="$(times_named house_style "$(the_targets_named "$target_line")")"
         if [ "$times" -eq 1 ]; then
             suite_case_passed "a target named twice is run once"
         else
@@ -519,11 +750,23 @@ runs="$(scoped_runs src/presentation/wx_managers.rs)"
 target_line="$(the_one_target_line "$runs")"
 if [ "${target_line%%:*}" = shape ]; then
     suite_case_failed "a changed source module is still its own library run" "$target_line"
-elif printf '%s\n' "$runs" | grep -qxF -- '--lib presentation::wx_managers:: -- --test-threads=4'; then
+elif the_library_filters "$runs" | grep -qxF -- 'presentation::wx_managers::'; then
     suite_case_passed "a changed source module is still its own library run"
 else
     suite_case_failed "a changed source module is still its own library run" \
-        "no line '--lib presentation::wx_managers:: -- --test-threads=4' in: $runs"
+        "no library filter 'presentation::wx_managers::' in: $runs"
+fi
+
+# A change reaching no module answers no library line at all, because a
+# `cargo test --lib` given no filter runs the whole library.
+runs="$(scoped_runs tests/house_style.rs docs/x.md)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a change reaching no module answers no library line" "$target_line"
+elif [ "$(library_lines_in "$runs")" -ne 0 ]; then
+    suite_case_failed "a change reaching no module answers no library line" "answered: $runs"
+else
+    suite_case_passed "a change reaching no module answers no library line"
 fi
 
 runs="$(scoped_runs src/lib.rs)"
@@ -562,10 +805,10 @@ expect_a_library_run() {
     target_line="$(the_one_target_line "$runs")"
     if [ "${target_line%%:*}" = shape ]; then
         suite_case_failed "$desc" "$target_line"
-    elif printf '%s\n' "$runs" | grep -qxF -- "--lib $module -- --test-threads=4"; then
+    elif the_library_filters "$runs" | grep -qxF -- "$module"; then
         suite_case_passed "$desc"
     else
-        suite_case_failed "$desc" "no line '--lib $module -- --test-threads=4' in: $runs"
+        suite_case_failed "$desc" "no library filter '$module' in: $runs"
     fi
 }
 
@@ -585,8 +828,8 @@ expect_a_library_run application::sent_copy:: \
 # now adds a library run per module a coupled record's red tests live in, read
 # from both ways a record writes its list.
 #
-# The library runs a made-up registry answers for a change, one per line, and
-# how many lines name exactly one filter.
+# The library lines a made-up registry answers for a change, and how many times
+# their filters name one filter.
 library_runs_from() {
     local reg="$1"
     shift
@@ -594,7 +837,11 @@ library_runs_from() {
 }
 
 times_run() {
-    printf '%s\n' "$2" | grep -cxF -- "--lib $1 -- --test-threads=4"
+    local filter count=0
+    while IFS= read -r filter; do
+        [ "$filter" = "$1" ] && count=$((count + 1))
+    done < <(the_library_filters "$2")
+    echo "$count"
 }
 
 elsewhere="$work/red-tests-elsewhere.toml"
@@ -668,7 +915,7 @@ if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
     suite_case_passed "a guard's red test in another module reaches its library run"
 else
     suite_case_failed "a guard's red test in another module reaches its library run" \
-        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+        "wanted the library filter a::b::tests:: once in: $runs"
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/z.rs)"
@@ -680,8 +927,47 @@ else
         "wanted a::b::tests:: and c::d::tests:: once each in: $runs"
 fi
 
+# Every library filter a change earns goes to one cargo call, since 2026-10-20
+# (13.3-01, review item 35): libtest takes several filters after `--`, and each
+# call of its own paid cargo's start and the library's start again. So the
+# change above, whose guards reach two other modules, answers one library line
+# holding its own module's filter and both guard modules', each once, sorted.
+if [ "$(library_lines_in "$runs")" -eq 1 ] &&
+    [ "$(the_library_filters "$runs" | tr '\n' ' ')" = "a::b::tests:: c::d::tests:: x::z:: " ]; then
+    suite_case_passed "a change whose guards reach two other modules answers one library line"
+else
+    suite_case_failed "a change whose guards reach two other modules answers one library line" \
+        "wanted one line holding a::b::tests:: c::d::tests:: x::z:: in: $runs"
+fi
+
+# And the registry is read once for it. `the_scoped_runs` asks the registry two
+# questions, which suites and which modules guard the change, and each used to
+# read it again inside a subshell of its own. A stand-in `grep` first on the
+# path writes down each call naming the registry and runs the real one.
+counting_grep_bin="$work/counting-grep"
+mkdir -p "$counting_grep_bin"
+cat > "$counting_grep_bin/grep" <<'SH'
+#!/usr/bin/env bash
+for argument in "$@"; do
+    [ "$argument" = "$GREP_WATCHED" ] && echo read >> "$GREP_CALLS"
+done
+exec "$REAL_GREP" "$@"
+SH
+chmod +x "$counting_grep_bin/grep"
+grep_calls="$work/grep-calls"
+: > "$grep_calls"
+GREP_WATCHED="$elsewhere" GREP_CALLS="$grep_calls" REAL_GREP="$(command -v grep)" \
+    PATH="$counting_grep_bin:$PATH" ask_from_the_tree --scoped-runs-for "$elsewhere" src/x/z.rs > /dev/null 2>&1
+registry_reads="$(wc -l < "$grep_calls")"
+if [ "$registry_reads" -eq 1 ]; then
+    suite_case_passed "a scoped question reads the registry once"
+else
+    suite_case_failed "a scoped question reads the registry once" \
+        "the stand-in grep saw the registry named $registry_reads times"
+fi
+
 runs="$(library_runs_from "$elsewhere" src/x/w.rs)"
-if [ "$runs" = "--lib x::w:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::w::" ]; then
     suite_case_passed "a red test in the changed file's own module adds no library run"
 else
     suite_case_failed "a red test in the changed file's own module adds no library run" \
@@ -689,7 +975,7 @@ else
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/v.rs)"
-if [ "$runs" = "--lib x::v:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::v::" ]; then
     suite_case_passed "a record with a suite adds no library run for its red tests"
 else
     suite_case_failed "a record with a suite adds no library run for its red tests" \
@@ -697,7 +983,7 @@ else
 fi
 
 runs="$(library_runs_from "$elsewhere" src/x/u.rs)"
-if [ "$runs" = "--lib x::u:: -- --test-threads=4" ]; then
+if [ "$(the_library_filters "$runs")" = "x::u::" ]; then
     suite_case_passed "a red name with no module adds no library run"
 else
     suite_case_failed "a red name with no module adds no library run" "answered: $runs"
@@ -708,7 +994,7 @@ fi
 runs="$(library_runs_from "$elsewhere" src/x/t.rs)"
 if [ "$(times_run k::l::tests:: "$runs")" -eq 1 ] &&
     ! printf '%s\n' "$runs" | grep -q ghost &&
-    ! printf '%s\n' "$runs" | grep -qE -- '--lib (p::q|r::s|m::n)::'; then
+    ! the_library_filters "$runs" | grep -qE -- '^(p::q|r::s|m::n)::'; then
     suite_case_passed "a red list inside a record's break text is not read"
 else
     suite_case_failed "a red list inside a record's break text is not read" \
@@ -720,17 +1006,17 @@ if [ "$(times_run a::b::tests:: "$runs")" -eq 1 ]; then
     suite_case_passed "a merge reaches the library runs of its guards' red tests"
 else
     suite_case_failed "a merge reaches the library runs of its guards' red tests" \
-        "wanted one '--lib a::b::tests:: -- --test-threads=4' in: $runs"
+        "wanted the library filter a::b::tests:: once in: $runs"
 fi
 
 # Against the real registry, the acceptance line of 13.2-26: two records break
 # the sent copy's flag and name tests in the controller's module.
 runs="$(scoped_runs src/application/sent_copy.rs)"
-if printf '%s\n' "$runs" | grep -q -- '^--lib application::mail_controller::'; then
+if the_library_filters "$runs" | grep -q -- '^application::mail_controller::'; then
     suite_case_passed "a change to the sent copy runs the controller's tests that guard it"
 else
     suite_case_failed "a change to the sent copy runs the controller's tests that guard it" \
-        "no '--lib application::mail_controller::' line in: $runs"
+        "no library filter application::mail_controller:: in: $runs"
 fi
 
 # Read out of `check.sh`: no line that is not a comment hands cargo one
@@ -1065,31 +1351,16 @@ fi
 # suite's reach over every suite is the rule that check's list holds every
 # other list, not a read of one file.
 #
-# Written without a process per step, as are the two helpers below it, because
-# every case here runs them and a fork costs tens of milliseconds on Windows:
-# measured 2026-09-23, the first spelling, `basename`, `sort` and `sed` in a
-# pipeline, cost about a second a case and took this suite from 9 seconds to 31.
+# Written without a process per step, as is the helper below it and
+# `sorted_words` at the top, because every case here runs them and a fork costs
+# tens of milliseconds on Windows: measured 2026-09-23, the first spelling,
+# `basename`, `sort` and `sed` in a pipeline, cost about a second a case and
+# took this suite from 9 seconds to 31.
 every_suite=()
 for suite_file in "$root"/scripts/*.test.sh; do
     suite_file="${suite_file##*/}"
     every_suite+=("${suite_file%.test.sh}")
 done
-
-# The words given, empty ones dropped, sorted and joined by one space.
-sorted_words() {
-    local -a words=()
-    local word index
-    for word in "$@"; do
-        [ -n "$word" ] || continue
-        index=${#words[@]}
-        while [ "$index" -gt 0 ] && [[ "${words[$((index - 1))]}" > "$word" ]]; do
-            words[index]="${words[$((index - 1))]}"
-            index=$((index - 1))
-        done
-        words[index]="$word"
-    done
-    echo "${words[*]}"
-}
 
 # The question's answer, checked for its shape, then the names answered yes.
 # Prints `shape: <why>` instead when the answer is not one line per suite.
@@ -1600,18 +1871,36 @@ expect_fixture_silent_about "every case in this suite ran" \
 # change to `src/lib.rs` staged. A run that is not refused goes on to its first
 # stage and stops at rustfmt, since the repository holds no `Cargo.toml`, so a
 # case costs a fork and one failed cargo call rather than a build.
+#
+# Any path given after the repository is staged as a new file beside it.
+#
+# Each is a copy of one repository built once, holding the start committed and
+# the branch cut, since 2026-10-20 (13.3-01). Built per case it was eight
+# processes before the case asked anything, and a process from this suite's
+# bash cost about a tenth of a second that day, so fourteen builds were about
+# a quarter of a minute of every run. A copy is one process, and every case
+# still gets a repository nothing else touches.
+a_commit_template="$work/a-commit-template"
+a_repository_of_its_own "$a_commit_template"
+mkdir -p "$a_commit_template/src" "$a_commit_template/tests" "$a_commit_template/locales" \
+    "$a_commit_template/docs" "$a_commit_template/.planning" "$a_commit_template/guards"
+for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
+    printf 'the start\n' > "$a_commit_template/$kept"
+done
+git -C "$a_commit_template" add --all
+git -C "$a_commit_template" commit --quiet -m "the start"
+git -C "$a_commit_template" checkout --quiet -b a-branch
+
 a_commit_being_made() {
-    local repo="$1" kept
-    a_repository_of_its_own "$repo"
-    mkdir -p "$repo/src" "$repo/tests" "$repo/locales" "$repo/docs" "$repo/.planning" "$repo/guards"
-    for kept in src/lib.rs src/other.rs docs/page.md .planning/STATE.md guards/guards.toml README.md; do
-        printf 'the start\n' > "$repo/$kept"
-    done
-    git -C "$repo" add --all
-    git -C "$repo" commit --quiet -m "the start"
-    git -C "$repo" checkout --quiet -b a-branch
+    local repo="$1" staged
+    shift
+    cp -R "$a_commit_template" "$repo"
     printf 'the staged change\n' >> "$repo/src/lib.rs"
-    git -C "$repo" add src/lib.rs
+    for staged in "$@"; do
+        [ -d "$repo/${staged%/*}" ] || mkdir -p "$repo/${staged%/*}"
+        printf 'the staged change\n' > "$repo/$staged"
+    done
+    git -C "$repo" add src/lib.rs "$@"
 }
 
 the_message="$work/the-message"
@@ -1747,6 +2036,55 @@ if printf '%s\n' "$code_calls" | grep -qxF 'clippy --all-targets --all-features 
 else
     suite_case_failed "a run for changed code still touches and calls clippy" \
         "the stand-in saw:" "$code_calls"
+fi
+
+# ── Every library filter in one cargo call ───────────────────────────────────
+# Added 2026-10-20 by 13.3-01 (review item 35). The run made one `cargo test
+# --lib` call per filter, and libtest takes several after `--`, so each call
+# paid cargo's start and the library's start for nothing. Proved through the
+# stand-in `cargo`, because no commit of this plan stages a source file and so
+# none of its own hook runs makes a library call at all.
+#
+# A commit staging the sent copy, with its mode left to `which-checks.sh` so
+# the staged list is read: the real registry couples it to the controller's
+# tests, so the one library call holds both filters, and the integration
+# targets are a call of their own.
+sent_copy_commit="$work/sent-copy-commit"
+a_commit_being_made "$sent_copy_commit" src/application/sent_copy.rs
+sent_copy_calls="$(commit_with_the_stand_in "$sent_copy_commit" "")"
+library_calls="$(printf '%s\n' "$sent_copy_calls" | grep -c '^test --lib' || true)"
+library_call="$(printf '%s\n' "$sent_copy_calls" | grep '^test --lib' || true)"
+target_calls="$(printf '%s\n' "$sent_copy_calls" | grep -c '^test --no-fail-fast --test ' || true)"
+if [ "$library_calls" -eq 1 ] && [ "$target_calls" -eq 1 ] &&
+    [ "$(times_run application::sent_copy:: "${library_call#test }")" -eq 1 ] &&
+    [ "$(times_run application::mail_controller::against_a_server_that_answers:: "${library_call#test }")" -eq 1 ]; then
+    suite_case_passed "an affected commit makes one library call for every filter it earns"
+else
+    suite_case_failed "an affected commit makes one library call for every filter it earns" \
+        "wanted one test --lib call holding application::sent_copy:: and" \
+        "application::mail_controller::against_a_server_that_answers:: and one" \
+        "test --no-fail-fast --test call; the stand-in saw:" "$sent_copy_calls"
+fi
+
+# The documents-only run's library modules likewise, in one call naming every
+# module on `check.sh`'s list, read from its one-line array.
+documents_modules=""
+while IFS= read -r line; do
+    case "$line" in
+        'the_modules_that_read_documents=('*')')
+            documents_modules="${line#*=(}"
+            documents_modules="${documents_modules%)}"
+            ;;
+    esac
+done < "$subject"
+documents_library_calls="$(printf '%s\n' "$documents_calls" | grep -c '^test --lib' || true)"
+documents_library_call="$(printf '%s\n' "$documents_calls" | grep '^test --lib' || true)"
+if [ -n "$documents_modules" ] && [ "$documents_library_calls" -eq 1 ] &&
+    [ "$(sorted_words $(the_library_filters "${documents_library_call#test }"))" = "$(sorted_words $documents_modules)" ]; then
+    suite_case_passed "a documents-only commit makes one library call"
+else
+    suite_case_failed "a documents-only commit makes one library call" \
+        "the stand-in saw:" "$documents_calls"
 fi
 
 # And the refusal still comes before any of it in the documents-only mode.
