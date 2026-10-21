@@ -1446,6 +1446,17 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message you delete or mark as read during the first download stays that way (2026-10-21,
+  MAIL-01, LIST-21).** While Wixen Mail brings down a folder you have open, it brings the list
+  up to date every ten seconds. A message you deleted or marked as read just before that could
+  come back, or turn unread again, until the next update or until you opened the folder again.
+  Pressing Delete on a message that had come back could then delete it for good instead of
+  moving it to Trash. Now the update is shown before Wixen Mail handles your next key, so a
+  delete or a mark stands.
+
+  Known limits. This has not been heard with a screen reader during a real first download yet;
+  the tests read the program's own text.
+
 - **Reply and Forward in an opened conversation no longer send a message with nothing quoted
   (2026-10-20, LIST-05).** When the cursor was on a message in an opened conversation whose
   text had not been downloaded yet, Forward opened with a header and an empty body, and a
