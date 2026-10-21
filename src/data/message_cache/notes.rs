@@ -97,6 +97,21 @@ pub enum MovedWhatTheBackendHolds {
     IntoTheFolderItIsAlreadyIn,
 }
 
+/// What a read found when it came to write a backend's words down over a note.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WhatTheNoteHereWas {
+    /// The note is no longer here under the identifier the read held: deleted
+    /// or moved while the read ran. Nothing was written.
+    Gone,
+    /// The note carries words somebody changed here and nobody has sent, which
+    /// differ from the backend's. Nothing was written; this is the note as it
+    /// stands, for the read to hold the two copies for a choice.
+    ChangedHere(Box<NoteEntry>),
+    /// The backend's words are written over the note, which keeps its folder
+    /// and its pin.
+    Written,
+}
+
 /// The wanted name, or the first numbering of it nothing has taken.
 ///
 /// `Work`, then `Work (2)`, then `Work (3)`. The Windows convention, which
@@ -885,6 +900,27 @@ impl MessageCache {
         Ok(())
     }
 
+    /// Write a backend's words down over a note a read held.
+    pub fn the_backends_words_over(
+        &self,
+        as_read: &NoteEntry,
+        title: &str,
+        body: &str,
+        named: &str,
+        version: Option<&str>,
+    ) -> Result<WhatTheNoteHereWas> {
+        self.save_note(&NoteEntry {
+            title: title.to_string(),
+            body: body.to_string(),
+            known_as: Some(named.to_string()),
+            known_version: version.map(str::to_string),
+            pending: false,
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            ..as_read.clone()
+        })?;
+        Ok(WhatTheNoteHereWas::Written)
+    }
+
     /// The person saved the notes editor: this note now says this.
     ///
     /// One statement for the title, the body, the stamp and the waiting flag,
@@ -1641,6 +1677,135 @@ line two
         assert_eq!(owed[0].known_as.as_deref(), Some("there-1"));
         assert_eq!(owed[0].folder_id.as_deref(), Some(folder.id.as_str()));
         assert_eq!(owed[0].waiting_for_note_id.as_deref(), Some("n1"));
+    }
+
+    /// A note the backend holds, as a read finds it: sent, unpinned, in
+    /// `folder`.
+    fn a_note_a_read_holds(cache: &MessageCache, folder: &str) -> NoteEntry {
+        let note = NoteEntry {
+            pinned: false,
+            ..a_note_in(cache, folder, false, Some("there-1"))
+        };
+        cache.save_note(&note).unwrap();
+        note
+    }
+
+    /// The backend's words, as a read brings them down, over `as_read`.
+    fn the_backends_copy_over(cache: &MessageCache, as_read: &NoteEntry) -> WhatTheNoteHereWas {
+        cache
+            .the_backends_words_over(as_read, "Their title", "Their words", "there-1", Some("v9"))
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_note_deleted_while_a_read_runs_is_gone_and_is_not_written_back() {
+        // Item 13 of the 2026-10-20 review. The read wrote the backend's copy
+        // with an upsert, which made the deleted note again.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let as_read = a_note_a_read_holds(&cache, &folder.id);
+
+        the_window(&cache).delete_note("n1").unwrap();
+        let found = the_backends_copy_over(&cache, &as_read);
+
+        assert_eq!(found, WhatTheNoteHereWas::Gone);
+        assert!(
+            cache.get_note("n1").unwrap().is_none(),
+            "a note deleted while the read ran came back"
+        );
+    }
+
+    #[test]
+    fn test_a_note_edited_while_a_read_runs_is_not_written_over_and_comes_back_as_it_stands() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let as_read = a_note_a_read_holds(&cache, &folder.id);
+
+        the_window(&cache)
+            .the_person_changed_the_note("n1", "Wiring colours, UK", "Typed meanwhile")
+            .unwrap();
+        let found = the_backends_copy_over(&cache, &as_read);
+
+        let WhatTheNoteHereWas::ChangedHere(here) = found else {
+            panic!("an edit made while the read ran was not found: {found:?}");
+        };
+        assert_eq!(
+            (here.title.as_str(), here.body.as_str()),
+            ("Wiring colours, UK", "Typed meanwhile")
+        );
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert_eq!(
+            (after.title.as_str(), after.body.as_str()),
+            ("Wiring colours, UK", "Typed meanwhile"),
+            "the backend's words were written over the edit"
+        );
+        assert!(
+            after.pending,
+            "the edit stopped waiting, so it never leaves"
+        );
+        assert_eq!(after.known_version.as_deref(), Some("v1"));
+    }
+
+    #[test]
+    fn test_a_note_pinned_while_a_read_runs_takes_the_backends_words_and_keeps_its_pin() {
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        let as_read = a_note_a_read_holds(&cache, &folder.id);
+
+        the_window(&cache).toggle_note_pin("n1").unwrap();
+        let found = the_backends_copy_over(&cache, &as_read);
+
+        assert_eq!(found, WhatTheNoteHereWas::Written);
+        let after = cache.get_note("n1").unwrap().expect("the note");
+        assert!(after.pinned, "the read undid a pin made while it ran");
+        assert_eq!(after.folder_id.as_deref(), Some(folder.id.as_str()));
+        assert_eq!(
+            (after.title.as_str(), after.body.as_str()),
+            ("Their title", "Their words")
+        );
+        assert_eq!(after.known_as.as_deref(), Some("there-1"));
+        assert_eq!(after.known_version.as_deref(), Some("v9"));
+        assert!(
+            !after.pending,
+            "a note that now says what the backend holds is still waiting to be sent"
+        );
+    }
+
+    #[test]
+    fn test_a_note_moved_while_a_read_runs_is_gone_and_the_moved_copy_is_left_alone() {
+        // A move of a note the backend holds is a copy under a new identifier
+        // and the old row taken away, so the identifier the read held is gone.
+        let cache = test_cache();
+        let folder = cache.ensure_default_note_folder("acct-1").unwrap();
+        cache
+            .save_note_folder(&NoteFolderEntry {
+                id: "folder-2".to_string(),
+                account_id: "acct-1".to_string(),
+                container: Some("https://example.test/dav/journals/home/".to_string()),
+                name: "Home".to_string(),
+                display_order: 1,
+                created_at: "2026-01-01".to_string(),
+            })
+            .unwrap();
+        let as_read = a_note_a_read_holds(&cache, &folder.id);
+
+        the_window(&cache)
+            .move_a_note_the_backend_holds(&as_read, "folder-2", "n2")
+            .unwrap();
+        let found = the_backends_copy_over(&cache, &as_read);
+
+        assert_eq!(found, WhatTheNoteHereWas::Gone);
+        assert!(
+            cache.get_note("n1").unwrap().is_none(),
+            "the moved note was written back into the folder it left"
+        );
+        let moved = cache.get_note("n2").unwrap().expect("the moved note");
+        assert_eq!(moved.folder_id.as_deref(), Some("folder-2"));
+        assert_eq!(
+            (moved.title.as_str(), moved.body.as_str()),
+            ("Wiring colours", "Brown is live")
+        );
+        assert_eq!(moved.known_as, None);
     }
 
     /// Pinning a note marks it as waiting to be sent.
