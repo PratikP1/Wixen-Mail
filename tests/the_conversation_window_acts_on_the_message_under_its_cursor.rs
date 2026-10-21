@@ -1529,3 +1529,161 @@ fn test_the_timer_reading_refuses_a_timer_that_gives_up_on_a_message_not_loaded(
         assert!(why.contains(said), "{planted:?}: {why}");
     }
 }
+
+// ── Every reading says where it began, 13.3-13 ─────────────────────────────
+//
+// The message view counts a conversation only for a reading begun in its
+// window, so a reading begun anywhere else has to say it began in none, or it
+// carries the conversation of the reading before it: a message opened from a
+// conversation, then another read aloud with Space from its own row, and the
+// cursor moved to a sibling of the second, would mark the second.
+
+const A_START: &str = "reading_began = Some(";
+const WHERE_IT_BEGAN: &str = "opened_from_a_conversation = ";
+const THE_TIMERS_CLEAR: &str = "s.reading_began = None;";
+
+/// The text from `at` to the end of the block enclosing it: up to the first
+/// later line that closes a brace further left than the line `at` is on.
+fn the_rest_of_its_block(source: &str, at: usize) -> &str {
+    let line_start = source[..at].rfind('\n').map_or(0, |end| end + 1);
+    let indent = |line: &str| line.len() - line.trim_start().len();
+    let its_indent = indent(&source[line_start..]);
+    let rest = &source[at..];
+    let mut offset = rest.find('\n').map_or(rest.len(), |end| end + 1);
+    for line in rest[offset..].split_inclusive('\n') {
+        if line.trim_start().starts_with('}') && indent(line) < its_indent {
+            return &rest[..offset];
+        }
+        offset += line.len();
+    }
+    rest
+}
+
+/// The line at `at` and the signature of the nearest function above it, at
+/// any depth, for a complaint to name the site by.
+fn the_site(source: &str, at: usize) -> String {
+    let line_start = source[..at].rfind('\n').map_or(0, |end| end + 1);
+    let line = source[line_start..].lines().next().unwrap_or("").trim();
+    let function = source[..line_start]
+        .lines()
+        .rev()
+        .map(str::trim_start)
+        .find(|line| {
+            ["fn ", "pub fn ", "pub(crate) fn "]
+                .iter()
+                .any(|spelling| line.starts_with(spelling))
+        })
+        .unwrap_or("the file's top");
+    format!("{function} at {line}")
+}
+
+/// Every start of a reading writes where it began before its block ends,
+/// and the timer forgets the conversation in the block where it forgets the
+/// reading.
+fn every_reading_says_where_it_began(app: &str) -> Result<(), String> {
+    let starts: Vec<usize> = app.match_indices(A_START).map(|(at, _)| at).collect();
+    if starts.is_empty() {
+        return Err(format!(
+            "nothing writes {A_START:?} any more, so this reads nothing"
+        ));
+    }
+    for at in starts {
+        if !the_rest_of_its_block(app, at).contains(WHERE_IT_BEGAN) {
+            return Err(format!(
+                "a reading starts in {} without saying where it began, so it carries an \
+                 earlier reading's conversation and the message view may mark a message the \
+                 cursor left",
+                the_site(app, at)
+            ));
+        }
+    }
+    let timer = body_of(app, THE_TIMER)?;
+    let clear = timer.find(THE_TIMERS_CLEAR).ok_or(format!(
+        "{THE_TIMER} no longer clears the reading with {THE_TIMERS_CLEAR:?}, so this reads \
+         nothing"
+    ))?;
+    if !the_rest_of_its_block(&timer, clear).contains("opened_from_a_conversation = None") {
+        return Err(
+            "mark_what_was_read forgets the reading and keeps its conversation, so the next \
+             reading begun without one counts it"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_every_start_of_a_reading_says_where_it_began_and_the_timer_forgets_it() {
+    every_reading_says_where_it_began(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The three places a reading's start is written or cleared, as they should
+/// be.
+fn readings_as_they_should_be() -> String {
+    "fn open_single_message(\n) {\n    \
+     lock_state(state).reading_began = Some((message.message_id, now));\n    \
+     lock_state(state).opened_from_a_conversation = opened_from_a_conversation;\n}\n\
+     fn build_the_window() {\n    wire_read_aloud(\n        {\n            \
+     move |index| {\n                \
+     s.reading_began = Some((message_id, now));\n                \
+     s.opened_from_a_conversation = None;\n            \
+     }\n        },\n    );\n}\n\
+     fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {\n    \
+     let (row, loaded) = {\n        \
+     s.reading_began = None;\n        \
+     s.opened_from_a_conversation = None;\n    \
+     };\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_reading_reading_passes_readings_shaped_as_they_should_be() {
+    every_reading_says_where_it_began(&readings_as_they_should_be())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_reading_reading_refuses_a_start_or_a_timer_that_keeps_the_conversation() {
+    let readings = readings_as_they_should_be();
+    for (planted, said) in [
+        (
+            "                s.opened_from_a_conversation = None;\n",
+            "a reading starts in fn build_the_window() {",
+        ),
+        (
+            "        s.opened_from_a_conversation = None;\n    };\n",
+            "forgets the reading and keeps its conversation",
+        ),
+        (
+            "    lock_state(state).opened_from_a_conversation = opened_from_a_conversation;\n",
+            "a reading starts in fn open_single_message(",
+        ),
+    ] {
+        let needle = if planted.ends_with("};\n") {
+            "    };\n"
+        } else {
+            ""
+        };
+        let broken = readings.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, readings,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = every_reading_says_where_it_began(&broken)
+            .expect_err("a reading that keeps an earlier conversation was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+    // A write after its block has closed is not a write for that reading.
+    let after_the_close = readings.replacen(
+        "                s.opened_from_a_conversation = None;\n            }\n",
+        "            }\n            s.opened_from_a_conversation = None;\n",
+        1,
+    );
+    assert_ne!(
+        after_the_close, readings,
+        "the move found nothing to replace"
+    );
+    let why = every_reading_says_where_it_began(&after_the_close)
+        .expect_err("a write after the closure ended was counted for it");
+    assert!(why.contains("fn build_the_window() {"), "{why}");
+}
