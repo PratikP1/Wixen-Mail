@@ -1747,3 +1747,61 @@ fn test_the_rule_reading_refuses_a_scan_and_passes_a_lookup() {
                       continue;\n        }\n    }\n}\n";
     the_rule_looks_each_row_up(looking_up).unwrap_or_else(|why| panic!("{why}"));
 }
+
+// ── A set leaving asks no place it throws away (13.3-14, review item 32) ────
+//
+// Under conversation view a message is not a row, so the set carries no
+// place; until 13.3-14 the place was worked out for every message anyway,
+// a scan of the loaded rows each, under the state lock, and thrown away.
+
+/// Every `.position(` in `the_set_leaving` stands after its message view's
+/// arm opens, the last `false =>` in it.
+fn a_set_leaving_asks_the_place_only_where_it_is_kept(source: &str) -> Result<(), String> {
+    let the_set_leaving = APlace {
+        opens: "fn the_set_leaving(",
+        ends: FUNCTION_END,
+        after: None,
+    };
+    let body = the_text_of(source, &the_set_leaving)?;
+    let arm = body.rfind("false =>").ok_or(
+        "the_set_leaving has no message view's arm, so this cannot say where its place is asked",
+    )?;
+    match body[..arm].contains(".position(") {
+        true => Err(
+            "the_set_leaving asks each message's place before it knows the list shows \
+                     messages, so under conversation view it scans the loaded rows for a place \
+                     it throws away"
+                .to_string(),
+        ),
+        false => Ok(()),
+    }
+}
+
+#[test]
+fn test_a_set_leaving_asks_each_place_only_under_the_message_view() {
+    a_set_leaving_asks_the_place_only_where_it_is_kept(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_set_leaving_reading_refuses_a_place_asked_before_the_view() {
+    let asked_first = "fn the_set_leaving(\n) {\n    \
+                       leaving.iter().filter_map(|row_id| {\n        \
+                       let row = s.messages.iter().position(|row| row.message_id == *row_id);\n        \
+                       match by_message {\n            \
+                       true => Some((*row_id, None)),\n            \
+                       false => row.map(|row| (*row_id, Some(row))),\n        \
+                       }\n    })\n}\n";
+    let why = a_set_leaving_asks_the_place_only_where_it_is_kept(asked_first)
+        .expect_err("a place asked before the view was passed over");
+    assert!(why.contains("throws away"), "{why}");
+
+    let asked_in_the_arm = "fn the_set_leaving(\n) {\n    \
+                            leaving.iter().filter_map(|row_id| match by_message {\n        \
+                            true => Some((*row_id, None)),\n        \
+                            false => s.messages.iter().position(|row| row.message_id == *row_id)\n            \
+                            .map(|row| (*row_id, Some(row))),\n    \
+                            })\n}\n";
+    a_set_leaving_asks_the_place_only_where_it_is_kept(asked_in_the_arm)
+        .unwrap_or_else(|why| panic!("{why}"));
+}

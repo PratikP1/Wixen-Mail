@@ -373,6 +373,30 @@ fn a_piece_as_a_line(piece: &long_text::Piece) -> Option<String> {
 const SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS: &str =
     "snippets recomputed as the first relevant words, 2026-09-19";
 
+/// The query [`MessageCache::text_missing_in_a_conversation`] runs, in one
+/// place, so a test can ask SQLite how it will be answered, as
+/// [`super::messages::messages_in_one_conversation`] is.
+///
+/// `?1` the account, `?2` the folder, `?3` whether the reach is the whole
+/// account, `?4` the conversation, and `?5` the message the row stands for.
+pub(super) fn missing_text_in_one_conversation() -> String {
+    let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
+    let scope = super::messages::conversation_scope();
+    format!(
+        "{scope}
+         SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)
+         FROM here m
+         INNER JOIN messages row ON row.id = m.id
+         INNER JOIN folders f ON row.folder_id = f.id
+         LEFT JOIN message_bodies b ON b.message_id = m.id
+         WHERE m.thread_id = ?4
+           AND b.message_id IS NULL
+           AND NOT {only_copy_is_here}
+         ORDER BY CASE WHEN m.id = ?5 THEN 0 ELSE 1 END,
+                  m.received_at ASC, m.id ASC",
+    )
+}
+
 impl MessageCache {
     /// Store a message body, replacing any previous one.
     pub fn save_message_body(
@@ -709,23 +733,9 @@ impl MessageCache {
         reach: crate::application::conversations::AConversationReaches,
         first: i64,
     ) -> Result<Vec<MessageToFetch>> {
-        let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
-        let scope = super::messages::conversation_scope();
         let mut stmt = self
             .conn
-            .prepare_cached(&format!(
-                "{scope}
-                 SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)
-                 FROM here m
-                 INNER JOIN messages row ON row.id = m.id
-                 INNER JOIN folders f ON row.folder_id = f.id
-                 LEFT JOIN message_bodies b ON b.message_id = m.id
-                 WHERE m.thread_id = ?4
-                   AND b.message_id IS NULL
-                   AND NOT {only_copy_is_here}
-                 ORDER BY CASE WHEN m.id = ?5 THEN 0 ELSE 1 END,
-                          m.received_at ASC, m.id ASC",
-            ))
+            .prepare_cached(&missing_text_in_one_conversation())
             .map_err(|e| {
                 Error::Other(format!(
                     "Failed to prepare the conversation's missing text query: {e}"

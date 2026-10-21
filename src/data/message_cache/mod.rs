@@ -5280,6 +5280,16 @@ mod storage_shape {
                     rusqlite::params!["acc", 1i64, 1i64, one],
                 ),
             ),
+            (
+                // Landing on a conversation row asks this on every row landed
+                // on (13.3-14, review item 33).
+                "the messages of one conversation with no text here",
+                how_it_will_be_answered(
+                    &cache.conn,
+                    &super::bodies::missing_text_in_one_conversation(),
+                    rusqlite::params!["acc", 1i64, 1i64, one, 1i64],
+                ),
+            ),
         ] {
             assert!(
                 reads_messages_only_by_conversation(&plan),
