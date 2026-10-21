@@ -203,6 +203,13 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
             arrived.could_not_be_read, book.name
         ));
     }
+    if arrived.stopped_short {
+        result.errors.push(format!(
+            "The server for {} sent only part of the address book, so no contact was \
+             taken off this computer.",
+            book.name
+        ));
+    }
 
     // Read once for every card rather than once per card, and kept in step
     // with every write, as the other two syncs do (audit #30).
@@ -228,9 +235,10 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
     }
 
     // Every card is in every read, so a card the server no longer holds was
-    // deleted there, and nothing took it off here on any read. Not when some
-    // cards could not be read: one missing may only be one of those.
-    if arrived.could_not_be_read == 0 {
+    // deleted there, and nothing took it off here on any read. Not when the
+    // answer is not whole: a card missing from one the server stopped short,
+    // or from one with cards that could not be read, may only be one of those.
+    if arrived.is_whole() {
         let named = arrived.cards.iter().map(|card| card.url.as_str()).collect();
         contacts_sync::take_off_who_a_whole_answer_left_out(
             cache,
@@ -1305,8 +1313,9 @@ mod tests {
     //
     // A CardDAV address book is read whole every time its marker moves, so a
     // card it no longer holds was deleted at the server, and nothing here took
-    // it off on any read. Unless some cards could not be read: then the answer
-    // is not whole, and a card missing from it may only be one of those.
+    // it off on any read. Unless some cards could not be read, or the server
+    // stopped short: then the answer is not whole, and a card missing from it
+    // may only be one of those.
 
     #[tokio::test]
     async fn test_a_card_the_server_no_longer_holds_is_taken_off_here() {

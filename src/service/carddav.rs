@@ -215,10 +215,7 @@ pub fn address_books_in(xml: &str, base_url: &str) -> Result<Vec<CardDavAddressB
 /// The character after the name has to end it, so `addressbook-home-set`, which
 /// the standard also defines, is not read as an address book.
 fn names_an_address_book(block: &str) -> bool {
-    const NAME: &str = "addressbook";
-    block.match_indices(NAME).any(|(at, _)| {
-        an_element_opens_at(block, at) && ends_a_name(block[at + NAME.len()..].chars().next())
-    })
+    elements_named(block, "addressbook") > 0
 }
 
 /// Whether an element name begins at that position: a `<` immediately before
@@ -290,6 +287,12 @@ pub struct CardsFromAServer {
     /// somebody goes looking for a broken program over. The file import makes
     /// the same distinction, and whoever calls this has the count to say it
     /// with.
+    ///
+    /// Three things count: a card whose text the reader turned away, a block
+    /// that carries no card text and is not the address book's own, and a
+    /// response written in a spelling [`response_blocks`] does not split. Until
+    /// 2026-10-21 only the first did, so an answer missing the rest read as
+    /// whole and the contacts it left out were taken off here.
     pub could_not_be_read: usize,
     /// Whether the server stopped before the end of the address book.
     ///
@@ -305,7 +308,7 @@ impl CardsFromAServer {
     /// Whether the answer names every card the address book holds, so that a
     /// card missing from it was deleted there.
     pub fn is_whole(&self) -> bool {
-        self.could_not_be_read == 0
+        self.could_not_be_read == 0 && !self.stopped_short
     }
 }
 
@@ -325,8 +328,15 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
     }
 
     let mut sent = CardsFromAServer::default();
+    let mut blocks = 0;
     for block in response_blocks(xml) {
+        blocks += 1;
         let Some(card) = the_card_in(block) else {
+            if the_server_stopped_at(block) {
+                sent.stopped_short = true;
+            } else if !names_the_address_book_itself(block, base_url) {
+                sent.could_not_be_read += 1;
+            }
             continue;
         };
         let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {
@@ -347,7 +357,36 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
             contact,
         });
     }
+    // The split above knows the `d:` spelling alone. A server writing the DAV
+    // elements with another prefix, or as the default namespace, sends blocks
+    // it cannot see, and an answer read as holding none of them names nobody.
+    sent.could_not_be_read += elements_named(xml, "response").saturating_sub(blocks);
     Ok(sent)
+}
+
+/// Whether a block is the server saying it stopped at its own limit, which it
+/// says with a 507 on a block for the address book (RFC 6352, section 8.6).
+fn the_server_stopped_at(block: &str) -> bool {
+    extract_xml_value(block, "d:status")
+        .is_some_and(|status| status.split_whitespace().nth(1) == Some("507"))
+}
+
+/// Whether a block is about the address book that was asked rather than about
+/// a card in it, which a server may list beside its cards.
+fn names_the_address_book_itself(block: &str, base_url: &str) -> bool {
+    extract_xml_value(block, "d:href").is_some_and(|href| {
+        resolved_against(&href, base_url).trim_end_matches('/') == base_url.trim_end_matches('/')
+    })
+}
+
+/// How many elements with that local name the text opens, whatever prefix it
+/// writes them with.
+fn elements_named(text: &str, name: &str) -> usize {
+    text.match_indices(name)
+        .filter(|(at, _)| {
+            an_element_opens_at(text, *at) && ends_a_name(text[at + name.len()..].chars().next())
+        })
+        .count()
 }
 
 /// The card's own text in a response block.
@@ -355,8 +394,10 @@ pub fn cards_in(xml: &str, base_url: &str, account_id: &str) -> Result<CardsFrom
 /// Three spellings of the element are tried, because the namespace prefix is
 /// the document's own choice and this cannot step over it the way
 /// [`names_an_address_book`] does: an element's value is taken by name here,
-/// not found by scanning. A server writing a fourth spelling is read as having
-/// sent no card, which is a real gap and has never been tried against one.
+/// not found by scanning. A server writing a fourth spelling sends a block
+/// with no card text this can see, which [`cards_in`] counts as a card that
+/// could not be read, so the gap takes nobody off; it has never been tried
+/// against a server that writes one.
 fn the_card_in(block: &str) -> Option<String> {
     ["card:address-data", "C:address-data", "address-data"]
         .iter()

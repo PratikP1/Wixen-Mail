@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 873 records have arrived since and have not been through it.
+# 877 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -1167,7 +1167,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -1353,7 +1353,7 @@ red = [
     "data::message_cache::taking_back::tests::test_an_owed_contact_is_taken_back_with_what_its_address_books_call_it",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
     { file = "src/data/message_cache/taking_back.rs", tests = 10 },
@@ -1409,7 +1409,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -1456,7 +1456,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
@@ -1652,7 +1652,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav.rs", tests = 176 },
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # A task's push clearing the waiting flag whatever the row now says, so a tick
@@ -2104,7 +2104,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "src/application/tasks_sync.rs", tests = 124 },
@@ -21304,7 +21304,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -21332,7 +21332,7 @@ red = [
     "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -21356,25 +21356,25 @@ tests_last_seen = [
 # The first candidate was joining the folded lines here rather than dropping
 # them. It reddened nothing, because joining them correctly is what the reader
 # does anyway, so the result was the same card by a longer road.
+#
+# Anchored on the line that hands the card to the shared reader since
+# 2026-10-21 (13.3-10), when the let-else above it gained a body counting the
+# blocks without card text. The break is the same edit, made one line lower.
 [[guard]]
 name = "a card from a server is read by the reader a file import uses, not here"
 file = "src/service/carddav.rs"
-before = '''        let Some(card) = the_card_in(block) else {
-            continue;
-        };'''
-after = '''        let Some(card) = the_card_in(block) else {
-            continue;
-        };
-        let card = card
+before = '''        let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {'''
+after = '''        let card = card
             .lines()
             .filter(|line| !line.starts_with(' '))
             .collect::<Vec<_>>()
-            .join("\n");'''
+            .join("\n");
+        let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {'''
 red = [
     "service::carddav::tests::test_a_cards_text_goes_through_the_reader_a_file_import_uses",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # ── Two address books that are one address book ─────────────────────────────
@@ -21452,7 +21452,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
 ]
 
 # ── A second answer to which copy of a contact wins ─────────────────────────
@@ -21495,7 +21495,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
 ]
 
 # ── An address book added by a screen that never asked a server ─────────────
@@ -42068,7 +42068,7 @@ red = [
     "application::carddav_sync::tests::test_a_card_sync_reads_the_contacts_here_as_often_for_two_hundred_cards_as_for_two",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
 ]
 
 # The contact a person matches is read again by id before her fate is
@@ -42165,28 +42165,96 @@ tests_last_seen = [
 # every card could be read. The first break skips the pass; the second runs it
 # after a read some cards of which could not be read. Added 2026-10-17 by
 # 13.2-21 and taken by hand against the whole library, nothing else red.
+#
+# Both anchored on the whole-answer question since 2026-10-21 (13.3-10), which
+# also asks whether the server stopped short, so the second break reddens the
+# case for a stopped answer as well.
 [[guard]]
 name = "a CardDAV read takes off a card the server no longer holds"
 file = "src/application/carddav_sync.rs"
-before = '''    if arrived.could_not_be_read == 0 {'''
-after = '''    if arrived.could_not_be_read == 0 && false {'''
+before = '''    if arrived.is_whole() {'''
+after = '''    if arrived.is_whole() && false {'''
 red = [
     "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
 ]
 
 [[guard]]
 name = "a CardDAV read with cards it could not read takes nobody off"
 file = "src/application/carddav_sync.rs"
-before = '''    if arrived.could_not_be_read == 0 {'''
-after = '''    if arrived.could_not_be_read == 0 || true {'''
+before = '''    if arrived.is_whole() {'''
+after = '''    if arrived.is_whole() || true {'''
 red = [
     "application::carddav_sync::tests::test_a_read_with_cards_that_could_not_be_read_takes_nobody_off",
+    "application::carddav_sync::tests::test_an_answer_the_server_stopped_short_takes_nobody_off_and_says_so",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
+]
+
+# A CardDAV answer is whole only when the reader can vouch for every card it
+# left out (13.3-10, review item 12). Four ways the reader could call an answer
+# whole when it is not, or call one partial when it is whole. Added 2026-10-21,
+# each taken by hand against the whole library, nothing else red.
+#
+# The 507 block a server adds for the address book when it stops at its own
+# limit, passed over as if it were the address book's own listing.
+[[guard]]
+name = "a CardDAV answer the server stopped short is kept as stopped"
+file = "src/service/carddav.rs"
+before = '''            if the_server_stopped_at(block) {'''
+after = '''            if false {'''
+red = [
+    "service::carddav::tests::test_an_answer_the_server_stopped_short_is_said_as_that_and_counts_no_card",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# A block without card text, a card whose text came back 404, passed over
+# rather than counted.
+[[guard]]
+name = "a CardDAV block without card text is counted as a card that could not be read"
+file = "src/service/carddav.rs"
+before = '''            } else if !names_the_address_book_itself(block, base_url) {'''
+after = '''            } else if false {'''
+red = [
+    "service::carddav::tests::test_a_block_without_card_text_is_counted_as_a_card_that_could_not_be_read",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# The other side of the same line: the address book's own block counted as a
+# card, which would turn the removal pass off for good on a server that lists
+# the collection it was asked about.
+[[guard]]
+name = "a CardDAV address book's own block is not counted as a card"
+file = "src/service/carddav.rs"
+before = '''            } else if !names_the_address_book_itself(block, base_url) {'''
+after = '''            } else if true {'''
+red = [
+    "service::carddav::tests::test_the_address_books_own_block_is_neither_a_card_nor_a_stop",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# Responses written `D:response` or in the default namespace, which the split
+# cannot see, left out of the count, so the answer reads as an empty address
+# book.
+[[guard]]
+name = "CardDAV responses the reader cannot split are counted as unreadable"
+file = "src/service/carddav.rs"
+before = '''    sent.could_not_be_read += elements_named(xml, "response").saturating_sub(blocks);'''
+after = '''    let _ = blocks;'''
+red = [
+    "service::carddav::tests::test_responses_in_a_spelling_the_reader_does_not_split_are_counted_unreadable",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # A person a whole answer left out stays while a change made here is waiting
@@ -42212,7 +42280,7 @@ red = [
     "application::contacts_sync::tests::test_the_version_outlook_gives_back_after_a_change_is_kept_for_the_next_one",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 19 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
