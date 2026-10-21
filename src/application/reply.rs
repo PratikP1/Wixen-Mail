@@ -270,11 +270,20 @@ impl WhatQuotingFinds {
 
 /// Decide what quoting a message finds, from what the store holds of its text
 /// and whether Wixen Mail is online.
+///
+/// A stored row holding neither half is no text, as the list's cursor reads
+/// it: that is a message to download, not one to quote as nothing.
 pub fn what_quoting_finds(
-    _stored: Option<&crate::data::message_cache::bodies::MessageBody>,
-    _reachability: crate::application::sending_later::Reachability,
+    stored: Option<&crate::data::message_cache::bodies::MessageBody>,
+    reachability: crate::application::sending_later::Reachability,
 ) -> WhatQuotingFinds {
-    WhatQuotingFinds::TheText
+    use crate::application::sending_later::Reachability;
+    let here = stored.is_some_and(|body| body.body_plain.is_some() || body.body_html.is_some());
+    match (here, reachability) {
+        (true, _) => WhatQuotingFinds::TheText,
+        (false, Reachability::Online) => WhatQuotingFinds::NotHereYet,
+        (false, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
+    }
 }
 
 /// Split a header value into its addresses.
