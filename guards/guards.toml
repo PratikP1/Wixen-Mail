@@ -19815,7 +19815,7 @@ red = [
     "presentation::ui_types::tests::test_every_day_a_series_is_shown_on_says_whether_that_day_was_changed",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # ── The same fact, known and then not said ──────────────────────────────────
@@ -19929,7 +19929,7 @@ red = [
     "presentation::ui_types::tests::test_the_heading_names_a_different_week_after_a_step",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # The month step made by adding and taking off thirty days, which is the naive
@@ -19960,7 +19960,7 @@ red = [
     "presentation::ui_types::tests::test_stepping_back_from_the_thirty_first_lands_in_the_shorter_month_and_forward_returns",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # December's next month taken as January of the same year, which is the
@@ -19981,7 +19981,7 @@ red = [
     "presentation::ui_types::tests::test_the_month_before_january_is_december_of_the_year_before",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # ── A copy that writes over the row it read ─────────────────────────────────
@@ -22578,7 +22578,7 @@ tests_last_seen = [
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
     { file = "src/presentation/wx_pgp_keys.rs", tests = 9 },
 ]
 
@@ -23318,10 +23318,12 @@ file = "src/presentation/ui_types.rs"
 before = """            id: format!("{}|{}", self.id, self.start),"""
 after = """            id: self.id.clone(),"""
 red = [
+    "presentation::event_times::tests::test_the_due_identity_is_still_the_stored_start",
     "presentation::ui_types::tests::test_two_days_of_one_series_are_two_due_identities_and_one_day_is_one",
 ]
 tests_last_seen = [
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/event_times.rs", tests = 23 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # The one mistake worse than a missed alert: an event whose owner switched
@@ -34054,7 +34056,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/event_times.rs", tests = 23 },
-    { file = "src/presentation/ui_types.rs", tests = 79 },
+    { file = "src/presentation/ui_types.rs", tests = 76 },
 ]
 
 # The calendar list's first cell worded from the stored text again, while the

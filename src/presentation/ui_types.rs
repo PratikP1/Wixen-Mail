@@ -139,24 +139,6 @@ pub struct MessageItem {
 }
 
 impl MessageItem {
-    /// Where a reply to this message should be addressed.
-    ///
-    /// `Reply-To` when the sender set one, and `From` otherwise. Ignoring it
-    /// is not a small thing: mailing lists set it so a reply reaches the list,
-    /// and plenty of automated senders set it because `From` is a no-reply
-    /// address that bounces. Replying to `From` regardless sends the message
-    /// to one person instead of the list, or into a void.
-    pub fn reply_address(&self) -> &str {
-        let reply_to = self.reply_to.trim();
-        if reply_to.is_empty() {
-            self.from.trim()
-        } else {
-            reply_to
-        }
-    }
-}
-
-impl MessageItem {
     /// Build a list row from what the cache stores.
     ///
     /// `thread_id` stays `None` here. Every stored message carries a
@@ -3541,61 +3523,6 @@ mod tests {
         // Truncating a multibyte body by byte offset would panic.
         let item = NoteItem::from_entry(&note(&"\u{4f60}".repeat(400)));
         assert!(item.body_preview.chars().count() <= NOTE_PREVIEW_CHARS + 1);
-    }
-
-    fn addressed(from: &str, reply_to: &str) -> MessageItem {
-        MessageItem {
-            uid: 1,
-            message_id: 1,
-            subject: "Notes".to_string(),
-            from: from.to_string(),
-            date: String::new(),
-            read: false,
-            starred: false,
-            answered: false,
-            draft: false,
-            has_attachments: false,
-            attachments: Vec::new(),
-            thread_depth: 0,
-            is_thread_parent: false,
-            thread_id: None,
-            snippet: None,
-            size_bytes: None,
-            to: String::new(),
-            cc: String::new(),
-            reply_to: reply_to.to_string(),
-            header_message_id: String::new(),
-            refs_header: None,
-            safety: crate::service::safety::Safety::Ordinary,
-            safety_reasons: Vec::new(),
-            receipt_to: None,
-            list_unsubscribe: None,
-            account_id: String::new(),
-            labels: Vec::new(),
-            says_first: None,
-        }
-    }
-
-    #[test]
-    fn test_a_reply_goes_where_the_sender_asked() {
-        // A mailing list sets Reply-To so a reply reaches the list. Replying
-        // to From instead sends it to one member, which is both the wrong
-        // recipient and, on a private thread, a disclosure.
-        let listed = addressed("Ada <ada@example.com>", "list@example.com");
-        assert_eq!(listed.reply_address(), "list@example.com");
-    }
-
-    #[test]
-    fn test_a_reply_falls_back_to_the_sender() {
-        let ordinary = addressed("Ada <ada@example.com>", "");
-        assert_eq!(ordinary.reply_address(), "Ada <ada@example.com>");
-    }
-
-    #[test]
-    fn test_a_blank_reply_to_is_not_treated_as_an_address() {
-        // A header present but empty is not somewhere to send mail.
-        let blank = addressed("Ada <ada@example.com>", "   ");
-        assert_eq!(blank.reply_address(), "Ada <ada@example.com>");
     }
 }
 

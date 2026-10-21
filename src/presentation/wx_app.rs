@@ -5598,7 +5598,7 @@ impl WxMailApp {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
-                            let (_to, subj, quote) = msg_info(&state, message_cache.as_deref());
+                            let (subj, quote) = msg_info(&state, message_cache.as_deref());
                             match quote {
                                 TheQuote::NotHere(not_here) => {
                                     the_text_is_not_here_yet(app, &a11y, not_here)
@@ -19765,31 +19765,24 @@ fn file_name_of(path: &std::path::Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Extract selected message info for reply/forward.
-fn msg_info(
-    state: &Arc<StdMutex<WxUIState>>,
-    cache: Option<&MessageCache>,
-) -> (String, String, TheQuote) {
-    let addressed = state
+/// What Forward takes from the message a command is for: its subject and
+/// the text it quotes.
+///
+/// Forward's alone, and it works out no reply address because a forward has
+/// none: Reply goes through `start_reply`, and the Reply-To rule lives in
+/// `application::reply`.
+fn msg_info(state: &Arc<StdMutex<WxUIState>>, cache: Option<&MessageCache>) -> (String, TheQuote) {
+    let message = state
         .lock()
-        .map(|s| {
-            s.the_message_a_command_is_for()
-                // The reply address, not the sender: a mailing list sets
-                // Reply-To so a reply reaches the list rather than one member.
-                .map(|m| (m.reply_address().to_string(), m.clone()))
-        })
+        .map(|s| s.the_message_a_command_is_for().cloned())
         .ok()
         .flatten();
-    match addressed {
-        Some((to, message)) => {
+    match message {
+        Some(message) => {
             let quote = the_body_a_command_quotes(state, cache, &message);
-            (to, message.subject, quote)
+            (message.subject, quote)
         }
-        None => (
-            String::new(),
-            String::new(),
-            TheQuote::Here(MessageBody::default()),
-        ),
+        None => (String::new(), TheQuote::Here(MessageBody::default())),
     }
 }
 
