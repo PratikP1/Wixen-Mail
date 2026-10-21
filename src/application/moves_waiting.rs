@@ -1452,12 +1452,18 @@ mod tests {
     }
 
     fn a_message_in_the_inbox(cache: &MessageCache, uid: u32) -> i64 {
+        a_message_in_the_inbox_carrying(cache, uid, &format!("lunch.{uid}@example.com"))
+    }
+
+    /// A message in the Inbox under `uid` whose Message-ID is `message_id`,
+    /// which may be blank, as a message that came without one is stored.
+    fn a_message_in_the_inbox_carrying(cache: &MessageCache, uid: u32, message_id: &str) -> i64 {
         cache
             .save_message(&CachedMessage {
                 id: 0,
                 uid,
                 folder_id: the_folder(cache, "INBOX"),
-                message_id: format!("lunch.{uid}@example.com"),
+                message_id: message_id.to_string(),
                 subject: "Lunch".to_string(),
                 from_addr: "ada@example.com".to_string(),
                 to_addr: "me@example.com".to_string(),
@@ -4432,6 +4438,183 @@ mod tests {
                 .is_some(),
             "the measurement this test records has changed: a read of the source \
              no longer brings back a message the server still lists there"
+        );
+    }
+
+    // ── A filed message is held only where the message there is it (13.3-08) ──
+
+    /// A destination folder that answers a search with `found`, says the
+    /// message at any number carries `carries`, and writes down every
+    /// identifier it was asked to search for.
+    struct ADestinationThatAnswers {
+        found: Vec<u32>,
+        carries: Option<String>,
+        searched_for: std::cell::RefCell<Vec<String>>,
+    }
+
+    impl ADestinationThatAnswers {
+        fn finding(found: &[u32], carries: Option<&str>) -> Self {
+            Self {
+                found: found.to_vec(),
+                carries: carries.map(str::to_string),
+                searched_for: std::cell::RefCell::new(Vec::new()),
+            }
+        }
+    }
+
+    impl ReplaysAMove for ADestinationThatAnswers {
+        async fn numbering_of(&self, _folder: &str) -> Result<Option<u32>> {
+            Ok(None)
+        }
+
+        async fn move_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(format!("Moved to {into}"))
+        }
+
+        async fn delete_it(
+            &self,
+            _folder: &str,
+            _uid: u32,
+            _trash: Option<&str>,
+        ) -> Result<String> {
+            Ok("Deleted".to_string())
+        }
+
+        async fn copy_it(&self, _from: &str, _uid: u32, into: &str) -> Result<String> {
+            Ok(copied_to(into))
+        }
+
+        async fn where_it_is(&self, _folder: &str, message_id: &str) -> Result<Vec<u32>> {
+            self.searched_for.borrow_mut().push(message_id.to_string());
+            Ok(self.found.clone())
+        }
+
+        async fn the_identifier_at(&self, _folder: &str, _uid: u32) -> Result<Option<String>> {
+            Ok(self.carries.clone())
+        }
+
+        async fn mark_it(&self, _folder: &str, _uid: u32, _marks: MarksFirst) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    /// A message carrying `message_id`, moved here into Archive and waiting.
+    fn moved_into_the_archive(home: &MessageCache, message_id: &str) -> (i64, AWaitingMove) {
+        let row = a_message_in_the_inbox_carrying(home, 42, message_id);
+        let waiting = what_happens_here(home, &a_move_of(row, 42, into_the_archive()), "Lunch")
+            .expect("made here")
+            .kept;
+        (row, waiting)
+    }
+
+    #[tokio::test]
+    async fn test_a_message_with_no_message_id_is_never_searched_for_and_is_brought_by_the_next_read()
+     {
+        // Item 8 of the review of 2026-10-20: a search for an empty header
+        // matches every message carrying one (RFC 3501, 6.4.4), so a filed
+        // message with no Message-ID took the number of whichever one
+        // message the destination held.
+        let home = a_cache();
+        let (row, _) = moved_into_the_archive(&home, "");
+        let archive = ADestinationThatAnswers::finding(&[7], Some("someone.else@example.com"));
+
+        let left = settle_a_moved_row(&archive, &home, row, "an account", "Archive")
+            .await
+            .expect("settled");
+
+        assert_eq!(left, WhereTheReplayLeftIt::TheNextReadBringsIt);
+        assert_eq!(
+            where_the_row_is(&home, row),
+            None,
+            "the row stayed, held at another message's number"
+        );
+        assert!(
+            archive.searched_for.borrow().is_empty(),
+            "the destination was searched for a blank identifier: {:?}",
+            archive.searched_for.borrow()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_number_whose_message_carries_another_identifier_is_not_taken() {
+        // The search matches a header containing the text asked for, so one
+        // number can be another message whose identifier holds this one.
+        let home = a_cache();
+        let (row, _) = moved_into_the_archive(&home, "lunch.42@example.com");
+        let archive = ADestinationThatAnswers::finding(&[7], Some("re.lunch.42@example.com"));
+
+        let left = settle_a_moved_row(&archive, &home, row, "an account", "Archive")
+            .await
+            .expect("settled");
+
+        assert_eq!(left, WhereTheReplayLeftIt::TheNextReadBringsIt);
+        assert_eq!(
+            where_the_row_is(&home, row),
+            None,
+            "the row was held at a number whose message is another"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_number_whose_message_carries_the_identifier_is_taken() {
+        let home = a_cache();
+        let (row, _) = moved_into_the_archive(&home, "lunch.42@example.com");
+        let archive_id = the_folder(&home, "Archive");
+        let archive = ADestinationThatAnswers::finding(&[7], Some("<lunch.42@example.com>"));
+
+        let left = settle_a_moved_row(&archive, &home, row, "an account", "Archive")
+            .await
+            .expect("settled");
+
+        assert_eq!(left, WhereTheReplayLeftIt::HeldAs(7));
+        assert_eq!(
+            where_the_row_is(&home, row),
+            Some((archive_id, 7, false, false)),
+            "the row is not the message at the number the destination gave"
+        );
+        assert_eq!(
+            archive.searched_for.borrow().as_slice(),
+            ["lunch.42@example.com"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_destination_answering_two_numbers_or_none_lets_the_row_go() {
+        for found in [vec![7, 8], Vec::new()] {
+            let home = a_cache();
+            let (row, _) = moved_into_the_archive(&home, "lunch.42@example.com");
+            let archive = ADestinationThatAnswers::finding(&found, Some("lunch.42@example.com"));
+
+            let left = settle_a_moved_row(&archive, &home, row, "an account", "Archive")
+                .await
+                .expect("settled");
+
+            assert_eq!(
+                left,
+                WhereTheReplayLeftIt::TheNextReadBringsIt,
+                "answered {found:?}"
+            );
+            assert_eq!(where_the_row_is(&home, row), None, "answered {found:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_after_a_refusal_a_message_with_no_message_id_is_not_where_the_move_wanted_it() {
+        // The same empty search, asked after the server refused the replay,
+        // read a destination holding anything as the move already done.
+        let home = a_cache();
+        let (_, waiting) = moved_into_the_archive(&home, "");
+        let archive = ADestinationThatAnswers::finding(&[7], Some("someone.else@example.com"));
+
+        let now = where_it_is_now(&archive, &home, &waiting)
+            .await
+            .expect("asked");
+
+        assert_eq!(now, WhereItIsNow::NotThere);
+        assert!(
+            archive.searched_for.borrow().is_empty(),
+            "the destination was searched for a blank identifier: {:?}",
+            archive.searched_for.borrow()
         );
     }
 
