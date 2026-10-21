@@ -470,6 +470,36 @@ END:VCALENDAR"#;
     }
 
     #[tokio::test]
+    async fn test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not() {
+        // Review item 10. A timeout was the one failure that named only the
+        // host; every other one carried reqwest's own words, which end with
+        // the whole address, token and all, and those words went into the log
+        // after every offline sync and were spoken by a followed link. Nothing
+        // listens on port 1 of the loopback, so the connection is refused
+        // here with no network at all.
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
+
+        let fetched = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_ics("http://127.0.0.1:1/private/feed.ics?token=s3cret"),
+        )
+        .await
+        .expect("a refused connection took longer than any limit here");
+
+        let said = fetched
+            .expect_err("nothing listens on port 1, yet a calendar arrived")
+            .to_string();
+        assert!(
+            said.contains("127.0.0.1"),
+            "it does not say which host could not be reached: {said}"
+        );
+        assert!(
+            !said.contains("s3cret") && !said.contains("/private/"),
+            "it wrote out the whole address rather than the host: {said}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_feed_larger_than_the_cap_is_refused_as_it_arrives() {
         let address = more_than_the_cap_and_then_silence().await;
         let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
