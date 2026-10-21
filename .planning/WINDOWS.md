@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 776
+open_count: 777
 waived_count: 0
 fixed_count: 149
-total_count: 925
-last_updated: 2026-10-21T18:00:00.000Z
+total_count: 926
+last_updated: 2026-10-21T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -940,6 +940,7 @@ last_updated: 2026-10-21T18:00:00.000Z
 | 923 | 13.3 | todo | src/data/message_cache/accounts.rs |  | 13.3-07, premise 4, ledger 847's class: a browser sign-in in the Add Account window keeps the new account's tokens in the credential store before OK, so a save refused after it, by a credential store that refuses or by an address a removal that would not go still holds, leaves those tokens under an id no row names, which neither removing an account nor the uninstall erases. Recommended: a refused save of an account that signs in through the browser forgets its tokens through oauth::forget_every_token_for, with a case; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
 | 924 | 13.3 | todo | src/data/message_cache/accounts.rs |  | 13.3-07, read in the code on 2026-10-21 and not heard, older than 13.3-07: delete_account's refusal is an Error::Security, whose Display puts "Security error: " in front of the sentence, and each reason inside it carries the store's own "Security error: " words, so the Account Manager says "The accounts could not all be saved. Security error: This account has not been removed, because Windows would not let go of its saved password (Security error: Could not remove this account's password in the Windows credential store: ...)". 13.3-07 makes that sentence the answer in one more case, an account added on an address a refused removal still holds. Recommended: the refusal as Error::InPlainWords naming only what was kept, the store's reasons in the log, with a case on the words; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
 | 925 | 13.3 | unrun-verify | src/application/mail_sync.rs |  | 13.3-08, item 9 of the review of 2026-10-20, tried by the tester under NVDA on a build holding 13.3-08's merge: during a first download of a large Inbox, a message from a blocked sender and one a filing rule moves, both sent to him; the blocked one gone from the Inbox, the filed one in its folder once, and the new-mail sentence heard. Held by test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived in src/application/mail_sync.rs over the scripted server, the cases of how_much_a_chunk_left_here in src/application/bringing_everything_down.rs, and the guard records "a download's chunk leaves the mail above the newest held to the check" and "a folder after a chunk does not count the mail left for the check as missing"; none has met a real server. Closed when the tester has done it on his own account | open |  | 2026-10-21T18:00:00.000Z |  |
+| 926 | 13.3 | unrun-verify | src/service/ical_subscription.rs |  | 13.3-09, items 10 and 11 of the review of 2026-10-20, tried by the tester on a build holding 13.3-09's merge: a subscribed calendar feed refreshed with the network off, and the log excerpt a feedback report would send read for the feed's address, which must not be there, only its host; and the sentence a followed calendar link speaks with the network off heard under NVDA. Held by test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not and the byte order mark and character set cases in src/service/ical_subscription.rs and src/application/opening.rs, and the guard records "a calendar feed that cannot be reached is named by its host and not its address", "a byte order mark is taken off a calendar or a card before it is read" and "a calendar saved as UTF-16 with its mark is read as UTF-16"; none has met a real calendar host. Closed when the tester has done both | open |  | 2026-10-21T20:00:00.000Z |  |
 
 ````json
 [
@@ -12041,6 +12042,18 @@ last_updated: 2026-10-21T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 926,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/service/ical_subscription.rs",
+    "line": null,
+    "description": "13.3-09, items 10 and 11 of the review of 2026-10-20, tried by the tester on a build holding 13.3-09's merge: a subscribed calendar feed refreshed with the network off, and the log excerpt a feedback report would send read for the feed's address, which must not be there, only its host; and the sentence a followed calendar link speaks with the network off heard under NVDA. Held by test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not and the byte order mark and character set cases in src/service/ical_subscription.rs and src/application/opening.rs, and the guard records \"a calendar feed that cannot be reached is named by its host and not its address\", \"a byte order mark is taken off a calendar or a card before it is read\" and \"a calendar saved as UTF-16 with its mark is read as UTF-16\"; none has met a real calendar host. Closed when the tester has done both",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T20:00:00.000Z",
     "resolved_at": null
   }
 ]
