@@ -1446,6 +1446,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Removing an account and adding it back on the same address now saves (2026-10-21,
+  MAIL-04).** In the Account Manager you can remove an account and add it again with the same
+  address, for example to switch it from POP to IMAP. Since the change of 2026-10-15 that
+  refuses a second account on an address another account uses, pressing OK refused the new
+  account, because the one you had just removed still held the address. Nothing was removed,
+  you were told to edit the account you had removed, and after a restart the old account was
+  back and the new one gone. Now the removed account goes first and the new one is saved. The
+  same holds when you change another account to the address of one you removed, and when the
+  two addresses differ only in capital letters. And when one account cannot be saved or
+  removed, your changes to the others are still saved.
+
+  Known limits. This has not been tried on a real account yet; the tests use the program's own
+  store. If Windows will not let go of a removed account's password, that account stays and
+  you hear why, and an account added on its address is not saved either. Until a restart the
+  Account Manager can still list the account that was not saved.
+
 - **A message you delete or mark as read during the first download stays that way (2026-10-21,
   MAIL-01, LIST-21).** While Wixen Mail brings down a folder you have open, it brings the list
   up to date every ten seconds. A message you deleted or marked as read just before that could

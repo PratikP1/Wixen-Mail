@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 865 records have arrived since and have not been through it.
+# 866 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -13288,9 +13288,13 @@ after = """        if false {
 red = [
     "data::message_cache::accounts::tests::test_an_account_whose_secrets_will_not_go_is_not_deleted",
     "data::message_cache::accounts::tests::test_one_account_that_will_not_go_does_not_throw_away_the_other_edits",
+    # 13.3-07: with the removal let through, the account added back on its
+    # address saves and the refused removal is not the answer, measured
+    # 2026-10-21.
+    "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 [[guard]]
@@ -13361,7 +13365,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
@@ -34827,7 +34831,7 @@ red = [
     "data::message_cache::accounts::tests::test_deleting_an_account_takes_its_directory_password_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 # Clearing the sign-in name in Look People Up at Work and saving leaves the
@@ -36327,7 +36331,7 @@ red = [
     "data::message_cache::quick_steps::tests::test_removing_an_account_takes_its_steps_and_leaves_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
     { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
 ]
 
@@ -36859,7 +36863,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_password_the_store_will_not_keep_is_said_with_the_accounts_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 # A rule's mark told to the server after the rule's move rather than before
@@ -40566,7 +40570,7 @@ red = [
     "data::message_cache::accounts::tests::test_saving_the_accounts_again_keeps_the_order_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 # The store saving a second account on an address another one uses: its
@@ -40582,9 +40586,50 @@ before = '''        self.refuse_an_address_another_account_uses(account)?;'''
 after = '''        let _ = self.refuse_an_address_another_account_uses(account);'''
 red = [
     "data::message_cache::accounts::tests::test_a_second_account_on_a_taken_address_is_refused_and_deletes_nothing",
+    # 13.3-07: with the refusal skipped, the table's own refusal answers in its
+    # words and after the password is kept, measured 2026-10-21.
+    "data::message_cache::accounts::tests::test_a_refused_save_does_not_throw_away_the_edits_after_it",
+    "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 27 },
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+]
+
+# The store saving the accounts before it removes the ones taken away: an
+# account removed and added back on its address in one sitting is refused,
+# because the removed row still holds the address, and after a restart the old
+# account is back (item 6 of the review of 13.2, 13.3-07).
+#
+# Measured by hand on 2026-10-21: the whole library at 9,371 passed and 4
+# failed, these four.
+[[guard]]
+name = "the store removes the accounts taken away before it saves the rest"
+file = "src/data/message_cache/accounts.rs"
+before = '''        let mut outcomes: Vec<(&str, Result<()>)> = gone
+            .iter()
+            .map(|account| (account.name.as_str(), self.delete_account(&account.id)))
+            .collect();
+        outcomes.extend(
+            accounts
+                .iter()
+                .map(|account| (account.name.as_str(), self.save_account(account))),
+        );'''
+after = '''        let mut outcomes: Vec<(&str, Result<()>)> = accounts
+            .iter()
+            .map(|account| (account.name.as_str(), self.save_account(account)))
+            .collect();
+        outcomes.extend(
+            gone.iter()
+                .map(|account| (account.name.as_str(), self.delete_account(&account.id))),
+        );'''
+red = [
+    "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
+    "data::message_cache::accounts::tests::test_an_account_removed_and_added_back_on_its_address_in_one_sitting_saves",
+    "data::message_cache::accounts::tests::test_an_address_given_back_in_other_capitals_saves_too",
+    "data::message_cache::accounts::tests::test_an_edited_account_may_take_the_address_of_one_removed_beside_it",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 32 },
 ]
 
 # Moving an account leaving the window's own list alone: the Account Manager
