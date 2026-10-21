@@ -2120,13 +2120,14 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let message_cache = message_cache.clone();
                 move |attachment| {
                     let app = AppHandles {
                         state: &state,
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    save_attachment(app, &frame, &a11y, attachment);
+                    save_attachment(app, message_cache.as_deref(), &frame, &a11y, attachment);
                 }
             });
             reader.on_read_attachment({
@@ -2134,13 +2135,14 @@ impl WxMailApp {
                 let ui_tx = ui_tx.clone();
                 let runtime = runtime.clone();
                 let a11y = a11y.clone();
+                let message_cache = message_cache.clone();
                 move |attachment| {
                     let app = AppHandles {
                         state: &state,
                         tx: &ui_tx,
                         rt: &runtime,
                     };
-                    read_attachment(app, &a11y, attachment);
+                    read_attachment(app, message_cache.as_deref(), &a11y, attachment);
                 }
             });
             // An invitation's three buttons, in the text reader and in the
@@ -3699,7 +3701,7 @@ impl WxMailApp {
                     // opening rather than left in a column, because it is a
                     // fact about the message somebody would want before they
                     // decide what to do with it.
-                    receipt_for_the_open_message(app);
+                    receipt_for_the_open_message(app, body_cache.as_deref());
                     // Mark as Read says which way it will go for the rows
                     // selected (#27, #30): the item, the tool and its tip.
                     refresh_mark_read_wording(&frame, toolbar_handle, &state, &list);
@@ -5012,7 +5014,7 @@ impl WxMailApp {
                             answer_the_invitation(app, &message_cache, under_the_cursor, answer);
                         }
                         _ if id == ID_SEND_RECEIPT => {
-                            send_receipt_for_the_open_message(app);
+                            send_receipt_for_the_open_message(app, message_cache.as_deref());
                         }
                         _ if id == ID_MOVE_TO_FOLDER || id == ID_COPY_TO_FOLDER => {
                             move_or_copy_message(
@@ -12211,6 +12213,7 @@ fn run_the_quick_step_at(
                     &s.accounts,
                     message.row_id,
                     s.active_account_id.as_deref(),
+                    cache.as_deref(),
                 )
                 .is_none_or(|owner| owner.id != account.id)
             })
@@ -12852,6 +12855,7 @@ fn mark_these_read(
         if !handed_to_the_move(state, message.row_id, &change) {
             spawn_server_change(
                 app,
+                cache.as_deref(),
                 message.row_id,
                 message.uid,
                 message.subject.clone(),
@@ -12927,6 +12931,7 @@ fn star_these(
         if !handed_to_the_move(state, message.row_id, &change) {
             spawn_server_change(
                 app,
+                cache.as_deref(),
                 message.row_id,
                 message.uid,
                 message.subject.clone(),
@@ -13053,6 +13058,7 @@ fn send_the_marks_on_their_own(
     for change in changes.into_iter().flatten().chain(labelled) {
         spawn_server_change(
             app,
+            Some(cache),
             row_id,
             message.uid,
             message.subject.clone(),
@@ -13243,6 +13249,7 @@ fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
     });
     spawn_server_change(
         app,
+        cache.as_deref(),
         row,
         uid,
         subject,
@@ -13661,6 +13668,7 @@ fn label_these(
                     if let Some(keyword) = tag.keyword.clone() {
                         spawn_server_change(
                             app,
+                            Some(cache),
                             message.row_id,
                             message.uid,
                             message.subject.clone(),
@@ -13708,6 +13716,7 @@ fn label_these(
                         if !handed_to_the_move(app.state, message.row_id, &change) {
                             spawn_server_change(
                                 app,
+                                Some(cache),
                                 message.row_id,
                                 message.uid,
                                 message.subject.clone(),
@@ -18993,6 +19002,14 @@ fn send_the_flag_changes_that_were_waiting(
         the_number_to_offer_it_at, what_became_of_it,
     };
     use crate::application::renumbered::{Kept, the_number_to_send_to};
+    // The account's turn for read and star changes, from before the list is
+    // read to the last change sent (item 18 of the review of 2026-10-20). An M
+    // pushed meanwhile waits for it, so it reaches the server after every
+    // change here and is the one kept, and it lets go of an older one only
+    // once this replay has sent it.
+    let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+        account_id,
+    ));
     let waiting = cache
         .flag_changes_waiting_for(account_id)
         .unwrap_or_default();
@@ -19005,8 +19022,12 @@ fn send_the_flag_changes_that_were_waiting(
     for change in &waiting {
         // What the change was kept under, read before anything is sent. A
         // change whose row cannot be read stays waiting rather than going to
-        // a number nobody checked.
-        let (Ok(numbering), Ok(message)) = (
+        // a number nobody checked. One no longer kept is passed over: it was
+        // let go after the list was read, by a newer change that reached the
+        // server, and sending it would undo that change. Whatever let it go,
+        // it is not this replay's to send (item 18 of the review of
+        // 2026-10-20).
+        let (Ok(Some(numbering)), Ok(message)) = (
             cache.the_numbering_a_flag_change_was_kept_under(
                 change.message_row_id,
                 change.which_flag,
@@ -22920,6 +22941,7 @@ fn put_a_mark_on(
     if let Some(change) = the_server_hears(mark) {
         spawn_server_change(
             app,
+            Some(cache),
             message.row_id,
             message.uid,
             message.subject.clone(),
@@ -23132,22 +23154,36 @@ fn the_row_to_land_on(was: Option<&str>, now: &[String], start_at: Option<&str>)
 /// Nothing is answered when no account can be named. The version this replaces
 /// fell back to whichever account came first in the list, which is how a
 /// command aimed at nothing in particular still reached a real server.
+///
+/// A message the list never loaded is asked of `store`. A command over a
+/// conversation row reaches its messages in every folder of the account, read
+/// from the store, and All Inboxes loads only the inboxes, so a reply in Sent
+/// is one. Until 13.3-04 it took the open account, and a mark went to that
+/// account's server with the other account's folder path and number (item 3
+/// of the review of 2026-10-20). Every command hands the window's store; the
+/// one read is indexed and made only for a row the list does not hold or
+/// holds with no account.
 fn owner_of(
     messages: &[MessageItem],
     accounts: &[crate::data::account::Account],
     row_id: i64,
     open: Option<&str>,
+    store: Option<&MessageCache>,
 ) -> Option<crate::data::account::Account> {
-    let the_message_is_in = messages
+    let on_the_list = messages
         .iter()
         .find(|m| m.message_id == row_id)
         .map(|m| m.account_id.as_str());
     // The rule itself lives in `application::destinations`, where a test can
     // reach it without a window, and this resolves the answer to an account
-    // somebody has set up. Two callers ask this and one of them decides which
-    // folders are offered, so the rule has to be one rule.
-    let whose =
-        crate::application::destinations::whose_folders_a_move_is_about(the_message_is_in, open)?;
+    // somebody has set up. Every command aimed at a message asks this, and one
+    // of them decides which folders are offered, so the rule has to be one rule.
+    let whose = crate::application::destinations::the_account_a_command_reaches(
+        on_the_list,
+        row_id,
+        store,
+        open,
+    )?;
     accounts.iter().find(|a| a.id == whose).cloned()
 }
 
@@ -26093,6 +26129,7 @@ fn move_or_copy_message(
             &s.accounts,
             row_id,
             s.active_account_id.as_deref(),
+            Some(cache.as_ref()),
         )
     }) else {
         return send_refusal(
@@ -26225,6 +26262,7 @@ fn move_or_copy_message(
                     &s.accounts,
                     message.row_id,
                     s.active_account_id.as_deref(),
+                    Some(cache.as_ref()),
                 ),
                 size_bytes: s
                     .messages
@@ -26424,6 +26462,7 @@ fn move_these(
     if !too_large_to_hold.is_empty() {
         send_server_first_what_cannot_be_held(
             app,
+            cache,
             too_large_to_hold,
             &into,
             copying,
@@ -26448,6 +26487,7 @@ fn move_these(
                 what_the_selection_holds(&[0], |_| Some(Members::AMessage(one.clone())));
             spawn_folder_move(
                 app,
+                Some(cache.as_ref()),
                 vec![AMessageMoving {
                     row_id: ask.asked.message_row_id,
                     uid: ask.asked.uid,
@@ -26500,6 +26540,7 @@ fn move_these(
 /// which is why it is said here and not by the quiet move that decided it.
 fn send_server_first_what_cannot_be_held(
     app: AppHandles<'_>,
+    store: &MessageCache,
     messages: Vec<AMessageMoving>,
     into: &crate::application::destinations::Destination,
     copying: bool,
@@ -26530,7 +26571,7 @@ fn send_server_first_what_cannot_be_held(
             })
         })
     });
-    spawn_folder_move(app, messages, those, into.clone(), copying);
+    spawn_folder_move(app, Some(store), messages, those, into.clone(), copying);
 }
 
 /// One message a move or a copy is taking, as the worker needs it.
@@ -26618,6 +26659,7 @@ fn report_the_chosen_as_junk(
                     &s.accounts,
                     message.row_id,
                     s.active_account_id.as_deref(),
+                    Some(cache.as_ref()),
                 ),
                 cache.folder_path_for_message(message.row_id).ok().flatten(),
             ) else {
@@ -27097,6 +27139,7 @@ impl ChangedHere {
 /// it stayed (#83).
 fn spawn_folder_move(
     app: AppHandles<'_>,
+    store: Option<&MessageCache>,
     moving: Vec<AMessageMoving>,
     chosen: crate::application::choosing_messages::Chosen,
     into: crate::application::destinations::Destination,
@@ -27124,6 +27167,7 @@ fn spawn_folder_move(
                     &s.accounts,
                     message.row_id,
                     s.active_account_id.as_deref(),
+                    store,
                 )
             })
             .collect();
@@ -27662,10 +27706,12 @@ fn delete_these(
         }
         // A message on a server: decided here where it goes, made here
         // first, and the server told in the background (#86, 2026-09-19).
-        match the_account_a_row_is_in(state, message.row_id).and_then(|account| {
-            where_a_delete_goes_here(&cache_for_deleting, &account, message.row_id, asked)
-                .map(|(what, from)| (account, what, from))
-        }) {
+        match the_account_a_row_is_in(state, &cache_for_deleting, message.row_id).and_then(
+            |account| {
+                where_a_delete_goes_here(&cache_for_deleting, &account, message.row_id, asked)
+                    .map(|(what, from)| (account, what, from))
+            },
+        ) {
             Ok((account, what, from)) => {
                 let account_id = account.id.clone();
                 deleting_here_first
@@ -27690,6 +27736,7 @@ fn delete_these(
     if let Some(words) = crate::application::sending_later::the_ones_being_sent_stay(being_sent) {
         send_refusal(tx, rt, &words);
     }
+    let store = cache.as_deref();
     let made = complete_here_then_tell_the_server(
         app,
         list,
@@ -27701,6 +27748,7 @@ fn delete_these(
         move |ask| {
             spawn_server_change(
                 app,
+                store,
                 ask.asked.message_row_id,
                 ask.asked.uid,
                 ask.subject,
@@ -27884,7 +27932,7 @@ fn what_each_account_needs(
     let mut by_account: std::collections::BTreeMap<String, Gathered> =
         std::collections::BTreeMap::new();
     for message in &chosen.messages {
-        let account = the_account_a_row_is_in(state, message.row_id)?;
+        let account = the_account_a_row_is_in(state, cache, message.row_id)?;
         let folder_path = cache
             .folder_path_for_message(message.row_id)
             .ok()
@@ -28459,6 +28507,7 @@ fn delete_if_local(
             &s.accounts,
             row_id,
             s.active_account_id.as_deref(),
+            Some(cache.as_ref()),
         )
     };
     let Some(account) = account else {
@@ -28502,6 +28551,7 @@ fn delete_if_local(
 /// sentence saying it is in none this program knows.
 fn the_account_a_row_is_in(
     state: &Arc<StdMutex<WxUIState>>,
+    store: &MessageCache,
     row_id: i64,
 ) -> std::result::Result<Account, String> {
     let s = lock_state(state);
@@ -28510,6 +28560,7 @@ fn the_account_a_row_is_in(
         &s.accounts,
         row_id,
         s.active_account_id.as_deref(),
+        Some(store),
     )
     .ok_or_else(|| "This message is not in an account this program knows about.".to_string())
 }
@@ -28621,7 +28672,7 @@ fn feedback_events_for_landing_on_a_conversation(
 /// The middle one matters most. Somebody whose setting is never still deserves
 /// to know a sender wanted to track them, and a client that silently swallows
 /// the request tells them nothing about who is doing it.
-fn receipt_for_the_open_message(app: AppHandles<'_>) {
+fn receipt_for_the_open_message(app: AppHandles<'_>, store: Option<&MessageCache>) {
     let AppHandles { state, tx, rt } = app;
     use crate::application::receipts::{Answer, Policy, Request, answer, noticed};
 
@@ -28669,7 +28720,7 @@ fn receipt_for_the_open_message(app: AppHandles<'_>) {
         Answer::Send { notify } => {
             said.push_str(" Sending one, because your settings say to.");
             send_status(tx, rt, &said);
-            spawn_receipt(app, notify, subject, row_id);
+            spawn_receipt(app, store, notify, subject, row_id);
         }
     }
 }
@@ -28679,7 +28730,7 @@ fn receipt_for_the_open_message(app: AppHandles<'_>) {
 /// Refuses when the open message is not the one that was offered. Without that
 /// check the command would acknowledge whatever happens to be selected, which
 /// on a list somebody is arrowing through is a message they never chose.
-fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
+fn send_receipt_for_the_open_message(app: AppHandles<'_>, store: Option<&MessageCache>) {
     let AppHandles { state, tx, rt } = app;
     let open = {
         let s = lock_state(state);
@@ -28702,7 +28753,7 @@ fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
         );
     };
     send_status(tx, rt, &format!("Sending a read receipt to {notify}..."));
-    spawn_receipt(app, notify, subject, row_id);
+    spawn_receipt(app, store, notify, subject, row_id);
 }
 
 /// Send a read receipt for one message.
@@ -28710,7 +28761,13 @@ fn send_receipt_for_the_open_message(app: AppHandles<'_>) {
 /// A receipt is mail leaving this machine with somebody's address on it, so it
 /// goes through the same gate as everything else that sends: an account that
 /// may not send mail may not acknowledge it either.
-fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_row_id: i64) {
+fn spawn_receipt(
+    app: AppHandles<'_>,
+    store: Option<&MessageCache>,
+    notify: String,
+    subject: String,
+    message_row_id: i64,
+) {
     use crate::application::receipts::{About, message};
 
     let AppHandles { state, tx, rt } = app;
@@ -28728,6 +28785,7 @@ fn spawn_receipt(app: AppHandles<'_>, notify: String, subject: String, message_r
             &s.accounts,
             message_row_id,
             s.active_account_id.as_deref(),
+            store,
         )
     };
     // The original's own `Message-ID`, so the receipt is filed against the
@@ -29604,8 +29662,13 @@ fn the_folder_it_is_in(cache: Option<&MessageCache>, row_id: i64) -> Option<Stri
 /// folder it left: a mark on whatever message holds that number there.
 /// Nothing when the message is in no folder this program knows, which the
 /// worker refuses as it always did.
+///
+/// `store` is the window's, which `owner_of` asks the account of a message
+/// the list never loaded: a conversation's reply in Sent under All Inboxes
+/// (13.3-04).
 fn spawn_server_change(
     app: AppHandles<'_>,
+    store: Option<&MessageCache>,
     message_row_id: i64,
     uid: u32,
     subject: String,
@@ -29628,6 +29691,7 @@ fn spawn_server_change(
             &s.accounts,
             message_row_id,
             s.active_account_id.as_deref(),
+            store,
         )
     };
     // When this change was asked for, before the worker starts (finding #2 of
@@ -29749,6 +29813,18 @@ fn spawn_server_change(
             }
             ServerChange::Flag(flag) => flag,
         };
+
+        // The account's turn for read and star changes, held to the end of
+        // this worker: past the STORE, the letting go of an older change and
+        // a failed push's keep (item 18 of the review of 2026-10-20). A check
+        // replaying the changes kept waiting holds it from reading its list to
+        // its last change, so this waits a few seconds for that and reaches
+        // the server last, and never lets go of a change the replay has read
+        // and not yet sent. The change was made here and said at once; only
+        // its STORE waits.
+        let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+            &account.id,
+        ));
 
         // The session this account is already signed in with, and a sign-in
         // only if there is not one. This is the case SCALE-02 is named for:
@@ -30648,6 +30724,7 @@ fn spawn_threat_list_refresh(rt: &Arc<Runtime>) {
 /// the application having stopped responding.
 fn read_attachment(
     app: AppHandles<'_>,
+    store: Option<&MessageCache>,
     a11y: &Arc<Accessibility>,
     attachment: &reader_text::ReaderAttachment,
 ) {
@@ -30674,6 +30751,7 @@ fn read_attachment(
             &s.accounts,
             attachment.message_row_id,
             s.active_account_id.as_deref(),
+            store,
         )
     };
 
@@ -30755,6 +30833,7 @@ fn document_of(
 /// [`bytes_of_the_attachment`] for what happens when it does not have it.
 fn save_attachment(
     app: AppHandles<'_>,
+    store: Option<&MessageCache>,
     frame: &Frame,
     a11y: &Arc<Accessibility>,
     attachment: &reader_text::ReaderAttachment,
@@ -30808,6 +30887,7 @@ fn save_attachment(
             &s.accounts,
             attachment.message_row_id,
             s.active_account_id.as_deref(),
+            store,
         )
     };
 
@@ -38509,7 +38589,7 @@ mod the_account_a_message_belongs_to {
         let accounts = [an_account("first"), an_account("second")];
         let messages = [a_message(1, "first"), a_message(2, "second")];
 
-        let owner = owner_of(&messages, &accounts, 2, Some("first"))
+        let owner = owner_of(&messages, &accounts, 2, Some("first"), None)
             .expect("a row naming its own account resolves to it");
 
         assert_eq!(
@@ -38525,7 +38605,8 @@ mod the_account_a_message_belongs_to {
         let accounts = [an_account("first")];
         let messages = [a_message(1, "")];
 
-        let owner = owner_of(&messages, &accounts, 1, Some("first")).expect("the open account");
+        let owner =
+            owner_of(&messages, &accounts, 1, Some("first"), None).expect("the open account");
 
         assert_eq!(owner.id, "first");
     }
@@ -38539,7 +38620,7 @@ mod the_account_a_message_belongs_to {
         let messages = [a_message(1, "")];
 
         assert!(
-            owner_of(&messages, &accounts, 1, None).is_none(),
+            owner_of(&messages, &accounts, 1, None, None).is_none(),
             "an unnamed account was resolved to whichever one came first"
         );
     }
@@ -38966,6 +39047,7 @@ fn block_the_sender(
                 &held.accounts,
                 message.message_id,
                 held.active_account_id.as_deref(),
+                Some(cache.as_ref()),
             )
         });
         (message, account, held.accounts.clone())

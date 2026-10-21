@@ -557,6 +557,48 @@ fn body_of(source: &str, signature: &str) -> String {
     rest[..ends].to_string()
 }
 
+/// The arguments of every call `opening` begins in `body`, each as written and
+/// trimmed, read to the call's own closing bracket.
+///
+/// Counted rather than searched for, so a line break or a `//` comment inside
+/// the call hides no argument, and a comma inside a nested call or closure is
+/// not taken for one between arguments.
+fn the_arguments_of_each_call(body: &str, opening: &str) -> Vec<Vec<String>> {
+    body.match_indices(opening)
+        .map(|(at, _)| the_arguments_up_to_the_close(&body[at + opening.len()..]))
+        .collect()
+}
+
+fn the_arguments_up_to_the_close(after_the_bracket: &str) -> Vec<String> {
+    let mut arguments = vec![String::new()];
+    let mut depth = 0usize;
+    let mut text = after_the_bracket.chars().peekable();
+    while let Some(c) = text.next() {
+        match c {
+            '/' if text.peek() == Some(&'/') => {
+                text.by_ref().find(|&skipped| skipped == '\n');
+                continue;
+            }
+            ')' | ']' | '}' if depth == 0 => break,
+            ',' if depth == 0 => {
+                arguments.push(String::new());
+                continue;
+            }
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth -= 1,
+            _ => {}
+        }
+        if let Some(argument) = arguments.last_mut() {
+            argument.push(c);
+        }
+    }
+    arguments
+        .into_iter()
+        .map(|argument| argument.trim().to_string())
+        .filter(|argument| !argument.is_empty())
+        .collect()
+}
+
 /// The window asks about a delete rather than deciding one for itself.
 ///
 /// Whether a delete is sent at all is now decided and carried out in one place
@@ -3772,8 +3814,17 @@ fn test_importing_mail_sends_each_kind_of_file_to_its_own_reader() {
 /// fault and nothing noticed, because there was nothing that could.
 ///
 /// What this cannot see: whether `owner_of` gives the right answer. That is
-/// measured in `presentation::wx_app::the_account_a_message_belongs_to`. This
-/// only says every handler asks it.
+/// measured in `presentation::wx_app::the_account_a_message_belongs_to`, and the
+/// rule it asks in `tests/one_hierarchy_two_views.rs`. This only says every
+/// handler asks it, and hands it the window's store.
+///
+/// The store since 13.3-04 (item 3 of the review of 2026-10-20). A command over
+/// a conversation row reaches the conversation's messages in every folder of
+/// the account, read from the store, and All Inboxes loads only the inboxes, so
+/// a reply in Sent is a message the list never loaded. `owner_of` answered the
+/// open account for it, and the change went to that account's server with the
+/// other account's folder path and number. Only the store can say where such a
+/// message is filed, so a call that hands it none is the fault again.
 #[test]
 fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
     let app = fs::read_to_string("src/presentation/wx_app.rs").expect("the main window");
@@ -3793,13 +3844,28 @@ fn test_everything_aimed_at_a_message_asks_which_account_that_message_is_in() {
         "fn spawn_server_change(",
         "fn read_attachment(",
         "fn save_attachment(",
+        // The four that asked and were never read here, each able to meet a
+        // conversation's message the list never loaded (13.3-04).
+        "fn run_the_quick_step_at(",
+        "fn report_the_chosen_as_junk(",
+        "fn the_account_a_row_is_in(",
+        "fn block_the_sender(",
     ] {
+        let calls = the_arguments_of_each_call(&body_of(&ship, aimed_at_a_row), "owner_of(");
         assert!(
-            body_of(&ship, aimed_at_a_row).contains("owner_of("),
+            !calls.is_empty(),
             "{aimed_at_a_row} works out the account for itself rather than asking which \
              account the chosen message is in, so in All Inboxes it can reach a server the \
              message was never on"
         );
+        for arguments in &calls {
+            assert!(
+                arguments.len() == 5 && arguments[4] != "None",
+                "{aimed_at_a_row} asks which account a message is in without handing over the \
+                 window's store, so a message the list never loaded, a conversation's reply in \
+                 Sent, is sent to the open account's server: {arguments:?}"
+            );
+        }
     }
 
     // The choosing half again, read where it is decided rather than anywhere

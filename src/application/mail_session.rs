@@ -187,11 +187,51 @@ fn the_turns_being_held() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
 /// The map's lock is let go before the turn is waited for, so a check
 /// waiting on one account never stops another account's turn being found.
 pub(crate) async fn one_check_at_a_time(account_id: &str) -> AnAccountsTurn {
+    the_turn_in(the_turns_being_held(), account_id).await
+}
+
+/// Wait for this account's turn among `turns`, and hold it: the one reading
+/// both kinds of turn share, so neither can come to hand out a fresh lock
+/// beside one somebody holds.
+async fn the_turn_in(
+    turns: &Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    account_id: &str,
+) -> tokio::sync::OwnedMutexGuard<()> {
     let turn = {
-        let mut turns = the_turns_being_held().lock().await;
+        let mut turns = turns.lock().await;
         turns.entry(account_id.to_string()).or_default().clone()
     };
     turn.lock_owned().await
+}
+
+/// An account's turn to send a read or star change to its server.
+pub(crate) type AnAccountsFlagTurn = tokio::sync::OwnedMutexGuard<()>;
+
+/// Every account's turn to send a read or star change, in the same shape as
+/// [`the_turns_being_held`] and kept apart from it.
+fn the_flag_turns_being_held() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static TURNS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    TURNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Wait for this account's turn to send a read or star change, and hold it.
+///
+/// One at a time per account (item 18 of the review of 2026-10-20). A check
+/// replays the changes kept waiting and a person's M is pushed on its own
+/// worker, both on the account's one session, which serves them command by
+/// command. So the push could reach the server between the replay's reading
+/// of the list and its sending, let the older change go, and then have the
+/// older one sent after it: the newest mark undone at the server and, at the
+/// next check, here. The replay holds this from reading its list to its last
+/// change, and the push from before it opens the session to after its
+/// answer, so whichever comes second goes second.
+///
+/// Not the check's turn. A check holds that for the whole check, downloads
+/// included, and a push waiting on it would wait for the download; and the
+/// replay takes this inside a check, so the two waiting on each other could
+/// never be let go. The replay holds this for a few seconds at most.
+pub(crate) async fn one_flag_change_at_a_time(account_id: &str) -> AnAccountsFlagTurn {
+    the_turn_in(the_flag_turns_being_held(), account_id).await
 }
 
 /// The accounts set up on this computer, as a crossing's replay opens their
@@ -811,6 +851,18 @@ mod tests {
     /// finishes at once: asking for an unheld lock takes no time at all.
     const A_SHORT_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
 
+    /// How long a turn that should come is given to come, four times the
+    /// usual wait (13.3-04).
+    ///
+    /// Under a break that hands every account one turn, the side-by-side cases
+    /// each hold it for one usual wait while they wait on themselves. A case
+    /// asking only whether a turn comes at all, after a let-go or a panic,
+    /// then waited behind them and went red or did not by timing alone, which
+    /// left the records over that break unmeasurable. Measured 2026-10-20: two
+    /// of four runs of the module under the break reddened a different set.
+    const AFTER_THE_OTHERS: std::time::Duration =
+        std::time::Duration::from_secs(crate::common::answering::LONG_ENOUGH.as_secs() * 4);
+
     #[tokio::test]
     async fn test_a_second_check_of_one_account_waits_for_the_first() {
         // F9 pressed while the start-up check runs: the second waits, so the
@@ -827,7 +879,7 @@ mod tests {
 
         drop(first);
         assert!(
-            tokio::time::timeout(LONG_ENOUGH, second).await.is_ok(),
+            tokio::time::timeout(AFTER_THE_OTHERS, second).await.is_ok(),
             "the second check never had its turn after the first let go of it"
         );
     }
@@ -858,11 +910,100 @@ mod tests {
         assert!(dying.await.is_err(), "the check was meant to panic");
 
         let again =
-            tokio::time::timeout(LONG_ENOUGH, one_check_at_a_time("turn-after-a-panic")).await;
+            tokio::time::timeout(AFTER_THE_OTHERS, one_check_at_a_time("turn-after-a-panic")).await;
 
         assert!(
             again.is_ok(),
             "the account's turn was kept by a check that panicked"
+        );
+    }
+
+    // ── One read or star change of an account at a time (13.3-04) ──────────
+    //
+    // Item 18 of the review of 2026-10-20: a check replaying the changes kept
+    // waiting read its list, a fresh M reached the server and let the older
+    // change go, and the replay then sent the older one. Each case names an
+    // account of its own, as above.
+
+    #[tokio::test]
+    async fn test_a_flag_change_waits_for_the_replay_of_its_account() {
+        let replaying = one_flag_change_at_a_time("flag-turn-waits").await;
+        let mut pushing = tokio::spawn(one_flag_change_at_a_time("flag-turn-waits"));
+
+        assert!(
+            tokio::time::timeout(A_SHORT_WAIT, &mut pushing)
+                .await
+                .is_err(),
+            "a read or star change reached the server while the account's replay held the turn"
+        );
+
+        drop(replaying);
+        assert!(
+            tokio::time::timeout(AFTER_THE_OTHERS, pushing)
+                .await
+                .is_ok(),
+            "the change never had its turn after the replay let go of it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_accounts_flag_changes_go_side_by_side() {
+        let _work = one_flag_change_at_a_time("flag-turn-side-by-side-work").await;
+
+        let home = tokio::time::timeout(
+            LONG_ENOUGH,
+            one_flag_change_at_a_time("flag-turn-side-by-side-home"),
+        )
+        .await;
+
+        assert!(
+            home.is_ok(),
+            "one account's flag change waited for another account's"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_flag_change_that_panics_gives_its_turn_back() {
+        let dying = tokio::spawn(async {
+            let _turn = one_flag_change_at_a_time("flag-turn-after-a-panic").await;
+            panic!("a push that fails part way through");
+        });
+        assert!(dying.await.is_err(), "the push was meant to panic");
+
+        let again = tokio::time::timeout(
+            AFTER_THE_OTHERS,
+            one_flag_change_at_a_time("flag-turn-after-a-panic"),
+        )
+        .await;
+
+        assert!(
+            again.is_ok(),
+            "the account's flag turn was kept by a push that panicked"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_an_accounts_flag_turn_and_check_turn_do_not_wait_on_each_other() {
+        // A check holds its turn for the whole check, downloads included, and
+        // a push waiting on that would wait for the download. The replay takes
+        // the flag turn inside a check, so the two being one turn would leave
+        // a check waiting on itself. Holding the flag turn and then asking for
+        // the check turn fails either way round: one lock would never be had
+        // twice.
+        let _pushing = tokio::time::timeout(
+            AFTER_THE_OTHERS,
+            one_flag_change_at_a_time("flag-turn-beside-a-check"),
+        )
+        .await
+        .expect("the account's flag turn, with nothing else holding it");
+        let checking = tokio::time::timeout(
+            AFTER_THE_OTHERS,
+            one_check_at_a_time("flag-turn-beside-a-check"),
+        )
+        .await;
+        assert!(
+            checking.is_ok(),
+            "a check waited for the account's read or star change"
         );
     }
 }

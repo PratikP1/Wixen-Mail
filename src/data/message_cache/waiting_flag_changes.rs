@@ -45,7 +45,7 @@ impl MessageCache {
     /// by the message's identifier at the replay; keeping the later numbering
     /// with a number from the first would send that number unchecked.
     pub fn keep_a_flag_change_waiting(&self, waiting: &AWaitingFlagChange) -> Result<()> {
-        let numbering = match self.the_numbering_a_flag_change_was_kept_under_if_kept(
+        let numbering = match self.the_numbering_a_flag_change_was_kept_under(
             waiting.message_row_id,
             waiting.which_flag,
         )? {
@@ -178,22 +178,17 @@ impl MessageCache {
         )
     }
 
-    /// The numbering the change's folder had when it was first kept, or
-    /// nothing when it was not known then or the change was kept by an older
-    /// build.
+    /// The numbering the change's folder had when it was first kept: nothing
+    /// inside when it was not known then or the change was kept by an older
+    /// build, and nothing at all when no change is kept for this message and
+    /// flag.
+    ///
+    /// The two nothings are two facts. A check's replay reads its list once
+    /// and asks this before each change it sends, and a change let go since,
+    /// by a newer one that reached the server, is not to be sent; read as one
+    /// kept with no numbering, it was sent to the number kept, after the newer
+    /// change (item 18 of the review of 2026-10-20).
     pub fn the_numbering_a_flag_change_was_kept_under(
-        &self,
-        message_row_id: i64,
-        which_flag: WhichFlag,
-    ) -> Result<Option<u32>> {
-        Ok(self
-            .the_numbering_a_flag_change_was_kept_under_if_kept(message_row_id, which_flag)?
-            .flatten())
-    }
-
-    /// The kept change's numbering, nothing inside when it kept none, and
-    /// nothing at all when no change is kept for this message and flag.
-    fn the_numbering_a_flag_change_was_kept_under_if_kept(
         &self,
         message_row_id: i64,
         which_flag: WhichFlag,
@@ -336,7 +331,7 @@ mod tests {
             .expect("the numbering");
     }
 
-    fn the_numbering_kept(cache: &MessageCache) -> Option<u32> {
+    fn the_numbering_kept(cache: &MessageCache) -> Option<Option<u32>> {
         cache
             .the_numbering_a_flag_change_was_kept_under(1, WhichFlag::Read)
             .expect("the numbering kept")
@@ -351,7 +346,26 @@ mod tests {
         cache
             .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
             .expect("a change kept");
-        assert_eq!(the_numbering_kept(&cache), Some(7));
+        assert_eq!(the_numbering_kept(&cache), Some(Some(7)));
+    }
+
+    #[test]
+    fn test_a_change_no_longer_kept_reads_back_as_gone() {
+        // Item 18 of the review of 2026-10-20: a change let go while a check's
+        // replay ran read back as one kept with no numbering, and the replay
+        // sent it to the number kept, after the newer change.
+        let cache = a_cache();
+        cache
+            .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
+            .expect("a change kept");
+        cache
+            .stop_waiting_for_this_change(&a_waiting_change(1, WhichFlag::Read, true))
+            .expect("letting go");
+        assert_eq!(
+            the_numbering_kept(&cache),
+            None,
+            "a change let go read back as one still kept"
+        );
     }
 
     #[test]
@@ -377,7 +391,7 @@ mod tests {
         cache
             .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, false))
             .expect("a change kept");
-        assert_eq!(the_numbering_kept(&cache), Some(7));
+        assert_eq!(the_numbering_kept(&cache), Some(Some(7)));
     }
 
     #[test]
@@ -386,7 +400,11 @@ mod tests {
         cache
             .keep_a_flag_change_waiting(&a_waiting_change(1, WhichFlag::Read, true))
             .expect("a change kept");
-        assert_eq!(the_numbering_kept(&cache), None);
+        assert_eq!(
+            the_numbering_kept(&cache),
+            Some(None),
+            "a change kept with no numbering read back as gone"
+        );
     }
 
     #[test]

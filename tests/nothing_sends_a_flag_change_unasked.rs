@@ -584,3 +584,215 @@ fn test_the_module_that_decides_cannot_express_sending() {
          changing that file would read it"
     );
 }
+
+// ── One read or star change of an account at a time (13.3-04) ─────────────
+//
+// Item 18 of the review of 2026-10-20, finding #2 of the audit of 2026-10-14
+// in the other order. A check's replay read the waiting list, a fresh M
+// reached the server between two of the replay's commands and let the older
+// change go, and the replay then sent the older change: the person's newest
+// mark undone at the server and, at the next check, here. Both sending sites
+// sit in `spawn_blocking` closures nothing in the library runs, so they are
+// read, as the rest of this file reads them.
+
+/// What takes an account's turn to send a read or star change.
+const THE_FLAG_TURN: &str = "one_flag_change_at_a_time(";
+
+/// The name the turn taken at `taken` is held under: the `let` before it with
+/// no statement between. A turn bound to `_`, or to nothing, is let go the
+/// moment it is taken.
+fn the_name_it_is_held_under(text: &str, taken: usize) -> Result<String, String> {
+    let bound = text[..taken]
+        .rfind("let ")
+        .filter(|at| !text[*at..taken].contains(';'))
+        .ok_or("the turn is taken and not held under a name, so it is let go at once")?;
+    let name = text[bound + "let ".len()..taken]
+        .split(['=', ':'])
+        .next()
+        .unwrap_or_default()
+        .trim();
+    match name {
+        "" | "_" => Err("the turn is let go the moment it is taken".into()),
+        name => Ok(name.to_string()),
+    }
+}
+
+/// Whether the replay takes the account's flag turn before it reads the
+/// waiting list and holds it to its end.
+fn the_replay_holds_the_turn_while_it_reads_and_sends(source: &str) -> Result<(), String> {
+    let replay = the_function(source, THE_REPLAY)?;
+    let taken = replay
+        .find(THE_FLAG_TURN)
+        .ok_or("the replay sends without the account's turn, so a push can reach the server between its reading and its sending")?;
+    let listed = replay
+        .find("flag_changes_waiting_for(")
+        .ok_or("the replay reads no waiting list")?;
+    if listed < taken {
+        return Err(
+            "the replay reads the waiting list before it has the turn, so a push between the two \
+             lets go of a change the replay still sends"
+                .into(),
+        );
+    }
+    let held = the_name_it_is_held_under(replay, taken)?;
+    if replay.contains(&format!("drop({held})")) {
+        return Err("the replay lets its turn go before its last change is sent".into());
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_flag_replay_holds_the_accounts_turn_while_it_reads_and_sends() {
+    assert_eq!(
+        the_replay_holds_the_turn_while_it_reads_and_sends(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_replay_that_takes_its_turn_after_the_list() {
+    let late = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                \x20   let waiting = cache.flag_changes_waiting_for(account_id).unwrap_or_default();\n\
+                \x20   let _turn = handle.block_on(one_flag_change_at_a_time(account_id));\n\
+                }\n";
+    assert!(the_replay_holds_the_turn_while_it_reads_and_sends(late).is_err());
+    let unheld = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                  \x20   let _ = handle.block_on(one_flag_change_at_a_time(account_id));\n\
+                  \x20   let waiting = cache.flag_changes_waiting_for(account_id).unwrap_or_default();\n\
+                  }\n";
+    assert!(
+        the_replay_holds_the_turn_while_it_reads_and_sends(unheld).is_err(),
+        "a turn let go the moment it was taken was read as held"
+    );
+    let let_go = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                  \x20   let turn = handle.block_on(one_flag_change_at_a_time(account_id));\n\
+                  \x20   let waiting = cache.flag_changes_waiting_for(account_id).unwrap_or_default();\n\
+                  \x20   drop(turn);\n\
+                  \x20   for change in &waiting {}\n\
+                  }\n";
+    assert!(
+        the_replay_holds_the_turn_while_it_reads_and_sends(let_go).is_err(),
+        "a turn let go after the list was read was read as held to the end"
+    );
+}
+
+/// Whether the push takes the account's flag turn in its worker before it
+/// opens a session, and holds it past its STORE, the letting go of the older
+/// change and a failed push's keep.
+fn the_push_holds_the_turn_around_its_store(source: &str) -> Result<(), String> {
+    let push = the_function(source, THE_PUSH)?;
+    let worker = push
+        .find("spawn_blocking(")
+        .ok_or("the push has no worker")?;
+    let taken = worker
+        + push[worker..]
+            .find(THE_FLAG_TURN)
+            .ok_or("the push sends without the account's turn, so it can reach the server in the middle of a check's replay")?;
+    let session = worker
+        + push[worker..]
+            .find("the_session_at(")
+            .ok_or("the push opens no session")?;
+    if session < taken {
+        return Err("the push opens its session before it has the turn".into());
+    }
+    let held = the_name_it_is_held_under(push, taken)?;
+    if let Some(let_go) = push.find(&format!("drop({held})")) {
+        let last = |call: &str| push.rfind(call).unwrap_or_default();
+        if let_go < last(LETTING_GO_OF_WHAT_CAME_BEFORE) || let_go < last("answer_a_failed_push(") {
+            return Err(
+                "the push lets its turn go before it has let go of the older change or kept a \
+                 failed one, so a replay can send the older change after it"
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_push_holds_the_accounts_turn_around_its_session_and_its_answer() {
+    assert_eq!(
+        the_push_holds_the_turn_around_its_store(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_push_that_takes_its_turn_late_or_lets_it_go_early() {
+    let after_the_session = "\nfn spawn_server_change(\n\
+                             \x20   rt.spawn_blocking(move || {\n\
+                             \x20       let controller = handle.block_on(the_session_at(&account));\n\
+                             \x20       let _turn = handle.block_on(one_flag_change_at_a_time(&account.id));\n\
+                             \x20   });\n\
+                             }\n";
+    assert!(the_push_holds_the_turn_around_its_store(after_the_session).is_err());
+    let outside_the_worker = "\nfn spawn_server_change(\n\
+                              \x20   let _turn = rt.block_on(one_flag_change_at_a_time(&account.id));\n\
+                              \x20   rt.spawn_blocking(move || {\n\
+                              \x20       let controller = handle.block_on(the_session_at(&account));\n\
+                              \x20   });\n\
+                              }\n";
+    assert!(
+        the_push_holds_the_turn_around_its_store(outside_the_worker).is_err(),
+        "a turn taken on the window's thread, before the worker, was read as the worker's"
+    );
+    let early = "\nfn spawn_server_change(\n\
+                 \x20   rt.spawn_blocking(move || {\n\
+                 \x20       let turn = handle.block_on(one_flag_change_at_a_time(&account.id));\n\
+                 \x20       let controller = handle.block_on(the_session_at(&account));\n\
+                 \x20       let outcome = handle.block_on(controller.set_flag(&folder_path, uid, SEEN, true));\n\
+                 \x20       drop(turn);\n\
+                 \x20       match outcome {\n\
+                 \x20           Ok(()) => { cache.stop_waiting_for_what_came_before(row, flag, asked_at); }\n\
+                 \x20           Err(e) => answer_a_failed_push(e),\n\
+                 \x20       }\n\
+                 \x20   });\n\
+                 }\n";
+    assert!(
+        the_push_holds_the_turn_around_its_store(early).is_err(),
+        "a turn let go before the older change was let go was read as held past it"
+    );
+}
+
+/// Whether the replay passes over a change the store says is no longer kept,
+/// rather than reading it as one kept with no numbering and sending it.
+fn the_replay_passes_over_a_change_let_go(source: &str) -> Result<(), String> {
+    let replay = the_function(source, THE_REPLAY)?;
+    let read = replay
+        .find("the_numbering_a_flag_change_was_kept_under(")
+        .ok_or("the replay reads no numbering")?;
+    let bound = replay[..read]
+        .rfind("let ")
+        .ok_or("the replay's reading of the numbering is bound to nothing")?;
+    if !replay[bound..read].contains("Ok(Some(") {
+        return Err(
+            "the replay reads a change let go since it read the list as one kept with no \
+             numbering, and sends it after the newer change"
+                .into(),
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn test_the_flag_replay_passes_over_a_change_let_go() {
+    assert_eq!(
+        the_replay_passes_over_a_change_let_go(&the_window()),
+        Ok(())
+    );
+}
+
+#[test]
+fn test_the_reading_refuses_a_replay_that_sends_a_change_let_go() {
+    // Today's replay, before the fix: gone and kept with no numbering are one
+    // answer.
+    let planted = "\nfn send_the_flag_changes_that_were_waiting(\n\
+                   \x20   let (Ok(numbering), Ok(message)) = (\n\
+                   \x20       cache.the_numbering_a_flag_change_was_kept_under(row, flag),\n\
+                   \x20       cache.get_message(row),\n\
+                   \x20   ) else {\n\
+                   \x20       continue;\n\
+                   \x20   };\n\
+                   }\n";
+    assert!(the_replay_passes_over_a_change_let_go(planted).is_err());
+}

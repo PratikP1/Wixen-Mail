@@ -35,10 +35,13 @@
 
 use std::collections::HashSet;
 use wixen_mail::application::destinations::{
-    where_mail_can_go, where_this_message_can_go, whose_folders_a_move_is_about,
+    the_account_a_command_reaches, where_mail_can_go, where_this_message_can_go,
+    whose_message_a_command_reaches,
 };
 use wixen_mail::application::folder_settings::UnreadOnAParent;
+use wixen_mail::data::message_cache::{CachedFolder, IncomingMessage, MessageCache};
 use wixen_mail::presentation::folder_tree::{AccountInTheTree, FolderInTheTree, WhichRow, rows};
+use wixen_mail::service::safety::Verdict;
 
 /// Three accounts and their folders, built to make every agreement below
 /// something that could fail.
@@ -343,7 +346,7 @@ fn test_the_window_offers_the_folders_of_the_account_the_message_is_in() {
     let open = "a";
     let the_message_is_in = "b";
 
-    let whose = whose_folders_a_move_is_about(Some(the_message_is_in), Some(open))
+    let whose = whose_message_a_command_reaches(Some(the_message_is_in), None, Some(open))
         .expect("a message in an account this program knows");
     let offered: Vec<String> = where_mail_can_go(&accounts(), &folders())
         .into_iter()
@@ -369,17 +372,185 @@ fn test_the_window_offers_the_folders_of_the_account_the_message_is_in() {
 
 #[test]
 fn test_a_row_with_no_account_of_its_own_falls_back_to_the_one_on_screen() {
-    // A row that records no account of its own is the ordinary case outside
-    // All Inboxes, where every row belongs to the account being looked at.
-    // Whether the account then names one this program knows is a question the
-    // caller answers, and it refuses rather than reaching for another.
-    assert_eq!(whose_folders_a_move_is_about(None, Some("a")), Some("a"));
+    // A loaded row that records no account of its own is the ordinary case
+    // outside All Inboxes, where every row belongs to the account being looked
+    // at. It falls back to that account only when the store cannot say where
+    // the message is filed either. Whether the account then names one this
+    // program knows is a question the caller answers, and it refuses rather
+    // than reaching for another.
+    //
+    // This case said until 13.3-04 that a row the list does not hold falls
+    // back to the account on screen too. That was item 3 of the review of
+    // 2026-10-20, a mark sent to another account's server, and it is now
+    // `test_a_message_neither_the_list_nor_the_store_can_place_reaches_no_account`.
     assert_eq!(
-        whose_folders_a_move_is_about(Some(""), Some("a")),
+        whose_message_a_command_reaches(Some(""), None, Some("a")),
         Some("a")
     );
-    assert_eq!(whose_folders_a_move_is_about(Some("b"), None), Some("b"));
-    assert_eq!(whose_folders_a_move_is_about(None, None), None);
+    assert_eq!(
+        whose_message_a_command_reaches(Some("b"), None, None),
+        Some("b")
+    );
+    assert_eq!(whose_message_a_command_reaches(Some(""), None, None), None);
+}
+
+#[test]
+fn test_a_row_on_the_list_answers_the_account_it_records_whatever_else_is_said() {
+    assert_eq!(
+        whose_message_a_command_reaches(Some("b"), Some("c"), Some("a")),
+        Some("b")
+    );
+
+    let (_home, store, mail) = two_accounts_that_both_hold_a_reply_numbered_57();
+    assert_eq!(
+        the_account_a_command_reaches(Some("b"), mail.in_as_sent, Some(&store), Some("a")),
+        Some("b".to_string()),
+        "the row the list loaded records its own account, and the list read it \
+         from the store in the first place"
+    );
+}
+
+#[test]
+fn test_a_message_the_list_never_loaded_reaches_the_account_the_store_files_it_under() {
+    // A conversation's reply in Sent, in All Inboxes, which loads every
+    // account's inbox and nothing else.
+    assert_eq!(
+        whose_message_a_command_reaches(None, Some("b"), Some("a")),
+        Some("b"),
+        "the change went to the open account's server, with the other \
+         account's folder path and number"
+    );
+}
+
+#[test]
+fn test_a_loaded_row_recording_no_account_asks_the_store_before_the_one_on_screen() {
+    assert_eq!(
+        whose_message_a_command_reaches(Some(""), Some("b"), Some("a")),
+        Some("b")
+    );
+
+    let (_home, store, mail) = two_accounts_that_both_hold_a_reply_numbered_57();
+    assert_eq!(
+        the_account_a_command_reaches(Some(""), mail.in_bs_sent, Some(&store), Some("a")),
+        Some("b".to_string())
+    );
+}
+
+#[test]
+fn test_a_message_neither_the_list_nor_the_store_can_place_reaches_no_account() {
+    // A row that came from the store, which then cannot say where it is filed,
+    // is refused rather than sent to whichever account is open: that account's
+    // server holds a different message under the same folder path and number.
+    assert_eq!(
+        whose_message_a_command_reaches(None, None, Some("a")),
+        None,
+        "a message nobody can place was sent to the open account"
+    );
+    assert_eq!(
+        whose_message_a_command_reaches(None, Some(""), Some("a")),
+        None
+    );
+    assert_eq!(whose_message_a_command_reaches(None, None, None), None);
+}
+
+#[test]
+fn test_a_reply_in_another_accounts_sent_reaches_that_account() {
+    // Both accounts hold a message numbered 57 in a folder with one path, so
+    // a change sent to the wrong one marks a real message there.
+    let (_home, store, mail) = two_accounts_that_both_hold_a_reply_numbered_57();
+
+    assert_eq!(
+        the_account_a_command_reaches(None, mail.in_bs_sent, Some(&store), Some("a")),
+        Some("b".to_string()),
+        "the reply in the second account's Sent went to the open account"
+    );
+    assert_eq!(
+        the_account_a_command_reaches(None, mail.in_as_sent, Some(&store), Some("b")),
+        Some("a".to_string())
+    );
+}
+
+#[test]
+fn test_a_row_the_store_does_not_hold_reaches_no_account() {
+    let (_home, store, mail) = two_accounts_that_both_hold_a_reply_numbered_57();
+    let nowhere = mail.in_as_sent.max(mail.in_bs_sent) + 1;
+
+    assert_eq!(
+        the_account_a_command_reaches(None, nowhere, Some(&store), Some("a")),
+        None,
+        "a row the store does not hold was sent to the open account"
+    );
+    assert_eq!(
+        the_account_a_command_reaches(None, nowhere, None, Some("a")),
+        None,
+        "and with no store to ask, a row the list does not hold is no account's"
+    );
+}
+
+/// The two replies the store cases ask about, by row.
+struct TwoReplies {
+    in_as_sent: i64,
+    in_bs_sent: i64,
+}
+
+/// A store holding accounts `a` and `b`, each with a Sent folder at the same
+/// path and a reply in it numbered 57, the way two Gmail accounts look.
+fn two_accounts_that_both_hold_a_reply_numbered_57() -> (tempfile::TempDir, MessageCache, TwoReplies)
+{
+    let home = tempfile::tempdir().expect("a home");
+    let store = MessageCache::new(home.path().to_path_buf(), None).expect("a store");
+    let sent = |account: &str| {
+        store
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: account.to_string(),
+                name: "Sent Mail".to_string(),
+                path: "[Gmail]/Sent Mail".to_string(),
+                folder_type: "Sent".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a Sent folder")
+    };
+    let (as_sent, bs_sent) = (sent("a"), sent("b"));
+    let rows = store
+        .upsert_messages(&[a_reply_numbered_57(as_sent), a_reply_numbered_57(bs_sent)])
+        .expect("the replies");
+    let mail = TwoReplies {
+        in_as_sent: rows[0],
+        in_bs_sent: rows[1],
+    };
+    (home, store, mail)
+}
+
+fn a_reply_numbered_57(folder_id: i64) -> IncomingMessage {
+    IncomingMessage {
+        folder_id,
+        uid: 57,
+        message_id: format!("<reply-{folder_id}@example.com>"),
+        subject: "Re: Thursday".to_string(),
+        from_addr: "me@example.com".to_string(),
+        to_addr: "Ada Lovelace <ada@example.com>".to_string(),
+        cc: None,
+        reply_to: None,
+        date: "2026-10-20T09:00:00Z".to_string(),
+        internal_date: Some("2026-10-20T09:00:00Z".to_string()),
+        size_bytes: Some(1_000),
+        refs_header: None,
+        read: true,
+        starred: false,
+        answered: false,
+        draft: false,
+        deleted: false,
+        has_attachments: false,
+        safety: Verdict::ordinary(),
+        gmail_message_id: None,
+        server_thread_id: None,
+        labels: None,
+        receipt_to: None,
+        list_unsubscribe: None,
+        pop_uidl: None,
+    }
 }
 
 #[test]
