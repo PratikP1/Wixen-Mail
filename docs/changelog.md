@@ -1446,6 +1446,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A change over many conversations no longer pauses the window (2026-10-21, LIST-04,
+  LIST-21, THREAD-01).** When the list shows conversations, marking, starring, deleting or
+  undoing over a large selection brings the changed rows up to date at once. That step checked
+  every row on screen against every conversation the change touched, and copied every row, while
+  nothing else could happen: with 5,000 conversations chosen it took about half a second in a
+  folder of 22,503 conversations and about four seconds in one of 130,000, and the screen reader
+  waited too. It now looks each row up and changes only the rows the change reached: 8.5 ms and
+  27.1 ms for the same two folders, measured on a release build. A delete or move over a
+  selection also stops working out each message's place in the list when the list shows
+  conversations and has no use for it.
+
+  Landing on a conversation row looks for its messages whose text is not here yet, so it can
+  fetch them. That search now asks the store for that one conversation alone, as marking a
+  conversation has since 18 October, rather than reading every message of the account first and
+  keeping one conversation's afterwards.
+
+  Known limitation: marking or starring a large selection still looks for each chosen message
+  among all the messages the list has loaded, one message at a time, so its cost grows with the
+  folder and the selection together. That is older than this fix, has not been timed, and is
+  not changed by it.
+
 - **A message you open from a conversation window in the message view is marked read
   (2026-10-21, LIST-03).** When the list shows one row per message, Enter on a message with
   replies opens its conversation window. A message you opened from there was never marked
