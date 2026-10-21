@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 771
+open_count: 775
 waived_count: 0
 fixed_count: 149
-total_count: 920
-last_updated: 2026-10-21T12:00:00.000Z
+total_count: 924
+last_updated: 2026-10-21T14:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -935,6 +935,10 @@ last_updated: 2026-10-21T12:00:00.000Z
 | 918 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-05, premise 3: Forward with no message chosen, or from a conversation whose list was reloaded under it so the named message is no longer among the loaded rows, opens an empty forward, where Reply refuses with no message selected. Unchanged by 13.3-05. Recommended: Forward refuses the same way Reply does, a one-line change in the ID_FORWARD arm with a case; Pratik's to schedule | open |  | 2026-10-21T02:00:00.000Z |  |
 | 919 | 13.3 | todo | src/application/reply.rs |  | 13.3-05, read in the code on 2026-10-20 and not tried: a message that came down with no text part at all, such as an encrypted message or one that is only an attachment, is stored with neither half, and the store reads such a row as no text. So Reply and Forward on it from an opened conversation refuse with the sentence that it is downloading and fetch it again at every press, and the text never arrives; before 13.3-05 they opened with nothing quoted. The list's cursor already fetches such a message again at every landing for the same reason. Recommended: record that a message's text was fetched and held no text part, so quoting it answers an empty quote rather than a download, and the list stops fetching it again; Pratik's to schedule | open |  | 2026-10-21T02:00:00.000Z |  |
 | 920 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-06, item 5 of the review of 2026-10-20, heard under NVDA on a build holding 13.3-06's merge: during the first download of a large folder, with that folder open in the message view, several Deletes and several M presses, each heard once, the rows staying gone or read across the next re-reads about every ten seconds, and nothing deleted outright that was sent to Trash; then the same in the conversation view. Held by the reading test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason in tests/everything_comes_down_without_being_asked.rs, which asks for the re-read before the tick's drain, and the guard record "the timer reads the open folder before it drains the workers' updates"; neither has met a real download. Closed when the tester has heard both views | open |  | 2026-10-21T12:00:00.000Z |  |
+| 921 | 13.3 | unrun-verify | src/data/message_cache/accounts.rs |  | 13.3-07, item 6 of the review of 2026-10-20, tried by the tester under NVDA on a build holding 13.3-07's merge: in one visit to the Account Manager, an account removed and added back on its address, for example switched from POP to IMAP, OK pressed and nothing refused; after a restart the new account listed and the old one not, and the old account's mail gone. Held by five cases in src/data/message_cache/accounts.rs, red first, and the guard record "the store removes the accounts taken away before it saves the rest"; none has met a real account or the Windows credential store. Closed when the tester has done it on his own accounts | open |  | 2026-10-21T14:00:00.000Z |  |
+| 922 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-07, premise 4, not one of the review's 42: handle_account_mgr sets the window's accounts to the list it was given, and starts bringing a new account's calendars, contacts and tasks, even when replace_accounts refused, so until a restart the window lists and works with an account the store does not hold, and the store's copy comes back at the next start. 13.3-07 takes away the commonest way there, an account removed and added back; a credential store that refuses remains. Recommended: after a refusal the window takes back what the store holds through load_accounts and brings nothing for an account that was not saved, with a reading; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
+| 923 | 13.3 | todo | src/data/message_cache/accounts.rs |  | 13.3-07, premise 4, ledger 847's class: a browser sign-in in the Add Account window keeps the new account's tokens in the credential store before OK, so a save refused after it, by a credential store that refuses or by an address a removal that would not go still holds, leaves those tokens under an id no row names, which neither removing an account nor the uninstall erases. Recommended: a refused save of an account that signs in through the browser forgets its tokens through oauth::forget_every_token_for, with a case; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
+| 924 | 13.3 | todo | src/data/message_cache/accounts.rs |  | 13.3-07, read in the code on 2026-10-21 and not heard, older than 13.3-07: delete_account's refusal is an Error::Security, whose Display puts "Security error: " in front of the sentence, and each reason inside it carries the store's own "Security error: " words, so the Account Manager says "The accounts could not all be saved. Security error: This account has not been removed, because Windows would not let go of its saved password (Security error: Could not remove this account's password in the Windows credential store: ...)". 13.3-07 makes that sentence the answer in one more case, an account added on an address a refused removal still holds. Recommended: the refusal as Error::InPlainWords naming only what was kept, the store's reasons in the log, with a case on the words; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
 
 ````json
 [
@@ -11976,6 +11980,54 @@ last_updated: 2026-10-21T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 921,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/data/message_cache/accounts.rs",
+    "line": null,
+    "description": "13.3-07, item 6 of the review of 2026-10-20, tried by the tester under NVDA on a build holding 13.3-07's merge: in one visit to the Account Manager, an account removed and added back on its address, for example switched from POP to IMAP, OK pressed and nothing refused; after a restart the new account listed and the old one not, and the old account's mail gone. Held by five cases in src/data/message_cache/accounts.rs, red first, and the guard record \"the store removes the accounts taken away before it saves the rest\"; none has met a real account or the Windows credential store. Closed when the tester has done it on his own accounts",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T14:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 922,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-07, premise 4, not one of the review's 42: handle_account_mgr sets the window's accounts to the list it was given, and starts bringing a new account's calendars, contacts and tasks, even when replace_accounts refused, so until a restart the window lists and works with an account the store does not hold, and the store's copy comes back at the next start. 13.3-07 takes away the commonest way there, an account removed and added back; a credential store that refuses remains. Recommended: after a refusal the window takes back what the store holds through load_accounts and brings nothing for an account that was not saved, with a reading; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T14:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 923,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/data/message_cache/accounts.rs",
+    "line": null,
+    "description": "13.3-07, premise 4, ledger 847's class: a browser sign-in in the Add Account window keeps the new account's tokens in the credential store before OK, so a save refused after it, by a credential store that refuses or by an address a removal that would not go still holds, leaves those tokens under an id no row names, which neither removing an account nor the uninstall erases. Recommended: a refused save of an account that signs in through the browser forgets its tokens through oauth::forget_every_token_for, with a case; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T14:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 924,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/data/message_cache/accounts.rs",
+    "line": null,
+    "description": "13.3-07, read in the code on 2026-10-21 and not heard, older than 13.3-07: delete_account's refusal is an Error::Security, whose Display puts \"Security error: \" in front of the sentence, and each reason inside it carries the store's own \"Security error: \" words, so the Account Manager says \"The accounts could not all be saved. Security error: This account has not been removed, because Windows would not let go of its saved password (Security error: Could not remove this account's password in the Windows credential store: ...)\". 13.3-07 makes that sentence the answer in one more case, an account added on an address a refused removal still holds. Recommended: the refusal as Error::InPlainWords naming only what was kept, the store's reasons in the log, with a case on the words; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T14:00:00.000Z",
     "resolved_at": null
   }
 ]
