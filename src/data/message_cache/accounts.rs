@@ -916,6 +916,175 @@ mod tests {
         );
     }
 
+    /// An account with the name the person gave it, for the cases whose
+    /// sentences name one.
+    fn called(name: &str, id: &str, email: &str) -> crate::data::account::Account {
+        let mut account = an_account(id, email, &format!("{id}-password"));
+        account.name = name.to_string();
+        account
+    }
+
+    /// Forget every password these cases may have kept, so the next case on
+    /// this thread starts from an empty store.
+    fn forget_passwords(ids: &[&str]) {
+        for id in ids {
+            credentials::forget(id).ok();
+        }
+    }
+
+    #[test]
+    fn test_an_account_removed_and_added_back_on_its_address_in_one_sitting_saves() {
+        // Removing an account and adding it back, for example to switch it
+        // from POP to IMAP, gives the new one a new id on the old address. The
+        // saves used to come before the removals, so the address was still
+        // held by the account just removed: the new one was refused, nothing
+        // was removed, and after a restart the old account was back.
+        let cache = a_cache("an-account-removed-and-added-back");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the first account to save");
+
+        cache
+            .replace_accounts(&[called("Work", "acc-new", "ada@example.com")])
+            .expect("the account added back to save");
+
+        assert_eq!(in_order(&cache), vec!["acc-new"]);
+        assert_eq!(
+            credentials::load("acc-new").expect("the credential store to answer"),
+            Some("acc-new-password".to_string()),
+            "the new account's password was not kept"
+        );
+        assert_eq!(
+            credentials::load("acc-work").expect("the credential store to answer"),
+            None,
+            "the removed account's password outlived it"
+        );
+        forget_passwords(&["acc-work", "acc-new"]);
+    }
+
+    #[test]
+    fn test_an_address_given_back_in_other_capitals_saves_too() {
+        // The rule compares addresses ignoring case, so the account removed
+        // held the address just as much when it was written another way.
+        let cache = a_cache("an-address-given-back-in-other-capitals");
+        cache
+            .save_account(&called("Work", "acc-work", "Ada@Example.com"))
+            .expect("the first account to save");
+
+        cache
+            .replace_accounts(&[called("Work", "acc-new", "ada@example.com")])
+            .expect("the account added back to save");
+
+        assert_eq!(in_order(&cache), vec!["acc-new"]);
+        forget_passwords(&["acc-work", "acc-new"]);
+    }
+
+    #[test]
+    fn test_an_edited_account_may_take_the_address_of_one_removed_beside_it() {
+        let cache = a_cache("an-edit-takes-a-removed-address");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the first account to save");
+        cache
+            .save_account(&called("Home", "acc-home", "grace@example.com"))
+            .expect("the second account to save");
+
+        cache
+            .replace_accounts(&[called("Home", "acc-home", "ada@example.com")])
+            .expect("the edit to save");
+
+        let stored = cache.load_accounts().expect("the accounts to load");
+        assert_eq!(
+            stored
+                .iter()
+                .map(|account| (account.id.as_str(), account.email.as_str()))
+                .collect::<Vec<_>>(),
+            vec![("acc-home", "ada@example.com")],
+            "the edit did not take the address, or the removed account stayed"
+        );
+        forget_passwords(&["acc-work", "acc-home"]);
+    }
+
+    #[test]
+    fn test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address() {
+        // The removed account still holds its address, so the account added
+        // on it is refused before its password reaches the store. The person
+        // hears why the removal did not happen, not a sentence telling them to
+        // edit an account they removed, and the other edits are kept.
+        let cache = a_cache("a-removal-that-will-not-go");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the first account to save");
+        cache
+            .save_account(&called("Home", "acc-home", "grace@example.com"))
+            .expect("the second account to save");
+
+        crate::service::secret_store::refuse_removals("that entry cannot be read");
+        let outcome = cache.replace_accounts(&[
+            called("Work", "acc-new", "ada@example.com"),
+            called("Renamed", "acc-home", "grace@example.com"),
+        ]);
+        crate::service::secret_store::allow();
+
+        let said = outcome.expect_err("the refused removal").to_string();
+        assert!(
+            said.starts_with("This account has not been removed"),
+            "{said}"
+        );
+        assert!(!said.contains("already uses"), "{said}");
+        let stored = cache.load_accounts().expect("the accounts to load");
+        let name_of = |id: &str| {
+            stored
+                .iter()
+                .find(|account| account.id == id)
+                .map(|account| account.name.clone())
+        };
+        assert_eq!(name_of("acc-home").as_deref(), Some("Renamed"));
+        assert_eq!(name_of("acc-work").as_deref(), Some("Work"));
+        assert_eq!(name_of("acc-new"), None);
+        assert_eq!(
+            credentials::load("acc-new").expect("the credential store to answer"),
+            None,
+            "a refused account's password was kept, with no row to name it"
+        );
+        forget_passwords(&["acc-work", "acc-home", "acc-new"]);
+    }
+
+    #[test]
+    fn test_a_refused_save_does_not_throw_away_the_edits_after_it() {
+        let cache = a_cache("a-refused-save-keeps-the-rest");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the first account to save");
+        cache
+            .save_account(&called("Home", "acc-home", "grace@example.com"))
+            .expect("the second account to save");
+
+        let outcome = cache.replace_accounts(&[
+            called("Work", "acc-work", "ada@example.com"),
+            called("Second", "acc-second", "ada@example.com"),
+            called("Renamed", "acc-home", "grace@example.com"),
+        ]);
+
+        assert_eq!(
+            outcome
+                .expect_err("the second account to be refused")
+                .to_string(),
+            "Work already uses ada@example.com. Edit that account rather than adding the address again."
+        );
+        let stored = cache.load_accounts().expect("the accounts to load");
+        assert_eq!(
+            stored
+                .iter()
+                .find(|account| account.id == "acc-home")
+                .map(|account| account.name.as_str()),
+            Some("Renamed"),
+            "the edit after the refused account was thrown away"
+        );
+        assert!(!stored.iter().any(|account| account.id == "acc-second"));
+        forget_passwords(&["acc-work", "acc-home", "acc-second"]);
+    }
+
     /// What the password column holds, straight out of the table.
     fn password_column(cache: &MessageCache, account_id: &str) -> String {
         cache
