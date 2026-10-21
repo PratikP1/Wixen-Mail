@@ -433,10 +433,13 @@ fn the_set_leaving(
     a_set.then(|| ASetLeaving {
         conversations,
         ..ASetLeaving::of(leaving.iter().filter_map(|row_id| {
-            let row = s.messages.iter().position(|row| row.message_id == *row_id);
             match by_message {
                 true => Some((*row_id, None)),
-                false => row.map(|row| (*row_id, Some(row))),
+                false => s
+                    .messages
+                    .iter()
+                    .position(|row| row.message_id == *row_id)
+                    .map(|row| (*row_id, Some(row))),
             }
         }))
     })

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 886 records have arrived since and have not been through it.
+# 887 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40164,7 +40164,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The rule over the rows asking whether each row was touched by a scan of
@@ -40187,7 +40187,33 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/view_state.rs", tests = 62 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
+]
+
+# A set leaving asking each message's place in the loaded rows before it
+# knows whether the list shows messages, the shape it had before 13.3-14:
+# under conversation view every message of a delete or a move scans the
+# loaded rows for a place that is thrown away, under the state lock (review
+# item 32). The set is the same, so only the reading goes red.
+#
+# Measured by hand on 2026-10-21: the target at 28 passed and 1 failed, this
+# one; the whole library at 9,420 passed and 1 failed, the plan reading in
+# `storage_shape` that 13.3-14's red had left red at the time, and nothing
+# this break reached.
+[[guard]]
+name = "a set leaving asks a message's place only when the list shows messages"
+file = "src/presentation/wx_app.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''            match by_message {
+                true => Some((*row_id, None)),'''
+after = '''            match (by_message, s.messages.iter().position(|row| row.message_id == *row_id)).0 {
+                true => Some((*row_id, None)),'''
+red = [
+    "test_a_set_leaving_asks_each_place_only_under_the_message_view",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
@@ -40294,7 +40320,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The catch-up taken out of the removal under conversation view: a delete or
@@ -40339,7 +40365,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The target that ignores the message an opened conversation named: Delete,
@@ -43425,7 +43451,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The same names left unused when a refusal ends a set's wait, so the rows of
@@ -43448,7 +43474,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The store's answer left out of whose message a command reaches (13.3-04,
