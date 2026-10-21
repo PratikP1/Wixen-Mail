@@ -82,6 +82,8 @@ pub struct MailboxArchive {
     in_name_order: Vec<usize>,
     /// How many things in it could not be read at all.
     could_not_be_read: usize,
+    /// How many of those did not match what the archive records about them.
+    did_not_match: usize,
     /// How many folders in it sat deeper than this program follows.
     too_deep_to_follow: usize,
     /// How much of it may be read before it is refused.
@@ -792,6 +794,7 @@ impl MailboxArchive {
             looked_over,
             in_name_order,
             could_not_be_read: found.could_not_be_read,
+            did_not_match: 0,
             too_deep_to_follow: found.too_deep_to_follow,
             allowed,
             unpacked_so_far: 0,
@@ -804,6 +807,17 @@ impl MailboxArchive {
     /// the caller's job to say so at the end rather than leave it in a log.
     pub fn how_many_could_not_be_read(&self) -> usize {
         self.could_not_be_read
+    }
+
+    /// How many of the things that could not be read did not match what the
+    /// archive records about them.
+    ///
+    /// Counted among [`MailboxArchive::how_many_could_not_be_read`] as well,
+    /// and told apart because it asks something different of somebody: the
+    /// archive is damaged or was changed after it was made, so it is the
+    /// archive to doubt rather than one file in it.
+    pub fn how_many_did_not_match_what_it_records(&self) -> usize {
+        self.did_not_match
     }
 
     /// How many folders sat deeper than this program follows a folder.
@@ -1373,6 +1387,7 @@ fn one_step_down(named: &str) -> Result<&Path> {
 
 #[cfg(test)]
 mod tests {
+    use super::for_tests::a_folder_nested;
     use super::*;
     use std::io::Write;
 
@@ -1827,6 +1842,9 @@ mod tests {
             vec!["Work/Invoices.mbox", "Work/2024/one.eml"]
         );
         assert_eq!(archive.how_many_could_not_be_read(), 1);
+        // Its check failed, so it is the archive that is damaged, and the
+        // import says so rather than that one file could not be read.
+        assert_eq!(archive.how_many_did_not_match_what_it_records(), 1);
     }
 
     /// Change one byte of a zip, at the first place these bytes are found.
@@ -2628,19 +2646,6 @@ mod tests {
         );
     }
 
-    /// One folder nested this many folders deep, with a message at the bottom.
-    fn a_folder_nested(inside: &Path, deep: usize) -> PathBuf {
-        let at = inside.join("mailbox");
-        let mut down = at.clone();
-        for _ in 0..deep {
-            down.push("a");
-        }
-        std::fs::create_dir_all(&down).expect("make the nested folders");
-        std::fs::write(down.join("deep.eml"), one_message()).expect("write the deep message");
-        std::fs::write(at.join("shallow.eml"), one_message()).expect("write the shallow message");
-        at
-    }
-
     #[test]
     fn test_a_folder_deeper_than_this_program_follows_is_counted_rather_than_walked_forever() {
         // Both sides of the limit, because a limit tested from one side only is
@@ -2711,6 +2716,8 @@ mod tests {
             vec!["Work/2024/one.eml", "Work/Invoices.mbox"]
         );
         assert_eq!(archive.how_many_could_not_be_read(), 1);
+        // A file held open records nothing it could fail to match.
+        assert_eq!(archive.how_many_did_not_match_what_it_records(), 0);
         drop(holding_it);
     }
 
@@ -2998,5 +3005,29 @@ pub(crate) mod for_tests {
         }
         writing.finish().expect("finish the test zip");
         at.to_path_buf()
+    }
+
+    /// One folder nested this many folders deep, with a message at the bottom
+    /// and one at the top.
+    pub(crate) fn a_folder_nested(inside: &Path, deep: usize) -> PathBuf {
+        let one_message = b"From: Ada Lovelace <ada@example.com>\r\n\
+                            Subject: Notes on the engine\r\n\
+                            \r\n\
+                            The engine weaves algebraic patterns.\r\n";
+        let at = inside.join("mailbox");
+        let mut down = at.clone();
+        for _ in 0..deep {
+            down.push("a");
+        }
+        std::fs::create_dir_all(&down).expect("make the nested folders");
+        std::fs::write(down.join("deep.eml"), one_message).expect("write the deep message");
+        std::fs::write(at.join("shallow.eml"), one_message).expect("write the shallow message");
+        at
+    }
+
+    /// One folder whose bottom message sits one folder deeper than a chosen
+    /// folder is followed.
+    pub(crate) fn a_folder_one_deeper_than_followed(inside: &Path) -> PathBuf {
+        a_folder_nested(inside, super::MOST_FOLDERS_DEEP + 1)
     }
 }

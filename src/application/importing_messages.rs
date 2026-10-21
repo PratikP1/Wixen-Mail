@@ -2793,6 +2793,91 @@ mod end_to_end {
         );
     }
 
+    // ── What the first look over an archive left out ────────────────────
+
+    /// What is said about one file the first look found not matching what
+    /// the archive records about it.
+    const ONE_FILE_DID_NOT_MATCH: &str = "1 file in the archive does not match what the archive \
+         records about it, so the archive is damaged or was changed after it was made, and that \
+         file was left out.";
+
+    #[test]
+    fn test_a_file_left_out_at_the_first_look_for_not_matching_its_archive_is_said_once() {
+        // Recorded as 10,000 bytes, under the 64 KB the first look reads of
+        // each file, so the file fails there rather than partway through the
+        // import. It was counted and never said: the import said "Imported 1
+        // folder, 3 messages." and nothing else. It is said once, as not
+        // matching, and not a second time as a file that could not be read.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at = a_zip_recording_altered_as(place.path(), 10_000, true);
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(how_many_in(&cache, &imported("Honest")), 3);
+        assert_eq!(
+            said,
+            format!("Imported 1 folder, 3 messages. {ONE_FILE_DID_NOT_MATCH}")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_file_in_a_chosen_folder_nothing_can_open_is_said_to_be_left_out() {
+        // A file another program holds open with no sharing, which is how a
+        // mail program still running keeps its own. The rest comes in, and the
+        // sentence says the one file was left behind. Windows only, because
+        // holding a file that way is done differently on each platform.
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let chosen = place.path().join("mail");
+        std::fs::create_dir_all(&chosen).expect("the chosen folder");
+        std::fs::write(chosen.join("Honest.mbox"), a_mailbox_of("honest", 3))
+            .expect("the honest file");
+        let held_open = chosen.join("Locked.mbox");
+        std::fs::write(&held_open, a_mailbox_of("locked", 3)).expect("the file to hold open");
+        let holding_it = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&held_open)
+            .expect("hold the file open");
+
+        let said = an_archive_brought_in(&cache, "acct", &chosen, &quietly);
+        drop(holding_it);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(
+            said,
+            "Imported 1 folder, 3 messages. 1 file in the archive could not be read and was left \
+             out."
+        );
+    }
+
+    #[test]
+    fn test_a_folder_deeper_than_a_chosen_folder_is_followed_is_said_to_be_left_out() {
+        // The message below the depth followed was counted and never said,
+        // while the archive's own comment promised a folder left behind is
+        // never left behind in silence.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let chosen = crate::service::mailbox_archive::for_tests::a_folder_one_deeper_than_followed(
+            place.path(),
+        );
+
+        let said = an_archive_brought_in(&cache, "acct", &chosen, &quietly);
+
+        assert!(
+            said.ends_with(
+                " 1 folder in the archive is nested too deeply for Wixen Mail to follow, so the \
+                 mail in it was left out."
+            ),
+            "{said}"
+        );
+    }
+
     // ── The files an imported message carried ───────────────────────────
 
     /// A few bytes shaped like the start of a PDF, which is what mail carries

@@ -377,6 +377,15 @@ pub struct FoldersImported {
     /// Mailbox files holding more than the archive records about them, whose
     /// mail up to the point where they stopped matching came in.
     pub did_not_match_and_some_came_in: usize,
+    /// Files that could not be read when the archive was first looked over,
+    /// and were left in it, other than those counted in the next.
+    pub files_unread_at_the_first_look: usize,
+    /// Files that did not match what the archive records about them when it
+    /// was first looked over, and were left in it.
+    pub files_not_matching_at_the_first_look: usize,
+    /// Folders nested deeper than a chosen folder is followed, whose mail was
+    /// left in them.
+    pub folders_too_deep_to_follow: usize,
     /// What the saved Outlook messages in the archive left in their files.
     pub from_saved_outlook_messages: WhatSavedOutlookMessagesLeft,
 }
@@ -1287,6 +1296,97 @@ mod tests {
     }
 
     #[test]
+    fn test_what_the_first_look_over_an_archive_left_out_is_said_one_sentence_each() {
+        // Counted when the archive was first looked over and never said until
+        // 13.3-12, so an import that left whole folders behind said "Imported
+        // 1 folder, 3 messages." and somebody may delete the archive. Files,
+        // never mailbox files, because a single message can be left out too;
+        // and each count its own sentence, because each asks something
+        // different of somebody.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                files_unread_at_the_first_look: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 1 file in the archive could not be read and was left \
+             out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                files_unread_at_the_first_look: 4,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 4 files in the archive could not be read and were \
+             left out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                files_not_matching_at_the_first_look: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 1 file in the archive does not match what the archive \
+             records about it, so the archive is damaged or was changed after it was made, and \
+             that file was left out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                files_not_matching_at_the_first_look: 2,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages. 2 files in the archive do not match what the archive \
+             records about them, so the archive is damaged or was changed after it was made, and \
+             those files were left out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 1,
+                folders_too_deep_to_follow: 1,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 1 message. 1 folder in the archive is nested too deeply for Wixen \
+             Mail to follow, so the mail in it was left out."
+        );
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 1,
+                folders_too_deep_to_follow: 3,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 1 message. 3 folders in the archive are nested too deeply for \
+             Wixen Mail to follow, so the mail in them was left out."
+        );
+        // Nought of each says nothing, and the sentences already there are
+        // said word for word as before.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                folders: 1,
+                messages: 3,
+                ..FoldersImported::default()
+            }),
+            "Imported 1 folder, 3 messages"
+        );
+        // An archive nothing came in from, with a file left out, is not told
+        // there is nothing in it that reads as mail.
+        assert_eq!(
+            what_the_folder_import_did(&FoldersImported {
+                files_unread_at_the_first_look: 1,
+                ..FoldersImported::default()
+            }),
+            "No folders were imported. 1 file in the archive could not be read and was left out."
+        );
+    }
+
+    #[test]
     fn test_everything_this_module_says_is_a_sentence_and_names_no_machinery() {
         // All of it is read aloud. A fragment with no stop on the end runs into
         // whatever is spoken next, and a sentence naming a mechanism tells
@@ -1305,6 +1405,9 @@ mod tests {
                 not_written_down: 1,
                 did_not_match_and_none_came_in: 1,
                 did_not_match_and_some_came_in: 1,
+                files_unread_at_the_first_look: 1,
+                files_not_matching_at_the_first_look: 1,
+                folders_too_deep_to_follow: 1,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(1),
             }),
             what_the_folder_import_did(&FoldersImported {
@@ -1319,6 +1422,9 @@ mod tests {
                 not_written_down: 2,
                 did_not_match_and_none_came_in: 2,
                 did_not_match_and_some_came_in: 2,
+                files_unread_at_the_first_look: 2,
+                files_not_matching_at_the_first_look: 2,
+                folders_too_deep_to_follow: 2,
                 from_saved_outlook_messages: saved_outlook_messages_leaving(2),
             }),
         ];
