@@ -1303,11 +1303,14 @@ pub(crate) enum WhatTheDeletionLeft {
 /// whose people could not be read.
 ///
 /// Each is carried out as a deletion the address book named outright would
-/// be, by [`one_address_book_deleted_them`], except where taking her off would
-/// lose something: a change waiting here, which the address book never had,
-/// and a choice somebody has not made yet. Those stay, as a change kept here
-/// stays, and are counted as nothing. Each is read again by id first, so an
-/// edit made while the sync ran keeps her too.
+/// be, by [`one_address_book_deleted_them`]. A person carrying a change made
+/// here goes too, with the change, and `say_if_a_change_went_too` says so,
+/// exactly as when the address book names her deletion. Until 2026-10-21 she
+/// stayed, still carrying the address book's name for a card it had deleted,
+/// so every sync after sent her change, had it refused and counted one more
+/// problem, for good (review item 24). A person waiting on a choice somebody
+/// has not made yet stays, and is counted as nothing. Each is read again by id
+/// first, so what is decided is the contact as she stands now.
 pub(crate) fn take_off_who_a_whole_answer_left_out(
     cache: &MessageCache,
     here: &mut TheContactsHere,
@@ -1322,10 +1325,7 @@ pub(crate) fn take_off_who_a_whole_answer_left_out(
         let left_out = local
             .id_in(address_book)
             .is_some_and(|known_as| !named.contains(known_as));
-        if !left_out
-            || the_copy_here_holds_work_nobody_has_sent(&local)
-            || cache.is_held_for_a_choice(&local.id)?
-        {
+        if !left_out || cache.is_held_for_a_choice(&local.id)? {
             continue;
         }
         let left = one_address_book_deleted_them(cache, &local, address_book, result)?;
