@@ -146,7 +146,7 @@ pub fn text_of(path: &Path) -> Result<String> {
             path.display()
         ))
     })?;
-    Ok(String::from_utf8_lossy(&raw).into_owned())
+    Ok(crate::service::ical_subscription::a_calendar_or_card_as_text(&raw, None))
 }
 
 /// The account an imported calendar or contact card is filed under.
@@ -471,6 +471,23 @@ mod tests {
 
         let read = text_of(&path).expect("a file that is not utf8 was refused");
         assert!(read.starts_with("FN:"), "{read:?}");
+    }
+
+    #[test]
+    fn test_a_calendar_file_saved_with_a_byte_order_mark_is_read_without_it() {
+        // Some Windows tools write three bytes in front of UTF-8 text. Kept,
+        // they sit in front of BEGIN:VCALENDAR and the file is refused as not
+        // a calendar at all (review item 11).
+        let folder = tempfile::tempdir().expect("a temporary folder");
+        let path = folder.path().join("marked.ics");
+        let calendar = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nEND:VCALENDAR\r\n";
+        std::fs::write(
+            &path,
+            [&[0xEF, 0xBB, 0xBF][..], calendar.as_bytes()].concat(),
+        )
+        .expect("could not write the file");
+
+        assert_eq!(text_of(&path).expect("a file with a mark"), calendar);
     }
 
     #[test]
