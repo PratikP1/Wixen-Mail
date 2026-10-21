@@ -1349,10 +1349,61 @@ mod tests {
         );
         assert!(ids.contains(&"here-kept".to_string()), "{ids:?}");
         assert!(
-            ids.contains(&"here-waiting".to_string()),
-            "a contact with a change waiting here was taken off: {ids:?}"
+            !ids.contains(&"here-waiting".to_string()),
+            "a contact the server deleted while a change waited here is still here: {ids:?}"
         );
-        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+        assert!(
+            result.deleted_with_a_change_waiting.holds("here-waiting"),
+            "the change that went with her was not said: {result:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 2, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent() {
+        // Kept, she carried the address book's name for a card it no longer
+        // has, so every sync sent her change, had it refused and counted one
+        // more problem, for good.
+        let (_paths, cache) = cache_for("carddav-deleted-while-changed");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        let ann = changed_here(
+            "Ann Example",
+            "ann@example.com",
+            &filed_under,
+            &the_card_at("ann"),
+            "\"v1\"",
+        );
+        cache.save_contact(&ann).expect("she saves");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            writes: Writes::NothingIsSent,
+            ..Scripted::default()
+        };
+
+        let first = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the first sync");
+        let second = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the second sync");
+
+        assert!(
+            cache.get_contact(&ann.id).expect("the read").is_none(),
+            "the contact the address book deleted is still here"
+        );
+        assert!(
+            first.deleted_with_a_change_waiting.holds(&ann.id),
+            "the change that went with her was not said: {first:?}"
+        );
+        assert_eq!(
+            server.written.lock().expect("what was written").len(),
+            1,
+            "her change was sent again after she went"
+        );
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
     }
 
     #[tokio::test]

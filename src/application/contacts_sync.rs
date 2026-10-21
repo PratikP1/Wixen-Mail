@@ -6790,11 +6790,14 @@ mod tests {
 
     /// A marker from a run that already happened, which is what makes the next
     /// sync ask for changes rather than read everything.
+    ///
+    /// Each provider's row has an id of its own, so a test can store a marker
+    /// for Google and for Outlook both.
     fn a_marker_from_the_last_run(cache: &MessageCache, provider: &str) {
         let marker = Some("marker-from-last-time".to_string());
         cache
             .save_sync_state(&SyncState {
-                id: "state-1".to_string(),
+                id: format!("state-{provider}"),
                 account_id: AN_ACCOUNT.to_string(),
                 sync_type: CONTACTS_SYNC.to_string(),
                 provider: provider.to_string(),
@@ -8379,6 +8382,16 @@ mod tests {
 
     // ── A change made here, going back out ──────────────────────────────────
 
+    /// Markers from a run that already happened, for both address books.
+    ///
+    /// For a test about what a push sends. Its scripted address books name
+    /// nobody, and a whole read naming nobody takes off the contact the push is
+    /// about, where the real address book would have named her.
+    fn both_address_books_were_read_before(cache: &MessageCache) {
+        a_marker_from_the_last_run(cache, GOOGLE_ADDRESS_BOOK);
+        a_marker_from_the_last_run(cache, MICROSOFT_ADDRESS_BOOK);
+    }
+
     /// A contact both address books know, changed here and told to neither.
     fn a_contact_both_address_books_know_was_changed_here(cache: &MessageCache) {
         let mut contact = a_local_contact("Alice Smith", "alice@example.com");
@@ -8485,6 +8498,7 @@ mod tests {
     async fn test_a_contact_both_address_books_accepted_stops_waiting_to_be_sent() {
         let cache = a_cache("fan_out_settles");
         a_contact_both_address_books_know_was_changed_here(&cache);
+        both_address_books_were_read_before(&cache);
         let google = an_address_book_that_takes_changes();
         let microsoft = an_outlook_that_takes_changes();
         let far = HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem;
@@ -8522,6 +8536,7 @@ mod tests {
     async fn test_a_change_one_address_book_refuses_still_reaches_the_other() {
         let cache = a_cache("fan_out_one_refuses");
         a_contact_both_address_books_know_was_changed_here(&cache);
+        both_address_books_were_read_before(&cache);
         let google = ScriptedGoogle::default();
         let microsoft = an_outlook_that_takes_changes();
         let far = HowFarAChangeGoes::ToEveryAddressBookThatKnowsThem;
@@ -8625,6 +8640,7 @@ mod tests {
         // on sends none of these.
         let cache = a_cache("fan_out_setting_off_is_said");
         a_contact_both_address_books_know_was_changed_here(&cache);
+        both_address_books_were_read_before(&cache);
         let microsoft = an_outlook_that_takes_changes();
 
         let result = sync_microsoft_contacts(
@@ -8804,6 +8820,7 @@ mod tests {
     async fn test_the_version_google_gives_back_after_a_change_is_kept_for_the_next_one() {
         let cache = a_cache("fan_out_version");
         a_contact_both_address_books_know_was_changed_here(&cache);
+        both_address_books_were_read_before(&cache);
         let google = an_address_book_that_takes_changes();
 
         sync_google_contacts(
@@ -9217,6 +9234,7 @@ mod tests {
         // storing it without anything going red.
         let cache = a_cache("fan_out_version_ms");
         a_contact_both_address_books_know_was_changed_here(&cache);
+        both_address_books_were_read_before(&cache);
         let microsoft = ScriptedMicrosoft {
             accepts_a_change: true,
             the_version_it_gives_back: Some("W/\"v9\"".to_string()),
@@ -13464,6 +13482,10 @@ mod tests {
     }
 
     /// What a whole answer naming only "kept" must have done.
+    ///
+    /// The person with a change waiting goes with her change and is said, as
+    /// she would be if the address book had named her deletion; she stayed
+    /// until 2026-10-21, and the change was refused on every sync after.
     fn only_the_dropped_person_went(
         cache: &MessageCache,
         address_book: &AddressBook,
@@ -13475,9 +13497,15 @@ mod tests {
             .into_iter()
             .map(|contact| contact.id)
             .collect();
+        for gone in ["local-gone", "local-waiting"] {
+            assert!(
+                !ids.contains(&gone.to_string()),
+                "a person the address book no longer holds is still here: {gone} in {ids:?}"
+            );
+        }
         assert!(
-            !ids.contains(&"local-gone".to_string()),
-            "a person the address book no longer holds is still here: {ids:?}"
+            result.deleted_with_a_change_waiting.holds("local-waiting"),
+            "the change that went with her was not said: {result:?}"
         );
         let both = the_contact_under(cache, "local-both");
         assert_eq!(
@@ -13491,7 +13519,6 @@ mod tests {
         );
         for (kept, why) in [
             ("local-kept", "named by the answer"),
-            ("local-waiting", "carrying a change waiting here"),
             ("local-held", "held for a choice"),
         ] {
             assert!(
@@ -13500,7 +13527,7 @@ mod tests {
             );
         }
         assert!(result.deleted_local.holds("local-gone"), "{result:?}");
-        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+        assert_eq!(result.deleted_local.count(), 2, "{result:?}");
     }
 
     #[tokio::test]
