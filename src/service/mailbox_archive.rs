@@ -505,6 +505,23 @@ impl From<std::io::ErrorKind> for WhyAnEntryWasNotRead {
     }
 }
 
+/// Which of the two things an archive is, asked before its entries are read,
+/// because what a failed read means depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KindOfArchive {
+    /// One file somebody chose.
+    AZip,
+    /// A folder somebody chose.
+    AFolder,
+}
+
+impl KindOfArchive {
+    /// Why a read of one of its entries failed, from the kind of the failure.
+    pub fn why_a_read_failed(self, kind: std::io::ErrorKind) -> WhyAnEntryWasNotRead {
+        kind.into()
+    }
+}
+
 /// What looking over an archive turned up, and what it could not.
 struct WhatWasFound {
     /// What was pointed at, for anything that has to be said about it.
@@ -1005,7 +1022,19 @@ impl MailboxArchive {
     /// in it depends on it: telling them to choose a folder when they chose a
     /// folder is telling them to do the thing they just did.
     pub fn is_a_folder(&self) -> bool {
-        matches!(self.holding, Holding::AFolder(_))
+        self.kind() == KindOfArchive::AFolder
+    }
+
+    /// Which of the two things it is.
+    ///
+    /// A value rather than a question asked as each entry is read, because
+    /// reading an entry borrows the archive, and what a failed read means has
+    /// to be decided inside that reading.
+    pub fn kind(&self) -> KindOfArchive {
+        match self.holding {
+            Holding::AZipFile(_) => KindOfArchive::AZip,
+            Holding::AFolder(_) => KindOfArchive::AFolder,
+        }
     }
 }
 
@@ -1887,6 +1916,29 @@ mod tests {
         assert!(said.contains("is damaged"), "{said}");
         assert!(said.contains("changed after it was made"), "{said}");
         assert!(said.contains("nothing was imported"), "{said}");
+        assert!(!said.contains("stops partway through"), "{said}");
+        assert!(!said.contains("another copy"), "{said}");
+    }
+
+    #[test]
+    fn test_a_packed_entry_whose_packed_bytes_are_broken_is_said_to_be_damaged_and_not_cut_short() {
+        // Most zips pack their entries, this program's own export included,
+        // and broken packed bytes fail in the unpacking with a kind of their
+        // own rather than the archive's check. Said as an archive that stops
+        // partway through, somebody fetches another copy of a file they
+        // already have whole (review item 26, 2026-10-20).
+        let place = a_place_to_work();
+        let at = for_tests::a_zip_packed_with_its_first_packed_byte_broken(
+            &place.path().join("packed.zip"),
+            &[("Work/Broken.mbox", a_folder_of_mail())],
+            "Work/Broken.mbox",
+        );
+
+        let said = refused(&at);
+
+        assert!(said.contains(&at.display().to_string()), "{said}");
+        assert!(said.contains("is damaged"), "{said}");
+        assert!(said.contains("changed after it was made"), "{said}");
         assert!(!said.contains("stops partway through"), "{said}");
         assert!(!said.contains("another copy"), "{said}");
     }
@@ -3010,6 +3062,50 @@ pub(crate) mod for_tests {
             }
         }
         writing.finish().expect("finish the test zip");
+        at.to_path_buf()
+    }
+
+    /// One zip whose entries are packed, as this program's own export packs
+    /// them, with the first packed byte of the entry `broken` overwritten.
+    ///
+    /// The byte is found from the entry's own record of where its packed
+    /// bytes start, never by searching the file for its text, which packing
+    /// has changed. 0xFF there names a kind of packed block that does not
+    /// exist, so the unpacking fails on it the same way every time: the
+    /// narrower shape of damage inside packed bytes, where ordinary damage
+    /// further in fails the archive's own check instead.
+    pub(crate) fn a_zip_packed_with_its_first_packed_byte_broken(
+        at: &Path,
+        entries: &[(&str, &[u8])],
+        broken: &str,
+    ) -> PathBuf {
+        let file = std::fs::File::create(at).expect("create the test zip");
+        let mut writing = zip::ZipWriter::new(file);
+        for (named, holding) in entries {
+            writing
+                .start_file(
+                    *named,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .expect("start an entry");
+            writing.write_all(holding).expect("write an entry");
+        }
+        writing.finish().expect("finish the test zip");
+
+        let packed_from = {
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(at).expect("open the test zip"))
+                .expect("read the test zip");
+            let entry = zip
+                .by_name(broken)
+                .expect("the entry to break is in the zip");
+            assert_eq!(entry.compression(), zip::CompressionMethod::Deflated);
+            entry.data_start().expect("where its packed bytes start")
+        };
+        let mut bytes = std::fs::read(at).expect("read the test zip back");
+        let packed_from = usize::try_from(packed_from).expect("a test zip is small");
+        bytes[packed_from] = 0xFF;
+        std::fs::write(at, &bytes).expect("write the broken zip");
         at.to_path_buf()
     }
 
