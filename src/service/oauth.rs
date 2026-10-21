@@ -81,6 +81,22 @@ const GOOGLES_CONTACTS: &str = "https://www.googleapis.com/auth/contacts";
 const GOOGLES_CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
 const GOOGLES_TASKS: &str = "https://www.googleapis.com/auth/tasks";
 
+/// Google's two sign-in permissions, which both of its sign-ins ask for so
+/// Google's sign-in service will say which account signed in, through
+/// `GoogleApiClient::the_address_signed_in`.
+///
+/// Google's consent screen asks these as one yes or no, before the tick boxes
+/// for the three above, so a person who unticks Calendar is still answered
+/// and keeps a sign-in that works (review item 20). `openid` makes it a
+/// sign-in Google's sign-in service answers for, and `email` is what puts
+/// the address in the answer. Each list below ends with them, so the
+/// permissions it was asked for before still come first; a scope is a set,
+/// in which order means nothing (RFC 6749, section 3.3), though Google's
+/// OpenID Connect page writes `openid` first, which only a real sign-in at
+/// phase 14's first sitting settles.
+const GOOGLES_SIGN_IN: &str = "openid";
+const GOOGLES_ADDRESS: &str = "email";
+
 pub struct OAuthService;
 
 impl OAuthService {
@@ -104,12 +120,14 @@ impl OAuthService {
                     // Widening a scope means new consent, so everybody signs in
                     // again once.
                     GOOGLES_TASKS.to_string(),
+                    GOOGLES_SIGN_IN.to_string(),
+                    GOOGLES_ADDRESS.to_string(),
                 ],
             },
             // The separate sign-in of an account whose mail keeps its app
-            // password: the same three as above and never mail, which the
-            // app password already does, on the same rule about asking for
-            // nothing that is not used.
+            // password: the same three as above and the two sign-in
+            // permissions, and never mail, which the app password already
+            // does, on the same rule about asking for nothing that is not used.
             OAuthProvider {
                 name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
@@ -118,6 +136,8 @@ impl OAuthService {
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
                     GOOGLES_TASKS.to_string(),
+                    GOOGLES_SIGN_IN.to_string(),
+                    GOOGLES_ADDRESS.to_string(),
                 ],
             },
             OAuthProvider {
@@ -851,10 +871,11 @@ impl AuthManager {
     /// for, before anything is kept (audit #23).
     ///
     /// The browser's account chooser decides whose token comes back, and the
-    /// calendar, contacts and tasks syncs act on whoever owns it. So Google is
-    /// asked whose primary calendar the token opens, and a different person's
-    /// consent is refused with nothing kept. A sign-in Google will not say
-    /// anything about is refused too: keeping it would be guessing.
+    /// calendar, contacts and tasks syncs act on whoever owns it. So Google's
+    /// sign-in service is asked, at its userinfo address, whose token it is,
+    /// and a different person's consent is refused with nothing kept. A
+    /// sign-in Google will not say anything about is refused too: keeping it
+    /// would be guessing.
     ///
     /// Microsoft's sign-in is told the address by the login hint alone. Its
     /// matching check is on the ledger: it needs a second token for Graph, and
