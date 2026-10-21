@@ -25,7 +25,7 @@
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::context_menu::Action;
-use wixen_mail::application::conversations::AConversationReaches;
+use wixen_mail::application::conversations::{AConversationReaches, WhoseConversation};
 use wixen_mail::application::{quick_steps, tagging};
 use wixen_mail::common::types::FolderType;
 use wixen_mail::common::what_ships::what_ships;
@@ -1359,6 +1359,99 @@ fn test_under_the_message_view_reading_may_mark_the_selected_row_alone() {
         None,
         "the cursor moved on from the message read"
     );
+}
+
+// ── Under the message view too, for a reading begun in the window, 13.3-13 ─
+//
+// Enter on a row of a conversation of two or more opens the same window in
+// the message view, and a message chosen there began a reading the timer
+// never marked, because the rule counted the conversation under the
+// conversation view alone. The reading now remembers the conversation it
+// began in, and only such a reading counts it: one begun with Space on the
+// message's own row, after which the cursor moved to a sibling, still marks
+// nothing (#25, LIST-03).
+
+/// The conversation `message` is in, as the window opened on it names it.
+fn the_conversation_of(state: &WxUIState, message: i64) -> WhoseConversation {
+    let loaded = state
+        .messages
+        .iter()
+        .find(|m| m.message_id == message)
+        .expect("the message is loaded");
+    WhoseConversation {
+        account_id: loaded.account_id.clone(),
+        thread_id: loaded
+            .thread_id
+            .clone()
+            .expect("the message is in a conversation"),
+    }
+}
+
+#[test]
+fn test_under_the_message_view_a_member_read_from_the_conversation_window_is_what_reading_may_mark()
+{
+    // A, B and C of one conversation, nothing read; the cursor on A, where
+    // Enter opened the window, and B chosen in it.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    let c = a_message(&cache, inbox, "origin", 3, 3, false);
+    let mut state = the_window_after_opening(&cache, inbox, Showing::Messages, a, b);
+    state.opened_from_a_conversation = Some(the_conversation_of(&state, a));
+    assert_eq!(state.what_reading_may_mark(), Some(b));
+
+    // The cursor may rest on any message of the conversation.
+    state.selected_message_index = state.messages.iter().position(|m| m.message_id == c);
+    assert_eq!(state.what_reading_may_mark(), Some(b), "the cursor on C");
+
+    // Already read, there is nothing to mark.
+    for message in state.messages.iter_mut().filter(|m| m.message_id == b) {
+        message.read = true;
+    }
+    assert_eq!(state.what_reading_may_mark(), None);
+}
+
+#[test]
+fn test_under_the_message_view_a_reading_begun_elsewhere_never_counts_the_conversation() {
+    // B read aloud from its own row and the cursor arrowed to A, or B's
+    // reading said to have begun in another conversation's window.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    let d = a_message(&cache, inbox, "second", 3, 3, false);
+    a_message(&cache, inbox, "second", 4, 4, false);
+    let mut state = the_window_after_opening(&cache, inbox, Showing::Messages, a, b);
+    assert_eq!(
+        state.what_reading_may_mark(),
+        None,
+        "begun in no conversation"
+    );
+    state.opened_from_a_conversation = Some(the_conversation_of(&state, d));
+    assert_eq!(
+        state.what_reading_may_mark(),
+        None,
+        "begun in another conversation"
+    );
+}
+
+#[test]
+fn test_under_the_message_view_a_cursor_on_another_conversation_marks_nothing() {
+    // B chosen in its conversation's window, then the cursor moved to D,
+    // a message of another conversation.
+    let dir = tempfile::tempdir().expect("a temporary folder");
+    let cache = MessageCache::new(dir.path().to_path_buf(), None).expect("a cache");
+    let inbox = a_folder(&cache, "INBOX");
+    let a = a_message(&cache, inbox, "origin", 1, 1, false);
+    let b = a_message(&cache, inbox, "origin", 2, 2, false);
+    let d = a_message(&cache, inbox, "second", 3, 3, false);
+    a_message(&cache, inbox, "second", 4, 4, false);
+    let mut state = the_window_after_opening(&cache, inbox, Showing::Messages, d, b);
+    state.opened_from_a_conversation = Some(the_conversation_of(&state, a));
+    assert_eq!(state.what_reading_may_mark(), None);
 }
 
 // ── The timer asks it, and marks what the loaded rows do not hold ─────────

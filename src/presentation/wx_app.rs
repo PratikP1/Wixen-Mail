@@ -532,6 +532,17 @@ pub struct WxUIState {
     /// started the moment a row was selected, and a walk through a folder by
     /// ear marked every message stopped on.
     pub reading_began: Option<(i64, std::time::Instant)>,
+    /// The conversation that reading began in, when it began in a
+    /// conversation window (13.3-13).
+    ///
+    /// The message view needs it to tell two readings apart that leave the
+    /// state otherwise alike: a message chosen in the window Enter opened on
+    /// a row of its conversation, which the reading timer marks while the
+    /// cursor stays on that conversation, and a message read aloud from its
+    /// own row with Space after which the cursor moved to a sibling, which it
+    /// must not mark (#25, LIST-03). Written beside every write of the
+    /// reading's start, so no reading carries an earlier one's conversation.
+    pub opened_from_a_conversation: Option<crate::application::conversations::WhoseConversation>,
     /// The last thing somebody did to messages, a mark, a star, a label, a
     /// move, a delete or a copy, which Edit, Undo takes back in the message
     /// list (#47, 13-07 and 13-08).
@@ -860,6 +871,7 @@ impl Default for WxUIState {
             selected_folder: None,
             receipt_offered: None,
             reading_began: None,
+            opened_from_a_conversation: None,
             last_action: None,
             land_on_when_listed: None,
             land_on_the_item_when_listed: None,
