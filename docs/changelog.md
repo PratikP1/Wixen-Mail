@@ -1446,6 +1446,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A note you change while a notes sync brings down a newer copy keeps what you did
+  (2026-10-21, SCALE-06, PIM-04).** When the copy at the other end had changed, a notes sync
+  fetched it and then wrote it over the note here as the sync had found it before the fetch.
+  Anything you did to that note in the meantime was lost: an edit was replaced by the other
+  copy, a pin was undone, a note you moved came back in its old folder as well, so it showed
+  twice, and a note you deleted came back. Now an edit is kept and both copies are held for you
+  to choose between, a pin stays, a moved note stays in its new folder only, and a deleted note
+  stays deleted.
+
+  Known limitation: this has not been tried against a real account.
 - **A CardDAV address book that sends only part of its cards no longer loses you contacts
   (2026-10-21, PIM-05, SCALE-06).** Since 2026-10-17 a sync that reads a whole CardDAV address
   book takes off any contact the answer leaves out. Three kinds of answer looked whole when they
@@ -1876,6 +1886,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the other end. Now the change waits and goes up at the next
   sync. A deleted one is deleted at Google, Outlook or the notes backend at the next sync, and
   a moved one is made in its new list or folder before the copy in the old one is deleted.
+  Corrected 2026-10-21: this covered a change made while a sync was sending a note. A change
+  made while a sync was bringing down a newer copy of the note was still lost until that day;
+  see the entry of that day.
 - **An edit made in the notes editor is sent (2026-10-17).** Saving a note in the notes editor
   changed it on this computer and never marked it as waiting to be sent. So an edit to a note
   the backend already held never reached it, and a later change at the other end could write

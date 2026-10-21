@@ -712,6 +712,13 @@ write path added by this milestone passes through that gate.
     contact held for a choice still stays. Held by a CardDAV case run twice, the changed
     assertions of five whole-read cases, red first, and a replacement record. No `[D]`
     clause; the box stays open.
+  - 13.3-11 on 2026-10-21 (review item 13): the read side of the race 13.2-20 closed on the
+    push side, for notes. A notes read that fetches a newer copy no longer writes it over the
+    note as it found it before the fetch: the store decides on the note as it stands, in one
+    immediate transaction, so an edit made meanwhile is held for a choice, a pin stays, and a
+    note moved or deleted meanwhile is not written back. Held by four store cases and four sync
+    cases that act on a second connection while the fetch runs, red first, and three new guard
+    records. No `[D]` clause; the box stays open.
 
 ### Writing and reading a message
 
@@ -1300,6 +1307,10 @@ write path added by this milestone passes through that gate.
     Save wrote the whole row back with the flag as it was read, and such an edit never left.
     An edit typed while the note is at the backend is kept and sent under the name the
     backend gave it. No `[D]` clause; the box stays open.
+  - 13.3-11 on 2026-10-21 (review item 13): an edit, a pin, a move or a delete made in the notes
+    window while a notes read fetches the backend's newer copy is kept, closing on the read
+    side what 13.2-20 closed on the push side. An edit is held for a choice rather than written
+    over, and a moved note no longer shows twice. No `[D]` clause; the box stays open.
 
 - [ ] **PIM-07**: A notes backend chosen by account type, behind one seam.
   - Evidence: rewritten 2026-09-10 by `05.1-03`, which made most of the old wording false.
@@ -8226,7 +8237,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SCALE-03 | Phase 3 | Pending |
 | SCALE-04 | Phase 3 | Complete |
 | SCALE-05 | Phase 3 | Complete |
-| SCALE-06 | Phase 3 | Pending; phase 13.2: 13.2-20.1 merged 2026-10-17, a change made to an event during a push is kept and sent, adding no `[D]` clause; phase 13.3: 13.3-10 done 2026-10-21, a contact a whole read leaves out while a change made here waits goes with the change and it is said, adding no `[D]` clause. Until 13.2-20.1 "Pending; phase 13.2: 13.2-20 merged 2026-10-17, a change made to a task or a note during a push is kept and sent, adding no `[D]` clause; 13.2-20.1 next for events". Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause" |
+| SCALE-06 | Phase 3 | Pending; phase 13.2: 13.2-20.1 merged 2026-10-17, a change made to an event during a push is kept and sent, adding no `[D]` clause; phase 13.3: 13.3-10 done 2026-10-21, a contact a whole read leaves out while a change made here waits goes with the change and it is said, adding no `[D]` clause; 13.3-11 done 2026-10-21, a note changed while a notes read fetches a newer copy keeps what was done, adding no `[D]` clause. Until 13.2-20.1 "Pending; phase 13.2: 13.2-20 merged 2026-10-17, a change made to a task or a note during a push is kept and sent, adding no `[D]` clause; 13.2-20.1 next for events". Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20 and 13.2-20.1, adding no `[D]` clause" |
 | WRITE-01 | Phase 4 | Pending |
 | WRITE-02 | Phase 4 | Complete |
 | WRITE-03 | Phase 4 | Complete |
@@ -8237,7 +8248,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-02 | Phase 5 | Pending |
 | PIM-06 | Phase 5 | Pending; phase 13.2: 13.2-18 merged 2026-10-16, an event made here on a view's first day is drawn in that view, adding no `[D]` clause. Until 13.2-18 "Pending; phase 13.2, planned 2026-10-14: 13.2-18, adding no `[D]` clause" |
 | PIM-03 | Phase 5 | Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause; 13.2-31.6 merged 2026-10-19, a feed's or a calendar server's changed day is folded only into the calendar being read and a cancelled day is counted deleted once, adding no `[D]` clause. Until 13.2-31.6 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, and 2026-10-16: 13.2-31.6, adding no `[D]` clause; 13.2-19 merged 2026-10-16, a subscribed feed's moved or cancelled day shows where it really is, adding no `[D]` clause". Until 13.2-19 "Pending; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
-| PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
+| PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause; phase 13.3: 13.3-11 done 2026-10-21, an edit, pin, move or delete made while a notes read fetches a newer copy is kept, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
 | PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause; phase 13.3: 13.3-10 done 2026-10-21, a CardDAV answer stopped short, half read or unsplittable takes nobody off (ledger 255 a dated line, 928 opened), adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
