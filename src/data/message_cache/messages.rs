@@ -205,6 +205,12 @@ const WHICH_MESSAGE_THIS_ROW_IS: &str = "CASE
 /// both are what lets [`EVERY_INBOX`]'s scope hold two accounts in one
 /// `here` without a row of one account standing in for a conversation of the
 /// other. The text is [`the_scope_over`]'s, with this scope's four parts.
+///
+/// Compiled for tests only since 2026-10-21 (13.3-14): the missing text of
+/// one conversation was the last read of the whole scope outside this file,
+/// and it reads [`one_conversation_scope`] now. The readings that hold the
+/// whole listing to this text still ask for it.
+#[cfg(test)]
 pub(super) fn conversation_scope() -> String {
     the_scope_over(&ONE_FOLDER, Listing::Whole)
 }
@@ -379,7 +385,7 @@ fn the_scope_over(scope: &AScope, listing: Listing) -> String {
 /// Nothing else differs from the listing, and nothing can, because the part
 /// that decides which messages exist is the same text in both.
 ///
-/// Until 2026-10-18 this read [`conversation_scope`], the whole listing's, and
+/// Until 2026-10-18 this read `conversation_scope`, the whole listing's, and
 /// narrowed after it, which built every message of the account outside All
 /// Mail and every conversation of the folder before looking at the one
 /// asked about: 138 to 146 ms at the size of Pratik's Inbox, measured that
@@ -396,6 +402,17 @@ pub(super) fn messages_in_one_conversation() -> String {
          ORDER BY m.received_at ASC, m.id ASC",
         scope = the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
     )
+}
+
+/// One folder's scope narrowed to the conversations bound at `?4`, for a
+/// read of one conversation outside this file.
+///
+/// The scope [`messages_in_one_conversation`] reads, for the reasons it
+/// gives: the whole scope builds every message of the account outside All
+/// Mail and every conversation of the folder before looking at the one
+/// asked about. `?4` is bound with [`as_bound_pairs`].
+pub(super) fn one_conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
 }
 
 /// The query a conversation listing runs, in one place.
@@ -436,7 +453,7 @@ pub(super) fn messages_in_one_conversation() -> String {
 ///
 /// Two more after those, since 2026-09-20: the account and the folder the
 /// row was read in, from `here`, which the scope fills. The text is
-/// [`a_conversation_listing`]'s over [`conversation_scope`], grouped by
+/// [`a_conversation_listing`]'s over `conversation_scope`, grouped by
 /// conversation; [`conversations_in_every_inbox_query`] is the same text
 /// over [`EVERY_INBOX`]'s scope, grouped by account and conversation.
 pub(super) fn conversations_query(order: &str, listing: Listing) -> String {
@@ -547,7 +564,7 @@ impl Listing {
 }
 
 /// The conversations named, as the JSON array [`Listing::OnlyNamed`] binds.
-fn as_bound_pairs(named: &[WhoseConversation]) -> Result<String> {
+pub(super) fn as_bound_pairs(named: &[WhoseConversation]) -> Result<String> {
     let pairs: Vec<[&str; 2]> = named
         .iter()
         .map(|one| [one.account_id.as_str(), one.thread_id.as_str()])

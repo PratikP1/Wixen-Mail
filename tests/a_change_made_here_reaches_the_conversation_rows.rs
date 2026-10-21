@@ -56,6 +56,13 @@
 //! the plan reading in `storage_shape`, which holds how the reads search and
 //! not how long they take.
 //!
+//! Since 13.3-14 (2026-10-21) a second ignored case times the rule over the
+//! rows alone, with Select All's bound of conversations touched over rows
+//! built in memory at the size of Pratik's Inbox and of the 200,000-message
+//! load, and a reading of the rule's text, with a planted companion, holds it
+//! to looking each row up rather than scanning the touched conversations for
+//! every row on screen.
+//!
 //! # Why this lives here rather than beside the code
 //!
 //! `src/data/message_cache/messages.rs` is named by 30 guard records and
@@ -76,8 +83,9 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use wixen_mail::application::conversations::{
-    AConversationReaches, ConversationItem, WhoseConversation,
+    AConversationReaches, ConversationItem, ReadIn, RowMessage, WhoseConversation,
 };
+use wixen_mail::application::editing::MOST_ROWS_WORTH_SELECTING;
 use wixen_mail::application::local_folders::THIS_COMPUTER;
 use wixen_mail::application::moves_waiting::what_happens_here;
 use wixen_mail::common::types::FolderType;
@@ -94,7 +102,7 @@ use wixen_mail::presentation::wx_app::{
     bring_the_conversation_rows_up_to_date, remember_these_rows_leaving, take_row_out_of_the_list,
     the_chosen_rows_have_unread,
 };
-use wixen_mail::service::safety::Verdict;
+use wixen_mail::service::safety::{Safety, Verdict};
 use wxdragon::prelude::*;
 
 // ── The fixture ─────────────────────────────────────────────────────────────
@@ -447,6 +455,28 @@ fn the_median_of_three(mut work: impl FnMut() -> usize) -> (Duration, usize) {
     (takes[1], rows)
 }
 
+/// The rule over `on_screen`, the median of three, with the rows it is
+/// handed copied before each take's clock starts and the rows it answers let
+/// go after the clock stops: the window hands it the rows it holds and keeps
+/// what it answers, so neither the copy nor the letting go is its cost.
+fn the_rule_s_median_of_three(
+    on_screen: &[ConversationItem],
+    touched: &[WhoseConversation],
+    fresh: &[ConversationItem],
+) -> (Duration, usize) {
+    let mut takes = Vec::new();
+    let mut rows = 0;
+    for _ in 0..3 {
+        let handed = on_screen.to_vec();
+        let started = Instant::now();
+        let brought = bring_rows_up_to_date(handed, touched, fresh);
+        takes.push(started.elapsed());
+        rows = brought.rows.len();
+    }
+    takes.sort();
+    (takes[1], rows)
+}
+
 /// What M on a conversation row may spend in the store, all of it: both reads
 /// of the conversation, the writes, and the rule over the rows on screen.
 /// 13.2-02 set 100 ms for a read on a key press and measured 299 ms for one of
@@ -530,11 +560,7 @@ fn the_press_timed(cache: &MessageCache, inbox: i64, condition: &str) -> ThePres
     let fresh = cache
         .conversations_named_in(inbox, THE_ACCOUNT, reach, None, &touched)
         .expect("the catch-up read");
-    let (ruled, _) = the_median_of_three(|| {
-        bring_rows_up_to_date(&on_screen, &touched, &fresh)
-            .rows
-            .len()
-    });
+    let (ruled, _) = the_rule_s_median_of_three(&on_screen, &touched, &fresh);
     let (every_inbox, of_every_inbox) = the_median_of_three(|| {
         cache
             .conversations_named_in_every_inbox(reach, None, &touched)
@@ -592,6 +618,90 @@ fn test_what_the_catch_up_costs_at_the_size_of_pratik_s_inbox() {
             "{condition}: every inbox's catch-up read spent {:?} against \
              {A_KEY_PRESS_MAY_SPEND:?}",
             press.every_inbox
+        );
+    }
+}
+
+// ── What the rule costs when a change touches many conversations ───────────
+
+/// An account identifier the length of the ones the program makes.
+const AN_ACCOUNT_OF_REAL_LENGTH: &str = "8d3f2a61-0c4b-4e9a-b7d2-5f1e6a9c3b70";
+
+/// One conversation row built in memory, carrying text the size a real row
+/// carries, so copying it costs what copying a row of a real folder costs.
+fn a_row_in_memory(at: usize, unread: i64) -> ConversationItem {
+    ConversationItem {
+        thread_id: format!("CAJx{at:08}.7f3c9e2b41d6@mail.example.com"),
+        read_in: ReadIn {
+            account_id: AN_ACCOUNT_OF_REAL_LENGTH.to_string(),
+            folder_id: 7,
+        },
+        subject: format!("Re: the quarterly figures for the north region, round {at}"),
+        messages: 2,
+        unread,
+        newest_received: "2026-10-06 09:41".to_string(),
+        newest_sent: "2026-10-06 09:40".to_string(),
+        snippet: Some("Thanks, I have looked through the attached sheet and".to_string()),
+        senders: "Ana Lopez <ana.lopez@example.com>\nSam Reid <sam.reid@example.org>".to_string(),
+        to: "team-north@example.com".to_string(),
+        cc: String::new(),
+        size_bytes: Some(48_213),
+        any_attachment: true,
+        any_flagged: false,
+        any_answered: true,
+        any_draft: false,
+        worst_safety: Safety::Ordinary,
+        stands_for: RowMessage {
+            id: i64::try_from(at).expect("a row id"),
+            uid: u32::try_from(at).expect("a uid"),
+            from: "Ana Lopez <ana.lopez@example.com>".to_string(),
+        },
+        says_first: None,
+        labels: String::new(),
+    }
+}
+
+/// `bring_rows_up_to_date` over `rows` rows on screen, with Select All's
+/// bound of conversations touched, spread through them, and fresh rows for
+/// half of those; the median of three, printed.
+fn the_rule_timed(rows: usize) -> Duration {
+    let on_screen: Vec<ConversationItem> = (0..rows).map(|at| a_row_in_memory(at, 1)).collect();
+    let apart = rows / MOST_ROWS_WORTH_SELECTING;
+    let touched: Vec<WhoseConversation> = (0..MOST_ROWS_WORTH_SELECTING)
+        .map(|n| whose(AN_ACCOUNT_OF_REAL_LENGTH, &on_screen[n * apart].thread_id))
+        .collect();
+    let fresh: Vec<ConversationItem> = (0..MOST_ROWS_WORTH_SELECTING)
+        .step_by(2)
+        .map(|n| a_row_in_memory(n * apart, 0))
+        .collect();
+    let (took, kept) = the_rule_s_median_of_three(&on_screen, &touched, &fresh);
+    assert_eq!(
+        kept,
+        rows - MOST_ROWS_WORTH_SELECTING / 2,
+        "a touched row with no fresh row leaves, and every other row stays"
+    );
+    println!(
+        "the rule over {rows} rows, {MOST_ROWS_WORTH_SELECTING} touched, {} fresh, \
+         the median of three: {took:?}",
+        fresh.len()
+    );
+    took
+}
+
+#[test]
+#[ignore = "a timing, run by hand with --release for docs/development/measurements.md"]
+fn test_what_the_rule_costs_when_a_change_touches_many_conversations() {
+    // 22,503 rows is Pratik's Inbox shown as conversations (the log of
+    // 2026-10-06); 130,000 is about what the 200,000-message load the
+    // review of 2026-10-20 judged against shows.
+    let timed: Vec<(usize, Duration)> = [22_503, 130_000]
+        .into_iter()
+        .map(|rows| (rows, the_rule_timed(rows)))
+        .collect();
+    for (rows, took) in timed {
+        assert!(
+            took <= A_KEY_PRESS_MAY_SPEND,
+            "over {rows} rows the rule spent {took:?} against {A_KEY_PRESS_MAY_SPEND:?}"
         );
     }
 }
@@ -1460,8 +1570,12 @@ const THE_PLACES: [APlace; 9] = [
 ];
 
 fn the_main_window() -> String {
-    let whole = std::fs::read_to_string(THE_MAIN_WINDOW)
-        .unwrap_or_else(|why| panic!("{THE_MAIN_WINDOW}: {why}"))
+    the_shipping_text_of(THE_MAIN_WINDOW)
+}
+
+fn the_shipping_text_of(path: &str) -> String {
+    let whole = std::fs::read_to_string(path)
+        .unwrap_or_else(|why| panic!("{path}: {why}"))
         .replace("\r\n", "\n");
     what_ships(&whole)
 }
@@ -1580,4 +1694,114 @@ fn test_the_reading_complains_when_the_catch_up_comes_before_the_change() {
     let why = every_change_made_here_reaches_the_catch_up(&planted)
         .expect_err("a catch-up before the change was passed over");
     assert!(why.contains("before the change is in it"), "{why}");
+}
+
+// ── The rule looks each row up (13.3-14, review item 17) ───────────────────
+//
+// Until 13.3-14 the rule scanned the touched conversations, and then the fresh
+// rows, once for every row on screen, on the interface thread under the state
+// lock: rows times conversations, so a mark over thousands of conversations in
+// a large folder froze the window. What it costs is the ignored timing above,
+// run by hand; what runs on every commit is this reading of its text.
+
+const THE_VIEW_STATE: &str = "src/presentation/view_state.rs";
+
+/// What a scan of a list looks like, any one of them inside the rule.
+const A_SCAN_PER_ROW: [&str; 3] = [".iter().find(", ".iter().position(", ".iter().any("];
+
+/// The rule's body holds no scan of a list.
+fn the_rule_looks_each_row_up(source: &str) -> Result<(), String> {
+    let the_rule = APlace {
+        opens: "pub fn bring_rows_up_to_date(",
+        ends: FUNCTION_END,
+        after: None,
+    };
+    let body = the_text_of(source, &the_rule)?;
+    match A_SCAN_PER_ROW.iter().find(|scan| body.contains(**scan)) {
+        Some(scan) => Err(format!(
+            "bring_rows_up_to_date holds {scan}, a scan for every row on screen, so a change \
+             over many conversations costs the rows times the conversations"
+        )),
+        None => Ok(()),
+    }
+}
+
+#[test]
+fn test_the_rule_over_the_rows_looks_each_row_up() {
+    the_rule_looks_each_row_up(&the_shipping_text_of(THE_VIEW_STATE))
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_rule_reading_refuses_a_scan_and_passes_a_lookup() {
+    let scanning = "pub fn bring_rows_up_to_date(\n    touched: &[WhoseConversation],\n) {\n    \
+                    for row in on_screen {\n        \
+                    let Some(this) = touched.iter().find(|one| one.is(row)) else {\n            \
+                    continue;\n        };\n    }\n}\n";
+    let why = the_rule_looks_each_row_up(scanning).expect_err("a scan per row was passed over");
+    assert!(why.contains(".iter().find("), "{why}");
+
+    let looking_up = "pub fn bring_rows_up_to_date(\n    touched: &[WhoseConversation],\n) {\n    \
+                      for row in on_screen {\n        \
+                      if !touched.contains(&row.whose()) {\n            \
+                      continue;\n        }\n    }\n}\n";
+    the_rule_looks_each_row_up(looking_up).unwrap_or_else(|why| panic!("{why}"));
+}
+
+// ── A set leaving asks no place it throws away (13.3-14, review item 32) ────
+//
+// Under conversation view a message is not a row, so the set carries no
+// place; until 13.3-14 the place was worked out for every message anyway,
+// a scan of the loaded rows each, under the state lock, and thrown away.
+
+/// Every `.position(` in `the_set_leaving` stands after its message view's
+/// arm opens, the last `false =>` in it.
+fn a_set_leaving_asks_the_place_only_where_it_is_kept(source: &str) -> Result<(), String> {
+    let the_set_leaving = APlace {
+        opens: "fn the_set_leaving(",
+        ends: FUNCTION_END,
+        after: None,
+    };
+    let body = the_text_of(source, &the_set_leaving)?;
+    let arm = body.rfind("false =>").ok_or(
+        "the_set_leaving has no message view's arm, so this cannot say where its place is asked",
+    )?;
+    match body[..arm].contains(".position(") {
+        true => Err(
+            "the_set_leaving asks each message's place before it knows the list shows \
+                     messages, so under conversation view it scans the loaded rows for a place \
+                     it throws away"
+                .to_string(),
+        ),
+        false => Ok(()),
+    }
+}
+
+#[test]
+fn test_a_set_leaving_asks_each_place_only_under_the_message_view() {
+    a_set_leaving_asks_the_place_only_where_it_is_kept(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_the_set_leaving_reading_refuses_a_place_asked_before_the_view() {
+    let asked_first = "fn the_set_leaving(\n) {\n    \
+                       leaving.iter().filter_map(|row_id| {\n        \
+                       let row = s.messages.iter().position(|row| row.message_id == *row_id);\n        \
+                       match by_message {\n            \
+                       true => Some((*row_id, None)),\n            \
+                       false => row.map(|row| (*row_id, Some(row))),\n        \
+                       }\n    })\n}\n";
+    let why = a_set_leaving_asks_the_place_only_where_it_is_kept(asked_first)
+        .expect_err("a place asked before the view was passed over");
+    assert!(why.contains("throws away"), "{why}");
+
+    let asked_in_the_arm = "fn the_set_leaving(\n) {\n    \
+                            leaving.iter().filter_map(|row_id| match by_message {\n        \
+                            true => Some((*row_id, None)),\n        \
+                            false => s.messages.iter().position(|row| row.message_id == *row_id)\n            \
+                            .map(|row| (*row_id, Some(row))),\n    \
+                            })\n}\n";
+    a_set_leaving_asks_the_place_only_where_it_is_kept(asked_in_the_arm)
+        .unwrap_or_else(|why| panic!("{why}"));
 }

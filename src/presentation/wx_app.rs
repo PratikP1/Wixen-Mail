@@ -433,10 +433,13 @@ fn the_set_leaving(
     a_set.then(|| ASetLeaving {
         conversations,
         ..ASetLeaving::of(leaving.iter().filter_map(|row_id| {
-            let row = s.messages.iter().position(|row| row.message_id == *row_id);
             match by_message {
                 true => Some((*row_id, None)),
-                false => row.map(|row| (*row_id, Some(row))),
+                false => s
+                    .messages
+                    .iter()
+                    .position(|row| row.message_id == *row_id)
+                    .map(|row| (*row_id, Some(row))),
             }
         }))
     })
@@ -28381,7 +28384,8 @@ fn bring_the_named_conversation_rows_up_to_date(
     };
     let (repainting, left, len_after) = {
         let mut s = lock_state(state);
-        let brought = view_state::bring_rows_up_to_date(&s.conversations, named, &fresh);
+        let on_screen = std::mem::take(&mut s.conversations);
+        let brought = view_state::bring_rows_up_to_date(on_screen, named, &fresh);
         s.conversations = brought.rows;
         (brought.repainting, brought.left, s.conversations.len())
     };

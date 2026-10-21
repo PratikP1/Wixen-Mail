@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 780
+open_count: 781
 waived_count: 0
 fixed_count: 149
-total_count: 929
-last_updated: 2026-10-21T23:45:00.000Z
+total_count: 930
+last_updated: 2026-10-21T23:50:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -944,6 +944,7 @@ last_updated: 2026-10-21T23:45:00.000Z
 | 927 | 13.3 | deviation | scripts/guards.py |  | 13.3-10, found 2026-10-21 while re-measuring nineteen records: one record ended "this record could not be measured: OSError(22, 'Invalid argument')" and its break stayed in src/application/contacts_sync.rs, so the run carried on and measured every later record against two breaks at once, reporting eight tests red that the records did not name. Nothing stopped the run and nothing said the tree was left broken; it was seen only by reading the verdicts and the diff. The run was stopped, the line put back by hand, and the nineteen measured again cleanly. Where the error arose is not diagnosed; the restore in the finally block of the function that applies a break is the likely place, since the break was what stayed. Recommendation: after restoring a file, compare its bytes with the copy kept and stop the whole run with a sentence when they differ, so a record that could not be measured never poisons the ones after it | open |  | 2026-10-21T22:00:00.000Z |  |
 | 928 | 13.3 | todo | src/application/carddav_sync.rs |  | 13.3-10, a question for Pratik: after a CardDAV answer that is not whole, because the server stopped at its own limit or some cards could not be read, the sync still writes the address book's new change marker down, so the next sync sees nothing has changed and does not ask for the cards again until something in the address book changes. The cards past the limit then stay missing here, and nothing is taken off meanwhile. Recommendation: keep the old marker after an answer that is not whole, so the next sync asks again; the cost is a whole read on every sync for a server that always stops short, which is what that server needs anyway. Not changed by 13.3-10, which kept the marker as it was | open |  | 2026-10-21T22:00:00.000Z |  |
 | 929 | 13.3 | unrun-verify | src/application/import_tree.rs |  | 13.3-12, items 14 and 26 of the review of 2026-10-20, tried by the tester under NVDA on a build holding 13.3-12's merge: File, Import, a zip holding one damaged file beside good ones, then a folder holding one mailbox file another program has open; hear each closing sentence say what came in and then, once, the file left out and why, and nothing about the zip stopping partway through or another copy. Held by cases in application::import_tree, application::importing_messages and service::mailbox_archive, on zips this project's own writer made and then broke, and the guard records "the files the first look could not read are carried onto the import's sentence", "a file the first look found not matching its archive is said once" and "a zip's broken packed bytes are read as damage"; nobody has heard the sentences. Closed when he has heard both | open |  | 2026-10-21T23:45:00.000Z |  |
+| 930 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-14, premise 1, read in the code on 2026-10-20 by the review's checkers and not timed, older than 13.2: mark_these_read and star_these find each chosen message among the loaded rows with iter_mut().find, one search per message under the state lock, so a mark or a star over a large selection costs the loaded rows times the selection on the interface thread, in either view. Not one of the review's 42; left by 13.3-14, which fixed the rule over the conversation rows beside it (review item 17). Recommended: look the rows up by id through a map built once per command, with an ignored timing like 13.3-14's at 5,000 chosen; Pratik's to schedule | open |  | 2026-10-21T23:50:00.000Z |  |
 
 ````json
 [
@@ -12093,6 +12094,18 @@ last_updated: 2026-10-21T23:45:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T23:45:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 930,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-14, premise 1, read in the code on 2026-10-20 by the review's checkers and not timed, older than 13.2: mark_these_read and star_these find each chosen message among the loaded rows with iter_mut().find, one search per message under the state lock, so a mark or a star over a large selection costs the loaded rows times the selection on the interface thread, in either view. Not one of the review's 42; left by 13.3-14, which fixed the rule over the conversation rows beside it (review item 17). Recommended: look the rows up by id through a map built once per command, with an ignored timing like 13.3-14's at 5,000 chosen; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T23:50:00.000Z",
     "resolved_at": null
   }
 ]

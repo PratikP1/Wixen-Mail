@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 885 records have arrived since and have not been through it.
+# 888 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40164,7 +40164,88 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
+]
+
+# The rule over the rows asking whether each row was touched by a scan of
+# the touched set, the shape it had before 13.3-14: every row on screen
+# walks every touched conversation, so a mark over 5,000 conversations took
+# 523 ms over 22,503 rows and 4.1 s over 130,000 on a release build (review
+# item 17). The answers are the same, so only the reading of the rule's text
+# goes red; the cost is the ignored timing beside it, run by hand.
+#
+# Measured by hand on 2026-10-21: the target at 26 passed and 1 failed, this
+# one; the whole library at 9,421 passed and 0 failed.
+[[guard]]
+name = "the rule over the conversation rows looks each row up rather than scanning what was touched"
+file = "src/presentation/view_state.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''        if !touched.contains(&whose) {'''
+after = '''        if touched.iter().find(|one| **one == whose).is_none() {'''
+red = [
+    "test_the_rule_over_the_rows_looks_each_row_up",
+]
+tests_last_seen = [
+    { file = "src/presentation/view_state.rs", tests = 62 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
+]
+
+# A set leaving asking each message's place in the loaded rows before it
+# knows whether the list shows messages, the shape it had before 13.3-14:
+# under conversation view every message of a delete or a move scans the
+# loaded rows for a place that is thrown away, under the state lock (review
+# item 32). The set is the same, so only the reading goes red.
+#
+# Measured by hand on 2026-10-21: the target at 28 passed and 1 failed, this
+# one; the whole library at 9,420 passed and 1 failed, the plan reading in
+# `storage_shape` that 13.3-14's red had left red at the time, and nothing
+# this break reached.
+[[guard]]
+name = "a set leaving asks a message's place only when the list shows messages"
+file = "src/presentation/wx_app.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''            match by_message {
+                true => Some((*row_id, None)),'''
+after = '''            match (by_message, s.messages.iter().position(|row| row.message_id == *row_id)).0 {
+                true => Some((*row_id, None)),'''
+red = [
+    "test_a_set_leaving_asks_each_place_only_under_the_message_view",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
+]
+
+# The missing text of one conversation read over the whole scope again and
+# narrowed after it, as it was before 13.3-14: the same messages, built from
+# every message of the account outside All Mail and every conversation of
+# the folder first, on every conversation row landed on (review item 33).
+# The answers are the same, so only the plan reading goes red.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,420 passed and 1
+# failed, this one; `a_conversation_row_stands_for_one_message` at 21,
+# `several_actions_reach_the_server_in_order` at 18 and
+# `a_change_made_here_reaches_the_conversation_rows` at 29, all passing.
+[[guard]]
+name = "landing on a conversation reads its missing text through the narrowed scope"
+file = "src/data/message_cache/messages.rs"
+before = '''pub(super) fn one_conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
+}'''
+after = '''pub(super) fn one_conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER, Listing::Whole).replace("\n         here AS (", "\n         everything AS (")
+        + ",
+         here AS (
+             SELECT * FROM everything
+             WHERE thread_id IN (SELECT json_extract(value, '$[1]') FROM json_each(?4))
+         )"
+}'''
+red = [
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
 # The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
@@ -40222,6 +40303,10 @@ tests_last_seen = [
 # Measured by hand on 2026-10-18: the whole library 9,268 passed and 2
 # failed, the reading and the scope reading; the two targets that read
 # conversations passed.
+#
+# Rewritten 2026-10-21 by 13.3-14: `conversation_scope` is compiled for tests
+# only since, and a break the program's own build cannot compile measures
+# nothing, so the break names the text that function returns.
 [[guard]]
 name = "the action's read of one conversation reads the narrowed scope"
 file = "src/data/message_cache/messages.rs"
@@ -40233,7 +40318,7 @@ after = '''         FROM here m
              SELECT json_extract(value, '$[1]') FROM json_each(?4)
          )
          ORDER BY m.received_at ASC, m.id ASC",
-        scope = conversation_scope()'''
+        scope = the_scope_over(&ONE_FOLDER, Listing::Whole)'''
 red = [
     "data::message_cache::messages::tests::test_both_conversation_queries_are_built_on_one_scope",
     "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
@@ -40271,7 +40356,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The catch-up taken out of the removal under conversation view: a delete or
@@ -40316,7 +40401,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The target that ignores the message an opened conversation named: Delete,
@@ -43402,7 +43487,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The same names left unused when a refusal ends a set's wait, so the rows of
@@ -43425,7 +43510,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
 # The store's answer left out of whose message a command reaches (13.3-04,
