@@ -1044,6 +1044,142 @@ fn test_the_loop_reading_complains_at_each_part_left_out() {
     }
 }
 
+// ── A message whose text is not here is refused, 13.3-05 ──────────────────
+//
+// A reply or a forward from an opened conversation read the named message's
+// text from the store and, when there was none, quoted nothing: a forward went
+// out with a header and an empty body, and nothing was said. Both commands now
+// ask `application::reply` what quoting finds, and when the text is not here
+// they say so, start its download, and open no compose window.
+
+const THE_QUOTE: &str = "fn the_body_a_command_quotes(";
+const THE_DECISION: &str = "what_quoting_finds(";
+const THE_REFUSAL: &str = "fn the_text_is_not_here_yet(";
+const THE_REFUSAL_CALLED: &str = "the_text_is_not_here_yet(";
+const THE_FETCH: &str = "spawn_body_fetch(";
+const THE_SENTENCE: &str = "FeedbackEvent::ActionRefused";
+const THE_REPLY: &str = "fn start_reply(";
+const THE_FORWARD_ARM: &str = "_ if id == ID_FORWARD =>";
+const THE_NEXT_COMMAND_ARM: &str = "_ if id ==";
+const THE_COMPOSE: &str = "open_compose(";
+
+/// The refusal is reached in `text` before any compose window opens.
+fn refuses_before_composing(text: &str, which: &str) -> Result<(), String> {
+    let refused = text.find(THE_REFUSAL_CALLED).ok_or(format!(
+        "{which} never reaches {THE_REFUSAL_CALLED}, so a message whose text is not here \
+         opens with nothing quoted"
+    ))?;
+    match text.find(THE_COMPOSE) {
+        Some(composed) if composed < refused => Err(format!(
+            "{which} opens a compose window before it reaches {THE_REFUSAL_CALLED}"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The quote asks the decision; the refusal fetches and says why; Reply and
+/// Forward each refuse before they compose.
+fn the_quote_is_refused_and_fetched(app: &str) -> Result<(), String> {
+    if !body_of(app, THE_QUOTE)?.contains(THE_DECISION) {
+        return Err(format!(
+            "{THE_QUOTE} does not ask {THE_DECISION}, so a message whose text is not here is \
+             quoted as nothing"
+        ));
+    }
+    let refusal = body_of(app, THE_REFUSAL)?;
+    if !refusal.contains(THE_FETCH) {
+        return Err(format!(
+            "{THE_REFUSAL} does not reach {THE_FETCH}, so the text never starts downloading"
+        ));
+    }
+    if !refusal.contains(THE_SENTENCE) {
+        return Err(format!(
+            "{THE_REFUSAL} does not signal {THE_SENTENCE}, so the refusal says nothing"
+        ));
+    }
+    refuses_before_composing(&body_of(app, THE_REPLY)?, "start_reply")?;
+    let arm_at = app.find(THE_FORWARD_ARM).ok_or(format!(
+        "{THE_FORWARD_ARM} is no longer in this file, so this reads nothing"
+    ))?;
+    let arm = &app[arm_at + THE_FORWARD_ARM.len()..];
+    let arm = &arm[..arm.find(THE_NEXT_COMMAND_ARM).unwrap_or(arm.len())];
+    refuses_before_composing(arm, "the Forward arm")
+}
+
+#[test]
+fn test_reply_and_forward_say_the_text_is_not_here_and_fetch_it() {
+    the_quote_is_refused_and_fetched(&the_main_window()).unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The four places as they should be, holding every anchor the reading
+/// looks for.
+fn a_quote_as_it_should_be() -> String {
+    "fn the_body_a_command_quotes(state) -> TheQuote {\n    \
+     match reply::what_quoting_finds(stored.as_ref(), reachability_of(state)) {}\n}\n\
+     fn the_text_is_not_here_yet(app, a11y, not_here: NotHere) {\n    \
+     spawn_body_fetch(app, not_here.message_row_id, not_here.uid);\n    \
+     let _ = a11y.signal(FeedbackEvent::ActionRefused, sentence);\n}\n\
+     fn start_reply(app) {\n    \
+     let TheQuote::Here(quote) = the_body_a_command_quotes(state, cache, &message) else {\n        \
+     return the_text_is_not_here_yet(app, a11y, not_here);\n    };\n    \
+     open_compose(app, frame, cache, a11y, compose);\n}\n\
+     fn dispatch() {\n    match id {\n        \
+     _ if id == ID_FORWARD => {\n            \
+     let TheQuote::Here(body) = quote else {\n                \
+     the_text_is_not_here_yet(app, &a11y, not_here);\n                return;\n            };\n            \
+     open_compose(app, &frame, &message_cache, &a11y, forward);\n        }\n        \
+     _ if id == ID_DELETE => {}\n    }\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_quote_reading_complains_at_each_part_left_out() {
+    let app = a_quote_as_it_should_be();
+    the_quote_is_refused_and_fetched(&app).unwrap_or_else(|why| panic!("{why}"));
+    for (planted, needle, said) in [
+        (
+            "reply::what_quoting_finds(stored.as_ref(), reachability_of(state))",
+            "Some(stored)",
+            "does not ask what_quoting_finds(",
+        ),
+        (
+            "    spawn_body_fetch(app, not_here.message_row_id, not_here.uid);\n",
+            "",
+            "does not reach spawn_body_fetch(",
+        ),
+        (
+            "    let _ = a11y.signal(FeedbackEvent::ActionRefused, sentence);\n",
+            "",
+            "the refusal says nothing",
+        ),
+        (
+            "        return the_text_is_not_here_yet(app, a11y, not_here);\n",
+            "        return;\n",
+            "start_reply never reaches the_text_is_not_here_yet(",
+        ),
+        (
+            "                the_text_is_not_here_yet(app, &a11y, not_here);\n",
+            "",
+            "the Forward arm never reaches the_text_is_not_here_yet(",
+        ),
+        (
+            "            let TheQuote::Here(body) = quote else {\n",
+            "            open_compose(app, &frame, &message_cache, &a11y, forward);\n            \
+             let TheQuote::Here(body) = quote else {\n",
+            "the Forward arm opens a compose window before",
+        ),
+    ] {
+        let broken = app.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, app,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = the_quote_is_refused_and_fetched(&broken)
+            .expect_err("a part of the refusal left out was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+}
+
 // ── A message read from the conversation is marked read, 13.2-03.1 ────────
 //
 // The reading timer marked only the message the list's cursor row stands
