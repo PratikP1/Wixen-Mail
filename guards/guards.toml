@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 885 records have arrived since and have not been through it.
+# 886 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40164,7 +40164,30 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/messages.rs", tests = 183 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
+]
+
+# The rule over the rows asking whether each row was touched by a scan of
+# the touched set, the shape it had before 13.3-14: every row on screen
+# walks every touched conversation, so a mark over 5,000 conversations took
+# 523 ms over 22,503 rows and 4.1 s over 130,000 on a release build (review
+# item 17). The answers are the same, so only the reading of the rule's text
+# goes red; the cost is the ignored timing beside it, run by hand.
+#
+# Measured by hand on 2026-10-21: the target at 26 passed and 1 failed, this
+# one; the whole library at 9,421 passed and 0 failed.
+[[guard]]
+name = "the rule over the conversation rows looks each row up rather than scanning what was touched"
+file = "src/presentation/view_state.rs"
+suite = "a_change_made_here_reaches_the_conversation_rows"
+before = '''        if !touched.contains(&whose) {'''
+after = '''        if touched.iter().find(|one| **one == whose).is_none() {'''
+red = [
+    "test_the_rule_over_the_rows_looks_each_row_up",
+]
+tests_last_seen = [
+    { file = "src/presentation/view_state.rs", tests = 62 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
 ]
 
 # The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
@@ -40271,7 +40294,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
 ]
 
 # The catch-up taken out of the removal under conversation view: a delete or
@@ -40316,7 +40339,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
 ]
 
 # The target that ignores the message an opened conversation named: Delete,
@@ -43402,7 +43425,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
 ]
 
 # The same names left unused when a refusal ends a set's wait, so the rows of
@@ -43425,7 +43448,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 26 },
+    { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 29 },
 ]
 
 # The store's answer left out of whose message a command reaches (13.3-04,

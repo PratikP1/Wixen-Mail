@@ -13,6 +13,8 @@
 //! the count handed to the control, and which `ORDER BY` the query is given.
 //! None of those needs a window to decide.
 
+use std::collections::{HashMap, HashSet};
+
 use crate::application::conversations::{ConversationItem, WhoseConversation};
 use crate::presentation::message_columns::Sort;
 
@@ -275,7 +277,8 @@ pub struct RowsBroughtUpToDate {
     pub rows: Vec<ConversationItem>,
     /// Where each row that left stood, in the rows as they were, in order.
     pub left: Vec<usize>,
-    /// What the control repaints, by [`which_rows_changed`].
+    /// What the control repaints: the rows [`which_rows_changed`] would name
+    /// between the rows as they were and as they are.
     pub repainting: Repainting,
 }
 
@@ -287,29 +290,87 @@ pub struct RowsBroughtUpToDate {
 /// change did not touch is left alone, and a fresh row that is not on screen
 /// is not added: a row keeps its place until the folder is next read, so the
 /// cursor and what was just heard do not jump.
+///
+/// What it costs is the rows on screen plus the conversations touched, and
+/// not their product (13.3-14, review item 17). Each row is looked up by its
+/// account and conversation, in a set of the touched pairs and a map of the
+/// fresh rows, the first fresh row for a pair kept; and the rows are taken
+/// and changed where they stand rather than copied, so a row nothing touched
+/// is neither copied nor compared. Until 13.3-14 each row on screen scanned
+/// the touched list, and every row was copied and compared, on the interface
+/// thread under the state lock: with 5,000 conversations touched that took
+/// 523 ms over 22,503 rows and 4.1 s over 130,000, measured 2026-10-21 on a
+/// release build, and 8.5 ms and 27.1 ms after; looking up alone, with every
+/// row still copied, left 154.7 ms over 130,000. The rows are on
+/// `docs/development/measurements.md`.
+///
+/// The repainting is worked out without a copy of the rows as they were.
+/// Before the first row that left, a row changed if it was replaced by
+/// something different; from it on, every row now stands where another
+/// stood, and two rows of one list never share an account and conversation,
+/// so each is repainted, which is what [`which_rows_changed`] answers.
 pub fn bring_rows_up_to_date(
-    on_screen: &[ConversationItem],
+    mut rows: Vec<ConversationItem>,
     touched: &[WhoseConversation],
     fresh: &[ConversationItem],
 ) -> RowsBroughtUpToDate {
-    let mut rows = Vec::with_capacity(on_screen.len());
+    let touched: HashSet<(&str, &str)> = touched
+        .iter()
+        .map(|one| (one.account_id.as_str(), one.thread_id.as_str()))
+        .collect();
+    let mut came_back: HashMap<(&str, &str), usize> = HashMap::with_capacity(fresh.len());
+    for (at, row) in fresh.iter().enumerate() {
+        came_back.entry(whose_row(row)).or_insert(at);
+    }
     let mut left = Vec::new();
-    for (at, row) in on_screen.iter().enumerate() {
-        let Some(this) = touched.iter().find(|one| one.is(row)) else {
-            rows.push(row.clone());
+    let mut replaced = Vec::new();
+    for (at, row) in rows.iter_mut().enumerate() {
+        let whose = whose_row(row);
+        if !touched.contains(&whose) {
             continue;
-        };
-        match fresh.iter().find(|came_back| this.is(came_back)) {
-            Some(came_back) => rows.push(came_back.clone()),
+        }
+        match came_back.get(&whose).map(|index| &fresh[*index]) {
+            Some(came_back) if *came_back == *row => {}
+            Some(came_back) => {
+                *row = came_back.clone();
+                replaced.push(at);
+            }
             None => left.push(at),
         }
     }
-    let repainting = which_rows_changed(on_screen, &rows);
+    let repainting = match left.first() {
+        None => Repainting {
+            rows: replaced,
+            count_changed: false,
+        },
+        Some(&first) => {
+            let mut was_at = 0;
+            rows.retain(|_| {
+                let stays = left.binary_search(&was_at).is_err();
+                was_at += 1;
+                stays
+            });
+            Repainting {
+                rows: replaced
+                    .into_iter()
+                    .filter(|row| *row < first)
+                    .chain(first..rows.len())
+                    .collect(),
+                count_changed: true,
+            }
+        }
+    };
     RowsBroughtUpToDate {
         rows,
         left,
         repainting,
     }
+}
+
+/// A row's account and conversation, the pair [`WhoseConversation::is`]
+/// compares, borrowed.
+fn whose_row(row: &ConversationItem) -> (&str, &str) {
+    (row.read_in.account_id.as_str(), row.thread_id.as_str())
 }
 
 /// The `ORDER BY` body for the list as it is being shown.
@@ -702,7 +763,7 @@ mod tests {
         ];
         let fresh = [a_conversation("b@x", 2)];
 
-        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[0])], &fresh);
+        let now = bring_rows_up_to_date(on_screen.to_vec(), &[whose(&fresh[0])], &fresh);
 
         assert_eq!(
             now.rows,
@@ -722,7 +783,7 @@ mod tests {
             a_conversation("c@x", 1),
         ];
 
-        let now = bring_rows_up_to_date(&on_screen, &[whose(&on_screen[0])], &[]);
+        let now = bring_rows_up_to_date(on_screen.to_vec(), &[whose(&on_screen[0])], &[]);
 
         assert_eq!(now.rows, [on_screen[1].clone(), on_screen[2].clone()]);
         assert_eq!(now.left, [0]);
@@ -743,7 +804,7 @@ mod tests {
             a_conversation("b@x", 1),
         ];
 
-        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[1])], &fresh);
+        let now = bring_rows_up_to_date(on_screen.to_vec(), &[whose(&fresh[1])], &fresh);
 
         assert_eq!(now.rows, [on_screen[0].clone(), fresh[1].clone()]);
         assert_eq!(now.repainting.rows(), [1]);
@@ -756,7 +817,11 @@ mod tests {
         let on_screen = [unread(a_conversation("a@x", 1), 1)];
         let fresh = [a_conversation("a@x", 1), a_conversation("z@x", 1)];
 
-        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[0]), whose(&fresh[1])], &fresh);
+        let now = bring_rows_up_to_date(
+            on_screen.to_vec(),
+            &[whose(&fresh[0]), whose(&fresh[1])],
+            &fresh,
+        );
 
         assert_eq!(now.rows, [fresh[0].clone()]);
         assert!(now.left.is_empty());
@@ -776,7 +841,7 @@ mod tests {
             in_account(a_conversation("a@x", 1), "second"),
         ];
 
-        let now = bring_rows_up_to_date(&on_screen, &[whose(&fresh[1])], &fresh);
+        let now = bring_rows_up_to_date(on_screen.to_vec(), &[whose(&fresh[1])], &fresh);
 
         assert_eq!(now.rows, [on_screen[0].clone(), fresh[1].clone()]);
         assert_eq!(now.repainting.rows(), [1]);

@@ -455,6 +455,28 @@ fn the_median_of_three(mut work: impl FnMut() -> usize) -> (Duration, usize) {
     (takes[1], rows)
 }
 
+/// The rule over `on_screen`, the median of three, with the rows it is
+/// handed copied before each take's clock starts and the rows it answers let
+/// go after the clock stops: the window hands it the rows it holds and keeps
+/// what it answers, so neither the copy nor the letting go is its cost.
+fn the_rule_s_median_of_three(
+    on_screen: &[ConversationItem],
+    touched: &[WhoseConversation],
+    fresh: &[ConversationItem],
+) -> (Duration, usize) {
+    let mut takes = Vec::new();
+    let mut rows = 0;
+    for _ in 0..3 {
+        let handed = on_screen.to_vec();
+        let started = Instant::now();
+        let brought = bring_rows_up_to_date(handed, touched, fresh);
+        takes.push(started.elapsed());
+        rows = brought.rows.len();
+    }
+    takes.sort();
+    (takes[1], rows)
+}
+
 /// What M on a conversation row may spend in the store, all of it: both reads
 /// of the conversation, the writes, and the rule over the rows on screen.
 /// 13.2-02 set 100 ms for a read on a key press and measured 299 ms for one of
@@ -538,11 +560,7 @@ fn the_press_timed(cache: &MessageCache, inbox: i64, condition: &str) -> ThePres
     let fresh = cache
         .conversations_named_in(inbox, THE_ACCOUNT, reach, None, &touched)
         .expect("the catch-up read");
-    let (ruled, _) = the_median_of_three(|| {
-        bring_rows_up_to_date(&on_screen, &touched, &fresh)
-            .rows
-            .len()
-    });
+    let (ruled, _) = the_rule_s_median_of_three(&on_screen, &touched, &fresh);
     let (every_inbox, of_every_inbox) = the_median_of_three(|| {
         cache
             .conversations_named_in_every_inbox(reach, None, &touched)
@@ -656,11 +674,7 @@ fn the_rule_timed(rows: usize) -> Duration {
         .step_by(2)
         .map(|n| a_row_in_memory(n * apart, 0))
         .collect();
-    let (took, kept) = the_median_of_three(|| {
-        bring_rows_up_to_date(&on_screen, &touched, &fresh)
-            .rows
-            .len()
-    });
+    let (took, kept) = the_rule_s_median_of_three(&on_screen, &touched, &fresh);
     assert_eq!(
         kept,
         rows - MOST_ROWS_WORTH_SELECTING / 2,
