@@ -112,6 +112,24 @@ pub enum WhatTheNoteHereWas {
     Written,
 }
 
+/// Whether the note `here` holds words somebody changed and nobody has sent,
+/// which the backend's `title` and `body` would replace.
+///
+/// Waiting is not enough on its own, because a pin leaves a note waiting too
+/// and the seam carries no pin, so a note pinned while a read ran has nothing
+/// to lose to the backend's words. Its words are someone's work if they were
+/// waiting when the read found the note, or were typed since.
+fn holds_words_nobody_has_sent(
+    here: &NoteEntry,
+    as_read: &NoteEntry,
+    title: &str,
+    body: &str,
+) -> bool {
+    let theirs_differ = here.title != title || here.body != body;
+    let typed_since = here.title != as_read.title || here.body != as_read.body;
+    here.pending && theirs_differ && (as_read.pending || typed_since)
+}
+
 /// The wanted name, or the first numbering of it nothing has taken.
 ///
 /// `Work`, then `Work (2)`, then `Work (3)`. The Windows convention, which
@@ -900,7 +918,28 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Write a backend's words down over a note a read held.
+    /// Write a backend's words down over a note a read held, deciding on the
+    /// note as it stands rather than as the read found it.
+    ///
+    /// The read finds every note here first and then fetches each changed copy
+    /// over the network, and the window writes on a connection of its own
+    /// meanwhile. Writing the row the read started with, through the upsert,
+    /// carried that row back over whatever was done in between, so each thing
+    /// is asked of the note again here:
+    ///
+    /// - deleted, or moved, which takes the row away under this identifier and
+    ///   writes a copy under another: nothing is written, because the upsert
+    ///   would make the note again and a moved note would show twice. The next
+    ///   push already knows what either owes the backend;
+    /// - changed here and not sent, with words that differ from the backend's:
+    ///   nothing is written and the note comes back as it stands, for the read
+    ///   to hold the two copies for a choice;
+    /// - anything else, a pin among them: the backend's words, name and marker
+    ///   are written with one `UPDATE` by identifier, which inserts nothing and
+    ///   leaves the folder and the pin the row holds now.
+    ///
+    /// The read and the write are one immediate transaction, so nothing the
+    /// window does can land between the decision and the write.
     pub fn the_backends_words_over(
         &self,
         as_read: &NoteEntry,
@@ -909,15 +948,36 @@ impl MessageCache {
         named: &str,
         version: Option<&str>,
     ) -> Result<WhatTheNoteHereWas> {
-        self.save_note(&NoteEntry {
-            title: title.to_string(),
-            body: body.to_string(),
-            known_as: Some(named.to_string()),
-            known_version: version.map(str::to_string),
-            pending: false,
-            updated_at: chrono::Utc::now().to_rfc3339(),
-            ..as_read.clone()
-        })?;
+        let writing = rusqlite::Transaction::new_unchecked(
+            &self.conn,
+            rusqlite::TransactionBehavior::Immediate,
+        )
+        .map_err(|e| Error::Other(format!("Failed to start writing a note down: {}", e)))?;
+        let Some(here) = self.get_note(&as_read.id)? else {
+            return Ok(WhatTheNoteHereWas::Gone);
+        };
+        if holds_words_nobody_has_sent(&here, as_read, title, body) {
+            return Ok(WhatTheNoteHereWas::ChangedHere(Box::new(here)));
+        }
+        self.conn
+            .execute(
+                "UPDATE notes
+                 SET title = ?2, body = ?3, provider_note_id = ?4, provider_version = ?5,
+                     pending = 0, updated_at = ?6
+                 WHERE id = ?1",
+                rusqlite::params![
+                    as_read.id,
+                    title,
+                    body,
+                    named,
+                    version,
+                    chrono::Utc::now().to_rfc3339()
+                ],
+            )
+            .map_err(|e| Error::Other(format!("Failed to write a note down: {}", e)))?;
+        writing
+            .commit()
+            .map_err(|e| Error::Other(format!("Failed to write a note down: {}", e)))?;
         Ok(WhatTheNoteHereWas::Written)
     }
 

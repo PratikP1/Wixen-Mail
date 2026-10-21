@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 877 records have arrived since and have not been through it.
+# 880 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -785,7 +785,7 @@ tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/every_google_calendar.rs", tests = 14 },
     { file = "src/application/mail_sync.rs", tests = 159 },
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
     { file = "src/application/reporting_junk.rs", tests = 31 },
@@ -1788,8 +1788,8 @@ red = [
     "data::message_cache::notes::tests::test_a_note_edited_while_its_push_was_in_flight_keeps_the_edit_and_stays_waiting",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # A note deleted here while its create was at the backend leaving a deletion
@@ -1806,8 +1806,8 @@ red = [
     "data::message_cache::notes::tests::test_a_note_made_here_and_deleted_during_its_create_is_owed_to_the_backend",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # A note moved into another folder while its create was at the backend given
@@ -1825,24 +1825,32 @@ red = [
     "data::message_cache::notes::tests::test_a_note_made_here_and_moved_during_its_create_stays_moved_and_the_first_copy_is_owed",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # The notes editor's write leaving the waiting flag as it was, so an edit to a
 # note a backend holds is never sent. Written 2026-10-17 by 13.2-20, taken by
 # hand against the whole library, 9,248 tests, with nothing else red; the push
 # cases edit notes already waiting, so only the store's own case sees it.
+#
+# Corrected 2026-10-21 by 13.3-11: its two cases for an edit made while a notes
+# read fetches the backend's copy edit a note that was not waiting, so an edit
+# the break leaves unmarked reads as nobody's work and is written over. Found
+# by the re-measure of that day, which named both and nothing else.
 [[guard]]
 name = "a note saved from the editor is waiting to be sent"
 file = "src/data/message_cache/notes.rs"
 before = '''                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = 1'''
 after = '''                "UPDATE notes SET title = ?2, body = ?3, updated_at = ?4, pending = pending'''
 red = [
+    "application::notes_sync::tests::test_a_note_edited_while_the_read_fetches_it_is_held_rather_than_written_over",
+    "data::message_cache::notes::tests::test_a_note_edited_while_a_read_runs_is_not_written_over_and_comes_back_as_it_stands",
     "data::message_cache::notes::tests::test_a_note_saved_from_the_editor_is_waiting_and_keeps_its_folder_pin_and_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # What a backend kept of a note written over an edit typed while the note was
@@ -1861,7 +1869,7 @@ red = [
     "application::notes_sync::tests::test_a_note_edited_while_the_backend_keeps_a_different_copy_is_not_written_over",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
 ]
 
 # The Move command leaving a note's stamp where it was. Only the stamp's own
@@ -1877,7 +1885,7 @@ red = [
     "application::notes_sync::tests::test_a_note_made_here_and_moved_while_the_backend_makes_it_stays_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/presentation/managers.rs", tests = 137 },
 ]
 
@@ -2130,7 +2138,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
@@ -20588,7 +20596,7 @@ red = [
     "data::message_cache::notes::tests::test_get_note_returns_the_full_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # ── The word beside a note saying what its body is written in ───────────────
@@ -20621,7 +20629,7 @@ red = [
     "data::message_cache::notes::tests::test_a_stored_form_this_build_did_not_write_survives_being_written_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # The other half. The word is still read correctly and is thrown away on the
@@ -20638,7 +20646,7 @@ red = [
     "data::message_cache::notes::tests::test_what_this_program_says_a_notes_body_is_written_in_is_one_word",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # ── A menu offering a sync that cannot happen, or hiding one that can ───────
@@ -20857,7 +20865,7 @@ red = [
     "data::message_cache::notes::tests::test_pinning_a_note_leaves_it_waiting_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/notes.rs", tests = 37 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]
 
 # A copy of a note makes a second note at the backend rather than writing over
@@ -20924,7 +20932,7 @@ red = [
     "application::notes_sync::tests::test_a_note_deleted_here_is_not_written_back_down_while_the_backend_still_names_it",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
 ]
 
 # The losing copy of a note is held for somebody rather than written over.
@@ -20992,7 +21000,7 @@ red = [
     "application::notes_sync::tests::test_a_note_that_moved_in_both_places_is_held_rather_than_written_over",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
 ]
 
 # A note's body comes back the bytes it went out as.
@@ -21142,25 +21150,34 @@ tests_last_seen = [
 # suite. The push is where a clash is normally found, and the push does not
 # always run; the read had no guard at all, so a change the setting held was
 # written over inside the same sync that counted it as waiting.
+#
+# Rewritten 2026-10-21 by 13.3-11 (review item 13): the decision moved into the
+# store, which answers on the note as it stands, and the read holds the two
+# copies on its `ChangedHere` answer. The break writes the backend's words over
+# that note instead. Taken by hand that day: the suite at 33 passed and these
+# two failed, as before; in the library it also reddens 13.3-11's sync case for
+# an edit made during the fetch, which the store's record below holds.
 [[guard]]
 name = "a change nobody has sent is not written over by the read"
 file = "src/application/notes_sync.rs"
 suite = "the_notes_seam_takes_a_second_kind_of_backend"
-before = '''        if let Some(here) = ours
-            && here.pending
-            && (here.title != said.title || here.body != said.body)
-        {
-            hold_these_two_copies(cache, here, container, &said, None, result);
-            continue;
-        }
-        match write_it_down(cache, folder, ours, &said) {'''
-after = '''        match write_it_down(cache, folder, ours, &said) {'''
+before = '''            Ok(WhatTheNoteHereWas::ChangedHere(here)) => {
+                hold_these_two_copies(cache, &here, container, &said, None, result)
+            }'''
+after = '''            Ok(WhatTheNoteHereWas::ChangedHere(here)) => {
+                let _ = cache.save_note(&NoteEntry {
+                    title: said.title.clone(),
+                    body: said.body.clone(),
+                    pending: false,
+                    ..*here
+                });
+            }'''
 red = [
     "test_the_setting_and_a_document_that_moved_do_not_lose_the_change",
     "test_the_setting_and_a_page_that_moved_do_not_lose_the_change",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21184,7 +21201,7 @@ red = [
     "test_a_page_the_backend_no_longer_holds_is_made_again",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21219,7 +21236,7 @@ red = [
     "test_a_three_part_section_arrives_as_it_was_given",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21260,7 +21277,7 @@ red = [
     "test_the_summary_says_a_backend_could_not_keep_a_note_only_when_one_really_could_not",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21920,7 +21937,7 @@ red = [
     "test_a_page_changed_to_what_onenote_already_says_is_not_a_question",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -21954,7 +21971,7 @@ red = [
     "test_a_page_renamed_at_both_ends_is_still_a_question",
 ]
 tests_last_seen = [
-    { file = "src/application/notes_sync.rs", tests = 27 },
+    { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "tests/the_notes_seam_takes_a_second_kind_of_backend.rs", tests = 35 },
 ]
 
@@ -43630,4 +43647,80 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/ical_subscription.rs", tests = 32 },
+]
+
+# A note deleted or moved while a notes read fetches the backend's copy is not
+# written back (13.3-11, review item 13). The break writes the backend's words
+# with the upsert when the row has gone, which is what the read did before:
+# the deleted note made again, the moved one shown in its old folder too.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,409 passed and 4
+# failed, these four, all new with 13.3-11.
+[[guard]]
+name = "a note gone while a read fetched it is not written back"
+file = "src/data/message_cache/notes.rs"
+before = '''        let Some(here) = self.get_note(&as_read.id)? else {
+            return Ok(WhatTheNoteHereWas::Gone);
+        };'''
+after = '''        let Some(here) = self.get_note(&as_read.id)? else {
+            self.save_note(&NoteEntry {
+                title: title.to_string(),
+                body: body.to_string(),
+                ..as_read.clone()
+            })?;
+            writing.commit().map_err(|e| Error::Other(e.to_string()))?;
+            return Ok(WhatTheNoteHereWas::Written);
+        };'''
+red = [
+    "application::notes_sync::tests::test_a_note_deleted_while_the_read_fetches_it_does_not_come_back",
+    "application::notes_sync::tests::test_a_note_moved_while_the_read_fetches_it_is_in_one_folder",
+    "data::message_cache::notes::tests::test_a_note_deleted_while_a_read_runs_is_gone_and_is_not_written_back",
+    "data::message_cache::notes::tests::test_a_note_moved_while_a_read_runs_is_gone_and_the_moved_copy_is_left_alone",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
+]
+
+# A note edited while a notes read fetches the backend's copy is answered as
+# changed here, not written over (13.3-11, review item 13). The break never
+# answers it, so the backend's words go over the edit.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,411 passed and 2
+# failed, these two. The seam suite's two cases for a change the setting held
+# also redden under it; the record above, which runs that suite, holds them.
+[[guard]]
+name = "a note edited while a read fetched it is not written over"
+file = "src/data/message_cache/notes.rs"
+before = '''        if holds_words_nobody_has_sent(&here, as_read, title, body) {'''
+after = '''        if holds_words_nobody_has_sent(&here, as_read, title, body) && false {'''
+red = [
+    "application::notes_sync::tests::test_a_note_edited_while_the_read_fetches_it_is_held_rather_than_written_over",
+    "data::message_cache::notes::tests::test_a_note_edited_while_a_read_runs_is_not_written_over_and_comes_back_as_it_stands",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
+]
+
+# A note pinned while a notes read fetches the backend's copy takes the
+# backend's words and keeps its pin, rather than being held for a choice
+# between its own unchanged words and the backend's (13.3-11, a record the plan
+# did not list). A pin leaves a note waiting and the seam carries no pin, so
+# waiting alone is not work to lose. The break holds every waiting note.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,411 passed and 2
+# failed, these two.
+[[guard]]
+name = "a note pinned while a read fetched it is not held for a choice"
+file = "src/data/message_cache/notes.rs"
+before = '''    here.pending && theirs_differ && (as_read.pending || typed_since)'''
+after = '''    here.pending && theirs_differ && (as_read.pending || typed_since || true)'''
+red = [
+    "application::notes_sync::tests::test_a_note_pinned_while_the_read_fetches_it_keeps_its_pin",
+    "data::message_cache::notes::tests::test_a_note_pinned_while_a_read_runs_takes_the_backends_words_and_keeps_its_pin",
+]
+tests_last_seen = [
+    { file = "src/application/notes_sync.rs", tests = 31 },
+    { file = "src/data/message_cache/notes.rs", tests = 41 },
 ]

@@ -54,7 +54,7 @@
 use crate::application::notes_backend::{ANoteThere, NotesService, WhatTheBackendSaid};
 use crate::application::summing_up::{SummingUp, how_many};
 use crate::common::Result;
-use crate::data::message_cache::{MessageCache, NoteEntry};
+use crate::data::message_cache::{MessageCache, NoteEntry, WhatTheNoteHereWas};
 
 /// What one notes sync did.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -840,15 +840,35 @@ async fn take_what_has_arrived<S: NotesService>(
         // `05.1-03` put the whole conflict story on the push side, which is
         // where a backend with a marker reports one. Nothing asked what happens
         // when the push never reaches the backend at all.
-        if let Some(here) = ours
-            && here.pending
-            && (here.title != said.title || here.body != said.body)
-        {
-            hold_these_two_copies(cache, here, container, &said, None, result);
+        //
+        // Decided by the store on the note as it stands, not on `ours`. `ours`
+        // was read before the fetch above went over the network, and the
+        // window writes on a connection of its own meanwhile: an edit, a pin,
+        // a move or a delete made while the fetch ran was written over, undone,
+        // shown twice or made again (item 13 of the 2026-10-20 review).
+        let Some(as_read) = ours else {
+            match write_it_down(cache, folder, &said) {
+                Ok(()) => result.stored += 1,
+                Err(e) => result
+                    .errors
+                    .push(format!("A note from the backend could not be kept: {e}")),
+            }
             continue;
-        }
-        match write_it_down(cache, folder, ours, &said) {
-            Ok(()) => result.stored += 1,
+        };
+        match cache.the_backends_words_over(
+            as_read,
+            &said.title,
+            &said.body,
+            &said.known_as.named,
+            said.known_as.version.as_deref(),
+        ) {
+            Ok(WhatTheNoteHereWas::Written) => result.stored += 1,
+            // Deleted or moved while the fetch ran. The next push already knows
+            // what either owes the backend, so the read has nothing to add.
+            Ok(WhatTheNoteHereWas::Gone) => {}
+            Ok(WhatTheNoteHereWas::ChangedHere(here)) => {
+                hold_these_two_copies(cache, &here, container, &said, None, result)
+            }
             Err(e) => result
                 .errors
                 .push(format!("A note from the backend could not be kept: {e}")),
@@ -874,52 +894,35 @@ fn the_marker_stayed_still(ours: Option<&str>, theirs: &ANoteThere) -> bool {
     }
 }
 
-/// Keep what the backend said, over the note it belongs to or as a new one.
+/// Keep what the backend said as a new note, one this computer has never held.
+///
+/// A note it does hold goes through `the_backends_words_over`, which writes
+/// over the row as it stands and never makes one.
 fn write_it_down(
     cache: &MessageCache,
     folder: &crate::data::message_cache::NoteFolderEntry,
-    ours: Option<&NoteEntry>,
     said: &crate::application::notes_backend::ANoteAsItStands,
 ) -> Result<()> {
     let now = chrono::Utc::now().to_rfc3339();
-    let note = match ours {
-        // Everything else about the row stays: which folder somebody filed it
-        // in, whether they pinned it, when they made it. None of those is the
-        // backend's to say, and writing a whole row from what arrived is how a
-        // sync comes to unpin somebody's note.
-        Some(ours) => NoteEntry {
-            title: said.title.clone(),
-            body: said.body.clone(),
-            known_as: Some(said.known_as.named.clone()),
-            known_version: said.known_as.version.clone(),
-            // It is now exactly what the backend holds, so there is nothing
-            // left to send. Left waiting, the next push would write the
-            // backend's own words back at it on every sync forever.
-            pending: false,
-            updated_at: now,
-            ..ours.clone()
-        },
-        None => NoteEntry {
-            id: format!("note-{}", uuid::Uuid::new_v4()),
-            account_id: folder.account_id.clone(),
-            // The folder this container is, which is where a note in this
-            // container belongs. It used to be the account's first note folder,
-            // whatever that was, which is what ledger 246 recorded: folders
-            // somebody made here meant nothing at the other end and every
-            // arrival landed in one place.
-            folder_id: Some(folder.id.clone()),
-            title: said.title.clone(),
-            body: said.body.clone(),
-            format: crate::data::message_cache::NoteBody::AsTyped,
-            pinned: false,
-            created_at: now.clone(),
-            updated_at: now,
-            pending: false,
-            known_as: Some(said.known_as.named.clone()),
-            known_version: said.known_as.version.clone(),
-        },
-    };
-    cache.save_note(&note)
+    cache.save_note(&NoteEntry {
+        id: format!("note-{}", uuid::Uuid::new_v4()),
+        account_id: folder.account_id.clone(),
+        // The folder this container is, which is where a note in this
+        // container belongs. It used to be the account's first note folder,
+        // whatever that was, which is what ledger 246 recorded: folders
+        // somebody made here meant nothing at the other end and every
+        // arrival landed in one place.
+        folder_id: Some(folder.id.clone()),
+        title: said.title.clone(),
+        body: said.body.clone(),
+        format: crate::data::message_cache::NoteBody::AsTyped,
+        pinned: false,
+        created_at: now.clone(),
+        updated_at: now,
+        pending: false,
+        known_as: Some(said.known_as.named.clone()),
+        known_version: said.known_as.version.clone(),
+    })
 }
 
 #[cfg(test)]
