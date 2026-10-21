@@ -1446,6 +1446,27 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A change to a message reaches that message's own account (2026-10-20, LIST-04,
+  LIST-21).** In All Inboxes, marking a conversation read or unread, starring it or labelling
+  it also changes the messages in it that the list does not show, such as your reply in
+  Sent. Those changes went to the server of whichever account you last opened, not the
+  account the reply is in. There they could mark, star or label an unrelated message that
+  happened to have the same folder and number, and the reply's own server was never told.
+  Now each change goes to the server of the account the message is in. The same holds for
+  Delete, Move, Report as Junk, a Quick Step, Block Sender, a read receipt, and opening or
+  saving an attachment. A message whose account cannot be found is left alone, with the
+  same message as before.
+
+  Also fixed: a read or star you change while a check is sending older changes for the same
+  message now reaches the server after them, so your newest change is the one kept. Before,
+  the check could send the older change after yours, and the message went back to how it
+  was, at the server and then here. This adds to the fix of 2026-10-15 further down, which
+  covered the other order.
+
+  Known limits. Neither fix has been tried against two real accounts or heard with a screen
+  reader yet; the tests run against a store built for them and against the program's own
+  text.
+
 - **The unread count beside a folder changes at once for people with more than one account
   (2026-10-20, LIST-04, FOLDER-01).** Since 2026-10-18 the folder tree's count, as in "Inbox,
   5 unread", changes as soon as you mark, delete, move or copy a message. With two or more
