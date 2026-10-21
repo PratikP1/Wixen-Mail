@@ -5598,17 +5598,22 @@ impl WxMailApp {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
                         _ if id == ID_FORWARD => {
-                            let (_to, subj, body) = msg_info(&state, message_cache.as_deref());
-                            open_compose(
-                                app,
-                                &frame,
-                                &message_cache,
-                                &a11y,
-                                ComposeMode::Forward {
-                                    subject: subj,
-                                    body,
-                                },
-                            );
+                            let (subj, quote) = msg_info(&state, message_cache.as_deref());
+                            match quote {
+                                TheQuote::NotHere(not_here) => {
+                                    the_text_is_not_here_yet(app, &a11y, not_here)
+                                }
+                                TheQuote::Here(body) => open_compose(
+                                    app,
+                                    &frame,
+                                    &message_cache,
+                                    &a11y,
+                                    ComposeMode::Forward {
+                                        subject: subj,
+                                        body,
+                                    },
+                                ),
+                            }
                         }
                         // Delete acts on whatever is in front of you. In Mail
                         // that is a message, with server semantics behind it;
@@ -19440,7 +19445,6 @@ fn start_reply(
             s.accounts.clone(),
         )
     };
-    let preview = the_body_a_command_quotes(state, cache.as_deref());
     let Some(message) = selected else {
         let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
         return;
@@ -19473,6 +19477,13 @@ fn start_reply(
         );
         return;
     }
+
+    // Asked before anything is announced: a reply whose quote is not here
+    // opens no window, so saying who it goes to would be a promise broken.
+    let preview = match the_body_a_command_quotes(state, cache.as_deref(), &message) {
+        TheQuote::NotHere(not_here) => return the_text_is_not_here_yet(app, a11y, not_here),
+        TheQuote::Here(quote) => quote,
+    };
 
     let _ = a11y.announce(
         &crate::application::reply::announcement(mode, &recipients),
@@ -19754,51 +19765,93 @@ fn file_name_of(path: &std::path::Path) -> String {
         .unwrap_or_else(|| path.display().to_string())
 }
 
-/// Extract selected message info for reply/forward.
-fn msg_info(
-    state: &Arc<StdMutex<WxUIState>>,
-    cache: Option<&MessageCache>,
-) -> (String, String, MessageBody) {
-    let addressed = state
+/// What Forward takes from the message a command is for: its subject and
+/// the text it quotes.
+///
+/// Forward's alone, and it works out no reply address because a forward has
+/// none: Reply goes through `start_reply`, and the Reply-To rule lives in
+/// `application::reply`.
+fn msg_info(state: &Arc<StdMutex<WxUIState>>, cache: Option<&MessageCache>) -> (String, TheQuote) {
+    let message = state
         .lock()
-        .map(|s| {
-            s.the_message_a_command_is_for()
-                // The reply address, not the sender: a mailing list sets
-                // Reply-To so a reply reaches the list rather than one member.
-                .map(|m| (m.reply_address().to_string(), m.subject.clone()))
-        })
+        .map(|s| s.the_message_a_command_is_for().cloned())
         .ok()
         .flatten();
-    match addressed {
-        Some((to, subject)) => (to, subject, the_body_a_command_quotes(state, cache)),
-        None => Default::default(),
+    match message {
+        Some(message) => {
+            let quote = the_body_a_command_quotes(state, cache, &message);
+            (message.subject, quote)
+        }
+        None => (String::new(), TheQuote::Here(MessageBody::default())),
     }
 }
 
-/// The text a reply or a forward quotes: the message an opened conversation
-/// named, read from the store, while its command runs (13.2-03); otherwise
-/// the preview, which holds the message the cursor row stands for.
+/// What a reply or a forward has to quote.
+enum TheQuote {
+    /// The text, as it was written.
+    Here(MessageBody),
+    /// The message's text is not on this computer.
+    NotHere(NotHere),
+}
+
+/// A message whose text a command could not quote, and what is done instead.
+struct NotHere {
+    message_row_id: i64,
+    uid: u32,
+    finds: crate::application::reply::WhatQuotingFinds,
+}
+
+/// The text a reply or a forward quotes of `message`, the message the
+/// command is for: when an opened conversation named it, read from the store
+/// while its command runs (13.2-03); otherwise the preview, which holds the
+/// message the cursor row stands for.
 ///
 /// Never the preview while a message is named, because the preview holds
 /// the list row's message and a reply would quote a message nobody chose.
-/// With no store open the named message quotes nothing rather than that.
+/// And never nothing: a named message whose text is not here answers that
+/// (13.3-05), so the command says so and fetches it rather than quoting an
+/// empty body somebody would send believing it held the message.
 fn the_body_a_command_quotes(
     state: &Arc<StdMutex<WxUIState>>,
     cache: Option<&MessageCache>,
-) -> MessageBody {
+    message: &MessageItem,
+) -> TheQuote {
     let (named, preview) = {
         let s = lock_state(state);
-        (s.acting_on, s.message_preview.clone())
+        (s.acting_on.is_some(), s.message_preview.clone())
     };
-    match named {
-        Some(named) => body_as_written(cache.and_then(|cache| {
-            cache
-                .get_message_body(named)
-                .map_err(|e| tracing::warn!("The text of message {named} could not be read: {e}"))
-                .ok()
-                .flatten()
-        })),
-        None => preview,
+    if !named {
+        return TheQuote::Here(preview);
+    }
+    let id = message.message_id;
+    let stored = cache.and_then(|cache| {
+        cache
+            .get_message_body(id)
+            .map_err(|e| tracing::warn!("The text of message {id} could not be read: {e}"))
+            .ok()
+            .flatten()
+    });
+    match crate::application::reply::what_quoting_finds(stored.as_ref(), reachability_of(state)) {
+        crate::application::reply::WhatQuotingFinds::TheText => {
+            TheQuote::Here(body_as_written(stored))
+        }
+        finds => TheQuote::NotHere(NotHere {
+            message_row_id: id,
+            uid: message.uid,
+            finds,
+        }),
+    }
+}
+
+/// Refuse a reply or a forward whose message's text is not here (13.3-05):
+/// start its download when Wixen Mail is online, so the same key works a
+/// moment later, and say why no compose window opens.
+fn the_text_is_not_here_yet(app: AppHandles<'_>, a11y: &Arc<Accessibility>, not_here: NotHere) {
+    if not_here.finds.fetches() {
+        spawn_body_fetch(app, not_here.message_row_id, not_here.uid);
+    }
+    if let Some(sentence) = not_here.finds.refusal() {
+        let _ = a11y.signal(FeedbackEvent::ActionRefused, sentence);
     }
 }
 

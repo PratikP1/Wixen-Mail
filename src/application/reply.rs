@@ -226,6 +226,66 @@ pub fn the_entry_a_reply_goes_out_from<'a>(
     )
 }
 
+/// Said when a reply or a forward is asked for a message whose text has not
+/// been downloaded, and the download has just been started.
+pub const NOT_HERE_YET: &str = "The text of this message is not on this computer yet. \
+     Wixen Mail is downloading it now, so try again in a moment.";
+
+/// Said when the same is asked while Wixen Mail is working offline, where
+/// nothing can be downloaded and nothing is started.
+pub const NOT_HERE_WHILE_OFFLINE: &str = "The text of this message is not on this computer, \
+     and it cannot be downloaded until Wixen Mail goes back online.";
+
+/// What a reply or a forward finds when it goes to quote a message.
+///
+/// A reply that quotes nothing, or a forward that carries a header and an
+/// empty body, looks finished and is not: the person sends it believing it
+/// holds the message. So a message whose text is not here is refused with a
+/// sentence, rather than quoted as nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatQuotingFinds {
+    /// The text is here; quote it.
+    TheText,
+    /// The text is not here yet; download it and say so.
+    NotHereYet,
+    /// The text is not here, and offline nothing can be downloaded.
+    NotHereWhileOffline,
+}
+
+impl WhatQuotingFinds {
+    /// Whether the message's text should be downloaded now.
+    pub fn fetches(self) -> bool {
+        self == WhatQuotingFinds::NotHereYet
+    }
+
+    /// What is said instead of opening a compose window, when anything is.
+    pub fn refusal(self) -> Option<&'static str> {
+        match self {
+            WhatQuotingFinds::TheText => None,
+            WhatQuotingFinds::NotHereYet => Some(NOT_HERE_YET),
+            WhatQuotingFinds::NotHereWhileOffline => Some(NOT_HERE_WHILE_OFFLINE),
+        }
+    }
+}
+
+/// Decide what quoting a message finds, from what the store holds of its text
+/// and whether Wixen Mail is online.
+///
+/// A stored row holding neither half is no text, as the list's cursor reads
+/// it: that is a message to download, not one to quote as nothing.
+pub fn what_quoting_finds(
+    stored: Option<&crate::data::message_cache::bodies::MessageBody>,
+    reachability: crate::application::sending_later::Reachability,
+) -> WhatQuotingFinds {
+    use crate::application::sending_later::Reachability;
+    let here = stored.is_some_and(|body| body.body_plain.is_some() || body.body_html.is_some());
+    match (here, reachability) {
+        (true, _) => WhatQuotingFinds::TheText,
+        (false, Reachability::Online) => WhatQuotingFinds::NotHereYet,
+        (false, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
+    }
+}
+
 /// Split a header value into its addresses.
 ///
 /// Commas inside a quoted display name do not separate addresses, and neither
@@ -804,5 +864,87 @@ mod tests {
                 let _ = reply_recipients(&message, &mine(), mode);
             }
         }
+    }
+
+    // ── What quoting finds, 13.3-05 ──────────────────────────────────────
+    //
+    // A reply or a forward from an opened conversation read the named
+    // message's text from the store and quoted nothing when there was none,
+    // so a forward went out with a header and an empty body and nothing was
+    // said.
+
+    use crate::application::sending_later::Reachability;
+    use crate::data::message_cache::bodies::MessageBody;
+
+    fn stored(plain: Option<&str>, html: Option<&str>) -> MessageBody {
+        MessageBody {
+            body_plain: plain.map(str::to_string),
+            body_html: html.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn test_a_message_with_no_stored_text_is_fetched_before_it_is_quoted() {
+        let finds = what_quoting_finds(None, Reachability::Online);
+        assert_eq!(finds, WhatQuotingFinds::NotHereYet);
+        assert!(finds.fetches());
+        assert_eq!(finds.refusal(), Some(NOT_HERE_YET));
+    }
+
+    #[test]
+    fn test_a_stored_row_holding_neither_half_is_not_here_yet() {
+        // Read the way the list's cursor reads it: neither half is no text.
+        let neither = stored(None, None);
+        let finds = what_quoting_finds(Some(&neither), Reachability::Online);
+        assert_eq!(finds, WhatQuotingFinds::NotHereYet);
+        assert!(finds.fetches());
+    }
+
+    #[test]
+    fn test_a_message_whose_text_is_here_is_quoted() {
+        for body in [
+            stored(Some("plain"), None),
+            stored(None, Some("<p>markup</p>")),
+            stored(Some("plain"), Some("<p>markup</p>")),
+            // An empty text part is still a text that came down.
+            stored(Some(""), None),
+        ] {
+            for reachability in [Reachability::Online, Reachability::Offline] {
+                let finds = what_quoting_finds(Some(&body), reachability);
+                assert_eq!(
+                    finds,
+                    WhatQuotingFinds::TheText,
+                    "{body:?} {reachability:?}"
+                );
+                assert!(!finds.fetches());
+                assert_eq!(finds.refusal(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn test_offline_a_message_with_no_text_here_is_not_fetched_and_says_why() {
+        for nothing_here in [None, Some(stored(None, None))] {
+            let finds = what_quoting_finds(nothing_here.as_ref(), Reachability::Offline);
+            assert_eq!(finds, WhatQuotingFinds::NotHereWhileOffline);
+            assert!(!finds.fetches(), "offline starts no download");
+            assert_eq!(finds.refusal(), Some(NOT_HERE_WHILE_OFFLINE));
+        }
+    }
+
+    #[test]
+    fn test_the_two_refusals_are_plain_words_that_name_nothing_of_the_message() {
+        for sentence in [NOT_HERE_YET, NOT_HERE_WHILE_OFFLINE] {
+            assert!(sentence.contains("not on this computer"), "{sentence}");
+            for unwanted in ['\u{2014}', '\u{2013}', '@', '<', '>'] {
+                assert!(
+                    !sentence.contains(unwanted),
+                    "{sentence} holds {unwanted:?}"
+                );
+            }
+            assert!(!sentence.contains("  "), "{sentence} holds a doubled space");
+        }
+        assert!(NOT_HERE_YET.contains("downloading it now"));
+        assert!(NOT_HERE_WHILE_OFFLINE.contains("back online"));
     }
 }
