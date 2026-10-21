@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 860 records have arrived since and have not been through it.
+# 862 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -5181,7 +5181,7 @@ red = [
     "application::mail_session::tests::test_a_server_that_drops_every_connection_is_tried_once_more_and_no_more",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 17 },
+    { file = "src/application/mail_session.rs", tests = 21 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 
@@ -16234,7 +16234,7 @@ red = [
     "application::mail_session::tests::test_two_pieces_of_work_for_one_account_sign_in_once",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 17 },
+    { file = "src/application/mail_session.rs", tests = 21 },
 ]
 
 # ── Once means once ─────────────────────────────────────────────────────────
@@ -16285,7 +16285,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 71 },
-    { file = "src/application/mail_session.rs", tests = 17 },
+    { file = "src/application/mail_session.rs", tests = 21 },
 ]
 
 # ── A folder listing reads no message text ─────────────────────────────────
@@ -17108,7 +17108,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]
 
 # ── What the sender said an attachment is ───────────────────────────────────
@@ -40977,6 +40977,14 @@ tests_last_seen = [
 # failed, each the one named. The case that a check which panics gives its
 # turn back has no record: what gives the turn back is the guard's drop,
 # and no edit to `one_check_at_a_time` short of leaking the guard reaches it.
+#
+# Since 13.3-04 (2026-10-20) the line both records break is the reading the
+# check's turn and the account's flag turn share, so each break reddens the
+# flag turn's case beside the check's. Measured by hand against the module,
+# twice for the fresh lock and four times for the one lock, the same two red
+# each time; the cases that ask only whether a turn comes now wait four times
+# as long, because under the one lock they waited behind the side-by-side
+# cases and went red by timing alone.
 [[guard]]
 name = "a second check of one account waits for the first"
 file = "src/application/mail_session.rs"
@@ -40984,10 +40992,11 @@ before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
 after = '''        let _ = &mut turns;
         Arc::new(Mutex::new(()))'''
 red = [
+    "application::mail_session::tests::test_a_flag_change_waits_for_the_replay_of_its_account",
     "application::mail_session::tests::test_a_second_check_of_one_account_waits_for_the_first",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 17 },
+    { file = "src/application/mail_session.rs", tests = 21 },
 ]
 
 [[guard]]
@@ -40997,9 +41006,10 @@ before = '''        turns.entry(account_id.to_string()).or_default().clone()'''
 after = '''        turns.entry(String::new()).or_default().clone()'''
 red = [
     "application::mail_session::tests::test_two_accounts_are_checked_side_by_side",
+    "application::mail_session::tests::test_two_accounts_flag_changes_go_side_by_side",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_session.rs", tests = 17 },
+    { file = "src/application/mail_session.rs", tests = 21 },
 ]
 
 [[guard]]
@@ -41077,7 +41087,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]
 
 [[guard]]
@@ -41093,7 +41103,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]
 
 # A change kept from offline is sent by number only into the numbering it
@@ -41180,7 +41190,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 13 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]
 
 # The one number a search for a kept identifier answers is sent to only
@@ -43103,4 +43113,57 @@ red = [
 tests_last_seen = [
     { file = "src/application/destinations.rs", tests = 37 },
     { file = "tests/one_hierarchy_two_views.rs", tests = 18 },
+]
+
+# The replay's flag turn taken after the waiting list is read (13.3-04,
+# review item 18): an M pushed between the reading and the turn would reach
+# the server, let the older change go, and have the replay send the older one
+# after it. Anchored on the turn and the list's reading together. Measured
+# 2026-10-20 by hand, the break applied and the target run: this one red.
+[[guard]]
+name = "a check's replay takes the account's flag turn before it reads the waiting list"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = '''    let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+        account_id,
+    ));
+    let waiting = cache
+        .flag_changes_waiting_for(account_id)
+        .unwrap_or_default();'''
+after = '''    let waiting = cache
+        .flag_changes_waiting_for(account_id)
+        .unwrap_or_default();
+    let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+        account_id,
+    ));'''
+red = [
+    "test_the_flag_replay_holds_the_accounts_turn_while_it_reads_and_sends",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
+]
+
+# The push's flag turn let go as soon as it is taken (13.3-04, review item
+# 18), so before its STORE, the letting go of the older change and a failed
+# push's keep: a replay could then read and send the older change after the
+# newer one reached the server. Anchored on the push's turn. Measured
+# 2026-10-20 by hand, the break applied and the target run: this one red.
+[[guard]]
+name = "a read or star push holds the account's flag turn past its answer"
+file = "src/presentation/wx_app.rs"
+suite = "nothing_sends_a_flag_change_unasked"
+before = '''        let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+            &account.id,
+        ));'''
+after = '''        let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+            &account.id,
+        ));
+        drop(_turn);'''
+red = [
+    "test_the_push_holds_the_accounts_turn_around_its_session_and_its_answer",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]

@@ -19002,6 +19002,14 @@ fn send_the_flag_changes_that_were_waiting(
         the_number_to_offer_it_at, what_became_of_it,
     };
     use crate::application::renumbered::{Kept, the_number_to_send_to};
+    // The account's turn for read and star changes, from before the list is
+    // read to the last change sent (item 18 of the review of 2026-10-20). An M
+    // pushed meanwhile waits for it, so it reaches the server after every
+    // change here and is the one kept, and it lets go of an older one only
+    // once this replay has sent it.
+    let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+        account_id,
+    ));
     let waiting = cache
         .flag_changes_waiting_for(account_id)
         .unwrap_or_default();
@@ -19014,14 +19022,16 @@ fn send_the_flag_changes_that_were_waiting(
     for change in &waiting {
         // What the change was kept under, read before anything is sent. A
         // change whose row cannot be read stays waiting rather than going to
-        // a number nobody checked.
-        let (Ok(numbering), Ok(message)) = (
-            cache
-                .the_numbering_a_flag_change_was_kept_under(
-                    change.message_row_id,
-                    change.which_flag,
-                )
-                .map(Option::flatten),
+        // a number nobody checked. One no longer kept is passed over: it was
+        // let go after the list was read, by a newer change that reached the
+        // server, and sending it would undo that change. Whatever let it go,
+        // it is not this replay's to send (item 18 of the review of
+        // 2026-10-20).
+        let (Ok(Some(numbering)), Ok(message)) = (
+            cache.the_numbering_a_flag_change_was_kept_under(
+                change.message_row_id,
+                change.which_flag,
+            ),
             cache.get_message(change.message_row_id),
         ) else {
             continue;
@@ -29803,6 +29813,18 @@ fn spawn_server_change(
             }
             ServerChange::Flag(flag) => flag,
         };
+
+        // The account's turn for read and star changes, held to the end of
+        // this worker: past the STORE, the letting go of an older change and
+        // a failed push's keep (item 18 of the review of 2026-10-20). A check
+        // replaying the changes kept waiting holds it from reading its list to
+        // its last change, so this waits a few seconds for that and reaches
+        // the server last, and never lets go of a change the replay has read
+        // and not yet sent. The change was made here and said at once; only
+        // its STORE waits.
+        let _turn = handle.block_on(crate::application::mail_session::one_flag_change_at_a_time(
+            &account.id,
+        ));
 
         // The session this account is already signed in with, and a sign-in
         // only if there is not one. This is the case SCALE-02 is named for:

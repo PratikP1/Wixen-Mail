@@ -45,7 +45,7 @@ impl MessageCache {
     /// by the message's identifier at the replay; keeping the later numbering
     /// with a number from the first would send that number unchecked.
     pub fn keep_a_flag_change_waiting(&self, waiting: &AWaitingFlagChange) -> Result<()> {
-        let numbering = match self.the_numbering_a_flag_change_was_kept_under_if_kept(
+        let numbering = match self.the_numbering_a_flag_change_was_kept_under(
             waiting.message_row_id,
             waiting.which_flag,
         )? {
@@ -178,23 +178,17 @@ impl MessageCache {
         )
     }
 
-    /// The numbering the change's folder had when it was first kept, or
-    /// nothing when it was not known then or the change was kept by an older
-    /// build.
+    /// The numbering the change's folder had when it was first kept: nothing
+    /// inside when it was not known then or the change was kept by an older
+    /// build, and nothing at all when no change is kept for this message and
+    /// flag.
+    ///
+    /// The two nothings are two facts. A check's replay reads its list once
+    /// and asks this before each change it sends, and a change let go since,
+    /// by a newer one that reached the server, is not to be sent; read as one
+    /// kept with no numbering, it was sent to the number kept, after the newer
+    /// change (item 18 of the review of 2026-10-20).
     pub fn the_numbering_a_flag_change_was_kept_under(
-        &self,
-        message_row_id: i64,
-        which_flag: WhichFlag,
-    ) -> Result<Option<Option<u32>>> {
-        Ok(Some(
-            self.the_numbering_a_flag_change_was_kept_under_if_kept(message_row_id, which_flag)?
-                .flatten(),
-        ))
-    }
-
-    /// The kept change's numbering, nothing inside when it kept none, and
-    /// nothing at all when no change is kept for this message and flag.
-    fn the_numbering_a_flag_change_was_kept_under_if_kept(
         &self,
         message_row_id: i64,
         which_flag: WhichFlag,
