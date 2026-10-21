@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 883 records have arrived since and have not been through it.
+# 884 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40370,7 +40370,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
 ]
 
 # The same break read by the library: the rule that tells a key-down which
@@ -40411,7 +40411,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
 ]
 
 # Ctrl+R in the conversation tree's keys given another command: inside an
@@ -40435,7 +40435,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
 ]
 
 # The reading timer's answer back to the row's own message alone: a message
@@ -40458,7 +40458,28 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
+]
+
+# The message view's half of the rule answering nothing: a message chosen in
+# the conversation window Enter opened on a row of its conversation is never
+# marked read in the message view, and the folder's count goes on counting
+# it (13.3-13, item 16, LIST-03).
+#
+# Measured by hand on 2026-10-21: the target at 31 passed and 1 failed, this
+# one, and the whole library at 9,421 passed and 0 failed.
+[[guard]]
+name = "a message chosen in a conversation window is what the reading timer may mark in the message view"
+file = "src/presentation/wx_app.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''        (in_it(under_the_cursor) && in_it(read) && !read.read).then_some(began)'''
+after = '''        (in_it(under_the_cursor) && in_it(read) && !read.read).then_some(began).filter(|_| false)'''
+red = [
+    "test_under_the_message_view_a_member_read_from_the_conversation_window_is_what_reading_may_mark",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
 ]
 
 # The Outbox's claim taken out of its condition: every caller is told the
@@ -43491,7 +43512,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 32 },
 ]
 
 # A chunk of the download taking the mail that arrived while it ran, with no

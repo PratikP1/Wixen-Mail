@@ -1001,12 +1001,16 @@ impl WxUIState {
     /// (13.2-03.1).
     ///
     /// The row's own message when it is unread, as the list always had it.
-    /// Under conversation view also a message read from the opened
-    /// conversation: an unread member of the row's conversation among the
-    /// loaded rows, or the row's own message filed in another folder, which
-    /// the loaded rows do not hold and whose read state the timer reads from
-    /// the store. A message of any other conversation, or a row the cursor
-    /// has left, is nothing.
+    /// Also a message read from an opened conversation, in either view.
+    /// Under conversation view: an unread member of the row's conversation
+    /// among the loaded rows, or the row's own message filed in another
+    /// folder, which the loaded rows do not hold and whose read state the
+    /// timer reads from the store. Under the message view: an unread member
+    /// of the conversation the reading began in, while the cursor is on any
+    /// message of it (13.3-13); a reading begun anywhere else counts no
+    /// conversation, so one read aloud from its own row is not marked once
+    /// the cursor moves to a sibling. A message of any other conversation,
+    /// or a row the cursor has left, is nothing.
     pub fn what_reading_may_mark(&self) -> Option<i64> {
         let (began, _) = self.reading_began?;
         let row = self.selected_message_index?;
@@ -1016,6 +1020,9 @@ impl WxUIState {
             .map(|message| message.message_id);
         if the_rows_own == Some(began) {
             return Some(began);
+        }
+        if !self.showing.showing_conversations() {
+            return self.read_in_the_conversation_under_the_cursor(row, began);
         }
         let conversation = self
             .showing
@@ -1030,6 +1037,20 @@ impl WxUIState {
             None => conversation.stands_for.id == began,
         };
         of_this_conversation.then_some(began)
+    }
+
+    /// Under the message view, `began` when its reading began in a
+    /// conversation window, the message on `row` is in that conversation,
+    /// and `began` is a loaded unread member of it.
+    fn read_in_the_conversation_under_the_cursor(&self, row: usize, began: i64) -> Option<i64> {
+        let whose = self.opened_from_a_conversation.as_ref()?;
+        let in_it = |message: &MessageItem| {
+            message.account_id == whose.account_id
+                && message.thread_id.as_deref() == Some(whose.thread_id.as_str())
+        };
+        let under_the_cursor = self.the_loaded_message_the_row_stands_for(row)?;
+        let read = self.messages.iter().find(|m| m.message_id == began)?;
+        (in_it(under_the_cursor) && in_it(read) && !read.read).then_some(began)
     }
 }
 
@@ -16242,6 +16263,14 @@ fn selected_row(list: &ListCtrl) -> Option<usize> {
     (found >= 0).then_some(found as usize)
 }
 
+/// Where a message chosen in a conversation window came from: the
+/// conversation, which its reading began in (13.3-13), and what to do when its
+/// window closes, which is to open the conversation again.
+struct FromAConversation {
+    whose: crate::application::conversations::WhoseConversation,
+    again: Rc<dyn Fn()>,
+}
+
 /// Open one message in the reader window.
 ///
 /// The body comes from the cache. A message with no cached body still opens:
@@ -16250,7 +16279,10 @@ fn selected_row(list: &ListCtrl) -> Option<usize> {
 ///
 /// Opening is reading (#25): the moment is recorded in `state`, and the main
 /// timer marks the message read after the wait the setting names, counted
-/// from here, if it is still the selected unread one then.
+/// from here, if it is still the selected unread one then. A message chosen
+/// in a conversation window comes `from` it: the reading records the
+/// conversation it began in, and closing the window opens the conversation
+/// again. One opened from the list comes from none.
 fn open_single_message(
     frame: &Frame,
     reader: &Rc<wx_reader::ReaderWindow>,
@@ -16258,15 +16290,20 @@ fn open_single_message(
     state: &Arc<StdMutex<WxUIState>>,
     cache: &Option<Arc<MessageCache>>,
     message: &MessageItem,
-    closed: Option<Rc<dyn Fn()>>,
+    from: Option<FromAConversation>,
 ) {
     use crate::application::reading_style::Style;
 
+    let (opened_from_a_conversation, closed) = match from {
+        Some(FromAConversation { whose, again }) => (Some(whose), Some(again)),
+        None => (None, None),
+    };
     // Before anything is built, so the message opens to its words once its
     // passphrase is typed, and before the reading is timed, so the time spent
     // typing a passphrase is not counted as reading the message (13-17.1).
     ask_for_the_passphrases_they_need(frame, cache, &[message.message_id]);
     lock_state(state).reading_began = Some((message.message_id, std::time::Instant::now()));
+    lock_state(state).opened_from_a_conversation = opened_from_a_conversation;
 
     // Asked before either document is built, so a move is already on the
     // calendar when the meeting is said. Here and not in the preview, which
@@ -30192,7 +30229,11 @@ fn open_conversation_again(
             };
             match chosen {
                 Some(message) => {
-                    open_single_message(frame, reader, a11y, &state, cache, &message, Some(again));
+                    let from = FromAConversation {
+                        whose: whose.clone(),
+                        again,
+                    };
+                    open_single_message(frame, reader, a11y, &state, cache, &message, Some(from));
                 }
                 None => msg_list.set_focus(),
             }
