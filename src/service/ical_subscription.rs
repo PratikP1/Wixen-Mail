@@ -65,7 +65,7 @@ impl ICalSubscriptionClient {
             .header("Accept", "text/calendar")
             .send()
             .await
-            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS fetch failed"))?;
+            .map_err(|e| why_the_feed_did_not_arrive(e, &host, "ICS fetch failed"))?;
 
         if !response.status().is_success() {
             return Err(Error::Network(format!(
@@ -81,7 +81,7 @@ impl ICalSubscriptionClient {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS response read error"))?
+            .map_err(|e| why_the_feed_did_not_arrive(e, &host, "ICS response read error"))?
         {
             if arrived.len() + chunk.len() > self.cap {
                 return Err(Error::InPlainWords(format!(
@@ -116,14 +116,20 @@ fn the_host_in(url: &str) -> String {
 
 /// What a failed request says: a host that ran out its time in words a person
 /// can act on, and anything else as the network failure it is.
-fn why_the_feed_did_not_arrive(failed: &reqwest::Error, host: &str, layer: &str) -> Error {
+///
+/// No arm may print the address. reqwest's own words end with the whole of it,
+/// and a subscription address often carries a private token, while these words
+/// are written to the log after every sync and spoken by a followed link. So
+/// every arm names the host, and reqwest's words are taken without the address
+/// (review item 10; only the timeout's arm did this before).
+fn why_the_feed_did_not_arrive(failed: reqwest::Error, host: &str, layer: &str) -> Error {
     if failed.is_timeout() {
         Error::InPlainWords(format!(
             "{host} did not answer in time, so the calendar was not fetched. Nothing on \
              this calendar was changed here."
         ))
     } else {
-        Error::Network(format!("{layer}: {failed}"))
+        Error::Network(format!("{layer} at {host}: {}", failed.without_url()))
     }
 }
 
