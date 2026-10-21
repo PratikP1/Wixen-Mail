@@ -122,7 +122,9 @@ const MOST_A_HANDED_OVER_FILE_MAY_HOLD: u64 = 2 * 1024 * 1024;
 /// Not valid UTF-8 is replaced rather than refused. Calendar and contact
 /// files are written by every program there is, some of them still emitting
 /// Latin-1, and refusing the file outright would lose every event in it over
-/// one accented name.
+/// one accented name. A byte order mark in front is taken off, through the
+/// same reading a subscribed feed gets: kept, it stands in front of
+/// `BEGIN:VCALENDAR` or `BEGIN:VCARD` and the file is not recognised.
 pub fn text_of(path: &Path) -> Result<String> {
     let how_big = std::fs::metadata(path)
         .map_err(|why| {

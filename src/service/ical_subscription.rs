@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use mail_parser::decoders::charsets::map::charset_decoder;
+
 use crate::common::{Error, Result};
 use crate::service::caldav::{self, CalDavEvent, parse_ical_vevent};
 
@@ -97,6 +99,9 @@ impl ICalSubscriptionClient {
             }
             arrived.extend_from_slice(&chunk);
         }
+        // Decoded as `text()` decoded it before the chunked read replaced it:
+        // a byte order mark taken off, and the character set the host named
+        // honoured, so neither a marked feed nor a windows-1252 one is lost.
         Ok(a_calendar_or_card_as_text(
             &arrived,
             declared_charset.as_deref(),
@@ -122,16 +127,41 @@ fn the_host_in(url: &str) -> String {
         .unwrap_or_else(|| "That address".to_string())
 }
 
-/// A calendar's or a contact card's bytes as text.
+/// The three bytes some Windows tools write in front of UTF-8 text.
+const UTF8_BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
+
+/// A calendar's or a contact card's bytes as text, read the way reqwest's
+/// `text()` read a feed before 13.2-14 (review item 11).
+///
+/// A byte order mark is taken off and the rest read as UTF-8: kept, it sits
+/// in front of `BEGIN:VCALENDAR` and the whole file is refused as not a
+/// calendar. It wins over a declared character set, because it is in the bytes
+/// themselves. Otherwise a character set the host declared and `mail-parser`
+/// knows decodes the bytes, so a feed sent in windows-1252 keeps its accents.
+/// Anything else, `utf-8` and names nobody knows included, is read as UTF-8,
+/// which is what the calendar standard says a feed is, with a replacement
+/// character for what is not: a file some program wrote in Latin-1 would
+/// otherwise lose every event in it over one accented name.
 pub(crate) fn a_calendar_or_card_as_text(bytes: &[u8], declared_charset: Option<&str>) -> String {
-    let _ = declared_charset;
-    String::from_utf8_lossy(bytes).into_owned()
+    let (bytes, declared_charset) = match bytes.strip_prefix(UTF8_BYTE_ORDER_MARK) {
+        Some(unmarked) => (unmarked, None),
+        None => (bytes, declared_charset),
+    };
+    match declared_charset.and_then(|label| charset_decoder(label.as_bytes())) {
+        Some(decode) => decode(bytes),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
 }
 
 /// The character set a `Content-Type` header names, if it names one.
 fn the_charset_in(content_type: &str) -> Option<&str> {
-    let _ = content_type;
-    None
+    content_type
+        .split(';')
+        .skip(1)
+        .filter_map(|parameter| parameter.split_once('='))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case("charset"))
+        .map(|(_, value)| value.trim().trim_matches('"'))
+        .filter(|charset| !charset.is_empty())
 }
 
 /// What a failed request says: a host that ran out its time in words a person
