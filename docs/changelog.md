@@ -1446,6 +1446,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message you open from a conversation window in the message view is marked read
+  (2026-10-21, LIST-03).** When the list shows one row per message, Enter on a message with
+  replies opens its conversation window. A message you opened from there was never marked
+  read, so the folder's unread count went on counting it. Now it is marked read after the wait
+  you chose under Mark as read after, while the list's cursor stays on a message of that
+  conversation, as it already was when the list shows conversations. Reading a message aloud
+  from its own row and then moving to another message still marks nothing.
+
+  Known limitation: nobody has heard this yet.
+
 - **Importing a zip or folder of mail says what it left out (2026-10-21, FOUND-11).** File,
   Import first looks over every file in the zip or folder you chose. A file it could not read
   there, a file that does not match what the zip records about it, and a folder nested too
@@ -2231,7 +2241,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   marked read after the wait you chose under Mark as read after, as a message opened from the
   list is, as long as the list's cursor is still on that conversation's row. The same goes
   for a conversation's own message when it is filed in another folder. Moving through the list
-  still marks nothing read. The version does not move.
+  still marks nothing read. The version does not move. Corrected by dating, 2026-10-21: until
+  then this held when the list showed conversations, and in the message view a message opened
+  from the conversation window was never marked read; it is now (13.3-13).
 - **Inside an opened conversation, the menu key, Delete, Shift+Delete and M act on the
   message the cursor is on (2026-10-14, LIST-05).** In the conversation window, the one place a
   conversation's messages are listed one by one, none of these did anything, so a message
