@@ -291,6 +291,22 @@ pub struct CardsFromAServer {
     /// the same distinction, and whoever calls this has the count to say it
     /// with.
     pub could_not_be_read: usize,
+    /// Whether the server stopped before the end of the address book.
+    ///
+    /// A server answering with more cards than its own limit allows sends what
+    /// fits and a block for the address book with the status 507 (RFC 6352,
+    /// section 8.6). That block is not a card, so it is not counted as one that
+    /// could not be read: it says that every card after the limit is missing,
+    /// however many those were.
+    pub stopped_short: bool,
+}
+
+impl CardsFromAServer {
+    /// Whether the answer names every card the address book holds, so that a
+    /// card missing from it was deleted there.
+    pub fn is_whole(&self) -> bool {
+        self.could_not_be_read == 0
+    }
 }
 
 /// The cards in a server's answer to [`ASKING_FOR_THE_CARDS`].
@@ -1214,6 +1230,157 @@ mod tests {
         assert_eq!(sent.cards.len(), 1, "the readable card came back");
         assert_eq!(sent.cards[0].contact.name, "Grace Hopper");
         assert_eq!(sent.could_not_be_read, 1, "the other was counted");
+    }
+
+    /// The block a server adds for the address book itself when it stopped at
+    /// its own limit, written the way RFC 6352's example in section 8.6 is.
+    fn the_server_stopped_here(href: &str) -> String {
+        format!(
+            "  <d:response>\n    \
+             <d:href>{href}</d:href>\n    \
+             <d:status>HTTP/1.1 507 Insufficient Storage</d:status>\n    \
+             <d:error><d:number-of-matches-within-limits/></d:error>\n    \
+             <d:responsedescription>Only one matching card was returned</d:responsedescription>\n  \
+             </d:response>\n"
+        )
+    }
+
+    /// A block naming a card whose text the server did not send, with the 404
+    /// a server gives for a property it could not answer.
+    fn a_card_without_its_text(href: &str) -> String {
+        format!(
+            "  <d:response>\n    \
+             <d:href>{href}</d:href>\n    \
+             <d:propstat>\n      \
+             <d:prop><d:getetag>\"one\"</d:getetag></d:prop>\n      \
+             <d:status>HTTP/1.1 200 OK</d:status>\n    \
+             </d:propstat>\n    \
+             <d:propstat>\n      \
+             <d:prop><card:address-data/></d:prop>\n      \
+             <d:status>HTTP/1.1 404 Not Found</d:status>\n    \
+             </d:propstat>\n  \
+             </d:response>\n"
+        )
+    }
+
+    fn graces_card() -> String {
+        a_card_block(
+            "/carddav/sam/contacts/grace.vcf",
+            Some("\"two\""),
+            &a_readable_card("Grace Hopper", "grace@example.com", "Met at the harbour"),
+        )
+    }
+
+    #[test]
+    fn test_an_answer_the_server_stopped_short_is_said_as_that_and_counts_no_card() {
+        let answer = a_multistatus(&format!(
+            "{}{}",
+            graces_card(),
+            the_server_stopped_here("/carddav/sam/")
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards.len(), 1, "the card that fitted came back");
+        assert!(sent.stopped_short, "the server stopping was not kept");
+        assert_eq!(
+            sent.could_not_be_read, 0,
+            "the address book's own block is not a card"
+        );
+    }
+
+    #[test]
+    fn test_a_block_without_card_text_is_counted_as_a_card_that_could_not_be_read() {
+        // Paired with a readable card, for the reason the test above gives.
+        let no_address = a_card_without_its_text("").replace("<d:href></d:href>", "");
+        let answer = a_multistatus(&format!(
+            "{}{}{}",
+            a_card_without_its_text("/carddav/sam/contacts/ada.vcf"),
+            graces_card(),
+            no_address
+        ));
+
+        let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+        assert_eq!(sent.cards.len(), 1, "the readable card came back");
+        assert_eq!(
+            sent.could_not_be_read, 2,
+            "the two without text were counted"
+        );
+        assert!(!sent.stopped_short);
+    }
+
+    #[test]
+    fn test_the_address_books_own_block_is_neither_a_card_nor_a_stop() {
+        // A server may list the collection it was asked about. Counted as a
+        // card, that block would turn the removal of deleted cards off for good
+        // and add a problem to every sync.
+        for itself in ["/carddav/sam/", "/carddav/sam", AT] {
+            let answer = a_multistatus(&format!(
+                "{}{}",
+                an_address_book(itself, "Sam", "\"ctag-1\""),
+                graces_card()
+            ));
+
+            let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+            assert_eq!(sent.cards.len(), 1, "{itself}");
+            assert_eq!(sent.could_not_be_read, 0, "{itself}");
+            assert!(!sent.stopped_short, "{itself}");
+        }
+    }
+
+    #[test]
+    fn test_responses_in_a_spelling_the_reader_does_not_split_are_counted_unreadable() {
+        // Read as no blocks at all, either answer was an empty address book,
+        // and a whole answer naming nobody takes everybody off.
+        let two_cards = |prefix: &str, namespaces: &str| {
+            let card = |name: &str, address: &str| {
+                format!(
+                    "<{prefix}response><{prefix}href>/carddav/sam/{name}.vcf</{prefix}href>\
+                     <{prefix}propstat><{prefix}prop>\
+                     <card:address-data>{}</card:address-data>\
+                     </{prefix}prop></{prefix}propstat></{prefix}response>\n",
+                    a_readable_card(name, address, "Met")
+                )
+            };
+            format!(
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+                 <{prefix}multistatus {namespaces} \
+                 xmlns:card=\"urn:ietf:params:xml:ns:carddav\">\n{}{}\
+                 <{prefix}responsedescription>Both cards</{prefix}responsedescription>\n\
+                 </{prefix}multistatus>\n",
+                card("Grace", "grace@example.com"),
+                card("Ada", "ada@example.com")
+            )
+        };
+
+        for (spelling, answer) in [
+            ("D:", two_cards("D:", "xmlns:D=\"DAV:\"")),
+            ("the default", two_cards("", "xmlns=\"DAV:\"")),
+        ] {
+            let sent = cards_in(&answer, AT, SOMEBODY).expect("a multistatus to be read");
+
+            assert!(sent.cards.is_empty(), "{spelling}");
+            assert_eq!(sent.could_not_be_read, 2, "{spelling}");
+        }
+    }
+
+    #[test]
+    fn test_an_answer_is_whole_only_when_nothing_was_unreadable_and_nothing_stopped() {
+        let whole = CardsFromAServer::default();
+        let one_unread = CardsFromAServer {
+            could_not_be_read: 1,
+            ..CardsFromAServer::default()
+        };
+        let stopped = CardsFromAServer {
+            stopped_short: true,
+            ..CardsFromAServer::default()
+        };
+
+        assert!(whole.is_whole());
+        assert!(!one_unread.is_whole());
+        assert!(!stopped.is_whole());
     }
 
     #[test]

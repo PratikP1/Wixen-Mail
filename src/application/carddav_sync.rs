@@ -537,6 +537,9 @@ mod tests {
         cards: Vec<CardOnAServer>,
         /// How many of its cards could not be read.
         could_not_be_read: usize,
+        /// Whether it stops before the end of the address book, as a server
+        /// does at its own limit.
+        stopped_short: bool,
         /// Whether the address book itself refuses to be read.
         unreadable: bool,
         /// What it does with a card written to it.
@@ -571,6 +574,7 @@ mod tests {
             Ok(CardsFromAServer {
                 cards: self.cards.clone(),
                 could_not_be_read: self.could_not_be_read,
+                stopped_short: self.stopped_short,
             })
         }
 
@@ -1371,5 +1375,44 @@ mod tests {
             "a card that may only have been unreadable was taken off: {ids:?}"
         );
         assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_the_server_stopped_short_takes_nobody_off_and_says_so() {
+        let (_paths, cache) = cache_for("carddav-stopped-short");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        held_as_a_card(&cache, &filed_under, "past-the-limit");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            stopped_short: true,
+            ..Scripted::default()
+        };
+
+        let result = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        let ids: Vec<String> = cache
+            .get_contacts_for_account("a1")
+            .expect("the contacts")
+            .into_iter()
+            .map(|contact| contact.id)
+            .collect();
+        assert!(
+            ids.contains(&"here-past-the-limit".to_string()),
+            "a card past the server's limit was taken off: {ids:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        let said = &result.errors[0];
+        assert!(
+            said.contains("Work"),
+            "the address book is not named: {said}"
+        );
+        assert!(said.contains("only part"), "the stop is not said: {said}");
+        assert!(!said.contains("Person"), "a contact was named: {said}");
     }
 }
