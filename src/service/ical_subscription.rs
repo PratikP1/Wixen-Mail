@@ -644,6 +644,27 @@ END:VCALENDAR"#;
     }
 
     #[test]
+    fn test_a_calendar_saved_as_utf_16_with_its_mark_is_still_a_calendar() {
+        // reqwest's text() read a UTF-16 mark too, so a calendar some Windows
+        // program saved as "Unicode" read before 13.2-14 and must again.
+        let saved_as = |mark: [u8; 2], unit_bytes: fn(u16) -> [u8; 2]| -> Vec<u8> {
+            mark.into_iter()
+                .chain(ONE_EVENT.encode_utf16().flat_map(unit_bytes))
+                .collect()
+        };
+        let little_endian = saved_as([0xFF, 0xFE], u16::to_le_bytes);
+        let big_endian = saved_as([0xFE, 0xFF], u16::to_be_bytes);
+
+        for (order, marked) in [("little", little_endian), ("big", big_endian)] {
+            assert_eq!(
+                a_calendar_or_card_as_text(&marked, None),
+                ONE_EVENT,
+                "a {order}-endian UTF-16 calendar"
+            );
+        }
+    }
+
+    #[test]
     fn test_a_feed_declared_in_windows_1252_reads_its_accents() {
         // 0xE9 is e with an acute accent in windows-1252 and not UTF-8 at all.
         let latin = b"SUMMARY:Caf\xE9";
