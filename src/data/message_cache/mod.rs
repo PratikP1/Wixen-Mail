@@ -31,7 +31,7 @@ pub use calendar::{
 pub use contacts::{CardsRead, MovedBetweenGroups};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
-pub use notes::{MovedWhatTheBackendHolds, NoteBody};
+pub use notes::{MovedWhatTheBackendHolds, NoteBody, WhatTheNoteHereWas};
 pub use outbox::CancelAnswer;
 pub use reminders::MovedToAnotherAccount;
 pub use searching::{TextTheIndexHolds, WhereToSearch};
