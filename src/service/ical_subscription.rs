@@ -133,10 +133,10 @@ const UTF8_BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
 /// A calendar's or a contact card's bytes as text, read the way reqwest's
 /// `text()` read a feed before 13.2-14 (review item 11).
 ///
-/// A byte order mark is taken off and the rest read as UTF-8: kept, it sits
-/// in front of `BEGIN:VCALENDAR` and the whole file is refused as not a
-/// calendar. It wins over a declared character set, because it is in the bytes
-/// themselves. Otherwise a character set the host declared and `mail-parser`
+/// A byte order mark is taken off and the rest read as UTF-8, or as UTF-16
+/// when the mark is UTF-16's: kept, it sits in front of `BEGIN:VCALENDAR` and
+/// the whole file is refused as not a calendar. It wins over a declared
+/// character set, because it is in the bytes themselves. Otherwise a character set the host declared and `mail-parser`
 /// knows decodes the bytes, so a feed sent in windows-1252 keeps its accents.
 /// Anything else, `utf-8` and names nobody knows included, is read as UTF-8,
 /// which is what the calendar standard says a feed is, with a replacement
@@ -145,12 +145,22 @@ const UTF8_BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
 pub(crate) fn a_calendar_or_card_as_text(bytes: &[u8], declared_charset: Option<&str>) -> String {
     let (bytes, declared_charset) = match bytes.strip_prefix(UTF8_BYTE_ORDER_MARK) {
         Some(unmarked) => (unmarked, None),
+        None if starts_with_a_utf_16_mark(bytes) => (bytes, Some("utf-16")),
         None => (bytes, declared_charset),
     };
     match declared_charset.and_then(|label| charset_decoder(label.as_bytes())) {
         Some(decode) => decode(bytes),
         None => String::from_utf8_lossy(bytes).into_owned(),
     }
+}
+
+/// Whether the bytes open with a UTF-16 byte order mark, either way round.
+///
+/// Neither pair can begin UTF-8 text, so nothing else is mistaken for one.
+/// `mail-parser`'s `utf-16` decoder reads the order off the mark and takes
+/// it away, which is the reading reqwest's `text()` gave such a feed.
+fn starts_with_a_utf_16_mark(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF])
 }
 
 /// The character set a `Content-Type` header names, if it names one.
