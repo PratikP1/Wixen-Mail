@@ -1446,6 +1446,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Reply and Forward in an opened conversation no longer send a message with nothing quoted
+  (2026-10-20, LIST-05).** When the cursor was on a message in an opened conversation whose
+  text had not been downloaded yet, Forward opened with a header and an empty body, and a
+  reply opened without its quote. Nothing said so, and the message could go out looking
+  finished. Now Reply, Reply All, Reply to Sender Only and Forward say that the text is not on
+  this computer yet, open nothing, and Wixen Mail starts downloading it, so the same key works
+  a moment later. While you work offline they say the text cannot be downloaded until you go
+  back online, and nothing is downloaded.
+
+  Known limits. This has not been heard with a screen reader yet. A message that arrived with
+  no text at all, such as an encrypted message or one that is only an attachment, is treated
+  the same way and its text never arrives, so these keys cannot open it from a conversation;
+  before, they opened it with nothing quoted. Forward and Reply from the message list are
+  unchanged: pressed before a message's text arrives, they quote "Downloading this message...".
+
 - **A change to a message reaches that message's own account (2026-10-20, LIST-04,
   LIST-21).** In All Inboxes, marking a conversation read or unread, starring it or labelling
   it also changes the messages in it that the list does not show, such as your reply in

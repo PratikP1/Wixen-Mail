@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 766
+open_count: 770
 waived_count: 0
 fixed_count: 149
-total_count: 915
-last_updated: 2026-10-21T01:00:00.000Z
+total_count: 919
+last_updated: 2026-10-21T02:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -930,6 +930,10 @@ last_updated: 2026-10-21T01:00:00.000Z
 | 913 | 13.3 | unrun-verify | src/presentation/wx_app.rs | 27605 | 13.3-02, review items 1 and 15, heard under NVDA on the tester's POP account in conversation view on a build holding 13.3-02's merge: Delete on a message inside an opened conversation, the window coming back without it and the cursor on its neighbour; a Delete in the POP Inbox and a move to another account heard changing the conversation's row at once. Built lists hold all of it in tests/a_change_made_here_reaches_the_conversation_rows.rs and a reading in tests/a_move_completes_here_first.rs. Closed when he has heard them on his own mailbox | open |  | 2026-10-20T20:00:00.000Z |  |
 | 914 | 13.3 | todo | Cargo.lock |  | 13.3-03, found on pull request 201 on 2026-10-20 and not caused by it: CI's Security Audit is red on two advisories published that week against packages the lock already held, RUSTSEC-2026-0382 (rustls-webpki 0.103.15, certificate verification may accept distrusted intermediates, fixed in 0.103.16) and RUSTSEC-2026-0383 (webpki-root-certs 1.0.9, bundled roots trust distrusted emSign intermediates, fixed in 1.0.10). Both are moves inside the versions Cargo.toml allows, a lock change only, and phase 13.3 moves no package without Pratik's word. Recommended: on his yes, cargo update -p rustls-webpki -p webpki-root-certs as a small plan of its own before 13.3-25, whose full gate runs the audit; every pull request until then shows the same red | open |  | 2026-10-20T23:00:00.000Z |  |
 | 915 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-04, review items 3 and 18, at the tester's two accounts on real servers on a build holding 13.3-04's merge: in All Inboxes under conversation view, with the first account the one last opened, M on a conversation of the second account that holds his reply in Sent, then the reply read on that account's web mail as marked and nothing changed in the first account's Sent; and a mark made while a check sends changes kept waiting for the same message, the newest one shown at the server afterwards. The rule and its store cases are held in tests/one_hierarchy_two_views.rs, every caller handing the store by a reading in tests/wired.rs, the flag turn by four cases in src/application/mail_session.rs and three readings in tests/nothing_sends_a_flag_change_unasked.rs; none of it has met a real server. Closed when he has seen both at his own accounts | open |  | 2026-10-21T01:00:00.000Z |  |
+| 916 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-05, review item 4, heard under NVDA on a build holding 13.3-05's merge: with Pause Downloading ticked, a conversation opened from the message view and the cursor on an older member never opened, Ctrl+L heard saying the text is not on this computer yet and that Wixen Mail is downloading it, with no compose window opening; Ctrl+L a moment later heard opening Forward with the text quoted; Ctrl+R the same; and with Work Offline on, the sentence that the text cannot be downloaded until Wixen Mail goes back online. The decision is held by cases in src/application/reply.rs and both commands by a reading in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs. Closed when he has heard all three | open |  | 2026-10-21T02:00:00.000Z |  |
+| 917 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-05, premise 5, older than 13.2 and not one of the review's 42: Forward or Reply from the message list pressed after the cursor lands on a message and before its text arrives quotes the preview's placeholder, Downloading this message..., and keeps quoting it if the fetch fails, because with nothing named the_body_a_command_quotes answers the preview. Recommended: the list path asks the same decision in application::reply, what_quoting_finds, for the row's message and refuses and fetches the same way, keeping the preview as its source when the text is here, since the preview holds text the reader decrypted; Pratik's to schedule | open |  | 2026-10-21T02:00:00.000Z |  |
+| 918 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-05, premise 3: Forward with no message chosen, or from a conversation whose list was reloaded under it so the named message is no longer among the loaded rows, opens an empty forward, where Reply refuses with no message selected. Unchanged by 13.3-05. Recommended: Forward refuses the same way Reply does, a one-line change in the ID_FORWARD arm with a case; Pratik's to schedule | open |  | 2026-10-21T02:00:00.000Z |  |
+| 919 | 13.3 | todo | src/application/reply.rs |  | 13.3-05, read in the code on 2026-10-20 and not tried: a message that came down with no text part at all, such as an encrypted message or one that is only an attachment, is stored with neither half, and the store reads such a row as no text. So Reply and Forward on it from an opened conversation refuse with the sentence that it is downloading and fetch it again at every press, and the text never arrives; before 13.3-05 they opened with nothing quoted. The list's cursor already fetches such a message again at every landing for the same reason. Recommended: record that a message's text was fetched and held no text part, so quoting it answers an empty quote rather than a download, and the list stops fetching it again; Pratik's to schedule | open |  | 2026-10-21T02:00:00.000Z |  |
 
 ````json
 [
@@ -11911,6 +11915,54 @@ last_updated: 2026-10-21T01:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T01:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 916,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-05, review item 4, heard under NVDA on a build holding 13.3-05's merge: with Pause Downloading ticked, a conversation opened from the message view and the cursor on an older member never opened, Ctrl+L heard saying the text is not on this computer yet and that Wixen Mail is downloading it, with no compose window opening; Ctrl+L a moment later heard opening Forward with the text quoted; Ctrl+R the same; and with Work Offline on, the sentence that the text cannot be downloaded until Wixen Mail goes back online. The decision is held by cases in src/application/reply.rs and both commands by a reading in tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs. Closed when he has heard all three",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 917,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-05, premise 5, older than 13.2 and not one of the review's 42: Forward or Reply from the message list pressed after the cursor lands on a message and before its text arrives quotes the preview's placeholder, Downloading this message..., and keeps quoting it if the fetch fails, because with nothing named the_body_a_command_quotes answers the preview. Recommended: the list path asks the same decision in application::reply, what_quoting_finds, for the row's message and refuses and fetches the same way, keeping the preview as its source when the text is here, since the preview holds text the reader decrypted; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 918,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-05, premise 3: Forward with no message chosen, or from a conversation whose list was reloaded under it so the named message is no longer among the loaded rows, opens an empty forward, where Reply refuses with no message selected. Unchanged by 13.3-05. Recommended: Forward refuses the same way Reply does, a one-line change in the ID_FORWARD arm with a case; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T02:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 919,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/application/reply.rs",
+    "line": null,
+    "description": "13.3-05, read in the code on 2026-10-20 and not tried: a message that came down with no text part at all, such as an encrypted message or one that is only an attachment, is stored with neither half, and the store reads such a row as no text. So Reply and Forward on it from an opened conversation refuse with the sentence that it is downloading and fetch it again at every press, and the text never arrives; before 13.3-05 they opened with nothing quoted. The list's cursor already fetches such a message again at every landing for the same reason. Recommended: record that a message's text was fetched and held no text part, so quoting it answers an empty quote rather than a download, and the list stops fetching it again; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T02:00:00.000Z",
     "resolved_at": null
   }
 ]
