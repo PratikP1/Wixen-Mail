@@ -1446,6 +1446,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Importing a zip or folder of mail says what it left out (2026-10-21, FOUND-11).** File,
+  Import first looks over every file in the zip or folder you chose. A file it could not read
+  there, a file that does not match what the zip records about it, and a folder nested too
+  deeply to follow were left out, and the closing sentence said only what came in, such as
+  "Imported 1 folder, 3 messages". You could not tell that anything was missing, and might
+  have deleted the zip. Now the closing sentence goes on to say how many files could not be
+  read, how many do not match what the zip records, so the zip is damaged or was changed after
+  it was made, and how many folders were nested too deeply. Each file is said once.
+
+  Most zips pack the files inside them, and Wixen Mail's own export does too. When a packed
+  file was damaged near its start, the import said the zip stops partway through and told you
+  to ask for another copy, or said the file could not be read. It now says the zip is damaged
+  or was changed after it was made, as it already did for damage found further in.
+
+  Known limits. Nobody has heard the new sentences yet. A file in a chosen folder that stops
+  being readable partway through, for a reason other than damage, is still said as one message
+  holding nothing a mail program recognises.
+
 - **A note you change while a notes sync brings down a newer copy keeps what you did
   (2026-10-21, SCALE-06, PIM-04).** When the copy at the other end had changed, a notes sync
   fetched it and then wrote it over the note here as the sync had found it before the fetch.
@@ -1676,7 +1694,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   is inside it does not match what the zip records about it, File, Import said the file "stops
   partway through" and told you to ask the program that wrote it for another copy. The file was
   all there, and another copy of it would say the same. Now the import says the file is
-  damaged or was changed after it was made, and that nothing was imported from it. A zip that
+  damaged or was changed after it was made, and that nothing was imported from it. Until
+  2026-10-21 that held only for damage the zip's own check caught; damage near the start of a
+  packed file, caught as the file was unpacked, still got the old sentence. A zip that
   really is cut short still says it stops partway through. The new zip reader also notices a
   file inside a zip that holds more than the zip says it does, which version 7.2.0 read
   without noticing.

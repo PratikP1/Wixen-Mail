@@ -1032,12 +1032,25 @@ pub fn an_archive_brought_in(
         Err(why) => return why.to_string(),
     };
     let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
-    // Counted again as the folders fill, rather than as the archive plans them.
+    let did_not_match = archive.how_many_did_not_match_what_it_records();
     let mut counted = import_tree::FoldersImported {
+        // Counted again as the folders fill, rather than as the archive plans
+        // them.
         folders: 0,
+        // What the first look over the archive left out, said at the end. A
+        // file that did not match what the archive records is one of those
+        // that could not be read as well, so it is taken out of that count
+        // and said once, as the fault it is.
+        files_unread_at_the_first_look: archive
+            .how_many_could_not_be_read()
+            .saturating_sub(did_not_match),
+        files_not_matching_at_the_first_look: did_not_match,
+        folders_too_deep_to_follow: archive.how_many_were_too_deep_to_follow(),
         ..plan.counted
     };
     let mut brought_in = MessagesImported::default();
+    // Asked now, because each reading below borrows the archive.
+    let read_from = archive.kind();
 
     for folder in &plan.folders {
         let mut into = AFolderMadeAtItsFirstMessage::found(cache, account, &folder.path);
@@ -1078,7 +1091,7 @@ pub fn an_archive_brought_in(
                 if let message_files::HowTheReadingEnded::TheFileStoppedBeingReadable(kind) = ended
                 {
                     let some_came_in = brought_in.brought_in > before;
-                    a_stop_counted(kind, some_came_in, &mut counted, &mut brought_in);
+                    a_stop_counted(read_from, kind, some_came_in, &mut counted, &mut brought_in);
                 }
                 Ok(())
             });
@@ -1097,20 +1110,22 @@ pub fn an_archive_brought_in(
 }
 
 /// Count a mailbox file in an archive that stopped being readable partway
-/// through, by the kind of the read that stopped it.
+/// through, by the kind of archive it was read from and the kind of the read
+/// that stopped it.
 ///
 /// One that stopped matching what the archive records about it is its own
 /// fault, counted by whether any of its mail had come in before it did. Any
 /// other stop is counted as a stretch that held no mail, which is how every
 /// stop was said before the kind was kept, so nothing else changes.
 fn a_stop_counted(
+    read_from: crate::service::mailbox_archive::KindOfArchive,
     kind: std::io::ErrorKind,
     some_came_in: bool,
     counted: &mut crate::application::import_tree::FoldersImported,
     brought_in: &mut MessagesImported,
 ) {
     use crate::service::mailbox_archive::WhyAnEntryWasNotRead;
-    match WhyAnEntryWasNotRead::from(kind) {
+    match read_from.why_a_read_failed(kind) {
         WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords => {
             counted.one_mailbox_file_did_not_match(some_came_in);
         }
@@ -2107,6 +2122,52 @@ mod tests {
             "Two.\r\n",
         )
     }
+
+    #[test]
+    fn test_a_zip_stopped_by_its_unpacking_counts_a_mailbox_file_that_did_not_match() {
+        // A packed entry's unpacking fails on broken packed bytes with
+        // InvalidInput, a kind the rule for files does not read as damage,
+        // so a zip broken that way was counted as one message holding nothing
+        // a mail program recognises (review item 26, 2026-10-20).
+        use crate::service::mailbox_archive::KindOfArchive;
+        let mut counted = crate::application::import_tree::FoldersImported::default();
+        let mut brought_in = MessagesImported::default();
+
+        a_stop_counted(
+            KindOfArchive::AZip,
+            std::io::ErrorKind::InvalidInput,
+            false,
+            &mut counted,
+            &mut brought_in,
+        );
+
+        assert_eq!(counted.did_not_match_and_none_came_in, 1);
+        assert_eq!(brought_in.could_not_be_read, 0);
+    }
+
+    #[test]
+    fn test_a_chosen_folder_stopped_by_an_invalid_input_counts_an_unreadable_stretch_as_before() {
+        // A folder records nothing about its files, so a file in one that
+        // stops reading with InvalidInput, which Windows answers for a
+        // parameter it refuses, says nothing about damage to an archive.
+        use crate::service::mailbox_archive::KindOfArchive;
+        let mut counted = crate::application::import_tree::FoldersImported::default();
+        let mut brought_in = MessagesImported::default();
+
+        a_stop_counted(
+            KindOfArchive::AFolder,
+            std::io::ErrorKind::InvalidInput,
+            false,
+            &mut counted,
+            &mut brought_in,
+        );
+
+        assert_eq!(
+            counted,
+            crate::application::import_tree::FoldersImported::default()
+        );
+        assert_eq!(brought_in.could_not_be_read, 1);
+    }
 }
 
 /// Bringing a file of mail in and then opening what came in.
@@ -2790,6 +2851,117 @@ mod end_to_end {
                  imported, and the rest was left out.",
                 some_of_it + 3
             )
+        );
+    }
+
+    // ── What the first look over an archive left out ────────────────────
+
+    /// What is said about one file the first look found not matching what
+    /// the archive records about it.
+    const ONE_FILE_DID_NOT_MATCH: &str = "1 file in the archive does not match what the archive \
+         records about it, so the archive is damaged or was changed after it was made, and that \
+         file was left out.";
+
+    #[test]
+    fn test_a_file_left_out_at_the_first_look_for_not_matching_its_archive_is_said_once() {
+        // Recorded as 10,000 bytes, under the 64 KB the first look reads of
+        // each file, so the file fails there rather than partway through the
+        // import. It was counted and never said: the import said "Imported 1
+        // folder, 3 messages." and nothing else. It is said once, as not
+        // matching, and not a second time as a file that could not be read.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let at = a_zip_recording_altered_as(place.path(), 10_000, true);
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(how_many_in(&cache, &imported("Honest")), 3);
+        assert_eq!(
+            said,
+            format!("Imported 1 folder, 3 messages. {ONE_FILE_DID_NOT_MATCH}")
+        );
+    }
+
+    #[test]
+    fn test_a_packed_mailbox_file_whose_packed_bytes_are_broken_is_said_not_to_match_its_archive() {
+        // Broken at its first packed byte, beside an honest file. The first
+        // look reads the opening of every file, so the broken one is left out
+        // there, and it is said as not matching what the archive records,
+        // not as a file that could not be read (review item 26, 2026-10-20).
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let broken = a_mailbox_of("broken", 3);
+        let honest = a_mailbox_of("honest", 3);
+        let at = crate::service::mailbox_archive::for_tests::a_zip_packed_with_its_first_packed_byte_broken(
+            &place.path().join("mail.zip"),
+            &[("Broken.mbox", broken.as_slice()), ("Honest.mbox", honest.as_slice())],
+            "Broken.mbox",
+        );
+
+        let said = an_archive_brought_in(&cache, "acct", &at, &quietly);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(how_many_in(&cache, &imported("Honest")), 3);
+        assert_eq!(
+            said,
+            format!("Imported 1 folder, 3 messages. {ONE_FILE_DID_NOT_MATCH}")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_a_file_in_a_chosen_folder_nothing_can_open_is_said_to_be_left_out() {
+        // A file another program holds open with no sharing, which is how a
+        // mail program still running keeps its own. The rest comes in, and the
+        // sentence says the one file was left behind. Windows only, because
+        // holding a file that way is done differently on each platform.
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let chosen = place.path().join("mail");
+        std::fs::create_dir_all(&chosen).expect("the chosen folder");
+        std::fs::write(chosen.join("Honest.mbox"), a_mailbox_of("honest", 3))
+            .expect("the honest file");
+        let held_open = chosen.join("Locked.mbox");
+        std::fs::write(&held_open, a_mailbox_of("locked", 3)).expect("the file to hold open");
+        let holding_it = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&held_open)
+            .expect("hold the file open");
+
+        let said = an_archive_brought_in(&cache, "acct", &chosen, &quietly);
+        drop(holding_it);
+
+        assert_eq!(the_folders_under_imported(&cache), vec![imported("Honest")]);
+        assert_eq!(
+            said,
+            "Imported 1 folder, 3 messages. 1 file in the archive could not be read and was left \
+             out."
+        );
+    }
+
+    #[test]
+    fn test_a_folder_deeper_than_a_chosen_folder_is_followed_is_said_to_be_left_out() {
+        // The message below the depth followed was counted and never said,
+        // while the archive's own comment promised a folder left behind is
+        // never left behind in silence.
+        let (cache, _) = a_cache();
+        let place = tempfile::tempdir().expect("a temporary folder");
+        let chosen = crate::service::mailbox_archive::for_tests::a_folder_one_deeper_than_followed(
+            place.path(),
+        );
+
+        let said = an_archive_brought_in(&cache, "acct", &chosen, &quietly);
+
+        assert!(
+            said.ends_with(
+                " 1 folder in the archive is nested too deeply for Wixen Mail to follow, so the \
+                 mail in it was left out."
+            ),
+            "{said}"
         );
     }
 

@@ -82,6 +82,8 @@ pub struct MailboxArchive {
     in_name_order: Vec<usize>,
     /// How many things in it could not be read at all.
     could_not_be_read: usize,
+    /// How many of those did not match what the archive records about them.
+    did_not_match: usize,
     /// How many folders in it sat deeper than this program follows.
     too_deep_to_follow: usize,
     /// How much of it may be read before it is refused.
@@ -404,7 +406,7 @@ fn a_zip_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArchiv
             Err(why) => {
                 found.one_could_not_be_read(
                     &format!("{named} in {}: {why}", at.display()),
-                    (&why).into(),
+                    KindOfArchive::AZip.why_a_read_failed(why.kind()),
                 );
             }
         }
@@ -499,6 +501,37 @@ impl From<std::io::ErrorKind> for WhyAnEntryWasNotRead {
         match kind {
             std::io::ErrorKind::InvalidData => Self::ItDoesNotMatchWhatTheArchiveRecords,
             _ => Self::ItCouldNotBeRead,
+        }
+    }
+}
+
+/// Which of the two things an archive is, asked before its entries are read,
+/// because what a failed read means depends on it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KindOfArchive {
+    /// One file somebody chose.
+    AZip,
+    /// A folder somebody chose.
+    AFolder,
+}
+
+impl KindOfArchive {
+    /// Why a read of one of its entries failed, from the kind of the failure.
+    ///
+    /// A zip packs most entries, this program's own export included, and a
+    /// packed entry's unpacking fails on broken packed bytes with
+    /// [`std::io::ErrorKind::InvalidInput`] rather than the archive's own
+    /// check failing with [`std::io::ErrorKind::InvalidData`]. Both mean the
+    /// zip's contents do not match what it records, so in a zip both are that
+    /// reason. A folder records nothing about its files and unpacks nothing,
+    /// so a file in one that fails with `InvalidInput`, which Windows answers
+    /// for a parameter it refuses, keeps the rule every other read has.
+    pub fn why_a_read_failed(self, kind: std::io::ErrorKind) -> WhyAnEntryWasNotRead {
+        match (self, kind) {
+            (Self::AZip, std::io::ErrorKind::InvalidInput) => {
+                WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords
+            }
+            _ => kind.into(),
         }
     }
 }
@@ -792,6 +825,7 @@ impl MailboxArchive {
             looked_over,
             in_name_order,
             could_not_be_read: found.could_not_be_read,
+            did_not_match: found.did_not_match,
             too_deep_to_follow: found.too_deep_to_follow,
             allowed,
             unpacked_so_far: 0,
@@ -801,12 +835,29 @@ impl MailboxArchive {
     /// How many things in the archive could not be read at all.
     ///
     /// Not nought is somebody's mail still sitting in their archive, so it is
-    /// the caller's job to say so at the end rather than leave it in a log.
+    /// the caller's job to say so at the end rather than leave it in a log,
+    /// and the import of a folder or zip of mail says it in its closing
+    /// sentence.
     pub fn how_many_could_not_be_read(&self) -> usize {
         self.could_not_be_read
     }
 
+    /// How many of the things that could not be read did not match what the
+    /// archive records about them.
+    ///
+    /// Counted among [`MailboxArchive::how_many_could_not_be_read`] as well,
+    /// and told apart because it asks something different of somebody: the
+    /// archive is damaged or was changed after it was made, so it is the
+    /// archive to doubt rather than one file in it. The import says these
+    /// apart from the rest, and once.
+    pub fn how_many_did_not_match_what_it_records(&self) -> usize {
+        self.did_not_match
+    }
+
     /// How many folders sat deeper than this program follows a folder.
+    ///
+    /// The import says these in its closing sentence, so a folder left
+    /// behind is never left behind in silence.
     pub fn how_many_were_too_deep_to_follow(&self) -> usize {
         self.too_deep_to_follow
     }
@@ -985,7 +1036,19 @@ impl MailboxArchive {
     /// in it depends on it: telling them to choose a folder when they chose a
     /// folder is telling them to do the thing they just did.
     pub fn is_a_folder(&self) -> bool {
-        matches!(self.holding, Holding::AFolder(_))
+        self.kind() == KindOfArchive::AFolder
+    }
+
+    /// Which of the two things it is.
+    ///
+    /// A value rather than a question asked as each entry is read, because
+    /// reading an entry borrows the archive, and what a failed read means has
+    /// to be decided inside that reading.
+    pub fn kind(&self) -> KindOfArchive {
+        match self.holding {
+            Holding::AZipFile(_) => KindOfArchive::AZip,
+            Holding::AFolder(_) => KindOfArchive::AFolder,
+        }
     }
 }
 
@@ -1373,6 +1436,7 @@ fn one_step_down(named: &str) -> Result<&Path> {
 
 #[cfg(test)]
 mod tests {
+    use super::for_tests::a_folder_nested;
     use super::*;
     use std::io::Write;
 
@@ -1827,6 +1891,9 @@ mod tests {
             vec!["Work/Invoices.mbox", "Work/2024/one.eml"]
         );
         assert_eq!(archive.how_many_could_not_be_read(), 1);
+        // Its check failed, so it is the archive that is damaged, and the
+        // import says so rather than that one file could not be read.
+        assert_eq!(archive.how_many_did_not_match_what_it_records(), 1);
     }
 
     /// Change one byte of a zip, at the first place these bytes are found.
@@ -1863,6 +1930,29 @@ mod tests {
         assert!(said.contains("is damaged"), "{said}");
         assert!(said.contains("changed after it was made"), "{said}");
         assert!(said.contains("nothing was imported"), "{said}");
+        assert!(!said.contains("stops partway through"), "{said}");
+        assert!(!said.contains("another copy"), "{said}");
+    }
+
+    #[test]
+    fn test_a_packed_entry_whose_packed_bytes_are_broken_is_said_to_be_damaged_and_not_cut_short() {
+        // Most zips pack their entries, this program's own export included,
+        // and broken packed bytes fail in the unpacking with a kind of their
+        // own rather than the archive's check. Said as an archive that stops
+        // partway through, somebody fetches another copy of a file they
+        // already have whole (review item 26, 2026-10-20).
+        let place = a_place_to_work();
+        let at = for_tests::a_zip_packed_with_its_first_packed_byte_broken(
+            &place.path().join("packed.zip"),
+            &[("Work/Broken.mbox", a_folder_of_mail())],
+            "Work/Broken.mbox",
+        );
+
+        let said = refused(&at);
+
+        assert!(said.contains(&at.display().to_string()), "{said}");
+        assert!(said.contains("is damaged"), "{said}");
+        assert!(said.contains("changed after it was made"), "{said}");
         assert!(!said.contains("stops partway through"), "{said}");
         assert!(!said.contains("another copy"), "{said}");
     }
@@ -2628,19 +2718,6 @@ mod tests {
         );
     }
 
-    /// One folder nested this many folders deep, with a message at the bottom.
-    fn a_folder_nested(inside: &Path, deep: usize) -> PathBuf {
-        let at = inside.join("mailbox");
-        let mut down = at.clone();
-        for _ in 0..deep {
-            down.push("a");
-        }
-        std::fs::create_dir_all(&down).expect("make the nested folders");
-        std::fs::write(down.join("deep.eml"), one_message()).expect("write the deep message");
-        std::fs::write(at.join("shallow.eml"), one_message()).expect("write the shallow message");
-        at
-    }
-
     #[test]
     fn test_a_folder_deeper_than_this_program_follows_is_counted_rather_than_walked_forever() {
         // Both sides of the limit, because a limit tested from one side only is
@@ -2711,6 +2788,8 @@ mod tests {
             vec!["Work/2024/one.eml", "Work/Invoices.mbox"]
         );
         assert_eq!(archive.how_many_could_not_be_read(), 1);
+        // A file held open records nothing it could fail to match.
+        assert_eq!(archive.how_many_did_not_match_what_it_records(), 0);
         drop(holding_it);
     }
 
@@ -2998,5 +3077,73 @@ pub(crate) mod for_tests {
         }
         writing.finish().expect("finish the test zip");
         at.to_path_buf()
+    }
+
+    /// One zip whose entries are packed, as this program's own export packs
+    /// them, with the first packed byte of the entry `broken` overwritten.
+    ///
+    /// The byte is found from the entry's own record of where its packed
+    /// bytes start, never by searching the file for its text, which packing
+    /// has changed. 0xFF there names a kind of packed block that does not
+    /// exist, so the unpacking fails on it the same way every time: the
+    /// narrower shape of damage inside packed bytes, where ordinary damage
+    /// further in fails the archive's own check instead.
+    pub(crate) fn a_zip_packed_with_its_first_packed_byte_broken(
+        at: &Path,
+        entries: &[(&str, &[u8])],
+        broken: &str,
+    ) -> PathBuf {
+        let file = std::fs::File::create(at).expect("create the test zip");
+        let mut writing = zip::ZipWriter::new(file);
+        for (named, holding) in entries {
+            writing
+                .start_file(
+                    *named,
+                    zip::write::SimpleFileOptions::default()
+                        .compression_method(zip::CompressionMethod::Deflated),
+                )
+                .expect("start an entry");
+            writing.write_all(holding).expect("write an entry");
+        }
+        writing.finish().expect("finish the test zip");
+
+        let packed_from = {
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(at).expect("open the test zip"))
+                .expect("read the test zip");
+            let entry = zip
+                .by_name(broken)
+                .expect("the entry to break is in the zip");
+            assert_eq!(entry.compression(), zip::CompressionMethod::Deflated);
+            entry.data_start().expect("where its packed bytes start")
+        };
+        let mut bytes = std::fs::read(at).expect("read the test zip back");
+        let packed_from = usize::try_from(packed_from).expect("a test zip is small");
+        bytes[packed_from] = 0xFF;
+        std::fs::write(at, &bytes).expect("write the broken zip");
+        at.to_path_buf()
+    }
+
+    /// One folder nested this many folders deep, with a message at the bottom
+    /// and one at the top.
+    pub(crate) fn a_folder_nested(inside: &Path, deep: usize) -> PathBuf {
+        let one_message = b"From: Ada Lovelace <ada@example.com>\r\n\
+                            Subject: Notes on the engine\r\n\
+                            \r\n\
+                            The engine weaves algebraic patterns.\r\n";
+        let at = inside.join("mailbox");
+        let mut down = at.clone();
+        for _ in 0..deep {
+            down.push("a");
+        }
+        std::fs::create_dir_all(&down).expect("make the nested folders");
+        std::fs::write(down.join("deep.eml"), one_message).expect("write the deep message");
+        std::fs::write(at.join("shallow.eml"), one_message).expect("write the shallow message");
+        at
+    }
+
+    /// One folder whose bottom message sits one folder deeper than a chosen
+    /// folder is followed.
+    pub(crate) fn a_folder_one_deeper_than_followed(inside: &Path) -> PathBuf {
+        a_folder_nested(inside, super::MOST_FOLDERS_DEEP + 1)
     }
 }
