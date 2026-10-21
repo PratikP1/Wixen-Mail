@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 870 records have arrived since and have not been through it.
+# 873 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -772,7 +772,7 @@ tests_last_seen = [
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 176 },
-    { file = "src/service/ical_subscription.rs", tests = 23 },
+    { file = "src/service/ical_subscription.rs", tests = 32 },
 ]
 
 # ── One contact, however many address books hold a copy ─────────────────────
@@ -41532,7 +41532,7 @@ red = [
     "service::ical_subscription::tests::test_a_feed_host_that_never_answers_is_given_up_on_within_the_limit",
 ]
 tests_last_seen = [
-    { file = "src/service/ical_subscription.rs", tests = 23 },
+    { file = "src/service/ical_subscription.rs", tests = 32 },
 ]
 
 # A calendar feed is read as it arrives and refused once it passes the cap
@@ -41548,7 +41548,7 @@ red = [
     "service::ical_subscription::tests::test_a_feed_larger_than_the_cap_is_refused_as_it_arrives",
 ]
 tests_last_seen = [
-    { file = "src/service/ical_subscription.rs", tests = 23 },
+    { file = "src/service/ical_subscription.rs", tests = 32 },
 ]
 
 # A followed calendar link is fetched on the runtime and its answer handed
@@ -43460,4 +43460,67 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/moves_waiting.rs", tests = 76 },
+]
+
+# A calendar feed that cannot be reached is named by its host, never by its
+# whole address, which may carry a private token and is written to the log
+# and spoken (13.3-09, review item 10). The break prints reqwest's words with
+# the address still on them.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,388 passed and 1
+# failed, this one. The timeout's case stays green under it, which is right:
+# the timeout has a sentence of its own that never held the address.
+[[guard]]
+name = "a calendar feed that cannot be reached is named by its host and not its address"
+file = "src/service/ical_subscription.rs"
+before = '''        Error::Network(format!("{layer} at {host}: {}", failed.without_url()))'''
+after = '''        Error::Network(format!("{layer} at {host}: {}", failed))'''
+red = [
+    "service::ical_subscription::tests::test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 32 },
+]
+
+# A feed, a calendar file or a contact card that starts with a byte order
+# mark is read without it, so BEGIN:VCALENDAR is its first line (13.3-09,
+# review item 11). The break keeps the mark and still drops the declared
+# character set, so only the mark is measured.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,393 passed and 4
+# failed, these four, all new with 13.3-09. The windows-1252 cases stay
+# green under it, which is right: they carry no mark.
+[[guard]]
+name = "a byte order mark is taken off a calendar or a card before it is read"
+file = "src/service/ical_subscription.rs"
+before = '''        Some(unmarked) => (unmarked, None),'''
+after = '''        Some(_unmarked) => (bytes, None),'''
+red = [
+    "application::opening::tests::test_a_calendar_file_saved_with_a_byte_order_mark_is_read_without_it",
+    "service::ical_subscription::tests::test_a_byte_order_mark_wins_over_a_declared_charset",
+    "service::ical_subscription::tests::test_a_feed_that_starts_with_a_byte_order_mark_is_still_a_calendar",
+    "service::ical_subscription::tests::test_a_feed_with_a_byte_order_mark_arrives_as_its_events",
+]
+tests_last_seen = [
+    { file = "src/application/opening.rs", tests = 24 },
+    { file = "src/service/ical_subscription.rs", tests = 32 },
+]
+
+# A calendar or a card saved as UTF-16 with its byte order mark is read as
+# UTF-16, as reqwest's text() read a feed before 13.2-14 (13.3-09, review
+# item 11, a case the plan did not list). The break never asks for the mark.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,397 passed and 1
+# failed, this one. The UTF-8 mark's cases stay green under it, which is
+# right: their mark is taken off by the arm above.
+[[guard]]
+name = "a calendar saved as UTF-16 with its mark is read as UTF-16"
+file = "src/service/ical_subscription.rs"
+before = '''        None if starts_with_a_utf_16_mark(bytes) => (bytes, Some("utf-16")),'''
+after = '''        None if false && starts_with_a_utf_16_mark(bytes) => (bytes, Some("utf-16")),'''
+red = [
+    "service::ical_subscription::tests::test_a_calendar_saved_as_utf_16_with_its_mark_is_still_a_calendar",
+]
+tests_last_seen = [
+    { file = "src/service/ical_subscription.rs", tests = 32 },
 ]

@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use mail_parser::decoders::charsets::map::charset_decoder;
+
 use crate::common::{Error, Result};
 use crate::service::caldav::{self, CalDavEvent, parse_ical_vevent};
 
@@ -65,7 +67,7 @@ impl ICalSubscriptionClient {
             .header("Accept", "text/calendar")
             .send()
             .await
-            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS fetch failed"))?;
+            .map_err(|e| why_the_feed_did_not_arrive(e, &host, "ICS fetch failed"))?;
 
         if !response.status().is_success() {
             return Err(Error::Network(format!(
@@ -73,6 +75,12 @@ impl ICalSubscriptionClient {
                 response.status()
             )));
         }
+        let declared_charset = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(the_charset_in)
+            .map(str::to_owned);
 
         // Read as it arrives and refused the moment it passes the cap, rather
         // than read whole and measured afterwards, which is the memory the cap
@@ -81,7 +89,7 @@ impl ICalSubscriptionClient {
         while let Some(chunk) = response
             .chunk()
             .await
-            .map_err(|e| why_the_feed_did_not_arrive(&e, &host, "ICS response read error"))?
+            .map_err(|e| why_the_feed_did_not_arrive(e, &host, "ICS response read error"))?
         {
             if arrived.len() + chunk.len() > self.cap {
                 return Err(Error::InPlainWords(format!(
@@ -91,8 +99,13 @@ impl ICalSubscriptionClient {
             }
             arrived.extend_from_slice(&chunk);
         }
-        // Lossy, as `text()` decoded it.
-        Ok(String::from_utf8_lossy(&arrived).into_owned())
+        // Decoded as `text()` decoded it before the chunked read replaced it:
+        // a byte order mark taken off, and the character set the host named
+        // honoured, so neither a marked feed nor a windows-1252 one is lost.
+        Ok(a_calendar_or_card_as_text(
+            &arrived,
+            declared_charset.as_deref(),
+        ))
     }
 
     /// Fetch and parse a .ics feed into CalDavEvent structs.
@@ -114,16 +127,69 @@ fn the_host_in(url: &str) -> String {
         .unwrap_or_else(|| "That address".to_string())
 }
 
+/// The three bytes some Windows tools write in front of UTF-8 text.
+const UTF8_BYTE_ORDER_MARK: &[u8] = b"\xEF\xBB\xBF";
+
+/// A calendar's or a contact card's bytes as text, read the way reqwest's
+/// `text()` read a feed before 13.2-14 (review item 11).
+///
+/// A byte order mark is taken off and the rest read as UTF-8, or as UTF-16
+/// when the mark is UTF-16's: kept, it sits in front of `BEGIN:VCALENDAR` and
+/// the whole file is refused as not a calendar. It wins over a declared
+/// character set, because it is in the bytes themselves. Otherwise a character set the host declared and `mail-parser`
+/// knows decodes the bytes, so a feed sent in windows-1252 keeps its accents.
+/// Anything else, `utf-8` and names nobody knows included, is read as UTF-8,
+/// which is what the calendar standard says a feed is, with a replacement
+/// character for what is not: a file some program wrote in Latin-1 would
+/// otherwise lose every event in it over one accented name.
+pub(crate) fn a_calendar_or_card_as_text(bytes: &[u8], declared_charset: Option<&str>) -> String {
+    let (bytes, declared_charset) = match bytes.strip_prefix(UTF8_BYTE_ORDER_MARK) {
+        Some(unmarked) => (unmarked, None),
+        None if starts_with_a_utf_16_mark(bytes) => (bytes, Some("utf-16")),
+        None => (bytes, declared_charset),
+    };
+    match declared_charset.and_then(|label| charset_decoder(label.as_bytes())) {
+        Some(decode) => decode(bytes),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
+}
+
+/// Whether the bytes open with a UTF-16 byte order mark, either way round.
+///
+/// Neither pair can begin UTF-8 text, so nothing else is mistaken for one.
+/// `mail-parser`'s `utf-16` decoder reads the order off the mark and takes
+/// it away, which is the reading reqwest's `text()` gave such a feed.
+fn starts_with_a_utf_16_mark(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0xFF, 0xFE]) || bytes.starts_with(&[0xFE, 0xFF])
+}
+
+/// The character set a `Content-Type` header names, if it names one.
+fn the_charset_in(content_type: &str) -> Option<&str> {
+    content_type
+        .split(';')
+        .skip(1)
+        .filter_map(|parameter| parameter.split_once('='))
+        .find(|(name, _)| name.trim().eq_ignore_ascii_case("charset"))
+        .map(|(_, value)| value.trim().trim_matches('"'))
+        .filter(|charset| !charset.is_empty())
+}
+
 /// What a failed request says: a host that ran out its time in words a person
 /// can act on, and anything else as the network failure it is.
-fn why_the_feed_did_not_arrive(failed: &reqwest::Error, host: &str, layer: &str) -> Error {
+///
+/// No arm may print the address. reqwest's own words end with the whole of it,
+/// and a subscription address often carries a private token, while these words
+/// are written to the log after every sync and spoken by a followed link. So
+/// every arm names the host, and reqwest's words are taken without the address
+/// (review item 10; only the timeout's arm did this before).
+fn why_the_feed_did_not_arrive(failed: reqwest::Error, host: &str, layer: &str) -> Error {
     if failed.is_timeout() {
         Error::InPlainWords(format!(
             "{host} did not answer in time, so the calendar was not fetched. Nothing on \
              this calendar was changed here."
         ))
     } else {
-        Error::Network(format!("{layer}: {failed}"))
+        Error::Network(format!("{layer} at {host}: {}", failed.without_url()))
     }
 }
 
@@ -470,6 +536,36 @@ END:VCALENDAR"#;
     }
 
     #[tokio::test]
+    async fn test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not() {
+        // Review item 10. A timeout was the one failure that named only the
+        // host; every other one carried reqwest's own words, which end with
+        // the whole address, token and all, and those words went into the log
+        // after every offline sync and were spoken by a followed link. Nothing
+        // listens on port 1 of the loopback, so the connection is refused
+        // here with no network at all.
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
+
+        let fetched = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_ics("http://127.0.0.1:1/private/feed.ics?token=s3cret"),
+        )
+        .await
+        .expect("a refused connection took longer than any limit here");
+
+        let said = fetched
+            .expect_err("nothing listens on port 1, yet a calendar arrived")
+            .to_string();
+        assert!(
+            said.contains("127.0.0.1"),
+            "it does not say which host could not be reached: {said}"
+        );
+        assert!(
+            !said.contains("s3cret") && !said.contains("/private/"),
+            "it wrote out the whole address rather than the host: {said}"
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_feed_larger_than_the_cap_is_refused_as_it_arrives() {
         let address = more_than_the_cap_and_then_silence().await;
         let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
@@ -523,6 +619,191 @@ END:VCALENDAR"#;
             "the text was not read as UTF-8"
         );
         let _ = tokio::time::timeout(LONGER_THAN_ANY_LIMIT_HERE, asked).await;
+    }
+
+    // ── A byte order mark, and a character set the host names ──────────
+    //
+    // Review item 11. Before 13.2-14 a feed went through reqwest's `text()`,
+    // which took a byte order mark off and read the character set the host
+    // named. The chunked read that replaced it did neither, so a feed some
+    // Windows tool had saved with a mark was refused as "not a calendar",
+    // and a feed sent in windows-1252 lost its accents.
+
+    /// A calendar with one event, whose first line is where a mark goes.
+    const ONE_EVENT: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:marked-1\r\n\
+                             SUMMARY:Standing meeting\r\nDTSTART:20260305T090000Z\r\n\
+                             END:VEVENT\r\nEND:VCALENDAR\r\n";
+
+    /// The three bytes some Windows tools write before UTF-8 text.
+    const A_MARK: [u8; 3] = [0xEF, 0xBB, 0xBF];
+
+    #[test]
+    fn test_a_feed_that_starts_with_a_byte_order_mark_is_still_a_calendar() {
+        let marked = [&A_MARK[..], ONE_EVENT.as_bytes()].concat();
+
+        let text = a_calendar_or_card_as_text(&marked, None);
+
+        assert!(
+            text.starts_with("BEGIN:VCALENDAR"),
+            "the mark was kept in front of the calendar: {:?}",
+            &text[..text.len().min(20)]
+        );
+        let events = parse_ics(&text).expect("a calendar with a mark in front of it");
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "marked-1");
+    }
+
+    #[test]
+    fn test_a_calendar_saved_as_utf_16_with_its_mark_is_still_a_calendar() {
+        // reqwest's text() read a UTF-16 mark too, so a calendar some Windows
+        // program saved as "Unicode" read before 13.2-14 and must again.
+        let saved_as = |mark: [u8; 2], unit_bytes: fn(u16) -> [u8; 2]| -> Vec<u8> {
+            mark.into_iter()
+                .chain(ONE_EVENT.encode_utf16().flat_map(unit_bytes))
+                .collect()
+        };
+        let little_endian = saved_as([0xFF, 0xFE], u16::to_le_bytes);
+        let big_endian = saved_as([0xFE, 0xFF], u16::to_be_bytes);
+
+        for (order, marked) in [("little", little_endian), ("big", big_endian)] {
+            assert_eq!(
+                a_calendar_or_card_as_text(&marked, None),
+                ONE_EVENT,
+                "a {order}-endian UTF-16 calendar"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_feed_declared_in_windows_1252_reads_its_accents() {
+        // 0xE9 is e with an acute accent in windows-1252 and not UTF-8 at all.
+        let latin = b"SUMMARY:Caf\xE9";
+
+        assert_eq!(
+            a_calendar_or_card_as_text(latin, Some("windows-1252")),
+            "SUMMARY:Caf\u{e9}",
+            "the character set the host named was not read"
+        );
+        assert_eq!(
+            a_calendar_or_card_as_text(latin, None),
+            "SUMMARY:Caf\u{fffd}",
+            "a feed that names no character set is UTF-8, as the calendar standard says"
+        );
+        assert_eq!(
+            a_calendar_or_card_as_text(latin, Some("x-nonsense")),
+            "SUMMARY:Caf\u{fffd}",
+            "a character set nothing knows is read as UTF-8"
+        );
+    }
+
+    #[test]
+    fn test_a_feed_declared_in_utf_8_reads_as_utf_8() {
+        // Green before the change as well, because lossy UTF-8 was already the
+        // answer for it; it is here so honouring a named character set never
+        // reads UTF-8 through some other one.
+        let utf8 = "SUMMARY:Caf\u{e9}".as_bytes();
+
+        for named in ["utf-8", "UTF-8"] {
+            assert_eq!(
+                a_calendar_or_card_as_text(utf8, Some(named)),
+                "SUMMARY:Caf\u{e9}",
+                "declared {named}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_a_byte_order_mark_wins_over_a_declared_charset() {
+        // A mark says UTF-8 in the bytes themselves, which is better evidence
+        // than a header a server sends for every file it holds.
+        let marked = [&A_MARK[..], "SUMMARY:Caf\u{e9}".as_bytes()].concat();
+
+        assert_eq!(
+            a_calendar_or_card_as_text(&marked, Some("windows-1252")),
+            "SUMMARY:Caf\u{e9}"
+        );
+    }
+
+    #[test]
+    fn test_the_charset_is_read_from_the_content_type() {
+        assert_eq!(
+            the_charset_in("text/calendar; charset=\"windows-1252\""),
+            Some("windows-1252")
+        );
+        assert_eq!(
+            the_charset_in("text/calendar; Charset=UTF-8"),
+            Some("UTF-8")
+        );
+        assert_eq!(the_charset_in("text/calendar"), None);
+    }
+
+    /// A loopback host that answers one request with these bytes under this
+    /// `Content-Type`, which [`crate::common::answering`] cannot do, since it
+    /// sends text and the point here is bytes that are not UTF-8.
+    async fn answering_in_bytes(content_type: &'static str, body: Vec<u8>) -> std::net::SocketAddr {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request).await;
+            let head = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\n\
+                 Content-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(head.as_bytes()).await;
+            let _ = stream.write_all(&body).await;
+            let _ = stream.shutdown().await;
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_with_a_byte_order_mark_arrives_as_its_events() {
+        let marked = [&A_MARK[..], ONE_EVENT.as_bytes()].concat();
+        let address = answering_in_bytes("text/calendar", marked).await;
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
+
+        let events = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_and_parse(&format!("http://{address}/feed.ics")),
+        )
+        .await
+        .expect("a feed with a mark to arrive")
+        .expect("a feed with a mark to read as a calendar");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].uid, "marked-1");
+    }
+
+    #[tokio::test]
+    async fn test_a_feed_served_in_windows_1252_arrives_with_its_accents() {
+        // The header has to be read off the reply and handed to the decoding,
+        // which no case of the decoding alone can show.
+        let (before, after) = ONE_EVENT
+            .split_once("Standing meeting")
+            .expect("the event's summary");
+        let latin = [before.as_bytes(), b"Caf\xE9", after.as_bytes()].concat();
+        let address = answering_in_bytes("text/calendar; charset=windows-1252", latin).await;
+        let client = ICalSubscriptionClient::answering_within(A_FEED_HAS_THIS_LONG, A_SMALL_CAP);
+
+        let events = tokio::time::timeout(
+            LONGER_THAN_ANY_LIMIT_HERE,
+            client.fetch_and_parse(&format!("http://{address}/feed.ics")),
+        )
+        .await
+        .expect("a feed in windows-1252 to arrive")
+        .expect("a feed in windows-1252 to read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].summary, "Caf\u{e9}");
     }
 
     #[test]

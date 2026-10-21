@@ -1446,6 +1446,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A calendar that cannot be fetched no longer gives away its private address (2026-10-21).**
+  When a calendar you subscribed to, or one a `webcal:` link opened, could not be fetched, for
+  example because the network was off or the host turned the connection away, the reason was
+  written to the log after every refresh and read out by a followed link, and it ended with the
+  calendar's whole web address. Such an address often holds a private key, and the log is what
+  a feedback report sends. Now the reason names only the host, as the sentence for a host that
+  does not answer in time already did.
+
+- **Calendars and contact cards saved with a byte order mark read again (2026-10-21).** Some
+  Windows programs put an invisible byte order mark at the start of a file. Since 2026-10-16 a
+  subscribed calendar that started with one was refused as not being a calendar, and a
+  calendar file or contact card you opened from disk always was. Now the mark is passed over,
+  whether the file is in UTF-8 or UTF-16, and the file reads. A calendar whose host says it is
+  written in an older character set, such as windows-1252, shows its accents again.
+
+  Known limits. None of this has been tried against a real calendar host; the tests use the
+  program's own stand-in host on this computer.
+
 - **Mail that arrives during the first download reaches your rules and is announced
   (2026-10-21, MAIL-01, MAIL-04, MAIL-05).** While Wixen Mail downloads everything in your
   folders, new mail can arrive. The download used to take that mail along with the older mail it
@@ -1992,7 +2010,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   of a calendar you subscribed to is held to the same limits, so a host that never answers
   can no longer hold up that refresh, or the undo of a deleted calendar, until Wixen Mail
   is restarted. Known limitation: a calendar is now read as UTF-8 whatever character set
-  its host names, as the calendar standard says it should be.
+  its host names, as the calendar standard says it should be. (Corrected 2026-10-21: since
+  then a calendar is read in the character set its host names, as it was before this change,
+  and as UTF-8 when the host names none, and a byte order mark at its start is passed over.
+  The fix is under Fixed above.)
 - **One unreadable message on a POP server no longer stops all of that account's mail
   (2026-10-16, MAIL-04).** A message of no bytes, or of nothing but blanks, could not be
   read, and the check stopped on it before saving anything. The server lists its mail in
