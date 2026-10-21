@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 864 records have arrived since and have not been through it.
+# 865 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40928,6 +40928,111 @@ before = '''                    let due = lock_state(&state)
                         .reading_the_open_folder_again
                         .the_folder_due(std::time::Instant::now());'''
 after = '''                    let due: Option<i64> = None;'''
+red = [
+    "test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/everything_comes_down_without_being_asked.rs", tests = 28 },
+]
+
+# Item 5 of the review of 2026-10-20 (13.3-06): the re-read sits above the
+# drain so its rows are applied in the tick that read them. The break puts
+# the two back in the order 13.2-09 left, the drain first. The `before` runs
+# to the drain's closing line rather than its `while let` line, because a
+# swap that stops there would not compile.
+[[guard]]
+name = "the timer reads the open folder before it drains the workers' updates"
+file = "src/presentation/wx_app.rs"
+suite = "everything_comes_down_without_being_asked"
+before = '''                    let due = lock_state(&state)
+                        .reading_the_open_folder_again
+                        .the_folder_due(std::time::Instant::now());
+                    if let Some(folder_id) = due {
+                        reread_folder_if_open(
+                            &state,
+                            &message_cache,
+                            folder_id,
+                            crate::presentation::ui_types::WhyTheRowsWereRead::AChunkOfTheDownloadLanded,
+                            &ui_tx,
+                        );
+                    }
+
+                    // Every update the workers sent since the last tick, as
+                    // one turn: a failed send, the lost connection and the
+                    // Outbox's closing count arrive together, and said one
+                    // after another each was written over the one before, so
+                    // only the count was heard (audit finding #32).
+                    a11y.as_one_turn(|| {
+                        while let Ok(update) = ui_rx.try_recv() {
+                            handle_update(
+                                &update,
+                                UpdateTargets {
+                                    state: &state,
+                                    folder_tree: &folder_tree,
+                                    msg_list: &msg_list,
+                                    column_layout: &column_layout,
+                                    preview: &preview_host,
+                                    frame: &frame,
+                                    toolbar: toolbar_handle,
+                                    a11y: &a11y,
+                                    pim: &pim_refs,
+                                    message_cache: &message_cache,
+                                    back_online_offer: &back_online_offer,
+                                    reader: &reader,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                    focus_home: &focus_home_cell,
+                                    waiting_to_be_asked_about: &waiting_to_be_asked_about,
+                                    opens_a_handover: &open_a_handover,
+                                },
+                            );
+                        }
+                    });'''
+after = '''                    // Every update the workers sent since the last tick, as
+                    // one turn: a failed send, the lost connection and the
+                    // Outbox's closing count arrive together, and said one
+                    // after another each was written over the one before, so
+                    // only the count was heard (audit finding #32).
+                    a11y.as_one_turn(|| {
+                        while let Ok(update) = ui_rx.try_recv() {
+                            handle_update(
+                                &update,
+                                UpdateTargets {
+                                    state: &state,
+                                    folder_tree: &folder_tree,
+                                    msg_list: &msg_list,
+                                    column_layout: &column_layout,
+                                    preview: &preview_host,
+                                    frame: &frame,
+                                    toolbar: toolbar_handle,
+                                    a11y: &a11y,
+                                    pim: &pim_refs,
+                                    message_cache: &message_cache,
+                                    back_online_offer: &back_online_offer,
+                                    reader: &reader,
+                                    tx: &ui_tx,
+                                    rt: &runtime,
+                                    focus_home: &focus_home_cell,
+                                    waiting_to_be_asked_about: &waiting_to_be_asked_about,
+                                    opens_a_handover: &open_a_handover,
+                                },
+                            );
+                        }
+                    });
+
+                    let due = lock_state(&state)
+                        .reading_the_open_folder_again
+                        .the_folder_due(std::time::Instant::now());
+                    if let Some(folder_id) = due {
+                        reread_folder_if_open(
+                            &state,
+                            &message_cache,
+                            folder_id,
+                            crate::presentation::ui_types::WhyTheRowsWereRead::AChunkOfTheDownloadLanded,
+                            &ui_tx,
+                        );
+                    }'''
 red = [
     "test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason",
 ]
