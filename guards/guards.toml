@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 887 records have arrived since and have not been through it.
+# 888 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40216,6 +40216,38 @@ tests_last_seen = [
     { file = "tests/a_change_made_here_reaches_the_conversation_rows.rs", tests = 31 },
 ]
 
+# The missing text of one conversation read over the whole scope again and
+# narrowed after it, as it was before 13.3-14: the same messages, built from
+# every message of the account outside All Mail and every conversation of
+# the folder first, on every conversation row landed on (review item 33).
+# The answers are the same, so only the plan reading goes red.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,420 passed and 1
+# failed, this one; `a_conversation_row_stands_for_one_message` at 21,
+# `several_actions_reach_the_server_in_order` at 18 and
+# `a_change_made_here_reaches_the_conversation_rows` at 29, all passing.
+[[guard]]
+name = "landing on a conversation reads its missing text through the narrowed scope"
+file = "src/data/message_cache/messages.rs"
+before = '''pub(super) fn one_conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER, Listing::OnlyNamed)
+}'''
+after = '''pub(super) fn one_conversation_scope() -> String {
+    the_scope_over(&ONE_FOLDER, Listing::Whole).replace("\n         here AS (", "\n         everything AS (")
+        + ",
+         here AS (
+             SELECT * FROM everything
+             WHERE thread_id IN (SELECT json_extract(value, '$[1]') FROM json_each(?4))
+         )"
+}'''
+red = [
+    "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/messages.rs", tests = 183 },
+    { file = "src/data/message_cache/mod.rs", tests = 26 },
+]
+
 # The unary plus taken off the folder terms of a narrowed scope (13.2-31.1).
 # With no statistics, which is how a fresh store and a store read in the
 # connection that wrote it stand, SQLite then searches `messages` by folder
@@ -40271,6 +40303,10 @@ tests_last_seen = [
 # Measured by hand on 2026-10-18: the whole library 9,268 passed and 2
 # failed, the reading and the scope reading; the two targets that read
 # conversations passed.
+#
+# Rewritten 2026-10-21 by 13.3-14: `conversation_scope` is compiled for tests
+# only since, and a break the program's own build cannot compile measures
+# nothing, so the break names the text that function returns.
 [[guard]]
 name = "the action's read of one conversation reads the narrowed scope"
 file = "src/data/message_cache/messages.rs"
@@ -40282,7 +40318,7 @@ after = '''         FROM here m
              SELECT json_extract(value, '$[1]') FROM json_each(?4)
          )
          ORDER BY m.received_at ASC, m.id ASC",
-        scope = conversation_scope()'''
+        scope = the_scope_over(&ONE_FOLDER, Listing::Whole)'''
 red = [
     "data::message_cache::messages::tests::test_both_conversation_queries_are_built_on_one_scope",
     "data::message_cache::storage_shape::test_a_change_made_here_reads_only_its_conversations_through_the_thread_index",

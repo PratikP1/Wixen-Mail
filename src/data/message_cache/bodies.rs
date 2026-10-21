@@ -378,10 +378,12 @@ const SNIPPETS_ARE_THE_FIRST_RELEVANT_WORDS: &str =
 /// [`super::messages::messages_in_one_conversation`] is.
 ///
 /// `?1` the account, `?2` the folder, `?3` whether the reach is the whole
-/// account, `?4` the conversation, and `?5` the message the row stands for.
+/// account, `?4` the conversation as the one pair
+/// [`super::messages::as_bound_pairs`] binds, and `?5` the message the row
+/// stands for.
 pub(super) fn missing_text_in_one_conversation() -> String {
     let only_copy_is_here = super::messages::ONLY_COPY_IS_HERE;
-    let scope = super::messages::conversation_scope();
+    let scope = super::messages::one_conversation_scope();
     format!(
         "{scope}
          SELECT m.id, f.path, m.uid, COALESCE(m.size_bytes, 0)
@@ -389,8 +391,7 @@ pub(super) fn missing_text_in_one_conversation() -> String {
          INNER JOIN messages row ON row.id = m.id
          INNER JOIN folders f ON row.folder_id = f.id
          LEFT JOIN message_bodies b ON b.message_id = m.id
-         WHERE m.thread_id = ?4
-           AND b.message_id IS NULL
+         WHERE b.message_id IS NULL
            AND NOT {only_copy_is_here}
          ORDER BY CASE WHEN m.id = ?5 THEN 0 ELSE 1 END,
                   m.received_at ASC, m.id ASC",
@@ -717,10 +718,21 @@ impl MessageCache {
     ///
     /// What selecting a conversation row asks for: the tester's "if a thread
     /// is highlighted, all messages should be cached". Over
-    /// [`super::messages::conversation_scope`], the same scope the row's
-    /// count was taken under, so the messages offered are the messages the
-    /// row is of, in every folder `reach` names and not only the one on
-    /// screen. `first` is the row message, put first because it is the one
+    /// [`super::messages::one_conversation_scope`], the scope the row's count
+    /// was taken under narrowed to this conversation, so the messages offered
+    /// are the messages the row is of, in every folder `reach` names and not
+    /// only the one on screen, read through the thread index.
+    ///
+    /// Until 13.3-14 this read the whole scope and kept one conversation
+    /// after it, which builds every message of the account outside All Mail
+    /// and every conversation of the folder first; the press of M read the
+    /// same way at 138 to 146 ms at the size of Pratik's Inbox, measured
+    /// 2026-10-18 on a release build (13.2-31.1), and this runs on every
+    /// conversation row landed on (review item 33). The conversation is bound
+    /// as data, never written into the text, because its identifier comes
+    /// from headers a stranger wrote.
+    ///
+    /// `first` is the row message, put first because it is the one
     /// the preview is waiting for; the rest follow by arrival, which is
     /// reading order. Left out, as [`Self::messages_with_no_text_here`]
     /// leaves them out: a message no server holds another copy of, which
@@ -745,12 +757,18 @@ impl MessageCache {
             reach,
             crate::application::conversations::AConversationReaches::TheWholeAccount
         );
+        let this_one = super::messages::as_bound_pairs(&[
+            crate::application::conversations::WhoseConversation {
+                account_id: account_id.to_string(),
+                thread_id: thread_id.to_string(),
+            },
+        ])?;
         stmt.query_map(
             rusqlite::params![
                 account_id,
                 folder_id,
                 i64::from(counts_the_account),
-                thread_id,
+                this_one,
                 first
             ],
             |row| {
