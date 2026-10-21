@@ -3300,6 +3300,11 @@ pub(crate) mod tests {
         /// a message under, or the words it refuses with. Nothing by default,
         /// which is a server that cannot say.
         finds_it_at: std::result::Result<Vec<u32>, String>,
+        /// What the folder a rule files into holds at a number, by the
+        /// identifier the message there carries, which a settled move reads
+        /// before it trusts a number `finds_it_at` gave (13.3-08). A number
+        /// with no entry is read from `headers`, the folder being checked.
+        holds_at: Vec<(u32, String)>,
     }
 
     /// How a scripted server answers a request for one message's whole text.
@@ -3334,6 +3339,7 @@ pub(crate) mod tests {
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
                 refuses_from_the_nth_fetch: None,
                 finds_it_at: Ok(Vec::new()),
+                holds_at: Vec::new(),
             }
         }
     }
@@ -3406,6 +3412,9 @@ pub(crate) mod tests {
         }
 
         async fn the_identifier_at(&self, _folder: &str, uid: u32) -> Result<Option<String>> {
+            if let Some((_, identifier)) = self.holds_at.iter().find(|(at, _)| *at == uid) {
+                return Ok(Some(identifier.clone()));
+            }
             Ok(crate::application::renumbered::the_identifier_among(
                 self.headers.clone(),
                 uid,
@@ -4447,6 +4456,8 @@ pub(crate) mod tests {
 
         // A server that can say where it put the message, since 2026-10-15:
         // one that cannot leaves no row here, for the next read to bring (#10).
+        // And the message there is this one, since 2026-10-21: a number is
+        // read before it is trusted (13.3-08).
         let server = Scripted {
             on_server: vec![7],
             headers: vec![ImapMessage {
@@ -4454,6 +4465,7 @@ pub(crate) mod tests {
                 ..message(7)
             }],
             finds_it_at: Ok(vec![3]),
+            holds_at: vec![(3, "note-1@example.com".to_string())],
             ..Default::default()
         };
         let folder = folder("INBOX", FolderType::Inbox, true);
@@ -4702,6 +4714,7 @@ pub(crate) mod tests {
             an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
         let server = Scripted {
             finds_it_at: Ok(vec![12]),
+            holds_at: vec![(12, "note-1@example.com".to_string())],
             ..a_server_holding_one_invoice()
         };
 
