@@ -4292,6 +4292,9 @@ impl WxMailApp {
                             return;
                         };
                         s.reading_began = Some((message_id, std::time::Instant::now()));
+                        // A reading begun from the list is never one begun
+                        // in a conversation window (13.3-13).
+                        s.opened_from_a_conversation = None;
                     }
                 },
             );
@@ -13270,6 +13273,7 @@ fn mark_what_was_read(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>) {
         // Cleared before the write, so a slow server does not mean asking
         // twice.
         s.reading_began = None;
+        s.opened_from_a_conversation = None;
         let loaded = s
             .messages
             .iter_mut()
