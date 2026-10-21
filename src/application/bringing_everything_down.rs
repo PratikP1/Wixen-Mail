@@ -143,6 +143,22 @@ pub struct HowMuchIsHere {
     pub total_on_server: usize,
 }
 
+/// How much of a folder is here after a chunk, with the mail the chunk left
+/// for the check not counted as missing.
+///
+/// The server's count takes in mail that arrived while the download ran, and
+/// a chunk leaves that mail for the check, which runs the account's rules over
+/// it and says it arrived (item 9 of the review of 2026-10-20). Counted as
+/// missing, it kept a folder whose only gap was new mail unfinished: the next
+/// chunk brought nothing, and [`stopped_coming_down`] said the server had
+/// stopped sending a folder it had not.
+pub fn how_much_a_chunk_left_here(done: &super::mail_sync::FolderSync) -> HowMuchIsHere {
+    HowMuchIsHere {
+        held: done.held,
+        total_on_server: done.total_on_server,
+    }
+}
+
 /// Whether a folder has stopped coming down.
 ///
 /// A chunk that brought nothing new is a server that has stopped handing
@@ -713,6 +729,70 @@ mod tests {
         assert!(stopped_coming_down(Some(500), here(500, 40_000)));
         assert!(!stopped_coming_down(Some(500), here(1000, 40_000)));
         assert!(!stopped_coming_down(None, here(500, 40_000)));
+    }
+
+    /// The folder after a chunk that left it holding `held` of the server's
+    /// `total`, with `left` of them left for the check, `before` held before
+    /// the chunk.
+    fn after_a_chunk(held: usize, total: usize, left: usize, before: usize) -> FolderHere {
+        FolderHere {
+            here: how_much_a_chunk_left_here(&crate::application::mail_sync::FolderSync {
+                held,
+                total_on_server: total,
+                left_for_the_check: left,
+                ..Default::default()
+            }),
+            held_before_the_last_chunk: Some(before),
+            ..a_folder(1, "Inbox", FolderType::Inbox, 0, 0)
+        }
+    }
+
+    #[test]
+    fn test_a_folder_whose_only_gap_was_left_for_the_check_is_all_here() {
+        // Item 9 of the review of 2026-10-20: the two that arrived while the
+        // download ran are the check's, so the five here are the folder.
+        assert_eq!(
+            where_a_folder_stands(&after_a_chunk(5, 7, 2, 3)),
+            WhereAFolderStands::IsAllHere
+        );
+    }
+
+    #[test]
+    fn test_a_chunk_that_left_new_mail_for_the_check_is_not_a_server_that_stopped() {
+        // The chunk after the one that finished the folder brings nothing,
+        // which was read as the server no longer sending it, and the person
+        // heard that the mail server stopped sending the Inbox.
+        let asked_again = after_a_chunk(5, 7, 2, 5);
+        assert_ne!(
+            where_a_folder_stands(&asked_again),
+            WhereAFolderStands::StoppedComingDown
+        );
+        assert_eq!(
+            where_a_folder_stands(&asked_again),
+            WhereAFolderStands::IsAllHere
+        );
+    }
+
+    #[test]
+    fn test_a_folder_still_missing_older_mail_needs_more_headers() {
+        assert_eq!(
+            where_a_folder_stands(&after_a_chunk(3, 7, 2, 1)),
+            WhereAFolderStands::NeedsMoreHeaders
+        );
+    }
+
+    #[test]
+    fn test_what_was_left_for_the_check_never_counts_a_folder_below_what_is_here() {
+        // The count is taken before the folder is listed, so a message that
+        // arrives between the two is left for the check and is not in the
+        // count: five here of a count of six with two left is all here, not
+        // four of six.
+        let folder = after_a_chunk(5, 6, 2, 4);
+        assert_eq!(folder.here, here(5, 5));
+        assert_eq!(
+            where_a_folder_stands(&folder),
+            WhereAFolderStands::IsAllHere
+        );
     }
 
     #[test]

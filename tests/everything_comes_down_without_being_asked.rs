@@ -206,6 +206,9 @@ fn test_the_download_does_what_the_model_says_and_nothing_of_its_own() {
         "INITIAL_FETCH_LIMIT",
         "fetch_over_a_mailbox(",
         "MoreOfWhatIsAlreadyThere",
+        // How much of a folder a chunk left here, with the mail left for the
+        // check not counted against it (item 9 of the review of 2026-10-20).
+        "how_much_a_chunk_left_here(",
     ] {
         assert!(
             runner.contains(expected),
