@@ -152,10 +152,17 @@ pub struct HowMuchIsHere {
 /// missing, it kept a folder whose only gap was new mail unfinished: the next
 /// chunk brought nothing, and [`stopped_coming_down`] said the server had
 /// stopped sending a folder it had not.
+///
+/// Never below what is held: the server is asked its count before it lists
+/// the folder, so a message arriving between the two is left for the check
+/// without being in the count.
 pub fn how_much_a_chunk_left_here(done: &super::mail_sync::FolderSync) -> HowMuchIsHere {
     HowMuchIsHere {
         held: done.held,
-        total_on_server: done.total_on_server,
+        total_on_server: done
+            .total_on_server
+            .saturating_sub(done.left_for_the_check)
+            .max(done.held),
     }
 }
 

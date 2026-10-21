@@ -399,7 +399,10 @@ pub struct Moving {
 /// rules run over what a check fetches and the check counts it as arrived, so
 /// cutting them at `limit` left a week's mail beyond the newest 500 unsorted
 /// and uncounted, brought down later by a download that runs no rules (#12,
-/// 2026-10-15). `fetch_headers` splits a long set into pieces a server takes.
+/// 2026-10-15). The download no longer takes it at all: since 2026-10-21 its
+/// chunks leave everything above the newest held to the check, through
+/// [`uids_a_download_takes`]. `fetch_headers` splits a long set into pieces a
+/// server takes.
 ///
 /// `limit` bounds the rest: a first look at a folder holding nothing here,
 /// newest first because that is where a reader starts, and the older mail
@@ -411,13 +414,7 @@ fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     if limit == 0 {
         return Vec::new();
     }
-    let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
-    let newest_held = stored.iter().copied().max();
-    let (mut arrived, mut older): (Vec<u32>, Vec<u32>) = on_server
-        .iter()
-        .copied()
-        .filter(|uid| !held.contains(uid))
-        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest));
+    let (mut arrived, mut older) = missing_above_and_below_the_newest_held(on_server, stored);
 
     // Descending to take the newest, then back to ascending for the caller.
     older.sort_unstable_by(|a, b| b.cmp(a));
@@ -451,10 +448,31 @@ struct WhatToFetch {
 /// newest held, so its first chunk takes the newest `limit`, as a first look
 /// does.
 fn uids_a_download_takes(on_server: &[u32], stored: &[u32], limit: usize) -> WhatToFetch {
+    let (arrived, mut older) = missing_above_and_below_the_newest_held(on_server, stored);
+    older.sort_unstable_by(|a, b| b.cmp(a));
+    older.truncate(limit);
+    older.sort_unstable();
     WhatToFetch {
-        uids: uids_to_fetch(on_server, stored, limit),
-        left_for_the_check: 0,
+        uids: older,
+        left_for_the_check: arrived.len(),
     }
+}
+
+/// The messages the server holds and this computer does not, split at the
+/// newest one held: those above it, which arrived since this computer last
+/// looked, and those below it, older mail not brought down yet. With nothing
+/// held, all of it is older mail.
+fn missing_above_and_below_the_newest_held(
+    on_server: &[u32],
+    stored: &[u32],
+) -> (Vec<u32>, Vec<u32>) {
+    let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
+    let newest_held = stored.iter().copied().max();
+    on_server
+        .iter()
+        .copied()
+        .filter(|uid| !held.contains(uid))
+        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest))
 }
 
 /// What the server answered when it was asked which messages a folder holds,

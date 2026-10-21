@@ -31795,8 +31795,12 @@ fn start_the_download(app: AppHandles<'_>) {
                             Ok(done) => {
                                 worked();
                                 entry.held_before_the_last_chunk = Some(entry.here.held);
-                                entry.here.held = done.held;
-                                entry.here.total_on_server = done.total_on_server;
+                                // Mail that arrived while the download ran is
+                                // the check's, and the server's count holds it:
+                                // counted as missing, the next chunk brought
+                                // nothing and the folder was said to have
+                                // stopped (item 9 of the review of 2026-10-20).
+                                entry.here = crate::application::bringing_everything_down::how_much_a_chunk_left_here(&done);
                                 // Per chunk, at debug: hundreds per account,
                                 // which is what debug is for (#71). Counts and
                                 // names, never a subject.
