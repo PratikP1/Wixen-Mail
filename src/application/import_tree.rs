@@ -584,6 +584,7 @@ pub fn what_the_folder_import_did(imported: &FoldersImported) -> String {
         imported.not_written_down,
     );
     what_mailbox_files_that_did_not_match_left(&mut said, imported);
+    what_the_first_look_left_out(&mut said, imported);
     what_files_too_large_to_keep_left(&mut said, imported.files_too_large_to_keep);
     // An archive nothing at all was found in. "No folders were imported" on its
     // own is what a broken import says too, and somebody who cannot tell those
@@ -630,6 +631,47 @@ fn what_mailbox_files_that_did_not_match_left(said: &mut SummingUp, imported: &F
                  about them, so the archive is damaged or was changed after it was made. Their \
                  mail up to the point where each stopped matching was imported, and the rest \
                  was left out"
+            ),
+        });
+    }
+}
+
+/// What the first look over the archive left in it, one whole sentence for
+/// each count that is not nought.
+///
+/// Files rather than mailbox files, because a single saved message can be left
+/// out too. Three sentences rather than one, because each asks something
+/// different of somebody: a file that could not be read may be open in another
+/// program, a file that does not match means the archive itself is in doubt,
+/// and a folder nested too deeply can be moved up and imported again.
+fn what_the_first_look_left_out(said: &mut SummingUp, imported: &FoldersImported) {
+    if imported.files_unread_at_the_first_look > 0 {
+        said.sentence(match imported.files_unread_at_the_first_look {
+            1 => "1 file in the archive could not be read and was left out".to_string(),
+            many => format!("{many} files in the archive could not be read and were left out"),
+        });
+    }
+    if imported.files_not_matching_at_the_first_look > 0 {
+        said.sentence(match imported.files_not_matching_at_the_first_look {
+            1 => "1 file in the archive does not match what the archive records about it, so \
+                  the archive is damaged or was changed after it was made, and that file was \
+                  left out"
+                .to_string(),
+            many => format!(
+                "{many} files in the archive do not match what the archive records about them, \
+                 so the archive is damaged or was changed after it was made, and those files \
+                 were left out"
+            ),
+        });
+    }
+    if imported.folders_too_deep_to_follow > 0 {
+        said.sentence(match imported.folders_too_deep_to_follow {
+            1 => "1 folder in the archive is nested too deeply for Wixen Mail to follow, so the \
+                  mail in it was left out"
+                .to_string(),
+            many => format!(
+                "{many} folders in the archive are nested too deeply for Wixen Mail to follow, \
+                 so the mail in them was left out"
             ),
         });
     }

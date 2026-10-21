@@ -1032,9 +1032,20 @@ pub fn an_archive_brought_in(
         Err(why) => return why.to_string(),
     };
     let plan = import_tree::where_the_folders_land(&archive.what_it_holds());
-    // Counted again as the folders fill, rather than as the archive plans them.
+    let did_not_match = archive.how_many_did_not_match_what_it_records();
     let mut counted = import_tree::FoldersImported {
+        // Counted again as the folders fill, rather than as the archive plans
+        // them.
         folders: 0,
+        // What the first look over the archive left out, said at the end. A
+        // file that did not match what the archive records is one of those
+        // that could not be read as well, so it is taken out of that count
+        // and said once, as the fault it is.
+        files_unread_at_the_first_look: archive
+            .how_many_could_not_be_read()
+            .saturating_sub(did_not_match),
+        files_not_matching_at_the_first_look: did_not_match,
+        folders_too_deep_to_follow: archive.how_many_were_too_deep_to_follow(),
         ..plan.counted
     };
     let mut brought_in = MessagesImported::default();

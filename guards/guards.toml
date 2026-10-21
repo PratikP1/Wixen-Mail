@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 880 records have arrived since and have not been through it.
+# 882 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -4242,7 +4242,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/service/signed_mail.rs", tests = 127 },
 ]
 
@@ -13231,7 +13231,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/checking_signatures.rs", tests = 21 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/application/pop_sync.rs", tests = 56 },
     { file = "src/application/reading_a_message.rs", tests = 22 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
@@ -13274,7 +13274,7 @@ red = [
     "data::message_cache::how_it_arrived::tests::test_this_reading_finds_the_arrival_paths_that_exist_today",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/data/message_cache/how_it_arrived.rs", tests = 13 },
 ]
 
@@ -16570,7 +16570,7 @@ red = [
     "data::message_cache::moves_waiting::tests::test_the_row_is_put_where_the_server_holds_it_with_the_marker_off",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
@@ -25863,7 +25863,7 @@ red = [
     "application::import_tree::tests::test_an_outlook_data_file_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
+    { file = "src/application/import_tree.rs", tests = 42 },
 ]
 
 # The name Save As offers is the subject with every path separator made
@@ -25886,7 +25886,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/export_tree.rs", tests = 55 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # File, Save As reaches a handler that writes, held by a reading of the main
@@ -34341,7 +34341,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/application/parts_left_behind.rs", tests = 8 },
     { file = "src/data/message_cache/attachment_content.rs", tests = 23 },
 ]
@@ -38524,14 +38524,16 @@ before = '''        match kind {
 after = '''        match kind {
             std::io::ErrorKind::InvalidData => Self::ItCouldNotBeRead,'''
 red = [
+    "application::importing_messages::end_to_end::test_a_file_left_out_at_the_first_look_for_not_matching_its_archive_is_said_once",
     "application::importing_messages::end_to_end::test_a_mailbox_file_holding_more_than_its_archive_records_is_said_to_be_damaged_or_changed",
     "application::importing_messages::end_to_end::test_a_mailbox_file_that_does_not_match_its_archive_leaves_the_rest_of_the_archive_to_come_in",
     "application::importing_messages::end_to_end::test_the_mail_before_a_file_stops_matching_its_archive_comes_in_and_is_said_to",
     "service::mailbox_archive::tests::test_an_archive_whose_contents_do_not_match_what_it_records_says_so_and_not_that_it_stops_partway",
+    "service::mailbox_archive::tests::test_one_entry_that_cannot_be_read_does_not_take_the_rest_of_the_archive_with_it",
     "service::mailbox_archive::tests::test_an_entry_claiming_to_be_small_is_still_only_read_as_far_as_it_is_allowed",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/service/mailbox_archive.rs", tests = 46 },
 ]
 
@@ -38553,7 +38555,7 @@ red = [
     "service::mailbox_archive::tests::test_two_entries_whose_names_are_not_text_and_differ_are_both_held_and_both_read",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/service/mailbox_archive.rs", tests = 46 },
 ]
 
@@ -38682,7 +38684,7 @@ red = [
     "service::outlook_data_file::one_saved_message::tests::test_an_encrypted_saved_message_is_counted_and_keeps_its_encrypted_part",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/service/outlook_data_file/one_saved_message.rs", tests = 17 },
 ]
 
@@ -38717,7 +38719,7 @@ red = [
     "application::import_tree::tests::test_a_saved_outlook_message_goes_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
+    { file = "src/application/import_tree.rs", tests = 42 },
 ]
 
 # Blind copy recipients a saved Outlook message held, left off the message
@@ -38732,7 +38734,7 @@ red = [
     "application::importing_messages::tests::test_what_a_saved_outlook_message_left_is_counted_by_cause",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # A message Outlook saved inside a folder or zip read in pieces like a
@@ -38754,7 +38756,7 @@ red = [
     "test_importing_mail_sends_each_kind_of_file_to_its_own_reader",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "tests/wired.rs", tests = 80 },
 ]
 
@@ -38815,7 +38817,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # Each record paired with the next file rather than its own, so a message's
@@ -38841,7 +38843,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/exporting_mail.rs", tests = 7 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
     { file = "src/application/parts_left_behind.rs", tests = 8 },
     { file = "src/data/message_cache/attachment_content.rs", tests = 23 },
 ]
@@ -38863,8 +38865,8 @@ red = [
     "application::import_tree::tests::test_the_folder_import_says_what_it_did_not_bring_in_in_the_single_file_imports_words",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/import_tree.rs", tests = 42 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # A folder exported with no files on its messages, so an imported message,
@@ -39041,8 +39043,8 @@ red = [
     "application::importing_messages::tests::test_what_saved_outlook_messages_left_is_said_one_cause_at_a_time",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/import_tree.rs", tests = 42 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # A folder of an archive is made only when its first message is filed, so a
@@ -39084,7 +39086,7 @@ red = [
     "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # The folder import carries the messages already in a folder onto what its
@@ -39105,8 +39107,8 @@ red = [
     "application::importing_messages::end_to_end::test_the_same_archive_brought_in_twice_counts_no_folder_the_second_time",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/import_tree.rs", tests = 42 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # ── Why nothing came from Google (#22, 14-01) ───────────────────────────────
@@ -43288,7 +43290,7 @@ red = [
     "application::importing_messages::end_to_end::test_the_mail_before_a_file_stops_matching_its_archive_comes_in_and_is_said_to",
 ]
 tests_last_seen = [
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # The mailbox files that did not match their archive counted and never said
@@ -43307,8 +43309,8 @@ red = [
     "application::importing_messages::end_to_end::test_the_mail_before_a_file_stops_matching_its_archive_comes_in_and_is_said_to",
 ]
 tests_last_seen = [
-    { file = "src/application/import_tree.rs", tests = 41 },
-    { file = "src/application/importing_messages.rs", tests = 55 },
+    { file = "src/application/import_tree.rs", tests = 42 },
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]
 
 # The row of a message deleted on this computer left for later again: the
@@ -43723,4 +43725,43 @@ red = [
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/data/message_cache/notes.rs", tests = 41 },
+]
+
+# The files the first look over an archive could not read counted and never
+# carried onto the import's closing sentence, so an import that left a file
+# behind says only what came in (13.3-12, review item 14, T-13.3-12-01).
+#
+# Measured by hand on 2026-10-21: the whole library at 9,416 passed and 1
+# failed, this one.
+[[guard]]
+name = "the files the first look could not read are carried onto the import's sentence"
+file = "src/application/importing_messages.rs"
+before = '''        files_unread_at_the_first_look: archive
+            .how_many_could_not_be_read()
+            .saturating_sub(did_not_match),'''
+after = '''        files_unread_at_the_first_look: 0,'''
+red = [
+    "application::importing_messages::end_to_end::test_a_file_in_a_chosen_folder_nothing_can_open_is_said_to_be_left_out",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 58 },
+]
+
+# A file the first look found not matching what the archive records is also
+# one it could not read, so without the subtraction it is said twice, once as
+# each (13.3-12, review item 14, T-13.3-12-03).
+#
+# Measured by hand on 2026-10-21: the whole library at 9,416 passed and 1
+# failed, this one.
+[[guard]]
+name = "a file the first look found not matching its archive is said once"
+file = "src/application/importing_messages.rs"
+before = '''            .how_many_could_not_be_read()
+            .saturating_sub(did_not_match),'''
+after = '''            .how_many_could_not_be_read(),'''
+red = [
+    "application::importing_messages::end_to_end::test_a_file_left_out_at_the_first_look_for_not_matching_its_archive_is_said_once",
+]
+tests_last_seen = [
+    { file = "src/application/importing_messages.rs", tests = 58 },
 ]

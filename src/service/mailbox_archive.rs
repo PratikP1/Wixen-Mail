@@ -794,7 +794,7 @@ impl MailboxArchive {
             looked_over,
             in_name_order,
             could_not_be_read: found.could_not_be_read,
-            did_not_match: 0,
+            did_not_match: found.did_not_match,
             too_deep_to_follow: found.too_deep_to_follow,
             allowed,
             unpacked_so_far: 0,
@@ -804,7 +804,9 @@ impl MailboxArchive {
     /// How many things in the archive could not be read at all.
     ///
     /// Not nought is somebody's mail still sitting in their archive, so it is
-    /// the caller's job to say so at the end rather than leave it in a log.
+    /// the caller's job to say so at the end rather than leave it in a log,
+    /// and the import of a folder or zip of mail says it in its closing
+    /// sentence.
     pub fn how_many_could_not_be_read(&self) -> usize {
         self.could_not_be_read
     }
@@ -815,12 +817,16 @@ impl MailboxArchive {
     /// Counted among [`MailboxArchive::how_many_could_not_be_read`] as well,
     /// and told apart because it asks something different of somebody: the
     /// archive is damaged or was changed after it was made, so it is the
-    /// archive to doubt rather than one file in it.
+    /// archive to doubt rather than one file in it. The import says these
+    /// apart from the rest, and once.
     pub fn how_many_did_not_match_what_it_records(&self) -> usize {
         self.did_not_match
     }
 
     /// How many folders sat deeper than this program follows a folder.
+    ///
+    /// The import says these in its closing sentence, so a folder left
+    /// behind is never left behind in silence.
     pub fn how_many_were_too_deep_to_follow(&self) -> usize {
         self.too_deep_to_follow
     }
