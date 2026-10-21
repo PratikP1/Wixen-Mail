@@ -885,18 +885,33 @@ fn test_the_reading_would_see_a_limit_grown_again() {
 // ── The open folder is read again at most every ten seconds ──────────────────
 
 /// What is wrong with the main timer's half of the paced re-read, as
-/// sentences; nothing when the timer, between the held mail and the
-/// reminders, asks which folder is due and reads it with a chunk's reason.
+/// sentences; nothing when the tick asks which folder is due, reads it with a
+/// chunk's reason, and does both before it drains the workers' updates.
+///
+/// Reads the whole tick, from its first-tick line to the editable boxes the
+/// reminders ask about, because the order inside it is the point. The re-read
+/// sends its rows down the same channel the drain empties, so a re-read after
+/// the drain is applied a tick later, and a Delete or an M handled in between
+/// is written over by rows read before it (item 5 of the review of
+/// 2026-10-20).
 fn what_is_wrong_with_the_timers_reread(window: &str) -> Vec<String> {
     let mut wrong = Vec::new();
-    let (Some(held_mail), Some(reminders)) = (
-        window.find("HOW_OFTEN_TO_LET_HELD_MAIL_GO {"),
+    let (Some(first_tick), Some(reminders)) = (
+        window.find("First timer tick, event loop is running"),
         window.find("let somewhere_to_type = ["),
     ) else {
         wrong.push("the main timer is not where this reads, so this reads nothing".into());
         return wrong;
     };
-    let timer = &window[held_mail..reminders.max(held_mail)];
+    let timer = &window[first_tick..reminders.max(first_tick)];
+    let Some(drains) = timer.find("ui_rx.try_recv()") else {
+        wrong.push(
+            "the main timer drains no updates where this reads, so the order of its re-read \
+             cannot be read"
+                .into(),
+        );
+        return wrong;
+    };
     let Some(asks) = timer.find(".the_folder_due(") else {
         wrong.push(
             "the main timer never asks which folder is due, so a folder a chunk marked is never \
@@ -921,6 +936,14 @@ fn what_is_wrong_with_the_timers_reread(window: &str) -> Vec<String> {
                 .into(),
         );
     }
+    if drains < asks {
+        wrong.push(
+            "the main timer reads the folder after the tick has applied the workers' updates, \
+             so the rows it reads wait for the next tick and a key pressed in between is undone \
+             by them"
+                .into(),
+        );
+    }
     wrong
 }
 
@@ -928,16 +951,22 @@ fn what_is_wrong_with_the_timers_reread(window: &str) -> Vec<String> {
 fn test_the_timer_reads_the_marked_folder_again_with_a_chunks_reason() {
     // Finding #36. The arm marks; the main timer, which already paces held
     // mail on its own interval, asks the model which folder is due and
-    // reads it, at most every ten seconds and once after the last chunk.
+    // reads it, at most every ten seconds and once after the last chunk. Item
+    // 5 of the review of 2026-10-20: it does so before the tick's drain, so
+    // the rows it reads are applied before any key runs.
     let wrong = what_is_wrong_with_the_timers_reread(&the_window_itself());
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
 #[test]
 fn test_the_reading_would_see_the_timer_leave_the_folder_unread() {
-    // Proving the reading before believing it: the timer as it was, and one
-    // that reads the folder for an arrival.
-    let the_timer_as_it_was = "if looked_for_held_mail_at.get().elapsed() >= \
+    // Proving the reading before believing it: the timer before finding #36,
+    // one that reads the folder for an arrival, and the order 13.2-09 left,
+    // the drain first and the re-read after the held mail.
+    let the_timer_as_it_was = "tracing::info!(\"First timer tick, event loop is running\");\n\
+                               a11y.as_one_turn(|| {\n    \
+                               while let Ok(update) = ui_rx.try_recv() {}\n});\n\
+                               if looked_for_held_mail_at.get().elapsed() >= \
                                HOW_OFTEN_TO_LET_HELD_MAIL_GO {\n    flush_outbox(app);\n}\n\n\
                                let somewhere_to_type = [\n";
     let wrong = what_is_wrong_with_the_timers_reread(the_timer_as_it_was);
@@ -946,15 +975,35 @@ fn test_the_reading_would_see_the_timer_leave_the_folder_unread() {
         "the reading did not see the timer as it was: {wrong:?}"
     );
 
-    let reads_for_an_arrival = "HOW_OFTEN_TO_LET_HELD_MAIL_GO {\n}\n\
+    let reads_for_an_arrival = "tracing::info!(\"First timer tick, event loop is running\");\n\
                                 if let Some(folder_id) = pacing.the_folder_due(now) {\n    \
                                 reread_folder_if_open(&state, &message_cache, folder_id, \
                                 WhyTheRowsWereRead::MailArrived, &ui_tx);\n}\n\n\
+                                a11y.as_one_turn(|| {\n    \
+                                while let Ok(update) = ui_rx.try_recv() {}\n});\n\n\
                                 let somewhere_to_type = [\n";
     let wrong = what_is_wrong_with_the_timers_reread(reads_for_an_arrival);
     assert!(
         wrong.len() == 1 && wrong[0].contains("count is spoken every ten seconds"),
         "the reading did not see the folder read for an arrival: {wrong:?}"
+    );
+
+    let reads_after_the_drain = "tracing::info!(\"First timer tick, event loop is running\");\n\
+                                 a11y.as_one_turn(|| {\n    \
+                                 while let Ok(update) = ui_rx.try_recv() {}\n});\n\n\
+                                 if looked_for_held_mail_at.get().elapsed() >= \
+                                 HOW_OFTEN_TO_LET_HELD_MAIL_GO {\n    flush_outbox(app);\n}\n\n\
+                                 let due = lock_state(&state)\n    \
+                                 .reading_the_open_folder_again\n    \
+                                 .the_folder_due(std::time::Instant::now());\n\
+                                 if let Some(folder_id) = due {\n    \
+                                 reread_folder_if_open(&state, &message_cache, folder_id, \
+                                 WhyTheRowsWereRead::AChunkOfTheDownloadLanded, &ui_tx);\n}\n\n\
+                                 let somewhere_to_type = [\n";
+    let wrong = what_is_wrong_with_the_timers_reread(reads_after_the_drain);
+    assert!(
+        wrong.len() == 1 && wrong[0].contains("after the tick has applied the workers' updates"),
+        "the reading did not see the folder read after the drain: {wrong:?}"
     );
 }
 

@@ -6632,6 +6632,33 @@ impl WxMailApp {
                             }
                         }
                     };
+                    // The folder on screen, read again while the download
+                    // brings it: at most every ten seconds and once after its
+                    // last chunk, on this timer for the reason the held mail
+                    // is (finding #36). The arm a chunk reaches only marks
+                    // the folder; reading it there cost a whole folder per
+                    // chunk and spoke its count each time.
+                    //
+                    // Above the drain, because the rows it reads come back
+                    // through the channel the drain empties, and so are
+                    // applied in this same tick before any key is handled.
+                    // Read after the drain they waited a tick, and a Delete
+                    // or an M handled in between was written over by rows
+                    // read before it: the message came back, or turned unread
+                    // again (item 5 of the review of 2026-10-20).
+                    let due = lock_state(&state)
+                        .reading_the_open_folder_again
+                        .the_folder_due(std::time::Instant::now());
+                    if let Some(folder_id) = due {
+                        reread_folder_if_open(
+                            &state,
+                            &message_cache,
+                            folder_id,
+                            crate::presentation::ui_types::WhyTheRowsWereRead::AChunkOfTheDownloadLanded,
+                            &ui_tx,
+                        );
+                    }
+
                     // Every update the workers sent since the last tick, as
                     // one turn: a failed send, the lost connection and the
                     // Outbox's closing count arrive together, and said one
@@ -6788,25 +6815,6 @@ impl WxMailApp {
                         if held_mail_is_due {
                             flush_outbox(app);
                         }
-                    }
-
-                    // The folder on screen, read again while the download
-                    // brings it: at most every ten seconds and once after its
-                    // last chunk, on this timer for the reason the held mail
-                    // is (finding #36). The arm a chunk reaches only marks
-                    // the folder; reading it there cost a whole folder per
-                    // chunk and spoke its count each time.
-                    let due = lock_state(&state)
-                        .reading_the_open_folder_again
-                        .the_folder_due(std::time::Instant::now());
-                    if let Some(folder_id) = due {
-                        reread_folder_if_open(
-                            &state,
-                            &message_cache,
-                            folder_id,
-                            crate::presentation::ui_types::WhyTheRowsWereRead::AChunkOfTheDownloadLanded,
-                            &ui_tx,
-                        );
                     }
 
                     // The editable boxes in this window somebody could be
