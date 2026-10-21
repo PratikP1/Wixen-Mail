@@ -1305,17 +1305,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_the_address_a_token_belongs_to_is_its_primary_calendars_id() {
-        // Google's reference for calendars.get, last updated 2026-05-12, says
-        // the calendar scope both sign-ins ask for allows it and "primary"
-        // names the signed-in user's own calendar; its concepts page, last
-        // updated 2026-09-03, says that calendar's ID "usually matches the
-        // user's primary email address".
+    async fn test_the_address_a_token_belongs_to_is_what_googles_sign_in_service_says() {
+        // Google's OpenID Connect page, last updated 2026-06-15: the userinfo
+        // address answers the signed-in person's claims, and `email` is
+        // "Provided only if you included the `email` scope". Its granular
+        // permissions page, last updated 2026-05-26: the sign-in permissions
+        // are approved or denied whole, with no tick box, so this question
+        // is answered for a token whose calendar permission was unticked.
         let (address, listening) = answering(
             "200 OK",
             "application/json",
-            r#"{"kind":"calendar#calendar","id":"ada.lovelace@gmail.com","summary":"Ada"}"#
-                .to_string(),
+            r#"{"sub":"1","email":"ada.lovelace@gmail.com","email_verified":true}"#.to_string(),
         )
         .await;
         let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
@@ -1323,10 +1323,11 @@ mod tests {
         let signed_in = google.the_address_signed_in("a-token").await;
 
         assert_eq!(signed_in.ok().as_deref(), Some("ada.lovelace@gmail.com"));
-        let request = heard(listening, "the primary calendar")
+        // The one request heard, so the calendar is never asked.
+        let request = heard(listening, "the sign-in service")
             .await
             .expect("asked");
-        assert_eq!(asked_for(&request), "GET /calendars/primary");
+        assert_eq!(asked_for(&request), "GET /userinfo");
         assert!(
             request
                 .to_lowercase()
@@ -1336,20 +1337,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_refusal_or_an_empty_answer_about_the_primary_calendar_is_never_an_address() {
-        for (status, reply) in [
+    async fn test_a_refusal_or_an_answer_with_no_email_is_never_an_address() {
+        for (status, reply, answered) in [
+            ("403 Forbidden", r#"{"error":"insufficient_scope"}"#, None),
+            ("200 OK", r#"{"sub":"1","email":"  "}"#, None),
+            ("200 OK", r#"{"sub":"1"}"#, None),
+            // The ordinary answer beside them, with the space Google never
+            // sends trimmed, so a body that refuses everything is red here.
             (
-                "403 Forbidden",
-                r#"{"error":{"code":403,"message":"Calendar API has not been used"}}"#,
+                "200 OK",
+                r#"{"sub":"1","email":" me@gmail.com "}"#,
+                Some("me@gmail.com"),
             ),
-            ("200 OK", r#"{"kind":"calendar#calendar","id":"  "}"#),
-            ("200 OK", r#"{"kind":"calendar#calendar"}"#),
         ] {
             let (address, _listening) =
                 answering(status, "application/json", reply.to_string()).await;
             let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
             let signed_in = google.the_address_signed_in("a-token").await;
-            assert!(signed_in.is_err(), "{status} {reply}: {signed_in:?}");
+            assert_eq!(signed_in.ok().as_deref(), answered, "{status} {reply}");
         }
     }
 

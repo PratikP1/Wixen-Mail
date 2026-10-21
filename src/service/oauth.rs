@@ -1551,6 +1551,26 @@ mod tests {
         let scopes_str = p.default_scopes.join(" ");
         assert!(scopes_str.contains("auth/contacts"));
         assert!(scopes_str.contains("auth/calendar"));
+        // The two sign-in permissions, which ask who signed in and have no
+        // tick box on Google's screen.
+        assert!(
+            p.default_scopes.iter().any(|s| s == "openid"),
+            "{scopes_str}"
+        );
+        assert!(
+            p.default_scopes.iter().any(|s| s == "email"),
+            "{scopes_str}"
+        );
+    }
+
+    /// The permissions an authorisation address asks for, one per entry.
+    fn the_scopes_asked_for(url: &str) -> Vec<String> {
+        url::Url::parse(url)
+            .expect("an address")
+            .query_pairs()
+            .find(|(name, _)| name == "scope")
+            .map(|(_, scope)| scope.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default()
     }
 
     #[test]
@@ -1566,6 +1586,8 @@ mod tests {
                 "https://www.googleapis.com/auth/contacts",
                 "https://www.googleapis.com/auth/calendar",
                 "https://www.googleapis.com/auth/tasks",
+                "openid",
+                "email",
             ]
         );
 
@@ -1585,6 +1607,10 @@ mod tests {
         assert!(url.contains("code_challenge"), "{url}");
         for asked in ["auth%2Fcontacts", "auth%2Fcalendar", "auth%2Ftasks"] {
             assert!(url.contains(asked), "{asked} is not asked for: {url}");
+        }
+        let scopes = the_scopes_asked_for(&url);
+        for asked in ["openid", "email"] {
+            assert!(scopes.iter().any(|s| s == asked), "{asked}: {scopes:?}");
         }
         assert!(!url.contains("mail.google.com"), "mail is asked for: {url}");
     }
@@ -2360,13 +2386,13 @@ mod who_consented {
         }
     }
 
-    /// A Google client asking a loopback stand-in that says whose primary
-    /// calendar a token opens.
-    async fn google_saying_the_calendar_is(address: &str) -> GoogleApiClient {
+    /// A Google client asking a loopback stand-in for Google's sign-in
+    /// service that says who a token belongs to.
+    async fn google_saying_the_sign_in_is(address: &str) -> GoogleApiClient {
         let (at, _listening) = answering(
             "200 OK",
             "application/json",
-            format!(r#"{{"kind":"calendar#calendar","id":"{address}","summary":"{address}"}}"#),
+            format!(r#"{{"sub":"1","email":"{address}","email_verified":true}}"#),
         )
         .await;
         GoogleApiClient::new().pointed_at(&format!("http://{at}"))
@@ -2389,7 +2415,7 @@ mod who_consented {
     async fn test_a_google_sign_in_made_as_somebody_else_keeps_nothing_and_says_who() {
         for provider in ["gmail", super::GOOGLE_CALENDARS_CONTACTS_AND_TASKS] {
             let manager = AuthManager::new("acc-somebody-else", provider, "client-id", None);
-            let google = google_saying_the_calendar_is("someone@gmail.com").await;
+            let google = google_saying_the_sign_in_is("someone@gmail.com").await;
 
             match asked_then_kept(&manager, "me@gmail.com", &google).await {
                 Err(Error::Authentication(said)) => assert_eq!(
@@ -2409,7 +2435,7 @@ mod who_consented {
     async fn test_a_google_sign_in_made_as_the_account_itself_is_kept() {
         let manager = AuthManager::new("acc-itself", "gmail", "client-id", None);
         // Google gives the address its own way; the account typed it another.
-        let google = google_saying_the_calendar_is("firstlast@gmail.com").await;
+        let google = google_saying_the_sign_in_is("firstlast@gmail.com").await;
 
         asked_then_kept(&manager, "First.Last@googlemail.com", &google)
             .await
