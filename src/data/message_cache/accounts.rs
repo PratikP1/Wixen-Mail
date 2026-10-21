@@ -145,25 +145,34 @@ impl MessageCache {
     /// through [`MessageCache::delete_account`], so nothing of it is left for
     /// the uninstall to miss.
     ///
-    /// The saving happens first. A removal can be refused, for the reason
-    /// [`MessageCache::delete_account`] gives, and doing the removals first
-    /// meant one account whose secrets would not go threw away every other
-    /// change made in the same sitting.
+    /// The removals happen first, because a save refuses an address another
+    /// stored row uses, and the table's `UNIQUE` address would refuse it too.
+    /// Removing an account and adding it back on the same address, to move it
+    /// from POP to IMAP for instance, gives the new one a new id, and saving
+    /// first found the old row still holding the address.
+    ///
+    /// Nothing stops at a refusal. A removal can be refused, for the reason
+    /// [`MessageCache::delete_account`] gives, and a save for an address a
+    /// kept account uses; either is one account's problem, so every other
+    /// removal and save still happens. The answer is the first refusal, and
+    /// any after it is logged by the account's name.
     pub fn replace_accounts(&self, accounts: &[crate::data::account::Account]) -> Result<()> {
-        let gone: Vec<String> = self
+        let gone: Vec<crate::data::account::Account> = self
             .load_accounts()?
             .into_iter()
-            .map(|stored| stored.id)
-            .filter(|id| !accounts.iter().any(|account| &account.id == id))
+            .filter(|stored| !accounts.iter().any(|account| account.id == stored.id))
             .collect();
 
-        for account in accounts {
-            self.save_account(account)?;
-        }
-        for id in &gone {
-            self.delete_account(id)?;
-        }
-        Ok(())
+        let mut outcomes: Vec<(&str, Result<()>)> = gone
+            .iter()
+            .map(|account| (account.name.as_str(), self.delete_account(&account.id)))
+            .collect();
+        outcomes.extend(
+            accounts
+                .iter()
+                .map(|account| (account.name.as_str(), self.save_account(account))),
+        );
+        the_first_refusal(outcomes)
     }
 
     /// Load all accounts from the database
@@ -392,6 +401,21 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update last sync: {}", e)))?;
         Ok(())
     }
+}
+
+/// The first of several accounts' refusals, each paired with the account's
+/// name, logging every one after it so none is lost behind another.
+fn the_first_refusal<'a>(outcomes: impl IntoIterator<Item = (&'a str, Result<()>)>) -> Result<()> {
+    let mut refusals = outcomes
+        .into_iter()
+        .filter_map(|(name, outcome)| outcome.err().map(|refusal| (name, refusal)));
+    let Some((_, first)) = refusals.next() else {
+        return Ok(());
+    };
+    for (name, refusal) in refusals {
+        tracing::warn!("{name} was refused as well: {refusal}");
+    }
+    Err(first)
 }
 
 impl MessageCache {
@@ -1027,10 +1051,7 @@ mod tests {
         crate::service::secret_store::allow();
 
         let said = outcome.expect_err("the refused removal").to_string();
-        assert!(
-            said.starts_with("This account has not been removed"),
-            "{said}"
-        );
+        assert!(said.contains("This account has not been removed"), "{said}");
         assert!(!said.contains("already uses"), "{said}");
         let stored = cache.load_accounts().expect("the accounts to load");
         let name_of = |id: &str| {
