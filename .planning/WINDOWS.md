@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 777
+open_count: 779
 waived_count: 0
 fixed_count: 149
-total_count: 926
-last_updated: 2026-10-21T20:00:00.000Z
+total_count: 928
+last_updated: 2026-10-21T22:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -269,7 +269,7 @@ last_updated: 2026-10-21T20:00:00.000Z
 | 252 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether replacing the copy here with what the backend could keep is what somebody wants. The alternative is keeping their bytes and telling them the two copies differ; this was decided on the argument that a loss somebody watches happen is better than one that arrives weeks later, and nobody has been asked. | open |  | 2026-09-10T23:33:50.138Z |  |
 | 253 | 05.1 | unrun-verify | src/application/notes_sync.rs |  | Whether making a note again when the backend says it no longer holds it is right where somebody deleted it at the other end on purpose. The seam's contract says a name the backend never gave is a note to create; a deletion made at the backend is not propagated here at all, so the two rules can disagree about one note. | open |  | 2026-09-10T23:33:50.847Z |  |
 | 254 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server's answer about its address books parses. Every fixture was written in this repository, and the reader assumes the d: prefix on the DAV elements and that the change marker is cs:getctag. A server spelling either differently is read as offering none. | open |  | 2026-09-11T01:41:41.360Z |  |
-| 255 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all. | open |  | 2026-09-11T01:41:45.676Z |  |
+| 255 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all. 13.3-10 (2026-10-21): a block with no card text this reader can see, other than the address book's own, and a response written in a spelling the reader does not split, D:response or the DAV namespace as the default, now count as cards that could not be read, so an answer holding any of them takes nobody off; a 507 block is kept as the server stopping short and takes nobody off either. The gap itself stays open: no real server's answer has been read here | open |  | 2026-09-11T01:41:45.676Z |  |
 | 256 | 05.1 | unrun-verify | src/data/message_cache/contacts.rs |  | Whether a card vcard_block_from_contact writes is accepted by a real CardDAV server. A round trip in this repository proves this writer and this reader agree with each other and says nothing about anybody else's server. | open |  | 2026-09-11T01:41:46.427Z |  |
 | 257 | 05.1 | unrun-verify | src/data/message_cache/contacts.rs |  | Whether a card written by another client reads correctly through contact_from_vcard_block. Only cards this repository wrote have been read back by it here, and Apple, Google and SabreDAV each write cards this program has never seen. | open |  | 2026-09-11T01:41:47.161Z |  |
 | 258 | 05.1 | unrun-verify | src/service/carddav.rs |  | Whether the scan for the address book element over a whole response block, rather than over the resource type alone, ever reads a server's answer as offering an address book it does not have. It needs a server sending a raw angle bracket inside a name it should have escaped. | open |  | 2026-09-11T01:41:58.844Z |  |
@@ -941,6 +941,8 @@ last_updated: 2026-10-21T20:00:00.000Z
 | 924 | 13.3 | todo | src/data/message_cache/accounts.rs |  | 13.3-07, read in the code on 2026-10-21 and not heard, older than 13.3-07: delete_account's refusal is an Error::Security, whose Display puts "Security error: " in front of the sentence, and each reason inside it carries the store's own "Security error: " words, so the Account Manager says "The accounts could not all be saved. Security error: This account has not been removed, because Windows would not let go of its saved password (Security error: Could not remove this account's password in the Windows credential store: ...)". 13.3-07 makes that sentence the answer in one more case, an account added on an address a refused removal still holds. Recommended: the refusal as Error::InPlainWords naming only what was kept, the store's reasons in the log, with a case on the words; Pratik's to schedule | open |  | 2026-10-21T14:00:00.000Z |  |
 | 925 | 13.3 | unrun-verify | src/application/mail_sync.rs |  | 13.3-08, item 9 of the review of 2026-10-20, tried by the tester under NVDA on a build holding 13.3-08's merge: during a first download of a large Inbox, a message from a blocked sender and one a filing rule moves, both sent to him; the blocked one gone from the Inbox, the filed one in its folder once, and the new-mail sentence heard. Held by test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived in src/application/mail_sync.rs over the scripted server, the cases of how_much_a_chunk_left_here in src/application/bringing_everything_down.rs, and the guard records "a download's chunk leaves the mail above the newest held to the check" and "a folder after a chunk does not count the mail left for the check as missing"; none has met a real server. Closed when the tester has done it on his own account | open |  | 2026-10-21T18:00:00.000Z |  |
 | 926 | 13.3 | unrun-verify | src/service/ical_subscription.rs |  | 13.3-09, items 10 and 11 of the review of 2026-10-20, tried by the tester on a build holding 13.3-09's merge: a subscribed calendar feed refreshed with the network off, and the log excerpt a feedback report would send read for the feed's address, which must not be there, only its host; and the sentence a followed calendar link speaks with the network off heard under NVDA. Held by test_a_feed_host_that_refuses_the_connection_is_named_and_its_address_is_not and the byte order mark and character set cases in src/service/ical_subscription.rs and src/application/opening.rs, and the guard records "a calendar feed that cannot be reached is named by its host and not its address", "a byte order mark is taken off a calendar or a card before it is read" and "a calendar saved as UTF-16 with its mark is read as UTF-16"; none has met a real calendar host. Closed when the tester has done both | open |  | 2026-10-21T20:00:00.000Z |  |
+| 927 | 13.3 | deviation | scripts/guards.py |  | 13.3-10, found 2026-10-21 while re-measuring nineteen records: one record ended "this record could not be measured: OSError(22, 'Invalid argument')" and its break stayed in src/application/contacts_sync.rs, so the run carried on and measured every later record against two breaks at once, reporting eight tests red that the records did not name. Nothing stopped the run and nothing said the tree was left broken; it was seen only by reading the verdicts and the diff. The run was stopped, the line put back by hand, and the nineteen measured again cleanly. Where the error arose is not diagnosed; the restore in the finally block of the function that applies a break is the likely place, since the break was what stayed. Recommendation: after restoring a file, compare its bytes with the copy kept and stop the whole run with a sentence when they differ, so a record that could not be measured never poisons the ones after it | open |  | 2026-10-21T22:00:00.000Z |  |
+| 928 | 13.3 | todo | src/application/carddav_sync.rs |  | 13.3-10, a question for Pratik: after a CardDAV answer that is not whole, because the server stopped at its own limit or some cards could not be read, the sync still writes the address book's new change marker down, so the next sync sees nothing has changed and does not ask for the cards again until something in the address book changes. The cards past the limit then stay missing here, and nothing is taken off meanwhile. Recommendation: keep the old marker after an answer that is not whole, so the next sync asks again; the cost is a whole read on every sync for a server that always stops short, which is what that server needs anyway. Not changed by 13.3-10, which kept the marker as it was | open |  | 2026-10-21T22:00:00.000Z |  |
 
 ````json
 [
@@ -3998,7 +4000,7 @@ last_updated: 2026-10-21T20:00:00.000Z
     "phase": "05.1",
     "file": "src/service/carddav.rs",
     "line": null,
-    "description": "Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all.",
+    "description": "Whether a real CardDAV server's answer with cards in it parses. The card's own element is tried under three spellings, card:address-data, C:address-data and address-data, and a server writing a fourth is read as having sent no card at all. 13.3-10 (2026-10-21): a block with no card text this reader can see, other than the address book's own, and a response written in a spelling the reader does not split, D:response or the DAV namespace as the default, now count as cards that could not be read, so an answer holding any of them takes nobody off; a 507 block is kept as the server stopping short and takes nobody off either. The gap itself stays open: no real server's answer has been read here",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-11T01:41:45.676Z",
@@ -12054,6 +12056,30 @@ last_updated: 2026-10-21T20:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-21T20:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 927,
+    "kind": "deviation",
+    "phase": "13.3",
+    "file": "scripts/guards.py",
+    "line": null,
+    "description": "13.3-10, found 2026-10-21 while re-measuring nineteen records: one record ended \"this record could not be measured: OSError(22, 'Invalid argument')\" and its break stayed in src/application/contacts_sync.rs, so the run carried on and measured every later record against two breaks at once, reporting eight tests red that the records did not name. Nothing stopped the run and nothing said the tree was left broken; it was seen only by reading the verdicts and the diff. The run was stopped, the line put back by hand, and the nineteen measured again cleanly. Where the error arose is not diagnosed; the restore in the finally block of the function that applies a break is the likely place, since the break was what stayed. Recommendation: after restoring a file, compare its bytes with the copy kept and stop the whole run with a sentence when they differ, so a record that could not be measured never poisons the ones after it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 928,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/application/carddav_sync.rs",
+    "line": null,
+    "description": "13.3-10, a question for Pratik: after a CardDAV answer that is not whole, because the server stopped at its own limit or some cards could not be read, the sync still writes the address book's new change marker down, so the next sync sees nothing has changed and does not ask for the cards again until something in the address book changes. The cards past the limit then stay missing here, and nothing is taken off meanwhile. Recommendation: keep the old marker after an answer that is not whole, so the next sync asks again; the cost is a whole read on every sync for a server that always stops short, which is what that server needs anyway. Not changed by 13.3-10, which kept the marker as it was",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-21T22:00:00.000Z",
     "resolved_at": null
   }
 ]

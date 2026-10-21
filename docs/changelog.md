@@ -1446,6 +1446,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A CardDAV address book that sends only part of its cards no longer loses you contacts
+  (2026-10-21, PIM-05, SCALE-06).** Since 2026-10-17 a sync that reads a whole CardDAV address
+  book takes off any contact the answer leaves out. Three kinds of answer looked whole when they
+  were not: a server that stopped at its own limit, a card sent without its text, and an answer
+  written in a form this program does not read. Each one took contacts off this computer that
+  were still in the address book. Now none of them takes anybody off. The sync counts a problem
+  instead, and a server that stopped at its limit is named in the log as having sent only part
+  of the address book.
+
+  A contact deleted in the address book while you had a change to it waiting here is now taken
+  off with the change, and the summary says "A contact you had changed was deleted in your
+  address book, and your change went with it." She used to stay, so every later sync sent your
+  change to a card that was gone, had it refused, and counted one more problem. This holds for
+  Google, Outlook and CardDAV address books. A contact waiting for you to choose between two
+  copies still stays.
+
+  Known limits. None of this has been tried against a real address book; the tests use the
+  program's own stand-in servers.
+
 - **A calendar that cannot be fetched no longer gives away its private address (2026-10-21).**
   When a calendar you subscribed to, or one a `webcal:` link opened, could not be fetched, for
   example because the network was off or the host turned the connection away, the reason was
@@ -1825,12 +1844,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   only inside the stretch the read asked about, six months back and a year ahead. Nothing is
   taken off that has a change waiting to be sent, that is waiting for you to choose between
   two copies, or that this sync has just sent. A contact another address book still holds
-  keeps that address book.
+  keeps that address book. Corrected 2026-10-21: since that day a contact with a change
+  waiting is taken off with the change, and the summary says so; a meeting with a change
+  waiting still stays.
 - **A card deleted from a CardDAV address book is taken off here (2026-10-17).** The CardDAV
   sync reads the whole address book whenever it has changed, and never took off a card the
   server no longer had, so a contact deleted at the server stayed here for good. Now it goes
   at the next sync. When some cards could not be read, nobody is taken off, since a missing
-  card may only be one of those.
+  card may only be one of those. Corrected 2026-10-21: until that day a contact with a change
+  waiting here was never taken off this way, and a server that stopped at its own limit or
+  sent a card without its text could still take contacts off; see the entry of that day.
 - **A Google calendar sync that fails is said rather than downloaded again (2026-10-17).** Any
   failure to read what changed in a Google calendar, an answer that would not read or a
   server fault that outlasted the retries, made the sync download the whole calendar again.

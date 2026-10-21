@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 873 records have arrived since and have not been through it.
+# 877 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -451,8 +451,14 @@ red = [
     # Added 2026-10-17 by 13.2-21's re-measure: the pass after a whole answer
     # carries out each person it left out through this same deletion, so a
     # person both address books knew and one whole read left out is dropped
-    # by the break instead of keeping the other.
-    "application::contacts_sync::tests::test_a_contact_both_address_books_accepted_stops_waiting_to_be_sent",
+    # by the break instead of keeping the other. The push test that read whole
+    # an address book naming nobody left the list on 2026-10-21 (13.3-10): it
+    # starts from a marker now, so no read of it leaves anybody out. Two other
+    # push tests joined it the same day: they read whole an address book naming
+    # nobody, and since 13.3-10 a person carrying a change is no longer kept
+    # out of the pass, so their contact reaches this deletion.
+    "application::contacts_sync::tests::test_a_refused_change_is_reported_as_a_setting_rather_than_as_an_error",
+    "application::contacts_sync::tests::test_an_edit_to_a_contact_both_address_books_know_reaches_both",
     "application::contacts_sync::tests::test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_google_read_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds",
@@ -482,8 +488,18 @@ before = """    if the_copy_here_holds_work_nobody_has_sent(local) {"""
 after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook::Google) {"""
 red = [
     "application::contacts_sync::tests::test_a_contact_outlook_removed_takes_a_waiting_change_with_it_and_says_so",
+    # Since 2026-10-21 (13.3-10) a whole read takes off a person carrying a
+    # change and says it through this question, and none of these people is
+    # owed the change by Google's flag.
+    "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
+    "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
+    "application::contacts_sync::tests::test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds",
+    "application::contacts_sync::tests::test_a_whole_google_read_takes_off_who_google_no_longer_holds",
+    "application::contacts_sync::tests::test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds",
+    "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -495,8 +511,16 @@ after = """    if this_address_book_is_still_owed_the_change(local, &AddressBook
 red = [
     "application::contacts_sync::tests::test_a_contact_google_deleted_takes_a_waiting_change_with_it_and_says_so",
     "application::contacts_sync::tests::test_a_deletion_says_what_went_with_it_whatever_the_contact_says_of_itself",
+    # Since 2026-10-21 (13.3-10), for the reason the record above gives.
+    "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
+    "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
+    "application::contacts_sync::tests::test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds",
+    "application::contacts_sync::tests::test_a_whole_google_read_takes_off_who_google_no_longer_holds",
+    "application::contacts_sync::tests::test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds",
+    "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -1167,7 +1191,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -1353,7 +1377,7 @@ red = [
     "data::message_cache::taking_back::tests::test_an_owed_contact_is_taken_back_with_what_its_address_books_call_it",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
     { file = "src/data/message_cache/taking_back.rs", tests = 10 },
@@ -1409,7 +1433,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -1456,7 +1480,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
 ]
@@ -1652,7 +1676,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/caldav.rs", tests = 176 },
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # A task's push clearing the waiting flag whatever the row now says, so a tick
@@ -2104,7 +2128,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 86 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "src/application/tasks_sync.rs", tests = 124 },
@@ -2133,8 +2157,12 @@ before = """    cache.drop_synced_contact(&local.id)?;"""
 after = """    cache.delete_contact(&local.id)?;"""
 red = [
     "application::contacts_sync::tests::test_a_contact_google_deleted_is_not_sent_back_to_google_as_a_deletion",
+    # Since 2026-10-21 (13.3-10): the next sync asks the CardDAV server to
+    # delete a card it no longer has, is refused, and counts a problem.
+    "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
 ]
 tests_last_seen = [
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
@@ -21304,7 +21332,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/contacts.rs", tests = 103 },
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -21332,7 +21360,7 @@ red = [
     "service::carddav::tests::test_a_collection_that_is_not_an_address_book_is_left_out",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # Measured 2026-09-10 on a clean tree with nothing else building, at the default
@@ -21356,25 +21384,25 @@ tests_last_seen = [
 # The first candidate was joining the folded lines here rather than dropping
 # them. It reddened nothing, because joining them correctly is what the reader
 # does anyway, so the result was the same card by a longer road.
+#
+# Anchored on the line that hands the card to the shared reader since
+# 2026-10-21 (13.3-10), when the let-else above it gained a body counting the
+# blocks without card text. The break is the same edit, made one line lower.
 [[guard]]
 name = "a card from a server is read by the reader a file import uses, not here"
 file = "src/service/carddav.rs"
-before = '''        let Some(card) = the_card_in(block) else {
-            continue;
-        };'''
-after = '''        let Some(card) = the_card_in(block) else {
-            continue;
-        };
-        let card = card
+before = '''        let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {'''
+after = '''        let card = card
             .lines()
             .filter(|line| !line.starts_with(' '))
             .collect::<Vec<_>>()
-            .join("\n");'''
+            .join("\n");
+        let Some(contact) = MessageCache::contact_from_vcard_block(account_id, &card) else {'''
 red = [
     "service::carddav::tests::test_a_cards_text_goes_through_the_reader_a_file_import_uses",
 ]
 tests_last_seen = [
-    { file = "src/service/carddav.rs", tests = 35 },
+    { file = "src/service/carddav.rs", tests = 40 },
 ]
 
 # ── Two address books that are one address book ─────────────────────────────
@@ -21452,7 +21480,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
 ]
 
 # ── A second answer to which copy of a contact wins ─────────────────────────
@@ -21495,7 +21523,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
 ]
 
 # ── An address book added by a screen that never asked a server ─────────────
@@ -42068,7 +42096,7 @@ red = [
     "application::carddav_sync::tests::test_a_card_sync_reads_the_contacts_here_as_often_for_two_hundred_cards_as_for_two",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
 ]
 
 # The contact a person matches is read again by id before her fate is
@@ -42165,67 +42193,146 @@ tests_last_seen = [
 # every card could be read. The first break skips the pass; the second runs it
 # after a read some cards of which could not be read. Added 2026-10-17 by
 # 13.2-21 and taken by hand against the whole library, nothing else red.
+#
+# Both anchored on the whole-answer question since 2026-10-21 (13.3-10), which
+# also asks whether the server stopped short, so the second break reddens the
+# case for a stopped answer as well.
 [[guard]]
 name = "a CardDAV read takes off a card the server no longer holds"
 file = "src/application/carddav_sync.rs"
-before = '''    if arrived.could_not_be_read == 0 {'''
-after = '''    if arrived.could_not_be_read == 0 && false {'''
+before = '''    if arrived.is_whole() {'''
+after = '''    if arrived.is_whole() && false {'''
 red = [
     "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
+    "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
 ]
 
 [[guard]]
 name = "a CardDAV read with cards it could not read takes nobody off"
 file = "src/application/carddav_sync.rs"
-before = '''    if arrived.could_not_be_read == 0 {'''
-after = '''    if arrived.could_not_be_read == 0 || true {'''
+before = '''    if arrived.is_whole() {'''
+after = '''    if arrived.is_whole() || true {'''
 red = [
     "application::carddav_sync::tests::test_a_read_with_cards_that_could_not_be_read_takes_nobody_off",
+    "application::carddav_sync::tests::test_an_answer_the_server_stopped_short_takes_nobody_off_and_says_so",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
 ]
 
-# A person a whole answer left out stays while a change made here is waiting
-# for any address book, since the address book never had it. The break takes
-# her off regardless; five older cases whose whole reads leave out a contact
-# with a change waiting go red with the new ones. Added 2026-10-17 by 13.2-21
-# and taken by hand against the whole library, nothing else red.
+# A CardDAV answer is whole only when the reader can vouch for every card it
+# left out (13.3-10, review item 12). Four ways the reader could call an answer
+# whole when it is not, or call one partial when it is whole. Added 2026-10-21,
+# each taken by hand against the whole library, nothing else red.
+#
+# The 507 block a server adds for the address book when it stops at its own
+# limit, passed over as if it were the address book's own listing.
 [[guard]]
-name = "a person a whole answer left out stays while a change made here waits"
+name = "a CardDAV answer the server stopped short is kept as stopped"
+file = "src/service/carddav.rs"
+before = '''            if the_server_stopped_at(block) {'''
+after = '''            if false {'''
+red = [
+    "service::carddav::tests::test_an_answer_the_server_stopped_short_is_said_as_that_and_counts_no_card",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# A block without card text, a card whose text came back 404, passed over
+# rather than counted.
+[[guard]]
+name = "a CardDAV block without card text is counted as a card that could not be read"
+file = "src/service/carddav.rs"
+before = '''            } else if !names_the_address_book_itself(block, base_url) {'''
+after = '''            } else if false {'''
+red = [
+    "service::carddav::tests::test_a_block_without_card_text_is_counted_as_a_card_that_could_not_be_read",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# The other side of the same line: the address book's own block counted as a
+# card, which would turn the removal pass off for good on a server that lists
+# the collection it was asked about.
+[[guard]]
+name = "a CardDAV address book's own block is not counted as a card"
+file = "src/service/carddav.rs"
+before = '''            } else if !names_the_address_book_itself(block, base_url) {'''
+after = '''            } else if true {'''
+red = [
+    "service::carddav::tests::test_the_address_books_own_block_is_neither_a_card_nor_a_stop",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# Responses written `D:response` or in the default namespace, which the split
+# cannot see, left out of the count, so the answer reads as an empty address
+# book.
+[[guard]]
+name = "CardDAV responses the reader cannot split are counted as unreadable"
+file = "src/service/carddav.rs"
+before = '''    sent.could_not_be_read += elements_named(xml, "response").saturating_sub(blocks);'''
+after = '''    let _ = blocks;'''
+red = [
+    "service::carddav::tests::test_responses_in_a_spelling_the_reader_does_not_split_are_counted_unreadable",
+]
+tests_last_seen = [
+    { file = "src/service/carddav.rs", tests = 40 },
+]
+
+# A person a whole answer left out goes with a change made here, and it is
+# said, as when the address book names her deletion (13.3-10, review item 24).
+# The break puts back the exception that kept her, which is what the record
+# "a person a whole answer left out stays while a change made here waits"
+# guarded from 2026-10-17 until 2026-10-21. That record was retired by 13.3-10
+# because its break was the fix itself and the behaviour it held was reversed:
+# kept, she carried the address book's name for a card it had deleted, and
+# every sync sent her change, had it refused and counted one more problem.
+# Five push tests it named read whole an address book naming nobody; they now
+# start from a marker and go red under neither break. Added 2026-10-21 and
+# taken by hand against the whole library, nothing else red.
+[[guard]]
+name = "a person a whole answer left out goes with a change made here, and it is said"
 file = "src/application/contacts_sync.rs"
-before = '''            || the_copy_here_holds_work_nobody_has_sent(&local)'''
-after = '''            || false'''
+before = '''        if !left_out || cache.is_held_for_a_choice(&local.id)? {'''
+after = '''        if !left_out
+            || the_copy_here_holds_work_nobody_has_sent(&local)
+            || cache.is_held_for_a_choice(&local.id)?
+        {'''
 red = [
     "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
-    "application::contacts_sync::tests::test_a_change_held_from_the_other_address_book_by_the_setting_is_said",
-    "application::contacts_sync::tests::test_a_change_one_address_book_refuses_still_reaches_the_other",
-    "application::contacts_sync::tests::test_a_contact_both_address_books_accepted_stops_waiting_to_be_sent",
+    "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
     "application::contacts_sync::tests::test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_google_read_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds",
     "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
-    "application::contacts_sync::tests::test_the_version_google_gives_back_after_a_change_is_kept_for_the_next_one",
-    "application::contacts_sync::tests::test_the_version_outlook_gives_back_after_a_change_is_kept_for_the_next_one",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 18 },
+    { file = "src/application/carddav_sync.rs", tests = 20 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
 ]
 
 # A person a whole answer left out stays while somebody's choice between two
 # copies of her is still to be made. The break takes her off regardless.
 # Added 2026-10-17 by 13.2-21 and taken by hand against the whole library,
-# nothing else red.
+# nothing else red. Anchored on the joined condition since 2026-10-21, when
+# 13.3-10 took the line above it out and rustfmt joined the rest onto one.
 [[guard]]
 name = "a person a whole answer left out stays while a choice about her waits"
 file = "src/application/contacts_sync.rs"
-before = '''            || cache.is_held_for_a_choice(&local.id)?'''
-after = '''            || false'''
+before = '''        if !left_out || cache.is_held_for_a_choice(&local.id)? {'''
+after = '''        if !left_out || false {'''
+# The Outlook case joined on 2026-10-21 (13.3-10): its later Outlook read is
+# whole and names nobody, and the contact it holds for a choice also carries a
+# change, which kept her out of the pass until that day.
 red = [
+    "application::contacts_sync::tests::test_the_other_address_book_setting_is_named_only_while_the_change_is_somebodys_work",
     "application::contacts_sync::tests::test_a_google_read_after_an_expired_marker_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_google_read_takes_off_who_google_no_longer_holds",
     "application::contacts_sync::tests::test_a_whole_outlook_read_takes_off_who_outlook_no_longer_holds",

@@ -203,6 +203,13 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
             arrived.could_not_be_read, book.name
         ));
     }
+    if arrived.stopped_short {
+        result.errors.push(format!(
+            "The server for {} sent only part of the address book, so no contact was \
+             taken off this computer.",
+            book.name
+        ));
+    }
 
     // Read once for every card rather than once per card, and kept in step
     // with every write, as the other two syncs do (audit #30).
@@ -228,9 +235,10 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
     }
 
     // Every card is in every read, so a card the server no longer holds was
-    // deleted there, and nothing took it off here on any read. Not when some
-    // cards could not be read: one missing may only be one of those.
-    if arrived.could_not_be_read == 0 {
+    // deleted there, and nothing took it off here on any read. Not when the
+    // answer is not whole: a card missing from one the server stopped short,
+    // or from one with cards that could not be read, may only be one of those.
+    if arrived.is_whole() {
         let named = arrived.cards.iter().map(|card| card.url.as_str()).collect();
         contacts_sync::take_off_who_a_whole_answer_left_out(
             cache,
@@ -537,6 +545,9 @@ mod tests {
         cards: Vec<CardOnAServer>,
         /// How many of its cards could not be read.
         could_not_be_read: usize,
+        /// Whether it stops before the end of the address book, as a server
+        /// does at its own limit.
+        stopped_short: bool,
         /// Whether the address book itself refuses to be read.
         unreadable: bool,
         /// What it does with a card written to it.
@@ -571,6 +582,7 @@ mod tests {
             Ok(CardsFromAServer {
                 cards: self.cards.clone(),
                 could_not_be_read: self.could_not_be_read,
+                stopped_short: self.stopped_short,
             })
         }
 
@@ -1301,8 +1313,9 @@ mod tests {
     //
     // A CardDAV address book is read whole every time its marker moves, so a
     // card it no longer holds was deleted at the server, and nothing here took
-    // it off on any read. Unless some cards could not be read: then the answer
-    // is not whole, and a card missing from it may only be one of those.
+    // it off on any read. Unless some cards could not be read, or the server
+    // stopped short: then the answer is not whole, and a card missing from it
+    // may only be one of those.
 
     #[tokio::test]
     async fn test_a_card_the_server_no_longer_holds_is_taken_off_here() {
@@ -1336,10 +1349,61 @@ mod tests {
         );
         assert!(ids.contains(&"here-kept".to_string()), "{ids:?}");
         assert!(
-            ids.contains(&"here-waiting".to_string()),
-            "a contact with a change waiting here was taken off: {ids:?}"
+            !ids.contains(&"here-waiting".to_string()),
+            "a contact the server deleted while a change waited here is still here: {ids:?}"
         );
-        assert_eq!(result.deleted_local.count(), 1, "{result:?}");
+        assert!(
+            result.deleted_with_a_change_waiting.holds("here-waiting"),
+            "the change that went with her was not said: {result:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 2, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent() {
+        // Kept, she carried the address book's name for a card it no longer
+        // has, so every sync sent her change, had it refused and counted one
+        // more problem, for good.
+        let (_paths, cache) = cache_for("carddav-deleted-while-changed");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        let ann = changed_here(
+            "Ann Example",
+            "ann@example.com",
+            &filed_under,
+            &the_card_at("ann"),
+            "\"v1\"",
+        );
+        cache.save_contact(&ann).expect("she saves");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            writes: Writes::NothingIsSent,
+            ..Scripted::default()
+        };
+
+        let first = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the first sync");
+        let second = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the second sync");
+
+        assert!(
+            cache.get_contact(&ann.id).expect("the read").is_none(),
+            "the contact the address book deleted is still here"
+        );
+        assert!(
+            first.deleted_with_a_change_waiting.holds(&ann.id),
+            "the change that went with her was not said: {first:?}"
+        );
+        assert_eq!(
+            server.written.lock().expect("what was written").len(),
+            1,
+            "her change was sent again after she went"
+        );
+        assert!(second.errors.is_empty(), "{:?}", second.errors);
     }
 
     #[tokio::test]
@@ -1371,5 +1435,44 @@ mod tests {
             "a card that may only have been unreadable was taken off: {ids:?}"
         );
         assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_the_server_stopped_short_takes_nobody_off_and_says_so() {
+        let (_paths, cache) = cache_for("carddav-stopped-short");
+        let book = an_address_book(&cache);
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        held_as_a_card(&cache, &filed_under, "past-the-limit");
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            stopped_short: true,
+            ..Scripted::default()
+        };
+
+        let result = sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        let ids: Vec<String> = cache
+            .get_contacts_for_account("a1")
+            .expect("the contacts")
+            .into_iter()
+            .map(|contact| contact.id)
+            .collect();
+        assert!(
+            ids.contains(&"here-past-the-limit".to_string()),
+            "a card past the server's limit was taken off: {ids:?}"
+        );
+        assert_eq!(result.deleted_local.count(), 0, "{result:?}");
+        assert_eq!(result.errors.len(), 1, "{:?}", result.errors);
+        let said = &result.errors[0];
+        assert!(
+            said.contains("Work"),
+            "the address book is not named: {said}"
+        );
+        assert!(said.contains("only part"), "the stop is not said: {said}");
+        assert!(!said.contains("Person"), "a contact was named: {said}");
     }
 }
