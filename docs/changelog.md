@@ -1446,6 +1446,28 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Mail that arrives during the first download reaches your rules and is announced
+  (2026-10-21, MAIL-01, MAIL-04, MAIL-05).** While Wixen Mail downloads everything in your
+  folders, new mail can arrive. The download used to take that mail along with the older mail it
+  was bringing down, without running your rules over it. A message from a sender you block stayed
+  in the Inbox, a filing rule never moved its message, and the next check found nothing new, so
+  nothing said it had arrived. Now the download leaves new mail for the next check, which runs
+  your rules over it and tells you it arrived. The download no longer says the mail server stopped
+  sending a folder whose only missing messages are new ones waiting for that check.
+
+- **A message a rule files is never tied to another message (2026-10-21, MAIL-02).** After a
+  rule files a message, or a move waiting from earlier reaches the server, Wixen Mail asks the
+  folder it went to where the message is now. A message with no Message-ID could be matched to
+  any message in that folder, and one whose Message-ID was part of another message's could be
+  matched to that other message. Your copy here then stood for the wrong message, so a later
+  Delete on it could remove a message you never chose. Now a message with no Message-ID is never
+  looked for, and a place is used only when the message there carries exactly the same Message-ID.
+  Otherwise the message appears once, from the next read of that folder.
+
+  Known limits. Neither fix has been tried against a real mail server yet; the tests use the
+  program's own scripted server. Checking each filed message costs one more question to the
+  server.
+
 - **Removing an account and adding it back on the same address now saves (2026-10-21,
   MAIL-04).** In the Account Manager you can remove an account and add it again with the same
   address, for example to switch it from POP to IMAP. Since the change of 2026-10-15 that
@@ -2045,13 +2067,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   over those alone, so a blocked sender or a filing rule missed the rest, and the check said
   500 had arrived. The rest came down later with nothing sorting them. Now a check takes every
   message that arrived since the last one, runs your rules over all of them, and counts all of
-  them in what it says arrived. The first look at a folder this computer holds nothing from
-  still takes the newest 500, and older mail still comes down in the background. A message a
-  rule filed into another folder also used to show there twice from the next check on, once as
-  filed here and once as the server holds it. It now shows once, at the place the server gave
-  it, or, when the server cannot say where that is, it comes back once on the next read of
-  that folder. Nothing here has been tried against a real mail server yet. The version does
-  not move.
+  them in what it says arrived. (Corrected 2026-10-21: until then, mail that arrived while the
+  download of everything was running was still taken by the download without your rules; see
+  "Mail that arrives during the first download reaches your rules" above.) The first look at a
+  folder this computer holds nothing from still takes the newest 500, and older mail still comes
+  down in the background. A message a rule filed into another folder also used to show there
+  twice from the next check on, once as filed here and once as the server holds it. It now
+  shows once, at the place the server gave it, or, when the server cannot say where that is, it
+  comes back once on the next read of that folder. Nothing here has been tried against a real
+  mail server yet. The version does not move.
 - **Delete uses the folder your mail server calls its Trash, and Empty Folder says a folder
   was emptied only when it was (2026-10-15, GAP-14, FOLDER-01).** A folder of your own named
   Bin, Deleted, Deleted Items, Deleted Messages or Trash, anywhere in the folder list, could be

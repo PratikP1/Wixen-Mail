@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 866 records have arrived since and have not been through it.
+# 870 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -753,14 +753,14 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/choosing_messages.rs", tests = 20 },
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/every_google_calendar.rs", tests = 14 },
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/notes_sync.rs", tests = 27 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
@@ -5457,7 +5457,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -5494,7 +5494,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -5546,7 +5546,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -5602,7 +5602,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -5635,7 +5635,7 @@ red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -5744,7 +5744,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
 ]
 # ── Mail collected over POP, removed from a server nobody asked ─────────────
@@ -14130,7 +14130,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/local_delete.rs", tests = 15 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 19 },
     { file = "src/data/message_cache/shared_folders.rs", tests = 11 },
@@ -16117,7 +16117,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -16415,7 +16415,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -16535,7 +16535,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/importing_messages.rs", tests = 55 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/sent_copy.rs", tests = 22 },
     { file = "src/data/message_cache/in_the_trash.rs", tests = 10 },
     { file = "src/data/message_cache/messages.rs", tests = 183 },
@@ -17054,7 +17054,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/flag_changes_waiting.rs", tests = 21 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -17337,7 +17337,7 @@ red = [
     "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 [[guard]]
@@ -19657,7 +19657,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # ── A move finished on a later run, sent again without asking ────────────────
@@ -26005,7 +26005,7 @@ red = [
     "application::bringing_everything_down::tests::test_the_folder_on_screen_comes_first_then_the_inbox_then_the_tree_order",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 # A text budget somebody chose ends the text run when the next chunk would
@@ -26026,7 +26026,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_chunk_of_text_shrinks_to_what_the_budget_still_allows",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 # A folder is reported as stopped only when a chunk brought nothing new.
@@ -26045,6 +26045,11 @@ tests_last_seen = [
 # Measured 2026-09-17 on the branch the record was written on, through
 # `scripts/guards.sh --remeasure`, the whole library; measured again the
 # same day after the correction.
+#
+# Corrected 2026-10-21 by 13.3-08: the re-measure that day found the case of
+# a folder still missing older mail after a chunk that left new mail for the
+# check red as well, since its last chunk brought something and the break
+# reads any chunk asked as one that stopped. Written from that run.
 [[guard]]
 name = "a folder is reported as stopped only when a chunk brought nothing new"
 file = "src/application/bringing_everything_down.rs"
@@ -26052,9 +26057,10 @@ before = """    here.held < here.total_on_server && held_before_the_last_chunk =
 after = """    here.held < here.total_on_server && held_before_the_last_chunk.is_some()"""
 red = [
     "application::bringing_everything_down::tests::test_a_finished_folder_brings_nothing_new_and_is_not_a_server_that_stopped",
+    "application::bringing_everything_down::tests::test_a_folder_still_missing_older_mail_needs_more_headers",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 # The list of messages with no text here carries each row's size, so a
@@ -26097,7 +26103,7 @@ red = [
     "application::mail_sync::tests::test_a_chunk_stops_before_the_next_message_when_asked_to",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # Three failures in a row that are not the gate's refusal end the chunk,
@@ -26121,7 +26127,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # What a person hears when the server stops answering is this program's
@@ -26148,7 +26154,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── Every Settings check box stays a check box (#67) ──────────────────────────
@@ -26693,7 +26699,7 @@ red = [
     "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A disabled account is never due a check (#37) ───────────────────────────
@@ -28083,7 +28089,7 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # The marker dropped from the forgetting: a row this program filed is
@@ -28250,7 +28256,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # An append nobody could settle read as a refusal: the destination hung up
@@ -28271,7 +28277,7 @@ red = [
     "application::moves_waiting::tests::test_a_destination_that_hung_up_and_cannot_be_asked_answers_not_reached_and_the_bytes_stay",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # The ceiling on a message kept while it moves taken away: a message of any
@@ -28297,7 +28303,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/mail_across_accounts.rs", tests = 44 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/data/message_cache/moves_in_flight.rs", tests = 13 },
 ]
 
@@ -28373,7 +28379,7 @@ red = [
     "application::moves_waiting::tests::test_a_crossing_made_here_moves_the_row_into_the_other_accounts_folder_and_waits",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/data/message_cache/moves_waiting.rs", tests = 19 },
 ]
 
@@ -29113,7 +29119,7 @@ red = [
     "test_a_rule_with_a_sound_counts_once_per_message_it_matched_and_one_without_counts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
@@ -34460,7 +34466,7 @@ red = [
     "test_a_rule_naming_the_label_in_other_capitals_finds_it",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "tests/a_rule_that_adds_a_label_labels_the_message.rs", tests = 8 },
 ]
 
@@ -34505,7 +34511,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -36548,7 +36554,7 @@ red = [
     "application::moves_waiting::tests::test_a_waiting_move_after_a_renumbering_finds_its_message_by_its_identifier",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # A move made here that never keeps the marks handed to it, so the marks a
@@ -36914,7 +36920,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -36952,7 +36958,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -36970,7 +36976,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_the_check_keeps_a_waiting_mark_over_what_the_server_says",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37005,7 +37011,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37038,7 +37044,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_the_next_check_does_not_bring_back_a_message_a_rule_deleted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37087,7 +37093,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37121,7 +37127,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/acting_on_a_set.rs", tests = 24 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # Labelling's do-half sending a run's label on its own worker rather than
@@ -39921,7 +39927,7 @@ red = [
     "application::moves_waiting::tests::test_an_already_done_replay_writes_its_line_too",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # A crossing that lands writes where the other account holds the message,
@@ -39938,7 +39944,7 @@ red = [
     "application::moves_waiting::tests::test_a_resumed_crossing_writes_no_fetch",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # The IMAP sign-in line says whether a password or a browser sign-in was
@@ -40811,7 +40817,7 @@ red = [
     "application::mail_sync::tests::test_the_rules_run_over_everything_a_large_arrival_brought",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # A rule's move leaving its row at a reserved number marked as filed here,
@@ -40843,7 +40849,7 @@ red = [
     "application::mail_sync::tests::test_a_rule_filed_message_whose_place_cannot_be_asked_comes_back_once",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
 ]
 
 # ── A message's text asked for at most once a run (finding #11, 13.2-09) ─────
@@ -40869,7 +40875,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_run_with_only_failed_text_left_finds_everything_here",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 [[guard]]
@@ -40948,7 +40954,7 @@ red = [
     "application::bringing_everything_down::tests::test_the_open_folder_is_read_again_at_most_every_ten_seconds",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 [[guard]]
@@ -40962,7 +40968,7 @@ red = [
     "application::bringing_everything_down::tests::test_a_chunk_in_a_folder_not_on_screen_marks_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/bringing_everything_down.rs", tests = 29 },
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
 ]
 
 [[guard]]
@@ -41214,7 +41220,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_label_put_on_or_taken_off_elsewhere_reaches_the_row_at_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 155 },
+    { file = "src/application/mail_sync.rs", tests = 159 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -41290,7 +41296,7 @@ red = [
     "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
 
@@ -41306,7 +41312,7 @@ red = [
     "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 [[guard]]
@@ -41322,7 +41328,7 @@ red = [
     "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]
 
 # A read or star kept from offline is sent by number only into the
@@ -41357,6 +41363,11 @@ tests_last_seen = [
 # (13.2-31.4) and at a save (14-08.1) read through it too and its red list had
 # named neither: the whole library 9,344 passed and 9 failed, the four above
 # and five in `draft_copy.rs`, which `tests_last_seen` now names.
+#
+# Corrected 2026-10-21 by 13.3-08: a settled move now reads the one number
+# its search found through the same comparison, and the re-measure that day
+# found that plan's case of a number whose message carries another identifier
+# red as well. Written from that run.
 [[guard]]
 name = "a number the search found is sent to only when its message carries the kept identifier"
 file = "src/application/renumbered.rs"
@@ -41368,6 +41379,7 @@ red = [
     "application::draft_copy::tests::test_a_save_whose_search_found_only_another_message_removes_nothing",
     "application::draft_copy::tests::test_a_search_that_found_only_another_message_removes_nothing",
     "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
+    "application::moves_waiting::tests::test_a_number_whose_message_carries_another_identifier_is_not_taken",
     "application::moves_waiting::tests::test_a_renumbered_crossing_leaves_a_message_whose_identifier_only_holds_its_own",
     "application::moves_waiting::tests::test_a_renumbered_delete_spares_a_message_whose_identifier_only_holds_its_own",
     "application::renumbered::tests::test_a_message_whose_identifier_only_holds_the_kept_one_is_put_back",
@@ -41375,7 +41387,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 29 },
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
 
@@ -41391,7 +41403,7 @@ red = [
     "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
-    { file = "src/application/moves_waiting.rs", tests = 71 },
+    { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
 
@@ -43353,4 +43365,99 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 29 },
+]
+
+# A chunk of the download taking the mail that arrived while it ran, with no
+# rules, so the check after it found the message held and ran nothing over it
+# (13.3-08, review item 9). The break answers the download's arm the way the
+# check's is answered.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,382 passed and 1
+# failed, this one. The three cases of the download's selection call it
+# directly and stay green, which is right: the break is in which selection
+# sync_folder asks.
+[[guard]]
+name = "a download's chunk leaves the mail above the newest held to the check"
+file = "src/application/mail_sync.rs"
+before = '''        WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere => {
+            uids_a_download_takes(on_server.uids(), &stored, limit)
+        }'''
+after = '''        WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere => WhatToFetch {
+            uids: uids_to_fetch(on_server.uids(), &stored, limit),
+            left_for_the_check: 0,
+        },'''
+red = [
+    "application::mail_sync::tests::test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 159 },
+]
+
+# The download counting the mail it left for the check as missing, so a folder
+# whose only gap was new mail got a chunk that brought nothing and was said to
+# have stopped coming down (13.3-08, review item 9). The break counts the
+# server's whole total.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,380 passed and 3
+# failed, these three. The case of a folder still missing older mail stays
+# green, which is right: it needs more headers either way.
+[[guard]]
+name = "a folder after a chunk does not count the mail left for the check as missing"
+file = "src/application/bringing_everything_down.rs"
+before = '''            .saturating_sub(done.left_for_the_check)
+'''
+after = ''
+red = [
+    "application::bringing_everything_down::tests::test_a_chunk_that_left_new_mail_for_the_check_is_not_a_server_that_stopped",
+    "application::bringing_everything_down::tests::test_a_folder_whose_only_gap_was_left_for_the_check_is_all_here",
+    "application::bringing_everything_down::tests::test_what_was_left_for_the_check_never_counts_a_folder_below_what_is_here",
+]
+tests_last_seen = [
+    { file = "src/application/bringing_everything_down.rs", tests = 33 },
+]
+
+# A filed or replayed message with no Message-ID searched for in its
+# destination, where the empty search matches every message carrying one
+# (13.3-08, review item 8). The break takes the blank guard out of
+# settle_a_moved_row.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,387 passed and 1
+# failed, this one, on its assertion that nothing was searched. The row
+# still goes under the break, because the confirming read then refuses a
+# blank identifier; the guard is what keeps the question from being asked.
+[[guard]]
+name = "a filed message with no Message-ID is never searched for in its destination"
+file = "src/application/moves_waiting.rs"
+before = '''    if carries_no_message_id(&message.message_id) {
+        cache.let_the_next_read_bring_it(message_row)?;
+        return Ok(WhereTheReplayLeftIt::TheNextReadBringsIt);
+    }
+'''
+after = ''
+red = [
+    "application::moves_waiting::tests::test_a_message_with_no_message_id_is_never_searched_for_and_is_brought_by_the_next_read",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 76 },
+]
+
+# The one number a settle's search found held without reading the message
+# there, so a message whose identifier merely contains this one could take
+# its place (13.3-08, review item 8). The break holds the number unread.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,387 passed and 1
+# failed, this one. The scripted conversations and Scripted in mail_sync.rs
+# stay green under it, which is right: each says the message at the number
+# is the one asked for.
+[[guard]]
+name = "a settled move holds a number only once the message there is read as the same"
+file = "src/application/moves_waiting.rs"
+before = '''            the_number_confirmed(&message.message_id, candidate, held.as_deref())'''
+after = '''            drop(held);
+            Some(candidate)'''
+red = [
+    "application::moves_waiting::tests::test_a_number_whose_message_carries_another_identifier_is_not_taken",
+]
+tests_last_seen = [
+    { file = "src/application/moves_waiting.rs", tests = 76 },
 ]

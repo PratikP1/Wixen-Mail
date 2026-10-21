@@ -65,6 +65,16 @@ pub struct FolderSync {
     /// not one; "1,000 of 40,000" says there is more and that asking again
     /// will get it.
     pub held: usize,
+    /// How many messages above the newest one held a chunk of the download
+    /// left for the next check; nought after a check.
+    ///
+    /// Mail that arrives while the download runs is the check's, because the
+    /// check runs the account's rules over it and says it arrived, and the
+    /// download does neither (item 9 of the review of 2026-10-20). The server
+    /// counts it in `total_on_server` all the same, so the download takes it
+    /// off before asking whether the folder is all here, through
+    /// `bringing_everything_down::how_much_a_chunk_left_here`.
+    pub left_for_the_check: usize,
     /// How many messages already held had their flags brought up to date.
     ///
     /// Read as well as counted, because it is the number that says whether
@@ -389,7 +399,10 @@ pub struct Moving {
 /// rules run over what a check fetches and the check counts it as arrived, so
 /// cutting them at `limit` left a week's mail beyond the newest 500 unsorted
 /// and uncounted, brought down later by a download that runs no rules (#12,
-/// 2026-10-15). `fetch_headers` splits a long set into pieces a server takes.
+/// 2026-10-15). The download no longer takes it at all: since 2026-10-21 its
+/// chunks leave everything above the newest held to the check, through
+/// [`uids_a_download_takes`]. `fetch_headers` splits a long set into pieces a
+/// server takes.
 ///
 /// `limit` bounds the rest: a first look at a folder holding nothing here,
 /// newest first because that is where a reader starts, and the older mail
@@ -401,13 +414,7 @@ fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     if limit == 0 {
         return Vec::new();
     }
-    let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
-    let newest_held = stored.iter().copied().max();
-    let (mut arrived, mut older): (Vec<u32>, Vec<u32>) = on_server
-        .iter()
-        .copied()
-        .filter(|uid| !held.contains(uid))
-        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest));
+    let (mut arrived, mut older) = missing_above_and_below_the_newest_held(on_server, stored);
 
     // Descending to take the newest, then back to ascending for the caller.
     older.sort_unstable_by(|a, b| b.cmp(a));
@@ -415,6 +422,57 @@ fn uids_to_fetch(on_server: &[u32], stored: &[u32], limit: usize) -> Vec<u32> {
     arrived.append(&mut older);
     arrived.sort_unstable();
     arrived
+}
+
+/// What a sync fetches headers for, and how many messages it left for the
+/// check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct WhatToFetch {
+    /// The numbers to fetch, ascending, which is how they go into a sequence
+    /// set.
+    uids: Vec<u32>,
+    /// How many messages above the newest one held were left for the check.
+    left_for_the_check: usize,
+}
+
+/// Which messages a chunk of the download of everything fetches headers for:
+/// the newest `limit` of those missing below the newest one held, and none
+/// above it.
+///
+/// A message above the newest one held arrived since this computer last
+/// looked, and it is the check's to bring: the check runs the account's rules
+/// over what it fetches and says it arrived, and the download does neither.
+/// Taking it here stored a blocked sender's mail in the Inbox unsorted and
+/// unsaid, and the check after it found the message held and fetched nothing
+/// (item 9 of the review of 2026-10-20). A folder holding nothing here has no
+/// newest held, so its first chunk takes the newest `limit`, as a first look
+/// does.
+fn uids_a_download_takes(on_server: &[u32], stored: &[u32], limit: usize) -> WhatToFetch {
+    let (arrived, mut older) = missing_above_and_below_the_newest_held(on_server, stored);
+    older.sort_unstable_by(|a, b| b.cmp(a));
+    older.truncate(limit);
+    older.sort_unstable();
+    WhatToFetch {
+        uids: older,
+        left_for_the_check: arrived.len(),
+    }
+}
+
+/// The messages the server holds and this computer does not, split at the
+/// newest one held: those above it, which arrived since this computer last
+/// looked, and those below it, older mail not brought down yet. With nothing
+/// held, all of it is older mail.
+fn missing_above_and_below_the_newest_held(
+    on_server: &[u32],
+    stored: &[u32],
+) -> (Vec<u32>, Vec<u32>) {
+    let held: std::collections::HashSet<u32> = stored.iter().copied().collect();
+    let newest_held = stored.iter().copied().max();
+    on_server
+        .iter()
+        .copied()
+        .filter(|uid| !held.contains(uid))
+        .partition(|uid| newest_held.is_some_and(|newest| *uid > newest))
 }
 
 /// What the server answered when it was asked which messages a folder holds,
@@ -1896,7 +1954,20 @@ pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
         cache.set_folder_last_fully_compared(folder_id, compared_at)?;
     }
 
-    let wanted = uids_to_fetch(on_server.uids(), &stored, limit);
+    // A check takes everything that arrived, so the rules run over all of it;
+    // a chunk of the download leaves that to the check and takes older mail.
+    let WhatToFetch {
+        uids: wanted,
+        left_for_the_check,
+    } = match wanted {
+        WhatThisSyncIsFor::WhateverHasChanged => WhatToFetch {
+            uids: uids_to_fetch(on_server.uids(), &stored, limit),
+            left_for_the_check: 0,
+        },
+        WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere => {
+            uids_a_download_takes(on_server.uids(), &stored, limit)
+        }
+    };
     let fetched = controller.fetch_headers(&folder.path, &wanted).await?;
     // One transaction for the batch rather than one per message. The sync has
     // its own connection on a worker thread, so writing them one at a time
@@ -2105,6 +2176,7 @@ pub(crate) async fn sync_folder<M: Mailbox + ReplaysAMove>(
             .stored_uids(folder_id)
             .map(|held| held.len())
             .unwrap_or(0),
+        left_for_the_check,
         renumbered,
         discarded_after_renumbering,
         filtered,
@@ -3228,6 +3300,11 @@ pub(crate) mod tests {
         /// a message under, or the words it refuses with. Nothing by default,
         /// which is a server that cannot say.
         finds_it_at: std::result::Result<Vec<u32>, String>,
+        /// What the folder a rule files into holds at a number, by the
+        /// identifier the message there carries, which a settled move reads
+        /// before it trusts a number `finds_it_at` gave (13.3-08). A number
+        /// with no entry is read from `headers`, the folder being checked.
+        holds_at: Vec<(u32, String)>,
     }
 
     /// How a scripted server answers a request for one message's whole text.
@@ -3262,6 +3339,7 @@ pub(crate) mod tests {
                 happened: std::rc::Rc::new(std::cell::RefCell::new(Vec::new())),
                 refuses_from_the_nth_fetch: None,
                 finds_it_at: Ok(Vec::new()),
+                holds_at: Vec::new(),
             }
         }
     }
@@ -3334,6 +3412,9 @@ pub(crate) mod tests {
         }
 
         async fn the_identifier_at(&self, _folder: &str, uid: u32) -> Result<Option<String>> {
+            if let Some((_, identifier)) = self.holds_at.iter().find(|(at, _)| *at == uid) {
+                return Ok(Some(identifier.clone()));
+            }
             Ok(crate::application::renumbered::the_identifier_among(
                 self.headers.clone(),
                 uid,
@@ -4375,6 +4456,8 @@ pub(crate) mod tests {
 
         // A server that can say where it put the message, since 2026-10-15:
         // one that cannot leaves no row here, for the next read to bring (#10).
+        // And the message there is this one, since 2026-10-21: a number is
+        // read before it is trusted (13.3-08).
         let server = Scripted {
             on_server: vec![7],
             headers: vec![ImapMessage {
@@ -4382,6 +4465,7 @@ pub(crate) mod tests {
                 ..message(7)
             }],
             finds_it_at: Ok(vec![3]),
+            holds_at: vec![(3, "note-1@example.com".to_string())],
             ..Default::default()
         };
         let folder = folder("INBOX", FolderType::Inbox, true);
@@ -4630,6 +4714,7 @@ pub(crate) mod tests {
             an_account_with_rules(&[("move_to_folder", Some("Invoices"))]);
         let server = Scripted {
             finds_it_at: Ok(vec![12]),
+            holds_at: vec![(12, "note-1@example.com".to_string())],
             ..a_server_holding_one_invoice()
         };
 
@@ -6867,6 +6952,105 @@ pub(crate) mod tests {
             message_id: Some(format!("message-{uid}@example.com")),
             ..message(uid)
         }
+    }
+
+    #[test]
+    fn test_a_download_chunk_leaves_mail_above_the_newest_held_for_the_check() {
+        // Item 9 of the review of 2026-10-20: the download took the mail that
+        // arrived while it ran, with no rules, and the check after it found
+        // the message held and fetched nothing, so a blocked sender's mail
+        // stayed in the Inbox and nothing said it had arrived.
+        assert_eq!(
+            uids_a_download_takes(&[1, 2, 3, 4, 5, 6, 7], &[3, 4, 5], 500),
+            WhatToFetch {
+                uids: vec![1, 2],
+                left_for_the_check: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_download_of_a_folder_holding_nothing_still_takes_the_newest() {
+        // Nothing held is no newest held, so nothing is new mail yet: the
+        // first chunk is a first look, newest first.
+        let on_server: Vec<u32> = (1..=10).collect();
+        assert_eq!(
+            uids_a_download_takes(&on_server, &[], 3),
+            WhatToFetch {
+                uids: vec![8, 9, 10],
+                left_for_the_check: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_download_of_a_folder_whose_older_mail_is_all_here_takes_nothing_new() {
+        assert_eq!(
+            uids_a_download_takes(&[1, 2, 3, 4, 5, 6, 7], &[1, 2, 3, 4, 5], 500),
+            WhatToFetch {
+                uids: Vec::new(),
+                left_for_the_check: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived() {
+        // End to end over the scripted server: a chunk of the download over a
+        // folder holding 3 to 5 of 1 to 7 brings 1 and 2 and leaves 6 and 7,
+        // and the check after it fetches those two, runs the rules over both
+        // and counts both as arrived.
+        let (_dir, cache, inbox, _invoices, folder, engine) =
+            an_account_with_rules(&[("mark_as_read", None)]);
+        let unread_invoice = |uid: u32| ImapMessage {
+            subject: format!("Invoice #{uid}"),
+            flags: Vec::new(),
+            ..message_numbered(uid)
+        };
+        let holding = |uids: std::ops::RangeInclusive<u32>| Scripted {
+            on_server: uids.clone().collect(),
+            headers: uids.clone().map(unread_invoice).collect(),
+            counts: crate::service::protocols::imap::FolderCounts {
+                total: uids.end() - uids.start() + 1,
+                unread: 0,
+            },
+            ..Scripted::default()
+        };
+        for_a_sync_that(
+            &holding(3..=5),
+            &cache,
+            inbox,
+            &folder,
+            500,
+            WhatThisSyncIsFor::WhateverHasChanged,
+        )
+        .expect("the first look runs");
+
+        let chunk = for_a_sync_that(
+            &holding(1..=7),
+            &cache,
+            inbox,
+            &folder,
+            500,
+            WhatThisSyncIsFor::MoreOfWhatIsAlreadyThere,
+        )
+        .expect("the chunk runs");
+        let mut held = cache.stored_uids(inbox).expect("what is held");
+        held.sort_unstable();
+        assert_eq!(
+            held,
+            [1, 2, 3, 4, 5],
+            "the chunk took the mail that arrived, which the check's rules never see"
+        );
+        assert_eq!(chunk.left_for_the_check, 2);
+
+        let check = sync_with_rules(&holding(1..=7), &cache, &folder, inbox, &engine);
+
+        assert_eq!(check.fetched, 2, "the check did not bring what arrived");
+        assert_eq!(
+            check.filtered.changed, 2,
+            "the rules did not run over what arrived"
+        );
     }
 
     #[test]

@@ -4066,6 +4066,15 @@ provider does.
     stands. Held by the timer reading in `tests/everything_comes_down_without_being_asked.rs`
     (28 tests), widened to the whole tick and red first, its planted companion and one new
     record. Hearing it is ledger 920. No `[D]` clause is added and the box stays ticked.
+  - 13.3-08 on 2026-10-21 (review item 9): a chunk of the download takes only the older mail
+    below the newest one held and leaves what arrived meanwhile to the next check, through
+    `mail_sync::uids_a_download_takes`; the runner counts the folder through
+    `bringing_everything_down::how_much_a_chunk_left_here`, which takes what was left off the
+    server's count, so a folder whose only gap is new mail is all here rather than said to have
+    stopped coming down. Held by four cases in `mail_sync`, four in `bringing_everything_down`,
+    red first, the runner reading in `tests/everything_comes_down_without_being_asked.rs`
+    widened, and two new records. Hearing it is ledger 925. No `[D]` clause is added and the
+    box stays ticked.
 
 - [x] **MAIL-02**: The message list holds every message the folder holds on this computer,
   and a message arriving adds a row and removes none.
@@ -4120,6 +4129,14 @@ provider does.
     for the next read to bring once. Held by two cases in `mail_sync` and a new record.
     Seeing it on the tester's account is ledger 850. No `[D]` clause is added and the box
     stays ticked.
+  - 13.3-08 on 2026-10-21 (review item 8) corrects that settling: a message with no
+    Message-ID is never searched for, since the empty search matches every message carrying
+    one, and the one number the destination answers is held only once the message there is
+    read and carries exactly that identifier, through `renumbered::the_number_confirmed`;
+    anything else lets the row go for the next read to bring once. A refused replay no longer
+    reads a blank identifier as already where the move wanted it. Held by five cases in
+    `moves_waiting`, three red first, and two new records. Seeing it on the tester's account
+    is ledger 850. No `[D]` clause is added and the box stays ticked.
 
 - [x] **MAIL-03**: Message text comes down with the mail unless a person has forbidden it,
   and stays unless a person has chosen a size.
@@ -4336,6 +4353,13 @@ provider does.
     tester's accounts is ledger 921; the window's copy after a refusal, tokens a refused
     browser sign-in leaves and the refusal's spoken prefix are ledger 922 to 924, Pratik's to
     schedule. No `[D]` clause is added and the box stays ticked.
+  - 13.3-08 on 2026-10-21 (review item 9) completes 13.2-08's line: mail that arrives while
+    the download of everything runs is no longer taken by the download, which ran no rules
+    over it, and is left to the next check, which takes everything above the newest one held
+    and runs the rules over all of it. Held by
+    `test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived` in `mail_sync`
+    over the scripted server, red first, and a new record. Hearing it is ledger 925. No `[D]`
+    clause is added and the box stays ticked.
 
 - [x] **MAIL-05**: How much is said while mail and the other modules are fetched is the
   person's choice, and by default only what arrived is said.
@@ -4434,6 +4458,12 @@ provider does.
     `presentation::accessibility`, and by `test_the_tick_and_every_command_speak_as_one_turn`
     in `tests/wired.rs` with its companion. Hearing it is ledger 886; handlers outside a turn
     are ledger 887. No `[D]` clause is added and the box stays ticked.
+  - 13.3-08 on 2026-10-21 (review item 9): what a check says arrived now counts the mail that
+    arrived while the download of everything ran, because the download leaves that mail to
+    the check, whose `FolderSync::fetched` counts it; before, the download had already stored
+    it and the check said nothing arrived. Held by
+    `test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived`, red first.
+    Hearing it is ledger 925. No `[D]` clause is added and the box stays ticked.
 
 ### Reading, and the list
 
@@ -8224,11 +8254,11 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-14 | Phase 10 | Complete, 10-01.1 at `d020aa60`; whether NVDA names the control after Ctrl+Tab is the tester's |
 | FOUND-15 | Phase 10 | Complete, 10-02.1 at `c0505f68`; whether All Inboxes opens in the chosen order after a visit to a folder, by ear, is the tester's |
 | FOUND-16 | Phase 10 | Complete, 10-02.2 at `44bff634`; one installer built from `main` reads `1.0.0-alpha.1+114.g44bff634` with file version `1.0.0.14114`; whether it installs over the alpha.1 build as an upgrade is settled by a machine, ledger 517 |
-| MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, the open folder read again at most every ten seconds during the download and a text refusal ending one account, ledger 851; phase 13.3: 13.3-06 done 2026-10-21, the re-read's rows applied in the tick that reads them, so a delete or a mark made meanwhile stands (ledger 920) |
-| MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850 |
+| MAIL-01 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-05 at `b477e8c9`; whether Gmail tolerates the download is the tester's account's, ledger 11, 72 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, the open folder read again at most every ten seconds during the download and a text refusal ending one account, ledger 851; phase 13.3: 13.3-06 done 2026-10-21, the re-read's rows applied in the tick that reads them, so a delete or a mark made meanwhile stands (ledger 920); 13.3-08 done 2026-10-21, a chunk of the download leaves mail arriving meanwhile to the check and a folder whose only gap is that mail is all here, not stopped (ledger 925, 850 amended) |
+| MAIL-02 | Phase 10 | Complete, 10-02 at `48536d31`; whether his folder reads as one list is the tester's, ledger 515; phase 13.2, planned 2026-10-14: 13.2-08, adding no `[D]` clause; 13.2-08 done 2026-10-15, a message a rule files is one row in its folder, ledger 850; phase 13.3: 13.3-08 done 2026-10-21, a filed or replayed message with no Message-ID is never searched for and the one number found is held only once the message there carries its identifier, ledger 850 amended |
 | MAIL-03 | Phase 10 | Complete, 10-01 at `d8e887d6`, 10-03 at `c4203632` and 10-05 at `b477e8c9`; whether Gmail tolerates the text in chunks is the tester's account's, ledger 11, 519 and 523; phase 13.2, planned 2026-10-14: 13.2-09, adding no `[D]` clause; 13.2-09 done 2026-10-15, each message's text asked for at most once a run, ledger 851 |
-| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, and 2026-10-15: 13.2-31.5, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864; 13.2-31.5 done 2026-10-19, a refused address is shown under the address box and goes when the address changes, ledger 848 fixed and 903 opened; phase 13.3: 13.3-07 done 2026-10-21, an account removed and added back on its address in one sitting saves, the removals done before the saves and no refusal stopping the rest, the saving of accounts still under no requirement (ledger 921 to 924) |
-| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852; 13.2-22 done 2026-10-17, lines said at the same moment are joined into one line, most urgent first, and the status bar shows them in the same order, ledger 886 and 887 |
+| MAIL-04 | Phase 10 | Complete, 10-01 at `d8e887d6` and 10-06 at `2da50b6b`; whether Gmail drops the watch and the restart carries mail over hours is the tester's account's, ledger 64, 65, 67, 525 and 526; phase 13.2, planned 2026-10-14: 13.2-06, 13.2-08, 13.2-10 and 13.2-14, and 2026-10-15: 13.2-31.5, adding no `[D]` clause; 13.2-06 done 2026-10-15, an account removed or switched off in the Account Manager stops being watched at once, the saving of accounts under no requirement (ledger 846, 847, 848); 13.2-08 done 2026-10-15, a check takes every message that arrived and the rules run over all of it, ledger 850; 13.2-10 done 2026-10-15, one check of an account runs at a time and the flag pass reads the account once, ledger 852; 13.2-14 done 2026-10-16, a POP message nobody can read is kept as plain text and the mail after it arrives, ledger 863 and 864; 13.2-31.5 done 2026-10-19, a refused address is shown under the address box and goes when the address changes, ledger 848 fixed and 903 opened; phase 13.3: 13.3-07 done 2026-10-21, an account removed and added back on its address in one sitting saves, the removals done before the saves and no refusal stopping the rest, the saving of accounts still under no requirement (ledger 921 to 924); 13.3-08 done 2026-10-21, mail arriving while the download runs is left to the check, which runs the rules over it (ledger 925) |
+| MAIL-05 | Phase 10 | Complete, 10-04 at `19a10706`; what each level sounds like is a listening pass and the tester's, ledger 521; phase 13.2, planned 2026-10-14: 13.2-08, 13.2-09, 13.2-10 and 13.2-22, adding no `[D]` clause; 13.2-08 done 2026-10-15, what a check says arrived counts every message of a large arrival, ledger 850; 13.2-09 done 2026-10-15, a chunk of the download shows the folder's count without speaking it, ledger 851; 13.2-10 done 2026-10-15, new mail is said once a check because a second check of one account waits for the first, ledger 852; 13.2-22 done 2026-10-17, lines said at the same moment are joined into one line, most urgent first, and the status bar shows them in the same order, ledger 886 and 887; phase 13.3: 13.3-08 done 2026-10-21, what a check says arrived counts the mail that arrived while the download ran, ledger 925 |
 | FOUND-17 | Phase 11 | Complete, 11-01 at `316ea755`; whether the runner keeps en-AU is the next push of `main`, Pratik's, ledger 530 |
 | FOUND-18 | Phase 11 | Complete, 11-02 at `1c0e9b0b`; whether the sign-in line is heard whole and which tab the corrected case's first Right reaches are the next push of `main`, Pratik's, ledger 531 |
 | FOUND-19 | Phase 11 | Complete, 11-06.3 at `1a973b46`; the harness's unset at `d5c3483e`, the two cases red at `cdf04ff8`, the suite run under this repository's absolute git dir and an absolute index copy with nothing moved; no commit made from a linked worktree |
