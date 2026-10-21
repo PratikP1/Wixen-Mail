@@ -2393,6 +2393,7 @@ mod tests {
 #[cfg(test)]
 mod who_consented {
     use super::{AuthManager, OAuthTokenSet, signed_in_as_somebody_else};
+    use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
     use crate::common::Error;
     use crate::common::answering::answering;
     use crate::service::google_api::GoogleApiClient;
@@ -2439,10 +2440,16 @@ mod who_consented {
             let google = google_saying_the_sign_in_is("someone@gmail.com").await;
 
             match asked_then_kept(&manager, "me@gmail.com", &google).await {
-                Err(Error::Authentication(said)) => assert_eq!(
-                    said,
-                    signed_in_as_somebody_else("me@gmail.com", "someone@gmail.com")
-                ),
+                Err(Error::Authentication(said)) => {
+                    assert_eq!(
+                        said,
+                        signed_in_as_somebody_else("me@gmail.com", "someone@gmail.com")
+                    );
+                    // The comparison is with the Username mail signs in with,
+                    // which need not be the address box (review item 19).
+                    assert!(!said.contains("this account's address"), "{said}");
+                    assert_eq!(reads_as_a_persons_sentence(&said, Voice::Answer), Ok(()));
+                }
                 other => panic!("{provider}: another person's sign-in was not refused: {other:?}"),
             }
             assert!(

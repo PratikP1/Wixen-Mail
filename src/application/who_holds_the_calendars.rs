@@ -1807,6 +1807,32 @@ mod tests {
     }
 
     #[test]
+    fn test_both_google_sign_ins_name_the_username_mail_signs_in_with() {
+        // The address box holds a send-as address on another domain, which
+        // Google cannot offer in the browser; mail signs in with the Username
+        // (review item 19).
+        let mut home = a_gmail_account(false);
+        home.email = "ada@lovelace.dev".into();
+        home.username = "ada.lovelace@gmail.com".into();
+        assert_eq!(
+            what_the_separate_sign_in_does(Some(&home), A_KEY),
+            WhatTheSeparateSignInDoes::SignsIn {
+                key: "a key",
+                address: "ada.lovelace@gmail.com".into()
+            }
+        );
+
+        home.use_oauth = true;
+        let said = what_sign_in_again_says_as_it_begins(&home);
+        assert_eq!(
+            said,
+            "Signing in to Home. In the browser, choose ada.lovelace@gmail.com, and finish \
+             there."
+        );
+        assert!(!said.contains("ada@lovelace.dev"), "{said}");
+    }
+
+    #[test]
     fn test_sign_in_again_on_a_password_gmail_account_names_the_separate_sign_in() {
         let gmail = what_sign_in_again_says_for_a_password_account(&a_gmail_account(false));
         assert!(gmail.contains(THE_BUTTON), "{gmail}");
@@ -1898,5 +1924,42 @@ mod tests {
         )
         .expect_err("a sign-in left behind passed");
         assert!(why.contains("left behind"), "{why}");
+    }
+
+    /// Both browser sign-ins the Account Manager starts are asked for the
+    /// account mail signs in as, the Username, and not the address box
+    /// (review item 19).
+    fn both_sign_ins_ask_for_the_account_mail_signs_in_as(manager: &str) -> Reading<()> {
+        for signature in ["fn sign_in_for_calendars(", "fn run_oauth_flow("] {
+            let body = the_function(manager, signature)?;
+            if !body.contains(".authorize(&account.signs_in_as())") {
+                return Err(format!(
+                    "{signature} does not ask for the account mail signs in as"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_both_sign_ins_ask_for_the_account_mail_signs_in_as() {
+        both_sign_ins_ask_for_the_account_mail_signs_in_as(&the_account_manager())
+            .unwrap_or_else(|why| panic!("{why}"));
+    }
+
+    #[test]
+    fn test_the_reading_of_the_sign_ins_sees_one_asking_for_the_address_box() {
+        let manager = the_account_manager();
+        for signature in ["fn sign_in_for_calendars(", "fn run_oauth_flow("] {
+            let asks_the_address_box = planted_in(
+                &manager,
+                signature,
+                ".authorize(&account.signs_in_as())",
+                ".authorize(&account.email)",
+            );
+            let why = both_sign_ins_ask_for_the_account_mail_signs_in_as(&asks_the_address_box)
+                .expect_err("a sign-in asking for the address box passed");
+            assert!(why.contains(signature), "{why}");
+        }
     }
 }
