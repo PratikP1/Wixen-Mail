@@ -406,7 +406,7 @@ fn a_zip_looked_over(at: &Path, allowed: HowMuchToAllow) -> Result<MailboxArchiv
             Err(why) => {
                 found.one_could_not_be_read(
                     &format!("{named} in {}: {why}", at.display()),
-                    (&why).into(),
+                    KindOfArchive::AZip.why_a_read_failed(why.kind()),
                 );
             }
         }
@@ -517,8 +517,22 @@ pub enum KindOfArchive {
 
 impl KindOfArchive {
     /// Why a read of one of its entries failed, from the kind of the failure.
+    ///
+    /// A zip packs most entries, this program's own export included, and a
+    /// packed entry's unpacking fails on broken packed bytes with
+    /// [`std::io::ErrorKind::InvalidInput`] rather than the archive's own
+    /// check failing with [`std::io::ErrorKind::InvalidData`]. Both mean the
+    /// zip's contents do not match what it records, so in a zip both are that
+    /// reason. A folder records nothing about its files and unpacks nothing,
+    /// so a file in one that fails with `InvalidInput`, which Windows answers
+    /// for a parameter it refuses, keeps the rule every other read has.
     pub fn why_a_read_failed(self, kind: std::io::ErrorKind) -> WhyAnEntryWasNotRead {
-        kind.into()
+        match (self, kind) {
+            (Self::AZip, std::io::ErrorKind::InvalidInput) => {
+                WhyAnEntryWasNotRead::ItDoesNotMatchWhatTheArchiveRecords
+            }
+            _ => kind.into(),
+        }
     }
 }
 
