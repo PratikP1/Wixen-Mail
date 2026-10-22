@@ -2499,3 +2499,235 @@ Filename: "{{app}}\wixen-mail.exe"; Parameters: "--erase-all-data"
         "only the message for a program already gone, which names nobody: {said:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Who the Windows Search guide says runs remove-scope
+// ---------------------------------------------------------------------------
+//
+// The installer ships `search-handler/README.md` as `{app}\docs\windows-search.md`.
+// 13.2-27 moved `remove-scope` from `ExecAsOriginalUser` to `Exec`, which runs
+// as the uninstaller, and the guide went on saying it ran as the person
+// uninstalling, because nothing read the guide (review item 29, 2026-10-20).
+// These readings hold the guide's sentence to the call the script makes.
+
+/// The Windows Search guide, read from the repository root.
+fn the_search_guide() -> String {
+    std::fs::read_to_string("search-handler/README.md").expect("the Windows Search guide")
+}
+
+/// Whose account an uninstall step runs as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RunsAs {
+    /// The account the uninstaller runs as, which is what `Exec` uses.
+    TheUninstaller,
+    /// The person who started it, which is what `ExecAsOriginalUser` uses.
+    ThePersonWhoStartedIt,
+}
+
+/// What the guide says when it names the account the uninstaller runs as.
+const THE_GUIDE_NAMING_THE_UNINSTALLER: &str = "the account the uninstaller runs as";
+
+/// What the guide said while the call was `ExecAsOriginalUser`.
+const THE_GUIDE_NAMING_THE_PERSON: &str = "as the person uninstalling";
+
+/// The name of the call whose brackets hold byte `at` of `blank`, Pascal with
+/// its strings blanked, or `None` when nothing encloses it.
+fn the_call_around(blank: &str, at: usize) -> Option<&str> {
+    let mut depth = 0;
+    let open = blank[..at].char_indices().rev().find_map(|(offset, c)| {
+        depth += match c {
+            ')' => 1,
+            '(' => -1,
+            _ => 0,
+        };
+        (depth < 0).then_some(offset)
+    })?;
+    let before = blank[..open].trim_end();
+    words_at(before)
+        .last()
+        .filter(|(start, word)| start + word.len() == before.len())
+        .map(|(_, word)| *word)
+}
+
+/// Which account the script runs `remove-scope` as at uninstall, read from the
+/// call that carries it inside `CurUninstallStepChanged`, comments ignored.
+fn who_the_script_runs_remove_scope_as(script: &str) -> Result<RunsAs, String> {
+    let code = uncommented(&the_code(script));
+    let step = the_routines(&code)
+        .into_iter()
+        .find(|routine| routine.name.eq_ignore_ascii_case("CurUninstallStepChanged"))
+        .ok_or("the script has no CurUninstallStepChanged to run remove-scope from")?;
+    let at = step
+        .text
+        .find("'remove-scope'")
+        .ok_or("CurUninstallStepChanged never hands 'remove-scope' to anything")?;
+    match the_call_around(&unquoted(&step.text), at) {
+        Some(call) if call.eq_ignore_ascii_case("Exec") => Ok(RunsAs::TheUninstaller),
+        Some(call) if call.eq_ignore_ascii_case("ExecAsOriginalUser") => {
+            Ok(RunsAs::ThePersonWhoStartedIt)
+        }
+        other => Err(format!(
+            "remove-scope is handed to {other:?}, which this reading cannot place"
+        )),
+    }
+}
+
+/// Some text's paragraphs, each with every run of spaces and line breaks made
+/// one space.
+fn the_paragraphs(text: &str) -> Vec<String> {
+    text.lines()
+        .collect::<Vec<_>>()
+        .split(|line| line.trim().is_empty())
+        .filter(|lines| !lines.is_empty())
+        .map(|lines| {
+            lines
+                .join(" ")
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect()
+}
+
+/// Which account the guide's paragraph about uninstalling says runs
+/// `remove-scope`, or why it cannot tell.
+///
+/// The paragraph is the one opening "Uninstalling" that names `remove-scope`.
+/// The table and the paragraph about the halves name it too, and say nothing
+/// about what an uninstall does.
+fn who_the_guide_says_runs_remove_scope(guide: &str) -> Result<RunsAs, String> {
+    let about_uninstalling: Vec<String> = the_paragraphs(guide)
+        .into_iter()
+        .filter(|paragraph| {
+            paragraph.starts_with("Uninstalling") && paragraph.contains("`remove-scope`")
+        })
+        .map(|paragraph| paragraph.to_lowercase())
+        .collect();
+    if about_uninstalling.is_empty() {
+        return Err(
+            "the guide has no paragraph opening \"Uninstalling\" that names \
+                    `remove-scope`, so it cannot tell who runs it"
+                .to_string(),
+        );
+    }
+    let says = |phrase: &str| about_uninstalling.iter().any(|p| p.contains(phrase));
+    match (
+        says(THE_GUIDE_NAMING_THE_UNINSTALLER),
+        says(THE_GUIDE_NAMING_THE_PERSON),
+    ) {
+        (true, false) => Ok(RunsAs::TheUninstaller),
+        (false, true) => Ok(RunsAs::ThePersonWhoStartedIt),
+        (true, true) => Err(format!(
+            "the guide names both accounts, so it cannot tell who runs remove-scope: \
+             {about_uninstalling:?}"
+        )),
+        (false, false) => Err(format!(
+            "the guide names neither account, so it cannot tell who runs remove-scope: \
+             {about_uninstalling:?}"
+        )),
+    }
+}
+
+/// The account `remove-scope` runs as when the guide and the script agree on
+/// it, or what each says when they do not.
+fn the_guide_and_the_script_agree(script: &str, guide: &str) -> Result<RunsAs, String> {
+    let runs = who_the_script_runs_remove_scope_as(script)?;
+    let says = who_the_guide_says_runs_remove_scope(guide)?;
+    if runs == says {
+        Ok(runs)
+    } else {
+        Err(format!(
+            "the guide says remove-scope runs as {says:?}, and the script runs it as {runs:?}"
+        ))
+    }
+}
+
+#[test]
+fn test_the_search_guide_says_who_runs_remove_scope_as_the_script_does() {
+    let agreed = the_guide_and_the_script_agree(&the_installer_script(), &the_search_guide());
+    assert!(
+        agreed.is_ok(),
+        "the Windows Search guide shipped as windows-search.md tells a person whose \
+         rule an uninstall removes, so it has to say what the script does: {}",
+        agreed.unwrap_err()
+    );
+}
+
+#[test]
+fn test_the_reading_can_tell_a_guide_that_names_the_wrong_account() {
+    let a_script = |call: &str| {
+        format!(
+            r#"
+[Code]
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Outcome: Integer;
+begin
+  {{ Not ExecAsOriginalUser, and not Exec either, said in a comment. }}
+  if not ({call}(Tool, 'remove-scope', '', SW_HIDE,
+               ewWaitUntilTerminated, Outcome) and (Outcome = 0)) then
+    Leftovers := 'Exec(ExecAsOriginalUser)';
+  Exec(Tool, 'unregister-classes', '', SW_HIDE, ewWaitUntilTerminated, Outcome);
+end;
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{{localappdata}}\wixen-mail"
+"#
+        )
+    };
+    let a_guide = |account: &str| {
+        format!(
+            "## The installer checkbox\n\
+             \n\
+             Uninstalling runs `remove-scope` {account}, and then\n\
+             `unregister-classes`.\n\
+             \n\
+             `uninstall` is `remove-scope` then `unregister-classes`, run as the\n\
+             person uninstalling or as the account the uninstaller runs as.\n"
+        )
+    };
+    let by_the_uninstaller = a_guide("as the account the uninstaller runs as");
+    let by_the_person = a_guide("as the person uninstalling");
+
+    assert_eq!(
+        the_guide_and_the_script_agree(&a_script("Exec"), &by_the_uninstaller),
+        Ok(RunsAs::TheUninstaller),
+        "Exec beside a guide naming the uninstaller's account, across a line break"
+    );
+    assert_eq!(
+        the_guide_and_the_script_agree(&a_script("execasoriginaluser"), &by_the_person),
+        Ok(RunsAs::ThePersonWhoStartedIt),
+        "ExecAsOriginalUser, in any case, beside a guide naming the person"
+    );
+    for (call, guide) in [
+        ("ExecAsOriginalUser", &by_the_uninstaller),
+        ("Exec", &by_the_person),
+    ] {
+        let agreed = the_guide_and_the_script_agree(&a_script(call), guide);
+        assert!(
+            agreed
+                .as_ref()
+                .is_err_and(|why| why.contains("the guide says")),
+            "{call} beside a guide naming the other account: {agreed:?}"
+        );
+    }
+
+    let agreed = the_guide_and_the_script_agree(
+        &a_script("Exec"),
+        &a_guide("whether or not the box was ever ticked"),
+    );
+    assert!(
+        agreed
+            .as_ref()
+            .is_err_and(|why| why.contains("names neither")),
+        "a guide naming neither account is a reading that cannot tell, not a pass: \
+         {agreed:?}"
+    );
+    let agreed = the_guide_and_the_script_agree(&a_script("ShellExec"), &by_the_uninstaller);
+    assert!(
+        agreed
+            .as_ref()
+            .is_err_and(|why| why.contains("cannot place")),
+        "a call this reading does not know is not taken for either account: {agreed:?}"
+    );
+}
