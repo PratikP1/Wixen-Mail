@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 895 records have arrived since and have not been through it.
+# 898 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -639,7 +639,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
@@ -783,7 +783,7 @@ tests_last_seen = [
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -2394,7 +2394,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 [[guard]]
@@ -8148,11 +8148,14 @@ red = [
     "application::every_google_calendar::tests::test_a_whole_read_of_one_calendar_takes_nothing_from_another",
     "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+    # Added 2026-10-22 by 13.3-17's re-measure: its Google reads carry a whole
+    # meeting the break sends down the path for days of a series.
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 [[guard]]
@@ -39738,9 +39741,12 @@ red = [
     "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
     "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+    # Added 2026-10-22 by 13.3-17's re-measure: its team calendar, which the
+    # break never files, is the one the meeting is deleted from.
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # A calendar Google's list named is filed under `google:`, the account and
@@ -39765,9 +39771,12 @@ red = [
     "application::every_google_calendar::tests::test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole",
     "application::every_google_calendar::tests::test_more_than_one_calendar_read_is_counted_in_what_is_said",
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+    # Added 2026-10-22 by 13.3-17's re-measure: its team calendar, filed
+    # where no read reaches it, is the one the meeting is deleted from.
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # The main calendar's row is the provider's row with a plain id, so an event
@@ -39797,7 +39806,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # A calendar that shows only when its owner is free or busy is passed over and
@@ -39811,7 +39820,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # Whether a listed calendar is shown follows Google only the first time; no
@@ -39833,7 +39842,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/data/message_cache/calendars.rs", tests = 10 },
 ]
 
@@ -39847,10 +39856,13 @@ before = '''        let existing = cache.event_in(its_rows, &event.id)?;'''
 after = '''        let existing = cache.get_event_by_provider_id(account_id, &event.id)?;'''
 red = [
     "application::every_google_calendar::tests::test_one_meeting_in_two_calendars_is_two_rows_and_a_cancellation_takes_only_its_own",
+    # Added 2026-10-22 by 13.3-17's re-measure: read across the account, the
+    # two calendars' copies are one row, so the deletion takes both.
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # A meeting Google cancels in one calendar goes from that calendar only. The
@@ -39865,7 +39877,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # A calendar Google stopped listing is put away, and a change made in it and
@@ -39880,7 +39892,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # Google's calendar list is the whole list or an error, because a calendar
@@ -39898,7 +39910,7 @@ red = [
     "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -39924,7 +39936,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # Each listed Google calendar is read from its own marker, kept on its row. The
@@ -39943,7 +39955,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # More than one calendar read is counted in what the calendar sync says, and
@@ -39958,7 +39970,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # The calendars read are folded into the running total with every other count.
@@ -39974,7 +39986,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
@@ -42240,7 +42252,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 14 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
 ]
 
 # A whole Google read takes off the rows of its calendar inside the window it
@@ -44101,22 +44113,96 @@ tests_last_seen = [
 # account, so a meeting or one day of it deleted in one calendar hid, froze or
 # called off the same meeting in another, a provider giving one meeting the
 # same name in every calendar it sits in (13.3-17, review item 22, ledger 825).
-# The notes are narrowed to the calendar being read and to notes naming none.
-# The break keeps every note, the account-wide set again.
+# The notes are narrowed to the calendar being read, to calendars made here and
+# to notes naming none. The break keeps every note, the account-wide set again.
 #
-# Measured by hand on 2026-10-22: the whole library at 9,433 passed and 3
-# failed, these three.
+# Measured by hand on 2026-10-22 for the calendar-server and feed reads: 9,433
+# passed and 3 failed. Rewritten the same day by 13.3-17's second task, when
+# the Google and Outlook reads moved onto the narrowing and the condition
+# gained the calendars made here: 9,434 passed and 4 failed, these four.
 [[guard]]
 name = "a calendar read is masked only by its own calendar's deletion notes"
 file = "src/application/deletions.rs"
-before = '''                .is_none_or(|noted_in| noted_in == calendar_id)'''
-after = '''                .is_none_or(|_| true)'''
+before = '''            Some(noted_in) => noted_in == calendar_id || made_here.contains(noted_in),'''
+after = '''            Some(_) => true,'''
 red = [
     "application::caldav_sync::tests::test_a_moved_day_deleted_in_another_calendar_is_still_written_by_a_feed_refresh",
     "application::caldav_sync::tests::test_a_moved_day_deleted_in_one_server_calendar_is_still_written_by_another",
     "application::deletions::tests::test_a_note_in_another_calendar_is_not_held_for_this_one",
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
-    { file = "src/application/deletions.rs", tests = 8 },
+    { file = "src/application/deletions.rs", tests = 9 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
+]
+
+# An event a provider holds, moved into a calendar made on this computer and
+# deleted there, leaves a note naming a calendar no read fills while the
+# provider's copy is still in the calendar it left. Narrowed to the calendar
+# being read alone, that note masked nothing and the read wrote the event back
+# (13.3-17, found when the Google read moved onto the narrowing). The break
+# takes the calendars made here out of the condition.
+#
+# Measured by hand on 2026-10-22: the whole library at 9,436 passed and 2
+# failed, these two.
+[[guard]]
+name = "a note in a calendar made here masks every calendar read"
+file = "src/application/deletions.rs"
+before = '''            Some(noted_in) => noted_in == calendar_id || made_here.contains(noted_in),'''
+after = '''            Some(noted_in) => noted_in == calendar_id,'''
+red = [
+    "application::calendar::tests::test_a_deletion_in_a_calendar_made_here_holds_across_three_syncs",
+    "application::deletions::tests::test_a_note_in_a_calendar_made_here_is_held_for_every_calendar",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 215 },
+    { file = "src/application/deletions.rs", tests = 9 },
+]
+
+# Each Google calendar's read asks the notes of the calendar it fills, the main
+# one and every listed one through one function (13.3-17, ledger 825). The
+# break asks no calendar's notes, so only notes naming none or a calendar made
+# here mask the read.
+#
+# Measured by hand on 2026-10-22: the whole library at 9,432 passed and 6
+# failed, these six.
+[[guard]]
+name = "a Google calendar's read asks the notes of the calendar it fills"
+file = "src/application/calendar.rs"
+before = '''    // other's copy to be brought up to date.
+    let deleted_here = events_deleted_in(cache, account_id, &filed_under.id, result);'''
+after = '''    // other's copy to be brought up to date.
+    let deleted_here = events_deleted_in(cache, account_id, "", result);'''
+red = [
+    "application::calendar::tests::test_a_day_of_a_series_this_computer_deleted_is_not_written_back",
+    "application::calendar::tests::test_a_deletion_in_a_read_only_calendar_of_this_account_holds_across_three_syncs",
+    "application::calendar::tests::test_a_whole_google_read_takes_off_what_it_did_not_name_inside_its_window",
+    "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_a_later_sync",
+    "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_the_read_that_follows",
+    "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 215 },
+    { file = "src/application/every_google_calendar.rs", tests = 15 },
+]
+
+# The Outlook read asks the notes of the one calendar it fills, once that
+# calendar is known (13.3-17, ledger 825). The break asks no calendar's notes.
+#
+# Measured by hand on 2026-10-22: the whole library at 9,434 passed and 4
+# failed, these four.
+[[guard]]
+name = "the Outlook read asks the notes of the calendar it fills"
+file = "src/application/calendar.rs"
+before = '''    let deleted_here = events_deleted_in(cache, account_id, &filed_under.id, &mut result);'''
+after = '''    let deleted_here = events_deleted_in(cache, account_id, "", &mut result);'''
+red = [
+    "application::calendar::tests::test_a_day_of_an_outlook_series_this_computer_deleted_is_not_written_back",
+    "application::calendar::tests::test_a_round_that_read_a_window_takes_off_what_outlook_no_longer_holds",
+    "application::calendar::tests::test_an_event_outlook_took_the_deletion_for_stays_gone_on_a_later_sync",
+    "application::calendar::tests::test_an_event_this_computer_deleted_is_not_written_back_by_outlook",
+]
+tests_last_seen = [
+    { file = "src/application/calendar.rs", tests = 215 },
 ]

@@ -117,26 +117,30 @@ impl FromIterator<String> for DeletedHere {
 }
 
 /// What a read of one calendar is masked by: the notes written in that
-/// calendar, and the notes that name no calendar at all.
+/// calendar, in a calendar made on this computer, or in none.
 ///
 /// Not the account's every note. A provider gives one meeting the same name
 /// in every calendar it sits in, so a meeting deleted in one calendar would
 /// otherwise hide, freeze or call off its copy in another, and a feed's note
 /// is never let go of, so for good.
 ///
-/// A note naming no calendar was written before notes carried theirs. Which
-/// calendar it came from is not known, so it masks every read rather than
-/// none: a deleted thing put back is the failure this module exists to stop.
+/// The other two mask every read, because the calendar the provider's copy
+/// sits in is not the one the note names. A calendar in `made_here` is one no
+/// read fills: an event a provider holds was moved into it, and the
+/// provider's copy is still in the calendar it left. A note naming no
+/// calendar was written before notes carried theirs, so where it came from is
+/// not known. Either way a deleted thing put back is the failure this module
+/// exists to stop.
 pub fn deleted_in_one_calendar(
     notes: impl IntoIterator<Item = DeletedCalendarEvent>,
     calendar_id: &str,
+    made_here: &HashSet<String>,
 ) -> DeletedHere {
     notes
         .into_iter()
-        .filter(|note| {
-            note.calendar_id
-                .as_deref()
-                .is_none_or(|noted_in| noted_in == calendar_id)
+        .filter(|note| match note.calendar_id.as_deref() {
+            None => true,
+            Some(noted_in) => noted_in == calendar_id || made_here.contains(noted_in),
         })
         .filter_map(|note| note.provider_event_id)
         .collect()
@@ -205,10 +209,14 @@ mod tests {
         }
     }
 
+    /// What a read of `calendar_id` is masked by, with no calendar made here.
+    fn a_read_of(calendar_id: &str, note: DeletedCalendarEvent) -> DeletedHere {
+        deleted_in_one_calendar([note], calendar_id, &HashSet::new())
+    }
+
     #[test]
     fn test_a_note_in_the_calendar_being_read_is_held_for_it() {
-        let deleted =
-            deleted_in_one_calendar([a_note(Some("assembly"), Some("cal-feed"))], "cal-feed");
+        let deleted = a_read_of("cal-feed", a_note(Some("assembly"), Some("cal-feed")));
 
         assert!(deleted.holds("assembly"));
     }
@@ -217,8 +225,7 @@ mod tests {
     fn test_a_note_in_another_calendar_is_not_held_for_this_one() {
         // A provider gives one meeting the same name in every calendar it sits
         // in, so a deletion in one calendar names the copy in another as well.
-        let deleted =
-            deleted_in_one_calendar([a_note(Some("assembly"), Some("cal-my-own"))], "cal-feed");
+        let deleted = a_read_of("cal-feed", a_note(Some("assembly"), Some("cal-my-own")));
 
         assert!(
             !deleted.holds("assembly"),
@@ -230,15 +237,34 @@ mod tests {
     fn test_a_note_naming_no_calendar_is_held_for_every_calendar() {
         // Written before notes carried their calendar; which one it was is
         // not known, so it goes on masking every read rather than none.
-        let notes = || [a_note(Some("assembly"), None)];
+        let note = || a_note(Some("assembly"), None);
 
-        assert!(deleted_in_one_calendar(notes(), "cal-feed").holds("assembly"));
-        assert!(deleted_in_one_calendar(notes(), "cal-my-own").holds("assembly"));
+        assert!(a_read_of("cal-feed", note()).holds("assembly"));
+        assert!(a_read_of("cal-my-own", note()).holds("assembly"));
+    }
+
+    #[test]
+    fn test_a_note_in_a_calendar_made_here_is_held_for_every_calendar() {
+        // An event a provider holds, moved into a calendar made on this
+        // computer and deleted there. No read fills that calendar, and the
+        // provider's copy is still in the calendar the event left, so the note
+        // has to go on masking whichever read names it.
+        let made_here = HashSet::from(["cal-made-here".to_string()]);
+        let deleted = deleted_in_one_calendar(
+            [a_note(Some("evt1"), Some("cal-made-here"))],
+            "cal-google",
+            &made_here,
+        );
+
+        assert!(
+            deleted.holds("evt1"),
+            "an event deleted out of a calendar made here was left for a read to write back"
+        );
     }
 
     #[test]
     fn test_a_note_with_no_providers_name_masks_nothing() {
-        let deleted = deleted_in_one_calendar([a_note(None, Some("cal-feed"))], "cal-feed");
+        let deleted = a_read_of("cal-feed", a_note(None, Some("cal-feed")));
 
         assert!(!deleted.holds(""));
         assert_eq!(deleted.0.len(), 0, "{deleted:?}");
