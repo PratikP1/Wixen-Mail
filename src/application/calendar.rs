@@ -552,6 +552,36 @@ pub(crate) fn events_deleted_here(
     }
 }
 
+/// Every event this computer deleted in one calendar, or in none, under the
+/// names the providers know.
+///
+/// What a read of that calendar asks before it writes anything down. Every
+/// note the calendar holds, taken or still owed, for the reason
+/// `application::deletions` gives. Narrowed to the calendar because a provider
+/// gives one meeting the same name in every calendar it sits in, as the
+/// store's `event_in` says: a deletion in one calendar is not a deletion of
+/// the copy in another.
+pub(crate) fn events_deleted_in(
+    cache: &MessageCache,
+    account_id: &str,
+    calendar_id: &str,
+    result: &mut CalendarSyncResult,
+) -> crate::application::deletions::DeletedHere {
+    match cache.deleted_calendar_events(account_id) {
+        Ok(notes) => crate::application::deletions::deleted_in_one_calendar(notes, calendar_id),
+        Err(e) => {
+            // Said rather than swallowed. Read as "nothing was deleted", a
+            // database that will not answer turns into a sync that writes back
+            // down everything somebody deleted.
+            result.errors.push(format!(
+                "What was deleted here could not be read, so this sync may put \
+                 back events you deleted: {e}"
+            ));
+            crate::application::deletions::DeletedHere::default()
+        }
+    }
+}
+
 /// Let go of the deletions that have been remembered long enough.
 ///
 /// At the start of a sync, so that the push and the read that follow both work

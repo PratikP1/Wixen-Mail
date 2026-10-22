@@ -804,8 +804,12 @@ pub async fn sync_caldav_calendar(
         &mut result,
     )
     .await;
-    let deleted_here =
-        crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
+    let deleted_here = crate::application::calendar::events_deleted_in(
+        cache,
+        account_id,
+        &calendar.id,
+        &mut result,
+    );
 
     // Ask for six months back and a year forward. Held rather than worked out
     // twice: the pass at the end has to know which stretch of time the answer
@@ -1222,8 +1226,12 @@ pub async fn refresh_subscription(
         .iter()
         .filter_map(|e| e.provider_event_id.as_deref().map(|uid| (uid, e)))
         .collect();
-    let deleted_here =
-        crate::application::calendar::events_deleted_here(cache, account_id, &mut result);
+    let deleted_here = crate::application::calendar::events_deleted_in(
+        cache,
+        account_id,
+        &calendar.id,
+        &mut result,
+    );
 
     // Whole events first, the days the feed changed out of a series after. A
     // feed writes a series and its moved or cancelled days the way a calendar

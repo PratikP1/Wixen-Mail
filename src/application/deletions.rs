@@ -116,13 +116,28 @@ impl FromIterator<String> for DeletedHere {
     }
 }
 
-/// What a read of one calendar is masked by.
+/// What a read of one calendar is masked by: the notes written in that
+/// calendar, and the notes that name no calendar at all.
+///
+/// Not the account's every note. A provider gives one meeting the same name
+/// in every calendar it sits in, so a meeting deleted in one calendar would
+/// otherwise hide, freeze or call off its copy in another, and a feed's note
+/// is never let go of, so for good.
+///
+/// A note naming no calendar was written before notes carried theirs. Which
+/// calendar it came from is not known, so it masks every read rather than
+/// none: a deleted thing put back is the failure this module exists to stop.
 pub fn deleted_in_one_calendar(
     notes: impl IntoIterator<Item = DeletedCalendarEvent>,
-    _calendar_id: &str,
+    calendar_id: &str,
 ) -> DeletedHere {
     notes
         .into_iter()
+        .filter(|note| {
+            note.calendar_id
+                .as_deref()
+                .is_none_or(|noted_in| noted_in == calendar_id)
+        })
         .filter_map(|note| note.provider_event_id)
         .collect()
 }
