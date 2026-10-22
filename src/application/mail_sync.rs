@@ -3405,7 +3405,10 @@ pub(crate) mod tests {
             Ok(format!("Copied to {into}"))
         }
 
-        async fn where_it_is(&self, _folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+        async fn where_it_is(&self, folder: &str, _message_id: &str) -> Result<Vec<u32>> {
+            self.happened
+                .borrow_mut()
+                .push(format!("asked where {folder} holds it"));
             self.finds_it_at
                 .clone()
                 .map_err(crate::common::Error::Protocol)
@@ -3445,6 +3448,9 @@ pub(crate) mod tests {
             self.moved
                 .borrow_mut()
                 .push((from.to_string(), uid, into.to_string()));
+            self.happened
+                .borrow_mut()
+                .push(format!("moved {uid} into {into}"));
             Ok(self.answers_a_move_with.clone())
         }
 
@@ -3606,36 +3612,42 @@ pub(crate) mod tests {
     /// A cache holding `how_many` messages in one account, none with any text.
     fn an_account_with_no_message_text(cache: &MessageCache, folder_id: i64, how_many: u32) {
         for uid in 1..=how_many {
-            cache
-                .upsert_message(&IncomingMessage {
-                    folder_id,
-                    uid,
-                    message_id: format!("<{uid}@example.com>"),
-                    refs_header: None,
-                    subject: format!("Quarterly report {uid}"),
-                    from_addr: "sender@example.com".into(),
-                    to_addr: "me@example.com".into(),
-                    cc: None,
-                    reply_to: None,
-                    date: format!("2026-07-{uid:02}"),
-                    internal_date: None,
-                    size_bytes: None,
-                    read: false,
-                    starred: false,
-                    answered: false,
-                    draft: false,
-                    deleted: false,
-                    has_attachments: false,
-                    safety: crate::service::safety::Verdict::ordinary(),
-                    gmail_message_id: None,
-                    server_thread_id: None,
-                    labels: None,
-                    receipt_to: None,
-                    list_unsubscribe: None,
-                    pop_uidl: None,
-                })
-                .expect("a message");
+            a_message_held_here(cache, folder_id, uid);
         }
+    }
+
+    /// One message stored in the folder under this number, with no text
+    /// here, its Message-ID `<uid@example.com>`; its row.
+    fn a_message_held_here(cache: &MessageCache, folder_id: i64, uid: u32) -> i64 {
+        cache
+            .upsert_message(&IncomingMessage {
+                folder_id,
+                uid,
+                message_id: format!("<{uid}@example.com>"),
+                refs_header: None,
+                subject: format!("Quarterly report {uid}"),
+                from_addr: "sender@example.com".into(),
+                to_addr: "me@example.com".into(),
+                cc: None,
+                reply_to: None,
+                date: format!("2026-07-{uid:02}"),
+                internal_date: None,
+                size_bytes: None,
+                read: false,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: None,
+            })
+            .expect("a message")
     }
 
     /// Run a backfill, handing back what it answered and everything it said.
@@ -4906,6 +4918,59 @@ pub(crate) mod tests {
             could_not.len(),
             1,
             "a move that never got as far as the server was passed over in silence"
+        );
+    }
+
+    #[test]
+    fn test_messages_filed_into_two_folders_are_moved_and_settled_one_folder_at_a_time() {
+        // A move needs the source open and asking where the destination holds
+        // the message needs the destination open, so settling after every
+        // move opened both folders again for every message filed: four
+        // commands where there had been one (item 21 of the review of
+        // 2026-10-20). One folder's moves together and then its questions
+        // opens the source once and each destination once.
+        let (_dir, cache, inbox, _invoices, folder, _engine) = an_account_with_rules(&[]);
+        cache
+            .save_folder(&CachedFolder {
+                id: 0,
+                account_id: "acct".into(),
+                name: "Receipts".into(),
+                path: "INBOX/Receipts".into(),
+                folder_type: "Custom".into(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a second folder to file into");
+        let filing = |uid: u32, into: &str| Moving {
+            message_row: a_message_held_here(&cache, inbox, uid),
+            uid,
+            into: into.to_string(),
+        };
+        let moves = [
+            filing(1, "Invoices"),
+            filing(2, "Receipts"),
+            filing(3, "Invoices"),
+        ];
+        let server = Scripted::default();
+
+        let (filed, could_not) = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("a runtime")
+            .block_on(carry_out_the_moves(&server, &cache, &folder, inbox, &moves));
+
+        assert_eq!(filed, 3, "a filed message was not counted: {could_not:?}");
+        assert!(could_not.is_empty(), "{could_not:?}");
+        assert_eq!(
+            what_it_was_asked(&server),
+            [
+                "moved 1 into INBOX/Invoices",
+                "moved 3 into INBOX/Invoices",
+                "asked where INBOX/Invoices holds it",
+                "asked where INBOX/Invoices holds it",
+                "moved 2 into INBOX/Receipts",
+                "asked where INBOX/Receipts holds it",
+            ],
+            "the moves and the questions were not one folder at a time"
         );
     }
 
