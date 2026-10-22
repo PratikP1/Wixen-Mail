@@ -118,18 +118,25 @@ impl MessageCache {
     /// Take a sent draft's filed copy out of a Drafts folder on this computer.
     ///
     /// Found by the draft's own Message-ID, which is how the copy was filed,
-    /// and removed with the statement that forgets any message here. The copy
-    /// is not marked as filed here (`replace_local_draft` says why), so that
-    /// statement reaches it. Answers whether there was a copy to remove.
+    /// spelled as [`Self::message_uid_by_message_id`] spells it. The copy is
+    /// not marked as filed here (`replace_local_draft` says why), and a row
+    /// that is marked is left alone. Answers whether a copy was removed.
+    ///
+    /// One statement over every unmarked copy rather than a number looked up
+    /// and then deleted by: a lookup meets one row, so a second copy, or a
+    /// marked row met first, left a copy of a sent draft in Drafts (review
+    /// item 38). A blank identifier removes nothing, because it would match
+    /// every message here that carries none.
     pub fn forget_the_filed_draft(&self, folder_id: i64, message_id: &str) -> Result<bool> {
-        let Some(uid) = self.message_uid_by_message_id(folder_id, message_id)? else {
+        let asking = crate::application::thread_identity::bare(message_id);
+        if asking.trim().is_empty() {
             return Ok(false);
-        };
+        }
         let removed = self
             .conn
             .execute(
-                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",
-                params![folder_id, uid],
+                "DELETE FROM messages WHERE folder_id = ?1 AND message_id = ?2 AND filed_here = 0",
+                params![folder_id, asking],
             )
             .map_err(|e| Error::Other(format!("Failed to remove the sent draft's copy: {}", e)))?;
         Ok(removed > 0)

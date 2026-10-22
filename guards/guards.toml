@@ -18118,7 +18118,7 @@ red = [
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
     { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
@@ -33875,7 +33875,7 @@ red = [
     "data::message_cache::drafts::tests::test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
 ]
 
 # A queued message whose key went after it was queued sent plain rather than
@@ -40732,16 +40732,22 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-10-14: the whole library at 9,049 passed and 1
 # failed, this one.
+#
+# Rewritten 2026-10-22 by 13.3-21 (review item 38) onto the one statement over
+# every unmarked copy; the break is the statement made to match nothing, and
+# it now reddens the two cases for a second copy and a marked row as well.
 [[guard]]
 name = "a sent draft's copy leaves the Drafts folder on this computer"
 file = "src/data/message_cache/drafts.rs"
-before = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",'''
-after = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND 0",'''
+before = '''                "DELETE FROM messages WHERE folder_id = ?1 AND message_id = ?2 AND filed_here = 0",'''
+after = '''                "DELETE FROM messages WHERE folder_id = ?1 AND message_id = ?2 AND 0",'''
 red = [
+    "data::message_cache::drafts::tests::test_a_row_filed_here_stays_and_the_unmarked_copy_beside_it_goes",
     "data::message_cache::drafts::tests::test_a_sent_drafts_copy_leaves_the_drafts_folder_here",
+    "data::message_cache::drafts::tests::test_every_unmarked_copy_of_a_sent_draft_leaves_drafts_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
 ]
 
 # Every caller handed a lock of its own: a removal no longer waits for a
@@ -43374,7 +43380,7 @@ red = [
     "data::message_cache::drafts_left_at_the_server::tests::test_removing_an_accounts_drafts_forgets_its_removals",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
     { file = "src/data/message_cache/drafts_left_at_the_server.rs", tests = 4 },
 ]
 
