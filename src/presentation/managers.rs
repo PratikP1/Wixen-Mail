@@ -2881,21 +2881,41 @@ fn save_what_the_contact_manager_returned(
         if edited.id.trim().is_empty() {
             edited.id = new_id("contact");
         }
-        // The record being replaced carries what the editor does not: the
-        // saved photo, the card the contact was imported from, the date it
-        // was added, and the address books that know it.
-        let replacing = stored.iter().find(|c| c.id == edited.id);
+        // The copy the window opened with, which is what the editor's row
+        // started from.
+        let opened = stored.iter().find(|c| c.id == edited.id);
         // Every row comes back on any edit, not only the one somebody
         // changed, so writing them all marked the whole address book as
         // waiting to be sent. One corrected phone number queued every Google
         // and Outlook contact for a push, and took the photo and the imported
         // card of each of them with it. A row nobody changed is left exactly
         // as it is instead, which is nothing written at all rather than a
-        // rebuilt row that happens to match.
-        if replacing.is_some_and(|existing| !contact_convert::holds_a_change(&edited, existing)) {
+        // rebuilt row that happens to match. Asked against the copy the window
+        // opened with, so a row nobody touched is not written back over what a
+        // sync has written since.
+        if opened.is_some_and(|existing| !contact_convert::holds_a_change(&edited, existing)) {
             continue;
         }
-        let contact = contact_convert::to_stored(&edited, account, replacing);
+        // The record being replaced carries what the editor does not: the
+        // saved photo, the card the contact was imported from, the date it
+        // was added, and the address books that know it. Read again rather
+        // than taken from the copy the window opened with, because a sync may
+        // have run while it was open: one that made a contact typed here at
+        // Google gave her Google's name, and saving from the old copy took it
+        // away, so the next sync made her a second time (review item 23). A
+        // contact gone since the window opened is saved from the copy it
+        // opened with, as before.
+        let replacing = match opened {
+            None => None,
+            Some(opened) => match cache.get_contact(&opened.id) {
+                Ok(now) => Some(now.unwrap_or_else(|| opened.clone())),
+                Err(e) => {
+                    failures.push(format!("{}: {}", edited.name, e));
+                    continue;
+                }
+            },
+        };
+        let contact = contact_convert::to_stored(&edited, account, replacing.as_ref());
         if let Err(e) = cache.save_contact(&contact) {
             failures.push(format!("{}: {}", contact.name, e));
         }

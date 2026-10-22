@@ -2032,26 +2032,18 @@ pub fn what_the_contacts_sync_did(result: &SyncResult) -> String {
 
 // ── Sending a change back out ───────────────────────────────────────────────
 
-/// Write down what an address book now holds.
+/// Write down an address book's answer for the contact the push read as
+/// `as_read`, `as_sent` being that copy with the answer written on it.
+///
+/// Decided on the contact as it stands now rather than as it was read, so an
+/// edit or a deletion made in the window while the address book answered is
+/// kept: see [`MessageCache::an_address_book_took_the_contact`].
 ///
 /// Never with `?`. A row that will not save must not abandon the contacts
 /// behind it in the queue, and must not skip the marker stored at the end of a
 /// sync: losing that turns the next run into a full re-read of the whole
 /// address book, which is how one failure becomes a long one.
-fn write_down(cache: &MessageCache, contact: &ContactEntry, result: &mut SyncResult) {
-    if let Err(unwritten) = cache.save_contact(contact) {
-        result.errors.push(format!(
-            "The contact {} was sent but could not be written down here: {unwritten}",
-            contact.id
-        ));
-    }
-}
-
-/// Write down an address book's answer for the contact the push read as
-/// `as_read`, deciding on the contact as it stands now.
-///
-/// Never with `?`, for the reason [`write_down`] gives.
-fn write_down_the_answer(
+fn write_down(
     cache: &MessageCache,
     as_read: &ContactEntry,
     as_sent: &ContactEntry,
@@ -2478,7 +2470,9 @@ async fn push_changed_contacts_to_google<B: GoogleContactBook>(
         if let Ok(now_there) = &sent {
             write_down(
                 cache,
+                &contact,
                 &contact.told(&book, version_marker(&now_there.etag).as_deref()),
+                &book,
                 result,
             );
         }
@@ -2546,6 +2540,7 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
         if let Ok(now_there) = &sent {
             write_down(
                 cache,
+                &contact,
                 &contact.told(
                     &book,
                     now_there
@@ -2553,6 +2548,7 @@ async fn push_changed_contacts_to_microsoft<B: MicrosoftContactBook>(
                         .as_deref()
                         .filter(|marker| !marker.is_empty()),
                 ),
+                &book,
                 result,
             );
         }
@@ -2777,19 +2773,15 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     // identifier is Google's to assign and only exists
                     // after the answer, so a crash in between still makes
                     // the contact a second time on the next sync.
-                    write_down_the_answer(
-                        cache,
-                        local,
-                        &updated,
-                        &AddressBook::Google,
-                        &mut result,
-                    );
+                    write_down(cache, local, &updated, &AddressBook::Google, &mut result);
                     result.created_remote.note(&local.id);
                 }
                 Err(e) => {
+                    // The id and never the name: every error here goes to the
+                    // log, for the reason `count_the_attempt` gives.
                     result.errors.push(format!(
-                        "Failed to push contact '{}' to Google: {}",
-                        local.name, e
+                        "Contact {} could not be added to Google: {e}",
+                        local.id
                     ));
                 }
             }
@@ -3009,13 +3001,15 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     updated.source_provider = Some(MICROSOFT_ADDRESS_BOOK.to_string());
                     updated.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
                     // Never `?`, for the reason written on the Google side.
-                    write_down(cache, &updated, &mut result);
+                    write_down(cache, local, &updated, &AddressBook::Microsoft, &mut result);
                     result.created_remote.note(&local.id);
                 }
                 Err(e) => {
+                    // The id and never the name, for the reason written on
+                    // the Google side.
                     result.errors.push(format!(
-                        "Failed to push contact '{}' to Microsoft: {}",
-                        local.name, e
+                        "Contact {} could not be added to Microsoft: {e}",
+                        local.id
                     ));
                 }
             }

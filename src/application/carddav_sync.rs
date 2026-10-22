@@ -296,7 +296,11 @@ async fn push_changes_to<B: CardsOnAServer>(
         match &sent {
             Ok(now) => {
                 let told = contact.told(filed_under, now.as_deref());
-                if let Err(unwritten) = cache.save_contact(&told) {
+                // Decided on the contact as it stands, so an edit made while
+                // the server took the card is kept and waits.
+                if let Err(unwritten) =
+                    cache.an_address_book_took_the_contact(&contact, &told, filed_under)
+                {
                     result.errors.push(format!(
                         "Contact {} was sent to {} and the note saying so could not be \
                          written: {unwritten}",
@@ -352,7 +356,11 @@ async fn push_changes_to<B: CardsOnAServer>(
                     .told(filed_under, now.as_deref());
                 told.source_provider = Some(filed_under.as_stored().to_string());
                 told.last_synced_at = Some(chrono::Utc::now().to_rfc3339());
-                if let Err(unwritten) = cache.save_contact(&told) {
+                // Decided on the contact as it stands, so an edit or a
+                // deletion made while the server took the card is kept.
+                if let Err(unwritten) =
+                    cache.an_address_book_took_the_contact(local, &told, filed_under)
+                {
                     // Never given up on. The card is already at the server, so
                     // stopping here abandons the contacts behind this one.
                     result.errors.push(format!(
