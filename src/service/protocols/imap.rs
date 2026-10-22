@@ -3362,7 +3362,9 @@ pub(crate) mod against_a_server_that_answers {
         let transcript = server.transcript().await;
         assert_eq!(removed, 1);
         let searched = server
-            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\"")
+            // UNDELETED, because a copy flagged at an earlier save on a server
+            // without UIDPLUS is one no caller is looking for (ledger 912).
+            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\" UNDELETED")
             .await
             .unwrap_or_else(|| panic!("nothing was searched for: {transcript:?}"));
         let flagged = server
