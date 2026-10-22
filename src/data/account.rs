@@ -254,6 +254,20 @@ impl Account {
         Ok(())
     }
 
+    /// The account a browser sign-in is asked for, compared with and named
+    /// as: the Username, which is what mail signs in with.
+    ///
+    /// Not the address box, which can hold a send-as address on another
+    /// domain that Google cannot offer in the browser (review item 19). The
+    /// address stands in only when the Username is blank, which saving
+    /// refuses, so only an account nobody saved through the editor has it.
+    pub fn signs_in_as(&self) -> &str {
+        match self.username.trim() {
+            "" => self.email.trim(),
+            username => username,
+        }
+    }
+
     /// Get a display name for the account
     pub fn display_name(&self) -> String {
         format!("{} <{}>", self.name, self.email)
@@ -436,6 +450,25 @@ mod tests {
     fn test_account_display_name() {
         let account = Account::new("Test Account".to_string(), "test@example.com".to_string());
         assert_eq!(account.display_name(), "Test Account <test@example.com>");
+    }
+
+    #[test]
+    fn test_an_account_signs_in_as_its_username_or_its_address_when_it_has_none() {
+        // A Gmail account whose address box holds a send-as address on another
+        // domain, and whose Username is the Gmail login mail signs in with
+        // (review item 19).
+        let mut account = Account::new("Ada".to_string(), "ada@lovelace.dev".to_string());
+        for (username, signs_in_as) in [
+            ("ada.lovelace@gmail.com", "ada.lovelace@gmail.com"),
+            (" ada.lovelace@gmail.com ", "ada.lovelace@gmail.com"),
+            // Only an account the editor never saved has none, since saving
+            // refuses a blank Username.
+            ("", "ada@lovelace.dev"),
+            ("   ", "ada@lovelace.dev"),
+        ] {
+            account.username = username.to_string();
+            assert_eq!(account.signs_in_as(), signs_in_as, "{username:?}");
+        }
     }
 
     fn create_valid_account(name: &str, email: &str) -> Account {

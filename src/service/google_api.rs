@@ -501,18 +501,21 @@ struct GoogleCalendarListResponse {
     next_page_token: Option<String>,
 }
 
-/// Response from `calendars.get` for the primary calendar, whose id is the
-/// address of the account that owns it.
+/// What Google's sign-in service says about the person a token belongs to,
+/// of which only the address is read.
 #[derive(Debug, Clone, Deserialize)]
-struct GooglePrimaryCalendar {
+struct GoogleWhoSignedIn {
     #[serde(default)]
-    id: String,
+    email: String,
 }
 
 // ── Client ──────────────────────────────────────────────────────────────────
 
 const PEOPLE_API_BASE: &str = "https://people.googleapis.com/v1";
 const CALENDAR_API_BASE: &str = "https://www.googleapis.com/calendar/v3";
+/// Google's sign-in service, whose userinfo address its OpenID Connect
+/// discovery document names.
+const SIGN_IN_SERVICE_BASE: &str = "https://openidconnect.googleapis.com/v1";
 const PERSON_FIELDS: &str = "names,emailAddresses,phoneNumbers,organizations,addresses,birthdays,photos,nicknames,urls,biographies,metadata";
 
 /// What a change to a contact is allowed to name.
@@ -635,6 +638,8 @@ pub struct GoogleApiClient {
     /// Separate from the contacts one because Google puts them on different
     /// hosts under different path prefixes, so one address cannot produce both.
     calendar_base: String,
+    /// Where who signed in is asked, on a host of its own for the same reason.
+    sign_in_base: String,
 }
 
 impl Default for GoogleApiClient {
@@ -650,6 +655,7 @@ impl GoogleApiClient {
             http: crate::service::outward::Outward::read_only(Self::http()),
             people_base: PEOPLE_API_BASE.to_string(),
             calendar_base: CALENDAR_API_BASE.to_string(),
+            sign_in_base: SIGN_IN_SERVICE_BASE.to_string(),
         }
     }
 
@@ -663,6 +669,7 @@ impl GoogleApiClient {
         Self {
             people_base: address.to_string(),
             calendar_base: address.to_string(),
+            sign_in_base: address.to_string(),
             ..self
         }
     }
@@ -683,6 +690,7 @@ impl GoogleApiClient {
             },
             people_base: PEOPLE_API_BASE.to_string(),
             calendar_base: CALENDAR_API_BASE.to_string(),
+            sign_in_base: SIGN_IN_SERVICE_BASE.to_string(),
         }
     }
 
@@ -698,6 +706,7 @@ impl GoogleApiClient {
             http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
             people_base: address.to_string(),
             calendar_base: address.to_string(),
+            sign_in_base: address.to_string(),
         }
     }
 
@@ -802,19 +811,23 @@ impl GoogleApiClient {
         with_retry(3, || self.api_delete(&url, token)).await
     }
 
-    // ── Calendar ────────────────────────────────────────────────────────
+    // ── Who signed in ───────────────────────────────────────────────────
 
-    /// The address of the Google account a token belongs to: the id of the
-    /// primary calendar the token opens.
+    /// The address of the Google account a token belongs to, as Google's
+    /// sign-in service answers it at its userinfo address.
     ///
     /// Asked once, as a browser sign-in finishes and before its token is kept,
     /// so a sign-in made as another person keeps nothing (audit #23). The
-    /// calendar permission both Google sign-ins ask for allows it. A refusal,
-    /// or an answer with no id, is an error and never an address.
+    /// `openid` and `email` permissions both Google sign-ins ask for allow it,
+    /// and Google's consent screen asks those as one yes or no with no tick
+    /// box, so a person who unticks Calendar is still answered (review item
+    /// 20). Until 13.3-15 this read the primary calendar's id, which that
+    /// person's token could not open. A refusal, or an answer with no address,
+    /// is an error and never an address.
     pub async fn the_address_signed_in(&self, token: &str) -> Result<String> {
-        let url = format!("{}/calendars/{THE_MAIN_CALENDAR}", self.calendar_base);
-        let calendar: GooglePrimaryCalendar = with_retry(3, || self.api_get(&url, token)).await?;
-        let address = calendar.id.trim();
+        let url = format!("{}/userinfo", self.sign_in_base);
+        let answer: GoogleWhoSignedIn = with_retry(3, || self.api_get(&url, token)).await?;
+        let address = answer.email.trim();
         match address.is_empty() {
             true => Err(Error::Authentication(
                 "Google did not say which account signed in.".to_string(),
@@ -822,6 +835,8 @@ impl GoogleApiClient {
             false => Ok(address.to_string()),
         }
     }
+
+    // ── Calendar ────────────────────────────────────────────────────────
 
     /// Every calendar on the account's list, hidden ones included.
     ///
@@ -1305,17 +1320,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_the_address_a_token_belongs_to_is_its_primary_calendars_id() {
-        // Google's reference for calendars.get, last updated 2026-05-12, says
-        // the calendar scope both sign-ins ask for allows it and "primary"
-        // names the signed-in user's own calendar; its concepts page, last
-        // updated 2026-09-03, says that calendar's ID "usually matches the
-        // user's primary email address".
+    async fn test_the_address_a_token_belongs_to_is_what_googles_sign_in_service_says() {
+        // Google's OpenID Connect page, last updated 2026-06-15: the userinfo
+        // address answers the signed-in person's claims, and `email` is
+        // "Provided only if you included the `email` scope". Its granular
+        // permissions page, last updated 2026-05-26: the sign-in permissions
+        // are approved or denied whole, with no tick box, so this question
+        // is answered for a token whose calendar permission was unticked.
         let (address, listening) = answering(
             "200 OK",
             "application/json",
-            r#"{"kind":"calendar#calendar","id":"ada.lovelace@gmail.com","summary":"Ada"}"#
-                .to_string(),
+            r#"{"sub":"1","email":"ada.lovelace@gmail.com","email_verified":true}"#.to_string(),
         )
         .await;
         let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
@@ -1323,10 +1338,11 @@ mod tests {
         let signed_in = google.the_address_signed_in("a-token").await;
 
         assert_eq!(signed_in.ok().as_deref(), Some("ada.lovelace@gmail.com"));
-        let request = heard(listening, "the primary calendar")
+        // The one request heard, so the calendar is never asked.
+        let request = heard(listening, "the sign-in service")
             .await
             .expect("asked");
-        assert_eq!(asked_for(&request), "GET /calendars/primary");
+        assert_eq!(asked_for(&request), "GET /userinfo");
         assert!(
             request
                 .to_lowercase()
@@ -1336,20 +1352,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_a_refusal_or_an_empty_answer_about_the_primary_calendar_is_never_an_address() {
-        for (status, reply) in [
+    async fn test_a_refusal_or_an_answer_with_no_email_is_never_an_address() {
+        for (status, reply, answered) in [
+            ("403 Forbidden", r#"{"error":"insufficient_scope"}"#, None),
+            ("200 OK", r#"{"sub":"1","email":"  "}"#, None),
+            ("200 OK", r#"{"sub":"1"}"#, None),
+            // The ordinary answer beside them, with the space Google never
+            // sends trimmed, so a body that refuses everything is red here.
             (
-                "403 Forbidden",
-                r#"{"error":{"code":403,"message":"Calendar API has not been used"}}"#,
+                "200 OK",
+                r#"{"sub":"1","email":" me@gmail.com "}"#,
+                Some("me@gmail.com"),
             ),
-            ("200 OK", r#"{"kind":"calendar#calendar","id":"  "}"#),
-            ("200 OK", r#"{"kind":"calendar#calendar"}"#),
         ] {
             let (address, _listening) =
                 answering(status, "application/json", reply.to_string()).await;
             let google = GoogleApiClient::new().pointed_at(&format!("http://{address}"));
             let signed_in = google.the_address_signed_in("a-token").await;
-            assert!(signed_in.is_err(), "{status} {reply}: {signed_in:?}");
+            assert_eq!(signed_in.ok().as_deref(), answered, "{status} {reply}");
         }
     }
 
@@ -1907,6 +1927,7 @@ mod tests {
             http: crate::service::outward::Outward::may_change_things(reqwest::Client::new()),
             people_base: PEOPLE_API_BASE.to_string(),
             calendar_base: format!("http://{address}"),
+            sign_in_base: SIGN_IN_SERVICE_BASE.to_string(),
         };
 
         google

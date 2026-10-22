@@ -350,7 +350,7 @@ in Wixen Mail's own files carries a key, and Wixen Mail sends yours only to
 Google, when you sign in.
 
 Each step below is one action. The steps follow Google's own pages as they read
-on 2026-10-05:
+on 2026-10-05, and the two sign-in permissions as they read on 2026-10-21:
 
 | Google's page | Last updated |
 |---|---|
@@ -361,6 +361,7 @@ on 2026-10-05:
 | Manage OAuth clients, on client secrets (support.google.com/cloud/answer/15549257) | no date shown |
 | Using OAuth 2.0 to Access Google APIs, on a project in Testing (developers.google.com, under Google Identity) | 2026-05-26 |
 | OAuth 2.0 Scopes for Google APIs, for what each permission is called (developers.google.com, under Google Identity) | 2026-09-14 |
+| OpenID Connect, for the two sign-in permissions (developers.google.com, under Google Identity) | 2026-06-15 |
 
 Google renames buttons from time to time. If a step names something you cannot
 find, the page in the table is where Google says what it is called now.
@@ -406,10 +407,10 @@ top of every page of the console, so check it there if you have more than one.
 7. Under **Test users**, choose **Add users**, type the Gmail address you read
    mail with in Wixen Mail, and choose **Save**.
 
-#### 4. Add the three permissions
+#### 4. Add the five permissions
 
 1. Open **Data Access**, then choose **Add or Remove Scopes**.
-2. Find and tick these three. Typing the address into the filter box is the
+2. Find and tick these five. Typing the address into the filter box is the
    quickest way to each:
 
    | Address | What Google calls it |
@@ -417,8 +418,15 @@ top of every page of the console, so check it there if you have more than one.
    | `https://www.googleapis.com/auth/calendar` | See, edit, share, and permanently delete all the calendars you can access using Google Calendar |
    | `https://www.googleapis.com/auth/contacts` | See, edit, download, and permanently delete your contacts |
    | `https://www.googleapis.com/auth/tasks` | Create, edit, organize, and delete all your tasks |
+   | `openid` | Associate you with your personal info on Google |
+   | `https://www.googleapis.com/auth/userinfo.email` | See your primary Google Account email address |
 
 3. Confirm your choice, then choose **Save**.
+
+The last two are the sign-in permissions. They let Wixen Mail ask Google which
+account signed in, so a sign-in made as somebody else keeps nothing. Google asks
+for them as one yes or no when you sign in, with no box to untick, so they are
+there even if you untick one of the other three.
 
 Do not add mail, `https://mail.google.com/`. Your mail keeps its app password,
 and Wixen Mail never asks this sign-in for mail.
@@ -471,17 +479,22 @@ tasks, so it does not need restarting.
 2. Choose your Gmail account in the list.
 3. Press `Alt+T`, **Sign In for Calendars, Contacts and Tasks**. Wixen Mail
    says it is signing in, names the address to choose, and your browser opens
-   at Google.
+   at Google. The address is the one in the account's **Username** box, which
+   is what mail signs in with, and not necessarily the one in its address box.
 4. Sign in with that address, the Google account you added as a test user. If
    the browser offers another account, choose the right one: a sign-in made as
    any other account is refused and nothing is kept.
 5. Google shows a screen saying it has not verified this app. That is expected
    for a key in Testing: the app it means is your own project. Choose to
    continue.
-6. Google lists the three permissions. Allow them.
-7. Your browser says you can close it, and Wixen Mail says the account is signed
+6. Google first asks whether Wixen Mail may see your name and email address.
+   Allow it: that is how Wixen Mail checks which account signed in.
+7. Google then lists the three permissions, calendars, contacts and tasks. Allow
+   them. If you untick one, the sign-in still works, and that one of the three
+   cannot sync until you sign in again and allow it.
+8. Your browser says you can close it, and Wixen Mail says the account is signed
    in for its calendars, contacts and tasks.
-8. Close the Account Manager. Wixen Mail brings that account's calendars,
+9. Close the Account Manager. Wixen Mail brings that account's calendars,
    contacts and tasks once, straight away.
 
 After that, Sync Calendar, Sync Contacts and Sync Tasks on the Tools menu, and
@@ -530,14 +543,19 @@ None of this has been tried against a real Google account yet.
 - **Google says access is blocked or denied when you sign in.** The address you
   signed in with is not under **Test users**.
 - **Wixen Mail says Google signed in as another address.** The browser signed
-  in to a different Google account. Press `Alt+T` again and choose the address
-  Wixen Mail names. If the address Google names is your own account's main
-  address and the account here uses another of its addresses, edit the account
-  and give it the main one.
-- **Wixen Mail says Google did not say which account signed in.** It asks the
-  Google Calendar API, so check that it is turned on in step 2.
+  in to a different Google account from the one in this account's **Username**
+  box. Press `Alt+T` again and choose the address Wixen Mail names. If the
+  address Google names is your own account's main address and the Username box
+  holds another of its addresses, edit the account and give the Username box
+  the main one.
+- **Wixen Mail says Google did not say which account signed in.** Wixen Mail
+  asks Google's sign-in service, and either the connection dropped or Google
+  refused the question. Try again. If it keeps happening, check that `openid`
+  and `userinfo.email` are both on the Data Access page in step 4.
 - **Calendars arrive and contacts or tasks do not.** Check that the People API
-  and the Google Tasks API are both turned on in step 2.
+  and the Google Tasks API are both turned on in step 2, and that you did not
+  untick contacts or tasks on Google's screen when you signed in. If you did,
+  press `Alt+T` again and allow them.
 
 ### How Gmail differs, and what Wixen Mail does about it
 

@@ -81,6 +81,21 @@ const GOOGLES_CONTACTS: &str = "https://www.googleapis.com/auth/contacts";
 const GOOGLES_CALENDAR: &str = "https://www.googleapis.com/auth/calendar";
 const GOOGLES_TASKS: &str = "https://www.googleapis.com/auth/tasks";
 
+/// Google's two sign-in permissions, which both of its sign-ins ask for so
+/// Google's sign-in service will say which account signed in, through
+/// `GoogleApiClient::the_address_signed_in`.
+///
+/// Google's consent screen asks these as one yes or no, before the tick boxes
+/// for the three above, so a person who unticks Calendar is still answered
+/// and keeps a sign-in that works (review item 20). `openid` makes it a
+/// sign-in Google's sign-in service answers for, and `email` is what puts
+/// the address in the answer. Each list below begins with `openid` and ends
+/// with `email`, because Google's OpenID Connect page (last updated
+/// 2026-06-15, read 2026-10-21) says the scope "must begin with the openid
+/// value".
+const GOOGLES_SIGN_IN: &str = "openid";
+const GOOGLES_ADDRESS: &str = "email";
+
 pub struct OAuthService;
 
 impl OAuthService {
@@ -92,6 +107,7 @@ impl OAuthService {
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     "https://mail.google.com/".to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
@@ -104,20 +120,23 @@ impl OAuthService {
                     // Widening a scope means new consent, so everybody signs in
                     // again once.
                     GOOGLES_TASKS.to_string(),
+                    GOOGLES_ADDRESS.to_string(),
                 ],
             },
             // The separate sign-in of an account whose mail keeps its app
-            // password: the same three as above and never mail, which the
-            // app password already does, on the same rule about asking for
-            // nothing that is not used.
+            // password: the same three as above and the two sign-in
+            // permissions, and never mail, which the app password already
+            // does, on the same rule about asking for nothing that is not used.
             OAuthProvider {
                 name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
                     GOOGLES_TASKS.to_string(),
+                    GOOGLES_ADDRESS.to_string(),
                 ],
             },
             OAuthProvider {
@@ -851,10 +870,11 @@ impl AuthManager {
     /// for, before anything is kept (audit #23).
     ///
     /// The browser's account chooser decides whose token comes back, and the
-    /// calendar, contacts and tasks syncs act on whoever owns it. So Google is
-    /// asked whose primary calendar the token opens, and a different person's
-    /// consent is refused with nothing kept. A sign-in Google will not say
-    /// anything about is refused too: keeping it would be guessing.
+    /// calendar, contacts and tasks syncs act on whoever owns it. So Google's
+    /// sign-in service is asked, at its userinfo address, whose token it is,
+    /// and a different person's consent is refused with nothing kept. A
+    /// sign-in Google will not say anything about is refused too: keeping it
+    /// would be guessing.
     ///
     /// Microsoft's sign-in is told the address by the login hint alone. Its
     /// matching check is on the ledger: it needs a second token for Graph, and
@@ -1241,11 +1261,15 @@ fn one_gmail_mailbox(address: &str) -> String {
 }
 
 /// What a Google sign-in made as another address says. Nothing was kept.
+///
+/// `asked_for` is the account's Username, which mail signs in with and the
+/// sign-in is compared with, so the sentence calls it that rather than the
+/// account's address, which can differ (review item 19).
 pub fn signed_in_as_somebody_else(asked_for: &str, signed_in_as: &str) -> String {
     format!(
-        "Google signed in as {signed_in_as}, which is not this account's address, so nothing \
-         was kept and nothing of that account's was brought here. Sign in again, and choose \
-         {asked_for} in the browser."
+        "Google signed in as {signed_in_as}, and this account's Username is {asked_for}, so \
+         nothing was kept and nothing from {signed_in_as} was brought here. Sign in again, and \
+         choose {asked_for} in the browser."
     )
 }
 
@@ -1551,6 +1575,29 @@ mod tests {
         let scopes_str = p.default_scopes.join(" ");
         assert!(scopes_str.contains("auth/contacts"));
         assert!(scopes_str.contains("auth/calendar"));
+        // The two sign-in permissions, which ask who signed in and have no
+        // tick box on Google's screen. Google's OpenID Connect page, last
+        // updated 2026-06-15, read 2026-10-21: the scope "must begin with the
+        // openid value".
+        assert_eq!(
+            p.default_scopes.first().map(String::as_str),
+            Some("openid"),
+            "{scopes_str}"
+        );
+        assert!(
+            p.default_scopes.iter().any(|s| s == "email"),
+            "{scopes_str}"
+        );
+    }
+
+    /// The permissions an authorisation address asks for, one per entry.
+    fn the_scopes_asked_for(url: &str) -> Vec<String> {
+        url::Url::parse(url)
+            .expect("an address")
+            .query_pairs()
+            .find(|(name, _)| name == "scope")
+            .map(|(_, scope)| scope.split_whitespace().map(str::to_string).collect())
+            .unwrap_or_default()
     }
 
     #[test]
@@ -1563,9 +1610,11 @@ mod tests {
         assert_eq!(
             separate.default_scopes,
             [
+                "openid",
                 "https://www.googleapis.com/auth/contacts",
                 "https://www.googleapis.com/auth/calendar",
                 "https://www.googleapis.com/auth/tasks",
+                "email",
             ]
         );
 
@@ -1586,6 +1635,13 @@ mod tests {
         for asked in ["auth%2Fcontacts", "auth%2Fcalendar", "auth%2Ftasks"] {
             assert!(url.contains(asked), "{asked} is not asked for: {url}");
         }
+        let scopes = the_scopes_asked_for(&url);
+        assert_eq!(
+            scopes.first().map(String::as_str),
+            Some("openid"),
+            "{scopes:?}"
+        );
+        assert!(scopes.iter().any(|s| s == "email"), "{scopes:?}");
         assert!(!url.contains("mail.google.com"), "mail is asked for: {url}");
     }
 
@@ -2346,6 +2402,7 @@ mod tests {
 #[cfg(test)]
 mod who_consented {
     use super::{AuthManager, OAuthTokenSet, signed_in_as_somebody_else};
+    use crate::application::status_sentences::{Voice, reads_as_a_persons_sentence};
     use crate::common::Error;
     use crate::common::answering::answering;
     use crate::service::google_api::GoogleApiClient;
@@ -2360,13 +2417,13 @@ mod who_consented {
         }
     }
 
-    /// A Google client asking a loopback stand-in that says whose primary
-    /// calendar a token opens.
-    async fn google_saying_the_calendar_is(address: &str) -> GoogleApiClient {
+    /// A Google client asking a loopback stand-in for Google's sign-in
+    /// service that says who a token belongs to.
+    async fn google_saying_the_sign_in_is(address: &str) -> GoogleApiClient {
         let (at, _listening) = answering(
             "200 OK",
             "application/json",
-            format!(r#"{{"kind":"calendar#calendar","id":"{address}","summary":"{address}"}}"#),
+            format!(r#"{{"sub":"1","email":"{address}","email_verified":true}}"#),
         )
         .await;
         GoogleApiClient::new().pointed_at(&format!("http://{at}"))
@@ -2389,13 +2446,19 @@ mod who_consented {
     async fn test_a_google_sign_in_made_as_somebody_else_keeps_nothing_and_says_who() {
         for provider in ["gmail", super::GOOGLE_CALENDARS_CONTACTS_AND_TASKS] {
             let manager = AuthManager::new("acc-somebody-else", provider, "client-id", None);
-            let google = google_saying_the_calendar_is("someone@gmail.com").await;
+            let google = google_saying_the_sign_in_is("someone@gmail.com").await;
 
             match asked_then_kept(&manager, "me@gmail.com", &google).await {
-                Err(Error::Authentication(said)) => assert_eq!(
-                    said,
-                    signed_in_as_somebody_else("me@gmail.com", "someone@gmail.com")
-                ),
+                Err(Error::Authentication(said)) => {
+                    assert_eq!(
+                        said,
+                        signed_in_as_somebody_else("me@gmail.com", "someone@gmail.com")
+                    );
+                    // The comparison is with the Username mail signs in with,
+                    // which need not be the address box (review item 19).
+                    assert!(!said.contains("this account's address"), "{said}");
+                    assert_eq!(reads_as_a_persons_sentence(&said, Voice::Answer), Ok(()));
+                }
                 other => panic!("{provider}: another person's sign-in was not refused: {other:?}"),
             }
             assert!(
@@ -2409,7 +2472,7 @@ mod who_consented {
     async fn test_a_google_sign_in_made_as_the_account_itself_is_kept() {
         let manager = AuthManager::new("acc-itself", "gmail", "client-id", None);
         // Google gives the address its own way; the account typed it another.
-        let google = google_saying_the_calendar_is("firstlast@gmail.com").await;
+        let google = google_saying_the_sign_in_is("firstlast@gmail.com").await;
 
         asked_then_kept(&manager, "First.Last@googlemail.com", &google)
             .await

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 888 records have arrived since and have not been through it.
+# 891 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -600,7 +600,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -640,7 +640,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/every_google_calendar.rs", tests = 14 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # ── A clause never decides how it joins to its neighbours ───────────────────
@@ -792,7 +792,7 @@ tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 176 },
@@ -39137,7 +39137,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -39159,7 +39159,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -39199,7 +39199,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39218,7 +39218,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # The contacts and tasks syncs say the same reason (14-01 task 2): after the
@@ -39242,7 +39242,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -39262,7 +39262,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -39278,7 +39278,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -39294,7 +39294,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # ── Each request a sync sends, written down (#22, 14-02) ───────────────────
@@ -39453,7 +39453,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # An account at neither provider with nothing of its own hears why there is
@@ -39468,7 +39468,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # A finished calendar sync writes its line at info, the level a stored
@@ -39510,7 +39510,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39526,7 +39526,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # F5 with a module other than Mail showing syncs that module (D-11). The
@@ -39540,7 +39540,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # The window's first F5 arm syncs only when the answer says the module
@@ -39555,7 +39555,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39568,13 +39568,16 @@ tests_last_seen = [
 # against the whole library.
 
 # The separate sign-in asks for the calendar, contacts and tasks permissions
-# and never for mail (T-14-12). The break adds mail to its list.
+# and never for mail (T-14-12). The break adds mail to its list. Its anchor
+# was moved on 2026-10-21 by 13.3-15, when openid went first in the list, to
+# the openid line and the contacts line, which only this list has together,
+# and re-measured.
 [[guard]]
 name = "the separate google sign-in never asks for mail"
 file = "src/service/oauth.rs"
-before = '''                default_scopes: vec![
+before = '''                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),'''
-after = '''                default_scopes: vec![
+after = '''                    GOOGLES_SIGN_IN.to_string(),
                     "https://mail.google.com/".to_string(),
                     GOOGLES_CONTACTS.to_string(),'''
 red = [
@@ -39600,7 +39603,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 27 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/service/oauth.rs", tests = 65 },
 ]
 
@@ -39617,7 +39620,7 @@ red = [
     "service::oauth::tests::test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/service/oauth.rs", tests = 65 },
 ]
 
@@ -39633,29 +39636,36 @@ after = '''    if true || account.use_oauth {
         return WhatTheSeparateSignInDoes::TheMailSignInCoversIt;'''
 red = [
     "application::who_holds_the_calendars::tests::test_the_separate_sign_in_button_answers_each_kind_of_account",
+    # 13.3-15, measured 2026-10-21: its Username case asks the button about a
+    # Gmail account on an app password too.
+    "application::who_holds_the_calendars::tests::test_both_google_sign_ins_name_the_username_mail_signs_in_with",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # Removing an account, and uninstalling, erase the separate sign-in's token,
 # because the list of an account's entries is read off the providers
-# (T-14-11). The break takes the separate sign-in off that list.
+# (T-14-11). The break takes the separate sign-in off that list. Its before
+# was rewritten on 2026-10-21 by 13.3-15, when the block gained the two
+# sign-in permissions, and re-measured.
 [[guard]]
 name = "removing an account erases its separate google sign-in"
 file = "src/service/oauth.rs"
 before = '''            // The separate sign-in of an account whose mail keeps its app
-            // password: the same three as above and never mail, which the
-            // app password already does, on the same rule about asking for
-            // nothing that is not used.
+            // password: the same three as above and the two sign-in
+            // permissions, and never mail, which the app password already
+            // does, on the same rule about asking for nothing that is not used.
             OAuthProvider {
                 name: GOOGLE_CALENDARS_CONTACTS_AND_TASKS.to_string(),
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
                     GOOGLES_TASKS.to_string(),
+                    GOOGLES_ADDRESS.to_string(),
                 ],
             },
 '''
@@ -39687,7 +39697,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
     { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
@@ -39951,7 +39961,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/every_google_calendar.rs", tests = 14 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 42 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
 ]
 
 # A change replayed within one account writes one line naming the message by
@@ -41813,7 +41823,9 @@ tests_last_seen = [
 # browser is kept again. authorize opens a browser and cannot run here, so
 # the reading of it is what goes red; the gate's own cases call it directly
 # and stay green. Added 2026-10-16 by 13.2-15 and taken by hand against the
-# whole library.
+# whole library. Since 2026-10-21 (13.3-15) the question goes to Google's
+# sign-in service rather than the primary calendar; the record after this one
+# holds that.
 [[guard]]
 name = "a Google sign-in asks who signed in before anything is kept"
 file = "src/service/oauth.rs"
@@ -41829,6 +41841,77 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/oauth.rs", tests = 65 },
+]
+
+# Who signed in is asked of Google's sign-in service at its userinfo address,
+# which the openid and email permissions allow and which Google's consent
+# screen offers no tick box for, so a person who unticks Calendar keeps a
+# sign-in that works (13.3-15, review item 20). The break puts back the
+# primary calendar's path the question asked before, which that person's
+# token could not open. The stand-ins answer at any path, so only the case
+# that reads the request goes red.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,420 passed and 1
+# failed, this one.
+[[guard]]
+name = "a Google sign-in asks Google's sign-in service who signed in"
+file = "src/service/google_api.rs"
+before = '''        let url = format!("{}/userinfo", self.sign_in_base);'''
+after = '''        let url = format!("{}/calendars/{THE_MAIN_CALENDAR}", self.calendar_base);'''
+red = [
+    "service::google_api::tests::test_the_address_a_token_belongs_to_is_what_googles_sign_in_service_says",
+]
+tests_last_seen = [
+    { file = "src/service/google_api.rs", tests = 41 },
+]
+
+# The separate sign-in for calendars, contacts and tasks asks for the email
+# permission, without which Google's sign-in service names nobody and every
+# such sign-in is refused (13.3-15, review item 20). The break takes it out of
+# that list alone.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,420 passed and 1
+# failed, this one.
+[[guard]]
+name = "the separate google sign-in asks for the address of who signed in"
+file = "src/service/oauth.rs"
+before = '''                    GOOGLES_ADDRESS.to_string(),
+                ],
+            },
+            OAuthProvider {
+                name: "outlook".to_string(),'''
+after = '''                ],
+            },
+            OAuthProvider {
+                name: "outlook".to_string(),'''
+red = [
+    "service::oauth::tests::test_the_separate_google_sign_in_asks_for_calendars_contacts_and_tasks_and_not_mail",
+]
+tests_last_seen = [
+    { file = "src/service/oauth.rs", tests = 65 },
+]
+
+# Sign In Again, and Add for a browser account, ask Google for the account
+# mail signs in as, its Username, and the check compares with it, rather than
+# the address box, which can hold a send-as address on another domain
+# (13.3-15, review item 19). The break puts the address box back in
+# run_oauth_flow. The reading goes red, and so does its planted companion,
+# because the line it plants into is no longer there to replace.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,423 passed and 2
+# failed, these two.
+[[guard]]
+name = "sign in again asks google for the account mail signs in as"
+file = "src/presentation/wx_account_manager.rs"
+before = '''        rt.block_on(auth_mgr.authorize(account.signs_in_as()))'''
+after = '''        rt.block_on(auth_mgr.authorize(&account.email))'''
+red = [
+    "application::who_holds_the_calendars::tests::test_both_sign_ins_ask_for_the_account_mail_signs_in_as",
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_sign_ins_sees_one_asking_for_the_address_box",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
 # A saved attachment is marked as from the internet after it is written

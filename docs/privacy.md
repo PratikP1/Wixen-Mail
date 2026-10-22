@@ -65,9 +65,13 @@ A browser sign-in is only ever sent to Google's or Microsoft's own servers, sinc
 2026-10-16. Before a sign-in is fetched or renewed for mail, every server it would reach,
 the incoming one and the outgoing one, is checked, and an account naming a server that is
 not the provider's is refused with a sentence naming that server, so nothing is sent to it.
-A Google sign-in is kept only for the address it was asked for: as it finishes, Wixen Mail
-asks Google which account the sign-in belongs to, and if somebody else's account was chosen
-in the browser, nothing is kept and nothing of theirs is brought here. Both are held by
+A Google sign-in is kept only for the account it was asked for: as it finishes, Wixen Mail
+asks Google's sign-in service which account the sign-in belongs to, through the two sign-in
+permissions, openid and the email address one, and compares the answer with the account's
+Username, the name mail signs in with (since 2026-10-21; until then it read the account's main
+calendar and compared the address box). If somebody else's account was chosen in the browser,
+nothing is kept and nothing of theirs is brought here. The address Google gives is compared
+and never written down. Both are held by
 `src/application/mail_auth.rs` and `src/service/oauth.rs`, and neither has been tried
 against a real account. Microsoft's sign-in is told which address to sign in as and is not
 yet checked for who signed in.

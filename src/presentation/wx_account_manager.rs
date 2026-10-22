@@ -841,7 +841,7 @@ fn sign_in_for_calendars(
         ))
     })?;
     runtime
-        .block_on(sign_in.authorize(&account.email))
+        .block_on(sign_in.authorize(account.signs_in_as()))
         .map(|_| ())
 }
 
@@ -3249,7 +3249,11 @@ fn run_oauth_flow(account: &mut Account) -> OAuthFlowResult {
                 );
             }
         };
-        rt.block_on(auth_mgr.authorize(&account.email))
+        // The Username, which mail signs in with, rather than the address
+        // box (review item 19). Outlook goes through here too, so its login
+        // hint names the Username as well; its sign-in is not checked for who
+        // signed in (ledger 865).
+        rt.block_on(auth_mgr.authorize(account.signs_in_as()))
     };
 
     match result {

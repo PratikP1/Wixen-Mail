@@ -1446,6 +1446,34 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A Google sign-in checks the account mail signs in as, and survives an unticked box
+  (2026-10-21, REAL-01).** Since 16 October a Google browser sign-in was compared with the
+  account's address box, while mail signs in with the Username box. A Gmail account whose
+  address box holds a send-as address on another domain, such as ada@lovelace.dev with the
+  Username ada.lovelace@gmail.com, was refused a sign-in that would have worked, and told to
+  choose an address Google cannot offer. Now Sign In Again and Sign In for Calendars, Contacts
+  and Tasks ask Google for the Username, compare with it and name it: "Signing in to Home. In
+  the browser, choose ada.lovelace@gmail.com, and finish there." A sign-in made as somebody
+  else is still refused with nothing kept, and now says "Google signed in as
+  someone@gmail.com, and this account's Username is me@gmail.com, so nothing was kept and
+  nothing from someone@gmail.com was brought here. Sign in again, and choose me@gmail.com in
+  the browser." Outlook's sign-in is told the Username too.
+
+  Wixen Mail also learned who signed in by reading the account's main calendar, so somebody
+  who unticked Calendar on Google's screen had the whole sign-in refused, mail included, with a
+  sentence pointing at the wrong cause. It now asks Google's sign-in service, through two more
+  permissions, openid and the email address one, which Google asks as one yes or no with no box
+  to untick. Unticking Calendar, Contacts or Tasks keeps the sign-in and leaves that one module
+  unable to sync. If you made your own Google sign-in key, add the two permissions on its Data
+  Access page, as Setting up a provider in Help now says.
+
+  This corrects the entry of 16 October below in two places: a Google sign-in no longer needs
+  the Google Calendar API, and a Google Workspace account no longer has to change its address
+  here, only its Username, if that is not its main address.
+
+  Known limitation: none of this has been tried against a real Google account, and whether
+  Google asks a key in Testing to list the two new permissions is not known yet.
+
 - **A change over many conversations no longer pauses the window (2026-10-21, LIST-04,
   LIST-21, THREAD-01).** When the list shows conversations, marking, starring, deleting or
   undoing over a large selection brings the changed rows up to date at once. That step checked
