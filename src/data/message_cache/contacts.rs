@@ -53,6 +53,24 @@ pub enum MovedBetweenGroups {
     IntoTheOneItIsLeaving,
 }
 
+/// What an address book's answer for a contact came to here, once the
+/// contact had been read again.
+///
+/// Three answers, because the window writes on a connection of its own while
+/// a sync waits for an address book, and the person may have edited the
+/// contact or deleted it in the meantime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhatTheAnswerCameTo {
+    /// Nobody touched the contact meanwhile, so the copy sent is written down.
+    WrittenAsSent,
+    /// Edited meanwhile. The edit stays, and waits for that address book under
+    /// the name and version marker it has just given.
+    TheEditWaits,
+    /// Deleted meanwhile. That address book is owed a deletion under the name
+    /// it has just given, so the contact is not written back here.
+    ADeletionIsOwed,
+}
+
 /// What reading a file of contact cards did, and what it could not do.
 ///
 /// Three counts rather than one, because one of them made two different
@@ -113,6 +131,18 @@ impl MessageCache {
             .commit()
             .map_err(|e| Error::Other(format!("Failed to save contact: {}", e)))?;
         Ok(())
+    }
+
+    /// An address book has taken the contact the push read as `as_read`, and
+    /// `as_sent` is that copy with the address book's answer written on it.
+    pub fn an_address_book_took_the_contact(
+        &self,
+        _as_read: &ContactEntry,
+        as_sent: &ContactEntry,
+        _address_book: &AddressBook,
+    ) -> Result<WhatTheAnswerCameTo> {
+        self.save_contact(as_sent)?;
+        Ok(WhatTheAnswerCameTo::WrittenAsSent)
     }
 
     /// The contact and the names its address books give it, in whatever
@@ -5667,6 +5697,164 @@ END:VCARD";
         assert!(ada.known_to.is_empty(), "{:?}", ada.known_to);
         assert!(ada.pending, "a card for somebody new is waiting for nobody");
         assert_eq!(ada.last_synced_at, None);
+    }
+
+    // ── An address book's answer, decided on the contact as it stands ───
+
+    /// A contact typed here that no address book knows, stored and read back,
+    /// which is the copy a push reads before it asks an address book to make it.
+    fn typed_here_and_read(cache: &MessageCache) -> ContactEntry {
+        let mut grace = a_contact("local-1", "Grace Hopper");
+        grace.email = "grace@example.com".to_string();
+        grace.pending = true;
+        cache.save_contact(&grace).expect("she saves");
+        cache
+            .get_contact("local-1")
+            .expect("a read")
+            .expect("she is here")
+    }
+
+    /// The copy a push read, with Google's answer to making it written on it,
+    /// the way the create pass writes it.
+    fn as_google_made_it(as_read: &ContactEntry) -> ContactEntry {
+        let mut sent = as_read
+            .also_known_to(AddressBook::Google, "people/new", Some("etag-1"))
+            .told(&AddressBook::Google, Some("etag-1"));
+        sent.source_provider = Some("gmail".to_string());
+        sent.last_synced_at = Some("2026-10-22T00:00:00Z".to_string());
+        sent
+    }
+
+    #[test]
+    fn test_a_contact_nobody_touched_while_an_address_book_made_it_is_written_as_sent() {
+        let cache = a_cache("contact_made_untouched");
+        let as_read = typed_here_and_read(&cache);
+        let as_sent = as_google_made_it(&as_read);
+
+        let came_to = cache
+            .an_address_book_took_the_contact(&as_read, &as_sent, &AddressBook::Google)
+            .expect("the answer is written");
+
+        assert_eq!(came_to, WhatTheAnswerCameTo::WrittenAsSent);
+        let after = cache.get_contact("local-1").expect("a read").expect("here");
+        assert_eq!(after, as_sent);
+    }
+
+    #[test]
+    fn test_a_contact_edited_while_an_address_book_made_it_keeps_the_edit_and_waits_under_the_new_name()
+     {
+        // Review item 23. The window writes on a connection of its own while a
+        // sync waits for Google, so an edit can land between the read and the
+        // write. Writing the copy that was sent put the old name back and
+        // cleared the waiting flag, so the edit never left this computer.
+        let cache = a_cache("contact_made_edited");
+        let as_read = typed_here_and_read(&cache);
+        let as_sent = as_google_made_it(&as_read);
+        let mut edited = as_read.clone();
+        edited.name = "Grace Brewster Hopper".to_string();
+        cache.save_contact(&edited).expect("the edit");
+
+        let came_to = cache
+            .an_address_book_took_the_contact(&as_read, &as_sent, &AddressBook::Google)
+            .expect("the answer is written");
+
+        assert_eq!(came_to, WhatTheAnswerCameTo::TheEditWaits);
+        let after = cache.get_contact("local-1").expect("a read").expect("here");
+        assert_eq!(
+            after.name, "Grace Brewster Hopper",
+            "the edit was written over"
+        );
+        assert_eq!(
+            after.known_to,
+            vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/new".to_string(),
+                provider_version: Some("etag-1".to_string()),
+                change_is_waiting: true,
+            }],
+            "without Google's name the next sync makes her a second time"
+        );
+        assert!(
+            after.pending,
+            "the edit stopped waiting, so it never leaves"
+        );
+    }
+
+    #[test]
+    fn test_a_contact_deleted_while_an_address_book_made_it_leaves_that_book_a_deletion() {
+        // Review item 23, the deletion half. She had no address book when she
+        // was deleted, so the deletion left no note, and writing the copy sent
+        // put her back here and left her at Google.
+        let cache = a_cache("contact_made_deleted");
+        let as_read = typed_here_and_read(&cache);
+        let as_sent = as_google_made_it(&as_read);
+        cache.delete_contact("local-1").expect("the deletion");
+
+        let came_to = cache
+            .an_address_book_took_the_contact(&as_read, &as_sent, &AddressBook::Google)
+            .expect("the answer is written");
+
+        assert_eq!(came_to, WhatTheAnswerCameTo::ADeletionIsOwed);
+        assert_eq!(
+            cache.get_contact("local-1").expect("a read"),
+            None,
+            "a contact deleted here came back"
+        );
+        let owed: Vec<(String, AddressBook, String, bool)> = cache
+            .deleted_contacts("test@example.com")
+            .expect("the notes")
+            .into_iter()
+            .map(|note| {
+                (
+                    note.contact_id,
+                    note.address_book,
+                    note.provider_contact_id,
+                    note.so_far.still_owed(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            owed,
+            [(
+                "local-1".to_string(),
+                AddressBook::Google,
+                "people/new".to_string(),
+                true
+            )],
+            "Google keeps a contact nobody has any more"
+        );
+    }
+
+    #[test]
+    fn test_a_change_answered_for_a_contact_deleted_meanwhile_leaves_the_note_it_had() {
+        // A change push is for a contact Google already holds, so deleting her
+        // wrote a note under Google's name. The answer must neither put her
+        // back nor replace that note.
+        let cache = a_cache("contact_changed_deleted");
+        let mut grace = a_contact("local-1", "Grace Hopper");
+        grace.pending = true;
+        grace.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+            provider_version: Some("etag-1".to_string()),
+            change_is_waiting: true,
+        }];
+        cache.save_contact(&grace).expect("she saves");
+        let as_read = cache.get_contact("local-1").expect("a read").expect("here");
+        let as_sent = as_read.told(&AddressBook::Google, Some("etag-2"));
+        cache.delete_contact("local-1").expect("the deletion");
+        let before = cache.deleted_contacts("test@example.com").expect("notes");
+
+        cache
+            .an_address_book_took_the_contact(&as_read, &as_sent, &AddressBook::Google)
+            .expect("the answer is written");
+
+        assert_eq!(cache.get_contact("local-1").expect("a read"), None);
+        assert_eq!(
+            cache.deleted_contacts("test@example.com").expect("notes"),
+            before,
+            "the note the deletion wrote was replaced"
+        );
     }
 }
 

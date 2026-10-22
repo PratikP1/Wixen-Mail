@@ -2047,6 +2047,25 @@ fn write_down(cache: &MessageCache, contact: &ContactEntry, result: &mut SyncRes
     }
 }
 
+/// Write down an address book's answer for the contact the push read as
+/// `as_read`, deciding on the contact as it stands now.
+///
+/// Never with `?`, for the reason [`write_down`] gives.
+fn write_down_the_answer(
+    cache: &MessageCache,
+    as_read: &ContactEntry,
+    as_sent: &ContactEntry,
+    address_book: &AddressBook,
+    result: &mut SyncResult,
+) {
+    if let Err(unwritten) = cache.an_address_book_took_the_contact(as_read, as_sent, address_book) {
+        result.errors.push(format!(
+            "The contact {} was sent but could not be written down here: {unwritten}",
+            as_read.id
+        ));
+    }
+}
+
 /// Every change waiting for one address book, with that address book's own
 /// name for the contact.
 ///
@@ -2758,7 +2777,13 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     // identifier is Google's to assign and only exists
                     // after the answer, so a crash in between still makes
                     // the contact a second time on the next sync.
-                    write_down(cache, &updated, &mut result);
+                    write_down_the_answer(
+                        cache,
+                        local,
+                        &updated,
+                        &AddressBook::Google,
+                        &mut result,
+                    );
                     result.created_remote.note(&local.id);
                 }
                 Err(e) => {
@@ -6933,6 +6958,30 @@ mod tests {
         /// address book gives her. The identifier is what catches Outlook's
         /// name for a contact being sent to Google.
         deleted: std::cell::RefCell<Vec<String>>,
+        /// What the person does in the window while Google is making or
+        /// changing a contact, run inside that call before it answers.
+        meanwhile: Meanwhile,
+    }
+
+    /// Something the person does in the window while an address book is
+    /// answering, run once.
+    type Meanwhile = std::cell::RefCell<Option<Box<dyn FnOnce()>>>;
+
+    /// What the person does while the address book is answering.
+    fn while_the_address_book_answers(work: impl FnOnce() + 'static) -> Meanwhile {
+        std::cell::RefCell::new(Some(Box::new(work)))
+    }
+
+    /// Run what the person does meanwhile, the first time it is asked for.
+    fn the_person_acts(meanwhile: &Meanwhile) {
+        if let Some(work) = meanwhile.borrow_mut().take() {
+            work();
+        }
+    }
+
+    /// The window's own connection to the folder a test's store lives in.
+    fn the_window_on(folder: &std::path::Path) -> MessageCache {
+        MessageCache::new(folder.to_path_buf(), None).expect("the window's connection")
     }
 
     impl GoogleContactBook for ScriptedGoogle {
@@ -6965,6 +7014,7 @@ mod tests {
                     "nothing in this test sends a contact".to_string(),
                 ));
             }
+            the_person_acts(&self.meanwhile);
             Ok(GooglePerson {
                 resource_name: "people/new".to_string(),
                 ..person.clone()
@@ -6996,6 +7046,7 @@ mod tests {
             {
                 return Err(googles_answer_to_a_marker_it_has_moved_past());
             }
+            the_person_acts(&self.meanwhile);
             Ok(GooglePerson {
                 resource_name: provider_contact_id.to_string(),
                 etag: "etag-after".to_string(),
@@ -7574,6 +7625,110 @@ mod tests {
         assert_eq!(result.created_remote.count(), 1);
         assert!(result.errors.is_empty(), "{:?}", result.errors);
         assert_eq!(google.sent.borrow().len(), 1);
+    }
+
+    /// What the person does in the window to the contact `id`: a new name.
+    fn rename_in_the_window(folder: std::path::PathBuf, id: &'static str, name: &'static str) {
+        let window = the_window_on(&folder);
+        let mut edited = window
+            .get_contact(id)
+            .expect("the window reads her")
+            .expect("she is here");
+        edited.name = name.to_string();
+        window.save_contact(&edited).expect("the edit");
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_edited_while_google_made_it_keeps_the_edit_and_sends_it_next_time() {
+        // Review item 23. The create pass wrote the copy it read before asking
+        // Google, so an edit made while Google was answering was written over
+        // and never sent anywhere.
+        let cache = a_cache("google_create_edited_meanwhile");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let folder = cache.path().to_path_buf();
+        let google = ScriptedGoogle {
+            accepts_a_contact: true,
+            accepts_a_change: true,
+            meanwhile: while_the_address_book_answers(move || {
+                rename_in_the_window(folder, "local-1", "Grace Brewster Hopper")
+            }),
+            ..Default::default()
+        };
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("the first sync");
+
+        let after = the_contact_under(&cache, "local-1");
+        assert_eq!(
+            after.name, "Grace Brewster Hopper",
+            "the edit was written over"
+        );
+        assert_eq!(after.id_in(&AddressBook::Google), Some("people/new"));
+        assert!(
+            still_owed_the_change(&after, &AddressBook::Google),
+            "the edit is not waiting for Google, so it never leaves"
+        );
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("the second sync");
+
+        assert_eq!(google.sent.borrow().len(), 1, "Google made her twice");
+        let changed = google.changed.borrow();
+        assert_eq!(changed.len(), 1, "the edit was never sent to Google");
+        assert_eq!(changed[0].0, "people/new");
+        assert_eq!(
+            changed[0]
+                .1
+                .names
+                .first()
+                .map(|n| n.unstructured_name.as_str()),
+            Some("Grace Brewster Hopper")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_deleted_while_google_made_it_stays_deleted_here_and_there() {
+        // Review item 23, the deletion half. She had no address book when she
+        // was deleted, so no note was written, and the create's write put her
+        // back here and left her at Google.
+        let cache = a_cache("google_create_deleted_meanwhile");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let folder = cache.path().to_path_buf();
+        let google = ScriptedGoogle {
+            accepts_a_contact: true,
+            accepts_a_deletion: true,
+            meanwhile: while_the_address_book_answers(move || {
+                the_window_on(&folder)
+                    .delete_contact("local-1")
+                    .expect("the deletion");
+            }),
+            ..Default::default()
+        };
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("the first sync");
+
+        assert_eq!(
+            cache.get_contact("local-1").expect("a read"),
+            None,
+            "a contact deleted here came back"
+        );
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("the second sync");
+
+        assert_eq!(
+            *google.deleted.borrow(),
+            ["people/new"],
+            "Google keeps a contact nobody has any more"
+        );
+        assert_eq!(cache.get_contact("local-1").expect("a read"), None);
     }
 
     #[tokio::test]
