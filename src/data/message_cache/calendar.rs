@@ -3,7 +3,7 @@
 use super::{CalendarEventEntry, MessageCache, SyncState, TheDeletionSoFar};
 use crate::application::invitations::Answer;
 use crate::common::{Error, Result};
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 /// One calendar at a provider, as a read of it finds the events it owns.
 #[derive(Debug, Clone, Copy)]
@@ -496,15 +496,9 @@ impl MessageCache {
             .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
 
-        let mut rows = stmt
-            .query_map(params![account_id, provider_event_id], map_event_row)
-            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
-
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
-            None => Ok(None),
-        }
+        stmt.query_row(params![account_id, provider_event_id], map_event_row)
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read event: {}", e)))
     }
 
     /// Which version of the meeting an answer given on this computer last wrote
@@ -785,15 +779,9 @@ impl MessageCache {
             .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
 
-        let mut rows = stmt
-            .query_map(params![event_id], map_event_row)
-            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
-
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
-            None => Ok(None),
-        }
+        stmt.query_row(params![event_id], map_event_row)
+            .optional()
+            .map_err(|e| Error::Other(format!("Failed to read event: {}", e)))
     }
 
     /// Get events for a specific calendar container.
@@ -1239,22 +1227,17 @@ impl MessageCache {
             .conn
             .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
-        let mut rows = stmt
-            .query_map(
-                params![
-                    calendar.account_id,
-                    provider_event_id,
-                    calendar.calendar_id,
-                    calendar.provider
-                ],
-                map_event_row,
-            )
-            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
-            None => Ok(None),
-        }
+        stmt.query_row(
+            params![
+                calendar.account_id,
+                provider_event_id,
+                calendar.calendar_id,
+                calendar.provider
+            ],
+            map_event_row,
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to read event: {}", e)))
     }
 
     /// Delete the event a read of one calendar holds under the provider's name
@@ -1298,17 +1281,12 @@ impl MessageCache {
             .conn
             .prepare_cached(&sql)
             .map_err(|e| Error::Other(format!("Failed to prepare event lookup: {}", e)))?;
-        let mut rows = stmt
-            .query_map(
-                params![account_id, calendar_id, provider_event_id],
-                map_event_row,
-            )
-            .map_err(|e| Error::Other(format!("Failed to query event: {}", e)))?;
-        match rows.next() {
-            Some(Ok(entry)) => Ok(Some(entry)),
-            Some(Err(e)) => Err(Error::Other(format!("Failed to read event: {}", e))),
-            None => Ok(None),
-        }
+        stmt.query_row(
+            params![account_id, calendar_id, provider_event_id],
+            map_event_row,
+        )
+        .optional()
+        .map_err(|e| Error::Other(format!("Failed to read event: {}", e)))
     }
 
     /// Delete the event one calendar holds under the provider's name for it,

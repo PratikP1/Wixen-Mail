@@ -85,7 +85,7 @@
 //! this cannot tell that apart from somebody making it again elsewhere.
 
 use crate::common::Result;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{DeletedCalendarEvent, MessageCache};
 use std::collections::HashSet;
 
 /// How long a deletion is remembered after the provider takes it.
@@ -114,6 +114,36 @@ impl FromIterator<String> for DeletedHere {
     fn from_iter<I: IntoIterator<Item = String>>(names: I) -> Self {
         Self(names.into_iter().collect())
     }
+}
+
+/// What a read of one calendar is masked by: the notes written in that
+/// calendar, in a calendar made on this computer, or in none.
+///
+/// Not the account's every note. A provider gives one meeting the same name
+/// in every calendar it sits in, so a meeting deleted in one calendar would
+/// otherwise hide, freeze or call off its copy in another, and a feed's note
+/// is never let go of, so for good.
+///
+/// The other two mask every read, because the calendar the provider's copy
+/// sits in is not the one the note names. A calendar in `made_here` is one no
+/// read fills: an event a provider holds was moved into it, and the
+/// provider's copy is still in the calendar it left. A note naming no
+/// calendar was written before notes carried theirs, so where it came from is
+/// not known. Either way a deleted thing put back is the failure this module
+/// exists to stop.
+pub fn deleted_in_one_calendar(
+    notes: impl IntoIterator<Item = DeletedCalendarEvent>,
+    calendar_id: &str,
+    made_here: &HashSet<String>,
+) -> DeletedHere {
+    notes
+        .into_iter()
+        .filter(|note| match note.calendar_id.as_deref() {
+            None => true,
+            Some(noted_in) => noted_in == calendar_id || made_here.contains(noted_in),
+        })
+        .filter_map(|note| note.provider_event_id)
+        .collect()
 }
 
 /// A moment, written the way a note records the one the provider took it at.
@@ -163,6 +193,81 @@ mod tests {
             !DeletedHere::default().holds("evt1"),
             "an account that has deleted nothing refused to store anything"
         );
+    }
+
+    /// A note written in `calendar_id`, or in no calendar, for `named`.
+    fn a_note(named: Option<&str>, calendar_id: Option<&str>) -> DeletedCalendarEvent {
+        DeletedCalendarEvent {
+            id: format!("note-{}", uuid::Uuid::new_v4()),
+            account_id: "acct".to_string(),
+            provider_event_id: named.map(str::to_string),
+            calendar_id: calendar_id.map(str::to_string),
+            deleted_at: "2026-03-01T00:00:00+00:00".to_string(),
+            event_url: None,
+            provider_recurrence_id: None,
+            so_far: crate::data::message_cache::TheDeletionSoFar::StillOwed,
+        }
+    }
+
+    /// What a read of `calendar_id` is masked by, with no calendar made here.
+    fn a_read_of(calendar_id: &str, note: DeletedCalendarEvent) -> DeletedHere {
+        deleted_in_one_calendar([note], calendar_id, &HashSet::new())
+    }
+
+    #[test]
+    fn test_a_note_in_the_calendar_being_read_is_held_for_it() {
+        let deleted = a_read_of("cal-feed", a_note(Some("assembly"), Some("cal-feed")));
+
+        assert!(deleted.holds("assembly"));
+    }
+
+    #[test]
+    fn test_a_note_in_another_calendar_is_not_held_for_this_one() {
+        // A provider gives one meeting the same name in every calendar it sits
+        // in, so a deletion in one calendar names the copy in another as well.
+        let deleted = a_read_of("cal-feed", a_note(Some("assembly"), Some("cal-my-own")));
+
+        assert!(
+            !deleted.holds("assembly"),
+            "a meeting deleted in one calendar masked its copy in another"
+        );
+    }
+
+    #[test]
+    fn test_a_note_naming_no_calendar_is_held_for_every_calendar() {
+        // Written before notes carried their calendar; which one it was is
+        // not known, so it goes on masking every read rather than none.
+        let note = || a_note(Some("assembly"), None);
+
+        assert!(a_read_of("cal-feed", note()).holds("assembly"));
+        assert!(a_read_of("cal-my-own", note()).holds("assembly"));
+    }
+
+    #[test]
+    fn test_a_note_in_a_calendar_made_here_is_held_for_every_calendar() {
+        // An event a provider holds, moved into a calendar made on this
+        // computer and deleted there. No read fills that calendar, and the
+        // provider's copy is still in the calendar the event left, so the note
+        // has to go on masking whichever read names it.
+        let made_here = HashSet::from(["cal-made-here".to_string()]);
+        let deleted = deleted_in_one_calendar(
+            [a_note(Some("evt1"), Some("cal-made-here"))],
+            "cal-google",
+            &made_here,
+        );
+
+        assert!(
+            deleted.holds("evt1"),
+            "an event deleted out of a calendar made here was left for a read to write back"
+        );
+    }
+
+    #[test]
+    fn test_a_note_with_no_providers_name_masks_nothing() {
+        let deleted = a_read_of("cal-feed", a_note(None, Some("cal-feed")));
+
+        assert!(!deleted.holds(""));
+        assert_eq!(deleted.0.len(), 0, "{deleted:?}");
     }
 
     #[test]

@@ -520,25 +520,45 @@ fn waiting_for(
         .collect()
 }
 
-/// Every event this computer deleted, under the names the providers know.
+/// Every event this computer deleted in one calendar, in a calendar made here,
+/// or in none, under the names the providers know.
 ///
-/// What the read asks before it writes anything down. Every note the account
-/// holds, taken or still owed, and not only the ones this pass could send:
-/// `application::deletions` says why the second question is not the first.
-///
-/// Not narrowed to one calendar, deliberately. A provider identifier names one
-/// event, and "did somebody delete it here" does not depend on which pass is
-/// asking.
-pub(crate) fn events_deleted_here(
+/// What a read of that calendar asks before it writes anything down. Every
+/// note the calendar holds, taken or still owed, and not only the ones this
+/// pass could send: `application::deletions` says why the second question is
+/// not the first. Narrowed to the calendar because a provider gives one
+/// meeting the same name in every calendar it sits in, as the store's
+/// `event_in` says: a deletion in one calendar is not a deletion of the copy
+/// in another.
+pub(crate) fn events_deleted_in(
     cache: &MessageCache,
     account_id: &str,
+    calendar_id: &str,
     result: &mut CalendarSyncResult,
 ) -> crate::application::deletions::DeletedHere {
-    match cache.deleted_calendar_events(account_id) {
-        Ok(notes) => notes
-            .into_iter()
-            .filter_map(|note| note.provider_event_id)
-            .collect(),
+    let deleted = || -> Result<crate::application::deletions::DeletedHere> {
+        let notes = cache.deleted_calendar_events(account_id)?;
+        let noted_in: std::collections::HashSet<&str> = notes
+            .iter()
+            .filter_map(|note| note.calendar_id.as_deref())
+            .collect();
+        let mut made_here = std::collections::HashSet::new();
+        for calendar in noted_in {
+            if cache
+                .get_calendar(calendar)?
+                .is_some_and(|row| !a_read_fills(&row))
+            {
+                made_here.insert(calendar.to_string());
+            }
+        }
+        Ok(crate::application::deletions::deleted_in_one_calendar(
+            notes,
+            calendar_id,
+            &made_here,
+        ))
+    };
+    match deleted() {
+        Ok(deleted) => deleted,
         Err(e) => {
             // Said rather than swallowed. Read as "nothing was deleted", a
             // database that will not answer turns into a sync that writes back
@@ -550,6 +570,16 @@ pub(crate) fn events_deleted_here(
             crate::application::deletions::DeletedHere::default()
         }
     }
+}
+
+/// Whether a provider's read fills this calendar: a calendar server's, a
+/// Google or Outlook calendar, or a feed. One made on this computer is filled
+/// by nobody.
+fn a_read_fills(calendar: &CalendarContainer) -> bool {
+    matches!(
+        calendar.source_provider.as_deref(),
+        Some(CALDAV | GOOGLE | MICROSOFT | crate::application::calendar_source::FROM_A_FEED)
+    )
 }
 
 /// Let go of the deletions that have been remembered long enough.
@@ -863,7 +893,6 @@ pub async fn sync_google_calendar(
     let mut result = CalendarSyncResult::default();
     forget_the_deletions_remembered_long_enough(cache, &mut result);
     let just_sent = push_to_google(cache, google, token, account_id, &mut result).await;
-    let deleted_here = events_deleted_here(cache, account_id, &mut result);
     let reading = TheGoogleRead {
         cache,
         google,
@@ -875,14 +904,8 @@ pub async fn sync_google_calendar(
     let state = cache.get_sync_state(account_id, "calendar", GOOGLE)?;
     let sync_token = state.as_ref().and_then(|s| s.sync_token.as_deref());
     let filed_under = cache.ensure_provider_calendar(account_id, GOOGLE, GOOGLE_CALENDAR_NAME)?;
-    let new_sync_token = read_one_google_calendar(
-        &reading,
-        &filed_under,
-        sync_token,
-        &deleted_here,
-        &mut result,
-    )
-    .await?;
+    let new_sync_token =
+        read_one_google_calendar(&reading, &filed_under, sync_token, &mut result).await?;
 
     // Save sync state
     remember_this_syncs_marker(
@@ -902,9 +925,7 @@ pub async fn sync_google_calendar(
     // Each keeps its marker on its own row, so it goes when the row does.
     for listed in the_calendars_google_listed(cache, account_id)? {
         let its_marker = listed.sync_token.as_deref();
-        match read_one_google_calendar(&reading, &listed, its_marker, &deleted_here, &mut result)
-            .await
-        {
+        match read_one_google_calendar(&reading, &listed, its_marker, &mut result).await {
             Ok(next) => {
                 cache.set_calendar_sync_token(&listed.id, next.as_deref())?;
                 result.calendars_read += 1;
@@ -953,7 +974,6 @@ async fn read_one_google_calendar(
     reading: &TheGoogleRead<'_>,
     filed_under: &CalendarContainer,
     sync_token: Option<&str>,
-    deleted_here: &crate::application::deletions::DeletedHere,
     result: &mut CalendarSyncResult,
 ) -> Result<Option<String>> {
     let TheGoogleRead {
@@ -970,6 +990,9 @@ async fn read_one_google_calendar(
         calendar_id: &filed_under.id,
         provider: GOOGLE,
     };
+    // And what was deleted in it alone, so a deletion in one leaves the
+    // other's copy to be brought up to date.
+    let deleted_here = events_deleted_in(cache, account_id, &filed_under.id, result);
 
     // One window, worked out once: what a whole read asks for is what the
     // pass after it speaks for, so the two cannot drift apart.
@@ -1088,7 +1111,7 @@ async fn read_one_google_calendar(
             &filed_under.id,
             event,
             at_google,
-            deleted_here,
+            &deleted_here,
             result,
         )?;
     }
@@ -1105,7 +1128,7 @@ async fn read_one_google_calendar(
             &filed_under.id,
             &named,
             &WhatTheAnswerCovers::OnlyBetween(from, to),
-            deleted_here,
+            &deleted_here,
             result,
         )?;
     }
@@ -1413,7 +1436,6 @@ pub async fn sync_microsoft_calendar(
     let mut result = CalendarSyncResult::default();
     forget_the_deletions_remembered_long_enough(cache, &mut result);
     let just_sent = push_to_microsoft(cache, ms_client, token, account_id, &mut result).await;
-    let deleted_here = events_deleted_here(cache, account_id, &mut result);
 
     let state = cache.get_sync_state(account_id, "calendar", MICROSOFT)?;
     let now = chrono::Utc::now();
@@ -1428,6 +1450,7 @@ pub async fn sync_microsoft_calendar(
         .filter(|_| running.is_some());
     let filed_under =
         cache.ensure_provider_calendar(account_id, MICROSOFT, MICROSOFT_CALENDAR_NAME)?;
+    let deleted_here = events_deleted_in(cache, account_id, &filed_under.id, &mut result);
 
     // Worked out on every run, link or not. `list_events` ignores it beside a
     // link, and the read after an expired link needs it: Graph refuses a

@@ -1446,6 +1446,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Deleting a meeting in one calendar leaves its copy in another alone (2026-10-22,
+  REAL-01).** The same meeting can sit in two of your calendars: a school assembly in your own
+  calendar and in the school's feed, or one meeting in two of your Google calendars. Deleting
+  it, or one day of it, in one calendar used to reach the copy in the other. That copy could
+  disappear, stop taking changes from Google or the server, or lose that day, and a deletion in
+  a feed did this for good. It happened for subscribed feeds, calendar servers, Google
+  calendars and Outlook. Now a deletion stays in the calendar you made it in, and the other
+  copy goes on updating. A meeting you moved into a calendar made on this computer and then
+  deleted still stays deleted everywhere, since the provider's copy is still in the calendar it
+  came from.
+
+  Known limits. Nobody has yet tried this with a real Google or Outlook account, a real calendar
+  server or a real feed.
+
 - **A Google sign-in checks the account mail signs in as, and survives an unticked box
   (2026-10-21, REAL-01).** Since 16 October a Google browser sign-in was compared with the
   account's address box, while mail signs in with the Username box. A Gmail account whose
@@ -1787,6 +1801,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
   Known limits. Nobody has yet refreshed a real feed or read a real calendar server with this
   change.
+
+  Corrected on 2026-10-22: "each now keeps its own" did not yet hold for a deletion. Deleting
+  the meeting, or one day of it, in one of those calendars still reached the other's copy until
+  the entry dated 2026-10-22 above.
 
 - **Refreshing a feed with a cancelled day no longer says "1 deleted" every time (2026-10-19,
   PIM-03).** When a feed calls off one day of a repeating event, the first refresh takes that
