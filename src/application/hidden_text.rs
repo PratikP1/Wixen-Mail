@@ -698,6 +698,58 @@ mod tests {
         assert_eq!(counted, 0);
     }
 
+    /// Visible words first and a hidden block of words after them, nested in
+    /// `depth` `div` elements: what a sender hides is hidden at any depth.
+    fn hidden_below_visible_text_nested(depth: usize) -> String {
+        crate::common::how_deep_markup_nests::nested(
+            "div",
+            depth,
+            "<p>Seen first</p><div style=\"display:none\">A paragraph the sender hid from view</div>",
+        )
+    }
+
+    #[test]
+    fn test_markup_nested_past_the_limit_has_what_the_sender_hid_dropped_and_counted() {
+        // Item 27 of the review of 2026-10-20: the page's cleaner keeps
+        // neither `style` nor `aria-hidden`, so a block the drop hands on is
+        // a block shown and read. A big stack, so a walk that calls itself
+        // per level fails here on an assertion rather than ending the program.
+        use crate::common::how_deep_markup_nests::{
+            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, on_a_stack_of,
+        };
+        let deep = hidden_below_visible_text_nested(DEEPEST_MARKUP_WALKED + 1);
+        let (shown, counted) =
+            on_a_stack_of(ROOM_FOR_ANY_WALK, move || drop_what_the_sender_hid(&deep));
+        let (_, counted_at_depth_one) =
+            drop_what_the_sender_hid(&hidden_below_visible_text_nested(1));
+
+        assert!(!shown.contains("the sender hid from view"), "{shown}");
+        assert!(shown.contains("Seen first"), "{shown}");
+        assert_eq!(counted, 1);
+        assert_eq!(counted, counted_at_depth_one);
+    }
+
+    #[test]
+    #[ignore = "run in a process of its own by the case after it, because an overflow ends the test program"]
+    fn test_markup_four_thousand_levels_deep_has_what_the_sender_hid_dropped_on_the_windows_stack()
+    {
+        use crate::common::how_deep_markup_nests::{THE_WINDOWS_STACK, on_a_stack_of};
+        let (shown, counted) = on_a_stack_of(THE_WINDOWS_STACK, || {
+            drop_what_the_sender_hid(&hidden_below_visible_text_nested(4_000))
+        });
+        assert!(!shown.contains("the sender hid from view"));
+        assert!(shown.contains("Seen first"));
+        assert_eq!(counted, 1);
+    }
+
+    #[test]
+    fn test_markup_four_thousand_levels_deep_has_what_the_sender_hid_dropped_without_ending_the_program()
+     {
+        crate::common::how_deep_markup_nests::passes_in_a_process_of_its_own(
+            "application::hidden_text::tests::test_markup_four_thousand_levels_deep_has_what_the_sender_hid_dropped_on_the_windows_stack",
+        );
+    }
+
     #[test]
     fn test_markup_with_nothing_hidden_goes_on_as_the_sender_wrote_it() {
         // Byte for byte, attribute order included: the ordinary message is
