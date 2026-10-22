@@ -1577,9 +1577,12 @@ mod tests {
         assert!(scopes_str.contains("auth/contacts"));
         assert!(scopes_str.contains("auth/calendar"));
         // The two sign-in permissions, which ask who signed in and have no
-        // tick box on Google's screen.
-        assert!(
-            p.default_scopes.iter().any(|s| s == "openid"),
+        // tick box on Google's screen. Google's OpenID Connect page, last
+        // updated 2026-06-15, read 2026-10-21: the scope "must begin with the
+        // openid value".
+        assert_eq!(
+            p.default_scopes.first().map(String::as_str),
+            Some("openid"),
             "{scopes_str}"
         );
         assert!(
@@ -1608,10 +1611,10 @@ mod tests {
         assert_eq!(
             separate.default_scopes,
             [
+                "openid",
                 "https://www.googleapis.com/auth/contacts",
                 "https://www.googleapis.com/auth/calendar",
                 "https://www.googleapis.com/auth/tasks",
-                "openid",
                 "email",
             ]
         );
@@ -1634,9 +1637,12 @@ mod tests {
             assert!(url.contains(asked), "{asked} is not asked for: {url}");
         }
         let scopes = the_scopes_asked_for(&url);
-        for asked in ["openid", "email"] {
-            assert!(scopes.iter().any(|s| s == asked), "{asked}: {scopes:?}");
-        }
+        assert_eq!(
+            scopes.first().map(String::as_str),
+            Some("openid"),
+            "{scopes:?}"
+        );
+        assert!(scopes.iter().any(|s| s == "email"), "{scopes:?}");
         assert!(!url.contains("mail.google.com"), "mail is asked for: {url}");
     }
 
