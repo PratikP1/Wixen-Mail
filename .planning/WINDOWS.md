@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 784
+open_count: 787
 waived_count: 0
 fixed_count: 150
-total_count: 934
-last_updated: 2026-10-22T12:00:00.000Z
+total_count: 937
+last_updated: 2026-10-22T22:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -949,6 +949,9 @@ last_updated: 2026-10-22T12:00:00.000Z
 | 932 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-15, read with the Read tool on 2026-10-21 in spawn_calendar_sync and calendar.rs: a Google sync whose permission was unticked on Google's screen gets 403 from Google, and the failure is pushed as "Google calendar: " and the error's text and spoken only as a count, "1 errors", so nothing names the cause, the unticked permission, or the way out, Alt+T or Sign In Again with the box ticked. Not a wrong cause, an absent one; contacts and tasks go the same way. Recommended: read Google's insufficient-permission reason and say which permission is missing and how to give it; Pratik's to schedule | open |  | 2026-10-22T02:30:00.000Z |  |
 | 933 | 13.3 | unrun-verify | src/application/mail_sync.rs |  | 13.3-16, review items 21 and 34, against a real IMAP server: a replayed change now answers its folder's numbering from the SELECT that opened the folder while it is still open, a SELECT the server refuses leaves no folder taken to be open, and a check's rule moves are moved and settled one destination at a time. To see on a real account, from the log or the server's own record: a check whose rules file a large arrival into two folders opening the source once per destination and each destination once, and the Trash emptying at a check opening the Trash once rather than once per message. Held today only by loopback cases in mail_controller and mail_sync | open |  | 2026-10-22T04:55:00.000Z |  |
 | 934 | 13.3 | unrun-verify | src/application/calendar.rs |  | 13.3-17, review item 22 and ledger 825, for the tester at phase 14's sittings: every calendar read now asks only the deletion notes of the calendar it fills, of a calendar made here, or of none. To see on real accounts: one meeting in two Google calendars, deleted here from one, then changed at Google, and the other calendar's copy updated at the next sync while the deleted one stays gone; and two subscribed feeds carrying one meeting with one moved day, that day deleted here in one feed, and the other feed still showing its moved day after a refresh. Proven only against loopback stand-ins and scripted feeds | open |  | 2026-10-22T12:00:00.000Z |  |
+| 935 | 13.3 | unrun-verify | src/data/message_cache/contacts.rs |  | 13.3-18, review item 23, for the tester at phase 14's sittings: a contact Google, Outlook or a CardDAV address book has just made or changed is read again before its answer is written, so an edit made meanwhile is kept and waits, and a contact deleted meanwhile is owed a deletion there; the Contact Manager saves over the contact as it stands. To see on a real Google account: import a vCard file of a few hundred contacts, and during the first contacts sync after it, edit one contact not yet sent in the Contact Manager and delete another; at the next sync, the edit is at Google and the deleted one is gone there, and neither is here twice. Proven only against scripted address books and a CardDAV test server | open |  | 2026-10-22T22:00:00.000Z |  |
+| 936 | 13.3 | todo | src/application/contacts_sync.rs |  | 13.3-18, premise 4, for Pratik: with Allow Changes off, a contact typed here on a Google or Outlook account goes to create_contact, the write gate refuses it, and the refusal is counted as an error on every contacts sync, where CardDAV's create sends the same refusal to waiting_on_the_setting and says the setting. Not one of the review's 42. Recommended: send a gate refusal from both creates to waiting_on_the_setting, as CardDAV's create and count_the_attempt already do; closed when Pratik answers | open |  | 2026-10-22T22:00:00.000Z |  |
+| 937 | 13.3 | todo | src/presentation/managers.rs |  | 13.3-18, read with the Read tool on 2026-10-22: report() writes a manager's failures to the log with tracing::error, and the Contact Manager names each contact that would not save by its name, so a refused save puts a contact's name in the log people attach to bug reports, the class review item 25 fixed for the sync. Not one of the review's 42. Recommended: name the contact by its id in the log line and keep her name in the sentence on screen; Pratik's to schedule | open |  | 2026-10-22T22:00:00.000Z |  |
 
 ````json
 [
@@ -12158,6 +12161,42 @@ last_updated: 2026-10-22T12:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-22T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 935,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/data/message_cache/contacts.rs",
+    "line": null,
+    "description": "13.3-18, review item 23, for the tester at phase 14's sittings: a contact Google, Outlook or a CardDAV address book has just made or changed is read again before its answer is written, so an edit made meanwhile is kept and waits, and a contact deleted meanwhile is owed a deletion there; the Contact Manager saves over the contact as it stands. To see on a real Google account: import a vCard file of a few hundred contacts, and during the first contacts sync after it, edit one contact not yet sent in the Contact Manager and delete another; at the next sync, the edit is at Google and the deleted one is gone there, and neither is here twice. Proven only against scripted address books and a CardDAV test server",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 936,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/application/contacts_sync.rs",
+    "line": null,
+    "description": "13.3-18, premise 4, for Pratik: with Allow Changes off, a contact typed here on a Google or Outlook account goes to create_contact, the write gate refuses it, and the refusal is counted as an error on every contacts sync, where CardDAV's create sends the same refusal to waiting_on_the_setting and says the setting. Not one of the review's 42. Recommended: send a gate refusal from both creates to waiting_on_the_setting, as CardDAV's create and count_the_attempt already do; closed when Pratik answers",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 937,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/managers.rs",
+    "line": null,
+    "description": "13.3-18, read with the Read tool on 2026-10-22: report() writes a manager's failures to the log with tracing::error, and the Contact Manager names each contact that would not save by its name, so a refused save puts a contact's name in the log people attach to bug reports, the class review item 25 fixed for the sync. Not one of the review's 42. Recommended: name the contact by its id in the log line and keep her name in the sentence on screen; Pratik's to schedule",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T22:00:00.000Z",
     "resolved_at": null
   }
 ]
