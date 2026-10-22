@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 903 records have arrived since and have not been through it.
+# 905 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -29609,7 +29609,7 @@ red = [
     "application::hidden_text::tests::test_opacity_nought_alone_is_not_a_hiding",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 30 },
+    { file = "src/application/hidden_text.rs", tests = 32 },
 ]
 
 # max-height:0 hides only together with overflow:hidden: alone, the block
@@ -29628,7 +29628,7 @@ red = [
     "application::hidden_text::tests::test_max_height_nought_hides_only_together_with_overflow_hidden",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 30 },
+    { file = "src/application/hidden_text.rs", tests = 32 },
 ]
 
 # The drop is the reading path's and never the sending path's. sanitize_html
@@ -29653,7 +29653,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 96 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
 ]
 
 # The one role the cleaner keeps is presentation, on a table's four tags,
@@ -29679,8 +29679,8 @@ red = [
     "test_no_role_but_presentation_survives_and_only_on_a_tables_four_tags",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 30 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+    { file = "src/application/hidden_text.rs", tests = 32 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
 ]
 
 # A sender's label is a name only where a reader would use it as one, and
@@ -29704,8 +29704,8 @@ red = [
     "test_a_label_is_kept_where_it_is_a_name_and_dropped_where_it_named_a_grouping",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 30 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+    { file = "src/application/hidden_text.rs", tests = 32 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
 ]
 
 # The reader reads a layout table as its blocks in order and never as a
@@ -29730,7 +29730,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 19 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
 ]
 
 # ── 11-11.1: where a link opens (#80), 2026-09-20 ──────────────────────────
@@ -41642,7 +41642,10 @@ tests_last_seen = [
 # sentence, which is said only for markup found too deep, and the audit's
 # message previewed and saved, each run in a process of its own, where the
 # break is an overflow the case reports as its own failure rather than the
-# end of the test program.
+# end of the test program. On 2026-10-22 13.3-19 made `hidden_text`'s walk
+# hold one edge at a time and took its depth check out, so the break no
+# longer reaches it, and its case that asserted the markup went on unchanged
+# was retired with the check and taken off the red list.
 [[guard]]
 name = "markup nested past the limit is found to be, so no walker is handed it"
 file = "src/common/how_deep_markup_nests.rs"
@@ -41655,7 +41658,6 @@ after = '''                depth += 1;
                     return false;
                 }'''
 red = [
-    "application::hidden_text::tests::test_markup_nested_past_the_limit_goes_on_unchanged_and_nothing_is_counted",
     "application::long_text::tests::test_a_heading_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
     "application::long_text::tests::test_a_list_item_as_deep_as_the_limit_is_read_whole_on_the_windows_stack",
     "application::long_text::tests::test_divs_as_deep_as_the_limit_are_read_whole_on_the_windows_stack",
@@ -41672,7 +41674,6 @@ red = [
     "vendor::paperback::tests::test_markup_nested_past_the_limit_is_read_as_its_words_alone",
 ]
 tests_last_seen = [
-    { file = "src/application/hidden_text.rs", tests = 30 },
     { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
     { file = "src/data/message_cache/bodies.rs", tests = 51 },
@@ -44331,4 +44332,53 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 304 },
+]
+
+# What a sender hid is dropped from markup of any depth, because the page's
+# cleaner keeps neither `style` nor `aria-hidden` and so cannot hide it
+# (13.3-19, item 27 of the review of 2026-10-20). The break puts back the
+# depth check 13.2-12 added, which handed markup nested past the limit on
+# unchanged, with its hidden preheader, padding and blocks of words in it.
+# Two records for the one break, since a record with a suite runs the
+# target and not the library: on the target the page's case and the
+# reader's go red, and in the library the drop's own case past the limit
+# and the companion that runs the 4,000-level case on the window's stack.
+# Measured 2026-10-22 through `scripts/guards.sh --remeasure`: each reddens
+# its two cases and nothing else.
+[[guard]]
+name = "what a sender hid is dropped from markup nested past the limit"
+file = "src/application/hidden_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = '''    let mut document = Html::parse_fragment(html);
+    let mut found = Findings::default();'''
+after = '''    let mut document = Html::parse_fragment(html);
+    if crate::common::how_deep_markup_nests::nests_deeper_than(document.tree.root(), crate::common::how_deep_markup_nests::DEEPEST_MARKUP_WALKED) {
+        return (html.to_string(), 0);
+    }
+    let mut found = Findings::default();'''
+red = [
+    "test_markup_nested_past_the_limit_has_its_hidden_blocks_left_out_of_the_page",
+    "test_markup_nested_past_the_limit_is_read_without_what_the_sender_hid",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 32 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+]
+
+[[guard]]
+name = "what a sender hid is dropped from markup nested past the limit, seen from the library"
+file = "src/application/hidden_text.rs"
+before = '''    let mut document = Html::parse_fragment(html);
+    let mut found = Findings::default();'''
+after = '''    let mut document = Html::parse_fragment(html);
+    if crate::common::how_deep_markup_nests::nests_deeper_than(document.tree.root(), crate::common::how_deep_markup_nests::DEEPEST_MARKUP_WALKED) {
+        return (html.to_string(), 0);
+    }
+    let mut found = Findings::default();'''
+red = [
+    "application::hidden_text::tests::test_markup_four_thousand_levels_deep_has_what_the_sender_hid_dropped_without_ending_the_program",
+    "application::hidden_text::tests::test_markup_nested_past_the_limit_has_what_the_sender_hid_dropped_and_counted",
+]
+tests_last_seen = [
+    { file = "src/application/hidden_text.rs", tests = 32 },
 ]

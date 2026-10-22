@@ -36,10 +36,8 @@
 
 use std::borrow::Cow;
 
-use ego_tree::{NodeId, NodeRef};
+use ego_tree::{NodeId, NodeRef, iter::Edge};
 use scraper::{Html, Node, StrTendril};
-
-use crate::common::how_deep_markup_nests::{DEEPEST_MARKUP_WALKED, nests_deeper_than};
 
 /// One of the ways a sender hides a block with a style declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,12 +257,6 @@ pub fn keep_the_layout_claim(builder: &mut ammonia::Builder<'_>) {
 /// [`WhatItHeld::Words`], for [`what_was_left_out`].
 pub fn drop_what_the_sender_hid(html: &str) -> (String, usize) {
     let mut document = Html::parse_fragment(html);
-    // The walk below calls itself once per level. Markup nested past the
-    // limit goes on as it came, to a sanitiser and a page that neither
-    // recurse (audit finding #17), and what it hid is the page's to hide.
-    if nests_deeper_than(document.tree.root(), DEEPEST_MARKUP_WALKED) {
-        return (html.to_string(), 0);
-    }
     let mut found = Findings::default();
     found.walk(document.tree.root());
     // Nothing to drop is the ordinary message, and it goes on as the sender
@@ -313,45 +305,70 @@ struct Findings {
 }
 
 impl Findings {
-    fn walk(&mut self, node: NodeRef<'_, Node>) {
-        for child in node.children() {
-            match child.value() {
-                Node::Element(element) => {
-                    let tag = element.name();
-                    // The cleaner's to drop, with their content; a walk into
-                    // a stylesheet would strip filler from CSS and count
-                    // its text as visible.
-                    if matches!(tag, "style" | "script" | "title" | "head") {
-                        continue;
-                    }
-                    match whether_hidden(tag, element.attr("style"), element.attr("aria-hidden")) {
-                        Hidden::Shown => {
-                            if element.attr("aria-label").is_some()
-                                && !keeps_its_label(tag, element.attr("role"))
-                            {
-                                self.to_unlabel.push(child.id());
-                            }
-                            self.walk(child);
-                        }
-                        Hidden::ByStyle(_) | Hidden::ByAria => self.drop(child),
+    /// Every node under `root` in document order, one edge at a time, so
+    /// markup of any depth costs no stack (audit finding #17, item 27 of the
+    /// review of 2026-10-20). A subtree the walk does not go into is passed
+    /// over by holding its root's id until that root closes.
+    fn walk(&mut self, root: NodeRef<'_, Node>) {
+        let mut passing_over: Option<NodeId> = None;
+        for edge in root.traverse() {
+            match edge {
+                Edge::Open(node) if passing_over.is_none() => {
+                    if !self.goes_into(node) {
+                        passing_over = Some(node.id());
                     }
                 }
-                Node::Text(text) => match strip_filler(text) {
+                Edge::Close(node) if passing_over == Some(node.id()) => passing_over = None,
+                _ => {}
+            }
+        }
+    }
+
+    /// Read one node on the way in, and answer whether the walk goes on
+    /// into what is under it.
+    fn goes_into(&mut self, node: NodeRef<'_, Node>) -> bool {
+        match node.value() {
+            Node::Element(element) => {
+                let tag = element.name();
+                // The cleaner's to drop, with their content; a walk into a
+                // stylesheet would strip filler from CSS and count its text
+                // as visible.
+                if matches!(tag, "style" | "script" | "title" | "head") {
+                    return false;
+                }
+                match whether_hidden(tag, element.attr("style"), element.attr("aria-hidden")) {
+                    Hidden::Shown => {
+                        if element.attr("aria-label").is_some()
+                            && !keeps_its_label(tag, element.attr("role"))
+                        {
+                            self.to_unlabel.push(node.id());
+                        }
+                        true
+                    }
+                    Hidden::ByStyle(_) | Hidden::ByAria => {
+                        self.drop(node);
+                        false
+                    }
+                }
+            }
+            Node::Text(text) => {
+                match strip_filler(text) {
                     Cow::Owned(stripped) if stripped.trim().is_empty() => {
-                        self.to_detach.push(child.id());
+                        self.to_detach.push(node.id());
                     }
                     Cow::Owned(stripped) => {
                         self.seen_visible_text = true;
-                        self.to_rewrite.push((child.id(), stripped));
+                        self.to_rewrite.push((node.id(), stripped));
                     }
                     Cow::Borrowed(kept) => {
                         if !kept.trim().is_empty() {
                             self.seen_visible_text = true;
                         }
                     }
-                },
-                _ => {}
+                }
+                true
             }
+            _ => true,
         }
     }
 
@@ -673,29 +690,6 @@ mod tests {
         assert!(shown.contains("<style>"), "{shown}");
         assert!(!shown.contains("decoration"), "{shown}");
         assert!(shown.contains("read"), "{shown}");
-    }
-
-    #[test]
-    fn test_markup_nested_past_the_limit_goes_on_unchanged_and_nothing_is_counted() {
-        // Audit finding #17: the walk calls itself once per level. Past the
-        // limit nothing is walked, and the markup goes on as it came to the
-        // sanitiser and the page, neither of which recurses. The hidden block
-        // inside is words a walk would count; here it is left for the page
-        // to hide. A big stack, so the walk before the fix finishes and fails
-        // on an assertion here.
-        use crate::common::how_deep_markup_nests::{
-            DEEPEST_MARKUP_WALKED, ROOM_FOR_ANY_WALK, nested, on_a_stack_of,
-        };
-        let deep = nested(
-            "div",
-            DEEPEST_MARKUP_WALKED + 1,
-            "<p>Seen first</p><div style=\"display:none\">A paragraph the sender hid from view</div>",
-        );
-        let as_given = deep.clone();
-        let (shown, counted) =
-            on_a_stack_of(ROOM_FOR_ANY_WALK, move || drop_what_the_sender_hid(&deep));
-        assert_eq!(shown, as_given);
-        assert_eq!(counted, 0);
     }
 
     /// Visible words first and a hidden block of words after them, nested in
