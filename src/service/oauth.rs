@@ -89,11 +89,10 @@ const GOOGLES_TASKS: &str = "https://www.googleapis.com/auth/tasks";
 /// for the three above, so a person who unticks Calendar is still answered
 /// and keeps a sign-in that works (review item 20). `openid` makes it a
 /// sign-in Google's sign-in service answers for, and `email` is what puts
-/// the address in the answer. Each list below ends with them, so the
-/// permissions it was asked for before still come first; a scope is a set,
-/// in which order means nothing (RFC 6749, section 3.3), though Google's
-/// OpenID Connect page writes `openid` first, which only a real sign-in at
-/// phase 14's first sitting settles.
+/// the address in the answer. Each list below begins with `openid` and ends
+/// with `email`, because Google's OpenID Connect page (last updated
+/// 2026-06-15, read 2026-10-21) says the scope "must begin with the openid
+/// value".
 const GOOGLES_SIGN_IN: &str = "openid";
 const GOOGLES_ADDRESS: &str = "email";
 
@@ -108,6 +107,7 @@ impl OAuthService {
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     "https://mail.google.com/".to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
@@ -120,7 +120,6 @@ impl OAuthService {
                     // Widening a scope means new consent, so everybody signs in
                     // again once.
                     GOOGLES_TASKS.to_string(),
-                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_ADDRESS.to_string(),
                 ],
             },
@@ -133,10 +132,10 @@ impl OAuthService {
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
                     GOOGLES_TASKS.to_string(),
-                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_ADDRESS.to_string(),
                 ],
             },

@@ -39568,13 +39568,16 @@ tests_last_seen = [
 # against the whole library.
 
 # The separate sign-in asks for the calendar, contacts and tasks permissions
-# and never for mail (T-14-12). The break adds mail to its list.
+# and never for mail (T-14-12). The break adds mail to its list. Its anchor
+# was moved on 2026-10-21 by 13.3-15, when openid went first in the list, to
+# the openid line and the contacts line, which only this list has together,
+# and re-measured.
 [[guard]]
 name = "the separate google sign-in never asks for mail"
 file = "src/service/oauth.rs"
-before = '''                default_scopes: vec![
+before = '''                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),'''
-after = '''                default_scopes: vec![
+after = '''                    GOOGLES_SIGN_IN.to_string(),
                     "https://mail.google.com/".to_string(),
                     GOOGLES_CONTACTS.to_string(),'''
 red = [
@@ -39658,10 +39661,10 @@ before = '''            // The separate sign-in of an account whose mail keeps i
                 auth_url: GOOGLES_SIGN_IN_PAGE.to_string(),
                 token_url: GOOGLES_TOKEN_ADDRESS.to_string(),
                 default_scopes: vec![
+                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_CONTACTS.to_string(),
                     GOOGLES_CALENDAR.to_string(),
                     GOOGLES_TASKS.to_string(),
-                    GOOGLES_SIGN_IN.to_string(),
                     GOOGLES_ADDRESS.to_string(),
                 ],
             },
