@@ -1446,6 +1446,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Automatic saving no longer says every minute that an older copy of a draft may still be on
+  the server (2026-10-22, FOUND-04).** Some mail servers cannot take away one message at a
+  time; they can only mark it for removal. On those, every automatic save of a draft, once a
+  minute, said that an older copy may still be on the server, and each save looked up every
+  copy marked at the saves before, read each one and marked it again. Now that sentence is
+  said once for each draft while Wixen Mail is open, and copies already marked for removal are
+  no longer looked up. A save the server would not take is still said every time. And when you
+  send a draft from an account whose Drafts folder is on this computer, every copy of that
+  draft in the folder is taken out, not only the first one found. Known limitations: on such a
+  server the older copies stay in Drafts, marked for removal, until the server or another
+  program clears them, and nothing here has been tried against one. When you send a draft
+  there, you hear once that its copy may still be in Drafts, and the try at the next check for
+  mail no longer says it failed again, because no try can take that copy away. And while the
+  server cannot be reached, each automatic save still says the server would not take the draft
+  (ledger 941).
 - **The uninstaller no longer says your mail folder stays when it is about to remove it
   (2026-10-22).** When the program had already gone from its folder before you uninstalled,
   for example because antivirus took it away, the uninstaller said your mail and settings

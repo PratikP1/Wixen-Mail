@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 789
+open_count: 790
 waived_count: 0
-fixed_count: 151
-total_count: 940
-last_updated: 2026-10-22T23:59:00.000Z
+fixed_count: 152
+total_count: 942
+last_updated: 2026-10-22T23:59:30.000Z
 ---
 
 # Broken Windows Ledger
@@ -926,7 +926,7 @@ last_updated: 2026-10-22T23:59:00.000Z
 | 909 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-31.9 closed ledger 889: start-up keeps a settings file that cannot be read, puts settings that allow no change in its place, and says so once on the status line after the first-run question; Settings refuses to open over settings it could not read and says so. Held by cases and by readings of the window's source; nobody has heard either sentence. For the tester, on a build holding 13.2-31.9's merge, under NVDA: close Wixen Mail, break app_config.json in the profile's config folder by hand, start it, hear the first-run question and then the sentence once, find the old file under the name the sentence gives in the folder it names, and open Settings to find it opens on the fresh settings. Closed when he has heard it | open |  | 2026-10-19T22:00:00.000Z |  |
 | 910 | 13.2 | unrun-verify | src/presentation/html_renderer.rs |  | 13.2-32 closed ledger 872: the document the formatted message window and the preview pane are given now carries a title, a conversation's subject or No subject, and Message for the preview, so WebView2 names its Chrome_WidgetWin_1 pane and the page root after it rather than after the page's data: address. Held by two cases reading the built documents' heads, two guard records and the Accessibility run's page and page-window targets, which can see only that the names are short. For the tester, on a build holding 13.2-32's merge, under NVDA: open a message in the formatted message window and move into its page, then into the preview pane beside the message list, and hear each named after the subject or as Message, never a run of letters and numbers. Closed when he has heard both | open |  | 2026-10-19T23:30:00.000Z |  |
 | 911 | 14 | unrun-verify | src/application/draft_copy.rs |  | 14-08.1 closed ledger 902: a saved draft's older copies at the server are read for the draft's exact Message-ID before they are removed. Held by cases on the Scripted stand-in and on the loopback, which reads and confirms the header through the adapter that runs; nothing has met a real server. For the tester, on a build holding 14-08.1's merge, the one 14-08.2 makes, in a phase 14 sitting: a message to himself titled "Wixen proof draft", written in for three minutes or more so it is saved more than once, and then Gmail's Drafts on the web and on his phone show one copy of it, with the latest words. Closed when he has seen it | open |  | 2026-10-20T12:00:00.000Z |  |
-| 912 | 14 | todo | src/application/draft_copy.rs |  | 14-08.1, read in the code on 2026-10-20 and never run: on a server without UIDPLUS, remove_these flags an older draft copy and leaves it, and the search has no UNDELETED, so each automatic save finds every copy flagged before, flags them all again with one UID STORE each, removes none, and answers that an older copy may still be on the server, which spawn_draft_append says at every save; since 14-08.1 each of those copies is also read once per save. Recommended: decide whether such a server is told once per draft rather than at every save, and whether copies already flagged are left out of the search; Pratik's to schedule | open |  | 2026-10-20T12:00:00.000Z |  |
+| 912 | 14 | todo | src/application/draft_copy.rs |  | 14-08.1, read in the code on 2026-10-20 and never run: on a server without UIDPLUS, remove_these flags an older draft copy and leaves it, and the search has no UNDELETED, so each automatic save finds every copy flagged before, flags them all again with one UID STORE each, removes none, and answers that an older copy may still be on the server, which spawn_draft_append says at every save; since 14-08.1 each of those copies is also read once per save. Recommended: decide whether such a server is told once per draft rather than at every save, and whether copies already flagged are left out of the search; Pratik's to schedule. Fixed 2026-10-22 by 13.3-21 (red 98045ae2, green b3d605db) on Pratik's yes of 2026-10-20 to this recommendation, review item 41: ImapSession::uids_with_message_id asks UNDELETED after the quoted identifier, for every caller, so a save finds only the live copy; Filed::needs_saying_once_per_draft says an older copy once for each draft while the program runs and a refused save every time, and spawn_draft_append asks it. Held by the loopback cases in service::protocols::imap and application::mail_controller, two cases in application::draft_copy, the reading in tests/wired.rs, and two new records. A server without UIDPLUS is ledger 942; the offline save said every minute is ledger 941 | fixed |  | 2026-10-20T12:00:00.000Z | 2026-10-22T23:59:30.000Z |
 | 913 | 13.3 | unrun-verify | src/presentation/wx_app.rs | 27605 | 13.3-02, review items 1 and 15, heard under NVDA on the tester's POP account in conversation view on a build holding 13.3-02's merge: Delete on a message inside an opened conversation, the window coming back without it and the cursor on its neighbour; a Delete in the POP Inbox and a move to another account heard changing the conversation's row at once. Built lists hold all of it in tests/a_change_made_here_reaches_the_conversation_rows.rs and a reading in tests/a_move_completes_here_first.rs. Closed when he has heard them on his own mailbox | open |  | 2026-10-20T20:00:00.000Z |  |
 | 914 | 13.3 | todo | Cargo.lock |  | 13.3-03, found on pull request 201 on 2026-10-20 and not caused by it: CI's Security Audit is red on two advisories published that week against packages the lock already held, RUSTSEC-2026-0382 (rustls-webpki 0.103.15, certificate verification may accept distrusted intermediates, fixed in 0.103.16) and RUSTSEC-2026-0383 (webpki-root-certs 1.0.9, bundled roots trust distrusted emSign intermediates, fixed in 1.0.10). Both are moves inside the versions Cargo.toml allows, a lock change only, and phase 13.3 moves no package without Pratik's word. Recommended: on his yes, cargo update -p rustls-webpki -p webpki-root-certs as a small plan of its own before 13.3-25, whose full gate runs the audit; every pull request until then shows the same red. Since 2026-10-22 (13.3-20) both are held open on this machine in scripts/audit.sh's awaiting_a_decision list, because 13.3-20's installer commit earned the whole gate and its audit refused on them; CI stays red on both. The commit that moves the lock takes them out of that list, and the gate refuses until it does | open |  | 2026-10-20T23:00:00.000Z |  |
 | 915 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-04, review items 3 and 18, at the tester's two accounts on real servers on a build holding 13.3-04's merge: in All Inboxes under conversation view, with the first account the one last opened, M on a conversation of the second account that holds his reply in Sent, then the reply read on that account's web mail as marked and nothing changed in the first account's Sent; and a mark made while a check sends changes kept waiting for the same message, the newest one shown at the server afterwards. The rule and its store cases are held in tests/one_hierarchy_two_views.rs, every caller handing the store by a reading in tests/wired.rs, the flag turn by four cases in src/application/mail_session.rs and three readings in tests/nothing_sends_a_flag_change_unasked.rs; none of it has met a real server. Closed when he has seen both at his own accounts | open |  | 2026-10-21T01:00:00.000Z |  |
@@ -955,6 +955,8 @@ last_updated: 2026-10-22T23:59:00.000Z
 | 938 | 13.3 | todo | src/presentation/reader_text.rs |  | 13.3-19, premise 3, read with the Read tool on 2026-10-20 and again on 2026-10-22: the text reader, the window Enter opens on a message, reads an HTML body through the vendored HtmlToText::convert on the markup as it came (reader_text.rs body_text, :232-250) and never drops what the sender hid, at any depth, so a newsletter's hidden preheader and its padding, and any block hidden by the six style rules or aria-hidden, are read there. Taken over from ledger 859's words-alone half. Not one of the review's 42, and a behaviour change Pratik has not been asked about. Recommended: hand the converter the markup drop_what_the_sender_hid gives, as the formatted view is, and say the sentence about blocks left out above the words when it counted any; Pratik's to decide | open |  | 2026-10-22T23:30:00.000Z |  |
 | 939 | 13.3 | unrun-verify | src/application/hidden_text.rs |  | 13.3-19, review item 27, for the tester's ear: a message nested past 512 levels with a hidden preview line and a hidden block of words below its visible text, opened in the formatted view under NVDA on a build holding 13.3-19's merge, reads neither and says the sentence about one block left out once, at the top. The cases read the page's markup; nobody has heard it | open |  | 2026-10-22T23:30:00.000Z |  |
 | 940 | 13.3 | unrun-verify | installer/Wixen-Mail-Setup.iss |  | 13.3-20, review item 28, for the tester on a throwaway per-user install, never on Pratik's own: install a build holding 13.3-20's merge for one user, delete wixen-mail.exe from the program folder by hand, uninstall, and hear under NVDA the message saying the mail and settings may still be on this computer, then find %LOCALAPPDATA%\wixen-mail gone afterwards, as the hedged sentence allows. The tests read the script as text; no uninstall has run. Rows 895 and 896 stand as they are; 895's walk, one account installing and uninstalling, is the case in which a second account keeps its folder | open |  | 2026-10-22T23:59:00.000Z |  |
+| 941 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-21, premise 5, read with the Read tool on 2026-10-22: while the mail server cannot be reached, every automatic save answers NotFiledAndTheOlderOneIsStillThere in spawn_draft_append and says the draft is on this computer and the server would not take it, once a minute for as long as somebody writes. Not ledger 912 and not review item 41, so 13.3-21 left it. Recommended: extend the once-per-draft rule in Filed::needs_saying_for to that answer until a save of the draft is taken, so it is heard once and again only after the server took a copy and then refused one; Pratik's to decide | open |  | 2026-10-22T23:59:30.000Z |  |
+| 942 | 13.3 | unrun-verify | src/application/draft_copy.rs |  | 13.3-21, review items 41 and 38, read in code only: nothing here has met a mail server without UIDPLUS. On such a server, a draft written in for three minutes or more should say once that an older copy may still be on the server and not again, the server's Drafts should hold the older copies marked for removal beside one unmarked copy with the latest words, and the search should read UID SEARCH HEADER MESSAGE-ID "..." UNDELETED. Held by the loopback cases in service::protocols::imap and application::mail_controller and the cases in application::draft_copy. Closed when a server without UIDPLUS has been seen to do this, at a phase 14 sitting or later | open |  | 2026-10-22T23:59:30.000Z |  |
 
 ````json
 [
@@ -11896,11 +11898,11 @@ last_updated: 2026-10-22T23:59:00.000Z
     "phase": "14",
     "file": "src/application/draft_copy.rs",
     "line": null,
-    "description": "14-08.1, read in the code on 2026-10-20 and never run: on a server without UIDPLUS, remove_these flags an older draft copy and leaves it, and the search has no UNDELETED, so each automatic save finds every copy flagged before, flags them all again with one UID STORE each, removes none, and answers that an older copy may still be on the server, which spawn_draft_append says at every save; since 14-08.1 each of those copies is also read once per save. Recommended: decide whether such a server is told once per draft rather than at every save, and whether copies already flagged are left out of the search; Pratik's to schedule",
-    "status": "open",
+    "description": "14-08.1, read in the code on 2026-10-20 and never run: on a server without UIDPLUS, remove_these flags an older draft copy and leaves it, and the search has no UNDELETED, so each automatic save finds every copy flagged before, flags them all again with one UID STORE each, removes none, and answers that an older copy may still be on the server, which spawn_draft_append says at every save; since 14-08.1 each of those copies is also read once per save. Recommended: decide whether such a server is told once per draft rather than at every save, and whether copies already flagged are left out of the search; Pratik's to schedule. Fixed 2026-10-22 by 13.3-21 (red 98045ae2, green b3d605db) on Pratik's yes of 2026-10-20 to this recommendation, review item 41: ImapSession::uids_with_message_id asks UNDELETED after the quoted identifier, for every caller, so a save finds only the live copy; Filed::needs_saying_once_per_draft says an older copy once for each draft while the program runs and a refused save every time, and spawn_draft_append asks it. Held by the loopback cases in service::protocols::imap and application::mail_controller, two cases in application::draft_copy, the reading in tests/wired.rs, and two new records. A server without UIDPLUS is ledger 942; the offline save said every minute is ledger 941",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-20T12:00:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-22T23:59:30.000Z"
   },
   {
     "id": 913,
@@ -12236,6 +12238,30 @@ last_updated: 2026-10-22T23:59:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-22T23:59:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 941,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-21, premise 5, read with the Read tool on 2026-10-22: while the mail server cannot be reached, every automatic save answers NotFiledAndTheOlderOneIsStillThere in spawn_draft_append and says the draft is on this computer and the server would not take it, once a minute for as long as somebody writes. Not ledger 912 and not review item 41, so 13.3-21 left it. Recommended: extend the once-per-draft rule in Filed::needs_saying_for to that answer until a save of the draft is taken, so it is heard once and again only after the server took a copy and then refused one; Pratik's to decide",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T23:59:30.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 942,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/application/draft_copy.rs",
+    "line": null,
+    "description": "13.3-21, review items 41 and 38, read in code only: nothing here has met a mail server without UIDPLUS. On such a server, a draft written in for three minutes or more should say once that an older copy may still be on the server and not again, the server's Drafts should hold the older copies marked for removal beside one unmarked copy with the latest words, and the search should read UID SEARCH HEADER MESSAGE-ID \"...\" UNDELETED. Held by the loopback cases in service::protocols::imap and application::mail_controller and the cases in application::draft_copy. Closed when a server without UIDPLUS has been seen to do this, at a phase 14 sitting or later",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T23:59:30.000Z",
     "resolved_at": null
   }
 ]
