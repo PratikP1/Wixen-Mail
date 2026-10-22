@@ -254,9 +254,18 @@ impl Account {
         Ok(())
     }
 
-    /// The account a browser sign-in is asked for and compared with.
+    /// The account a browser sign-in is asked for, compared with and named
+    /// as: the Username, which is what mail signs in with.
+    ///
+    /// Not the address box, which can hold a send-as address on another
+    /// domain that Google cannot offer in the browser (review item 19). The
+    /// address stands in only when the Username is blank, which saving
+    /// refuses, so only an account nobody saved through the editor has it.
     pub fn signs_in_as(&self) -> &str {
-        &self.email
+        match self.username.trim() {
+            "" => self.email.trim(),
+            username => username,
+        }
     }
 
     /// Get a display name for the account

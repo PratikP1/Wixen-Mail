@@ -380,7 +380,8 @@ pub enum WhatTheSeparateSignInDoes<Key> {
     /// carries all four permissions (D-14).
     TheMailSignInCoversIt,
     NoGoogleSignInKey,
-    /// Sign in as the account's address, with the key this copy holds.
+    /// Sign in as the account mail signs in as, its Username, with the key
+    /// this copy holds.
     SignsIn {
         key: Key,
         address: String,
@@ -405,7 +406,7 @@ pub fn what_the_separate_sign_in_does<Key>(
         None => WhatTheSeparateSignInDoes::NoGoogleSignInKey,
         Some(key) => WhatTheSeparateSignInDoes::SignsIn {
             key,
-            address: account.email.clone(),
+            address: account.signs_in_as().to_string(),
         },
     }
 }
@@ -451,12 +452,13 @@ impl<Key> WhatTheSeparateSignInDoes<Key> {
 ///
 /// It names the address to choose, which the provider is also told, so a
 /// person with several accounts in the browser knows which one this is for
-/// (audit #23).
+/// (audit #23). That is the Username mail signs in with, the one the sign-in
+/// is compared with, and not the address box (review item 19).
 pub fn what_sign_in_again_says_as_it_begins(account: &Account) -> String {
     format!(
         "Signing in to {}. {}",
         account.name,
-        choose_in_the_browser(&account.email)
+        choose_in_the_browser(account.signs_in_as())
     )
 }
 
@@ -1932,7 +1934,7 @@ mod tests {
     fn both_sign_ins_ask_for_the_account_mail_signs_in_as(manager: &str) -> Reading<()> {
         for signature in ["fn sign_in_for_calendars(", "fn run_oauth_flow("] {
             let body = the_function(manager, signature)?;
-            if !body.contains(".authorize(&account.signs_in_as())") {
+            if !body.contains(".authorize(account.signs_in_as())") {
                 return Err(format!(
                     "{signature} does not ask for the account mail signs in as"
                 ));
@@ -1954,7 +1956,7 @@ mod tests {
             let asks_the_address_box = planted_in(
                 &manager,
                 signature,
-                ".authorize(&account.signs_in_as())",
+                ".authorize(account.signs_in_as())",
                 ".authorize(&account.email)",
             );
             let why = both_sign_ins_ask_for_the_account_mail_signs_in_as(&asks_the_address_box)

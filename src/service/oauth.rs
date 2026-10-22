@@ -1262,11 +1262,15 @@ fn one_gmail_mailbox(address: &str) -> String {
 }
 
 /// What a Google sign-in made as another address says. Nothing was kept.
+///
+/// `asked_for` is the account's Username, which mail signs in with and the
+/// sign-in is compared with, so the sentence calls it that rather than the
+/// account's address, which can differ (review item 19).
 pub fn signed_in_as_somebody_else(asked_for: &str, signed_in_as: &str) -> String {
     format!(
-        "Google signed in as {signed_in_as}, which is not this account's address, so nothing \
-         was kept and nothing of that account's was brought here. Sign in again, and choose \
-         {asked_for} in the browser."
+        "Google signed in as {signed_in_as}, and this account's Username is {asked_for}, so \
+         nothing was kept and nothing from {signed_in_as} was brought here. Sign in again, and \
+         choose {asked_for} in the browser."
     )
 }
 
