@@ -1446,6 +1446,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The uninstaller no longer says your mail folder stays when it is about to remove it
+  (2026-10-22).** When the program had already gone from its folder before you uninstalled,
+  for example because antivirus took it away, the uninstaller said your mail and settings
+  were still on this computer in `%LOCALAPPDATA%\wixen-mail` and to delete the folder
+  yourself, and a moment later it removed that folder. It now says your mail and settings may
+  still be there, and to delete the folder if it is. The message after an uninstall for
+  everybody now says another Windows account may still have its own copy, rather than that it
+  does: the uninstall also removes the mail folder of the account that approved the
+  administrator prompt when Wixen Mail was installed. And the Windows Search guide installed
+  with the program, `windows-search.md`, said uninstalling takes away the Windows Search rule
+  as the person uninstalling. It runs as the account the uninstaller runs as, so uninstalling
+  for everybody with another account's password leaves your own rule in place, and the guide
+  now says so and points at the message that tells you how to untick it in Indexing Options.
+  Known limitation: no uninstall has been run to hear or check any of this.
 - **A message nested more than 512 levels deep no longer shows or reads what its sender hid
   (2026-10-22, LIST-25).** Since 2026-10-15, a message whose layout put more than 512 boxes
   one inside another went to the formatted view with the blocks its sender had hidden left
