@@ -543,6 +543,136 @@ mod tests {
         );
     }
 
+    /// A Drafts folder on this computer, under `acc-1`.
+    fn a_drafts_folder(cache: &MessageCache) -> i64 {
+        cache
+            .save_folder(&crate::data::message_cache::CachedFolder {
+                id: 0,
+                account_id: "acc-1".to_string(),
+                name: "Drafts".to_string(),
+                path: "Drafts".to_string(),
+                folder_type: "Drafts".to_string(),
+                unread_count: 0,
+                total_count: 0,
+            })
+            .expect("a Drafts folder")
+    }
+
+    /// The numbers a folder holds, in order.
+    fn numbers_in(cache: &MessageCache, folder_id: i64) -> Vec<u32> {
+        let mut held: Vec<u32> = cache
+            .conn
+            .prepare("SELECT uid FROM messages WHERE folder_id = ?1")
+            .and_then(|mut statement| {
+                statement
+                    .query_map(params![folder_id], |row| row.get::<_, u32>(0))?
+                    .collect()
+            })
+            .expect("the folder to be read");
+        held.sort_unstable();
+        held
+    }
+
+    #[test]
+    fn test_every_unmarked_copy_of_a_sent_draft_leaves_drafts_here() {
+        // Item 38 of the review: the removal looked one number up and deleted
+        // by it, so a second copy, one restored from Trash beside a newer one,
+        // stayed in Drafts as a draft nobody sent.
+        let cache = a_cache("every_copy_of_a_sent_draft");
+        let folder_id = a_drafts_folder(&cache);
+        let sent = crate::application::draft_message::message_id_for("d-1");
+        filed(&cache, folder_id, 1, &sent);
+        filed(&cache, folder_id, 2, &sent);
+        filed(&cache, folder_id, 3, "<another@example.com>");
+
+        assert!(
+            cache
+                .forget_the_filed_draft(folder_id, &sent)
+                .expect("the copies to be taken out"),
+            "the copies that were filed were not found"
+        );
+
+        assert_eq!(
+            numbers_in(&cache, folder_id),
+            vec![3],
+            "a copy of the sent draft stayed, or another message went with them"
+        );
+    }
+
+    #[test]
+    fn test_a_row_filed_here_stays_and_the_unmarked_copy_beside_it_goes() {
+        let cache = a_cache("a_row_filed_here_beside_a_copy");
+        let folder_id = a_drafts_folder(&cache);
+        let sent = crate::application::draft_message::message_id_for("d-1");
+        cache
+            .file_message_here(&crate::data::message_cache::IncomingMessage {
+                folder_id,
+                uid: 1,
+                message_id: sent.clone(),
+                subject: "Filed here".to_string(),
+                from_addr: "me@example.com".to_string(),
+                to_addr: "ada@example.com".to_string(),
+                cc: None,
+                reply_to: None,
+                date: "2026-10-14T09:00:00Z".to_string(),
+                internal_date: None,
+                size_bytes: Some(10),
+                refs_header: None,
+                read: true,
+                starred: false,
+                answered: false,
+                draft: false,
+                deleted: false,
+                has_attachments: false,
+                safety: crate::service::safety::Verdict::ordinary(),
+                gmail_message_id: None,
+                server_thread_id: None,
+                labels: None,
+                receipt_to: None,
+                list_unsubscribe: None,
+                pop_uidl: None,
+            })
+            .expect("a row this program filed");
+        filed(&cache, folder_id, 2, &sent);
+
+        assert!(
+            cache
+                .forget_the_filed_draft(folder_id, &sent)
+                .expect("the copy to be taken out"),
+            "the unmarked copy was not taken out"
+        );
+
+        assert_eq!(
+            numbers_in(&cache, folder_id),
+            vec![1],
+            "the row this program filed went, or the unmarked copy stayed"
+        );
+    }
+
+    #[test]
+    fn test_a_blank_identifier_removes_nothing_from_drafts_here() {
+        // A blank identifier matches every message here that carries none, so
+        // a removal asked with one would take a stranger's message out.
+        let cache = a_cache("a_blank_identifier_in_drafts");
+        let folder_id = a_drafts_folder(&cache);
+        filed(&cache, folder_id, 1, "");
+
+        for blank in ["", "  ", "<>"] {
+            assert!(
+                !cache
+                    .forget_the_filed_draft(folder_id, blank)
+                    .expect("the folder to be read"),
+                "a blank identifier {blank:?} was answered as a copy taken out"
+            );
+        }
+
+        assert_eq!(
+            numbers_in(&cache, folder_id),
+            vec![1],
+            "a message with no identifier was taken out by a blank one"
+        );
+    }
+
     #[test]
     fn test_draft_operations() {
         let temp_dir = tempfile::tempdir().expect("a temporary folder");
