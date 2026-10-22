@@ -2195,12 +2195,19 @@ Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"
 
 /// What the message after an uninstall for everybody has to say, as phrases its
 /// text holds, compared ignoring case and line breaks.
-const WHAT_THE_ALL_USERS_MESSAGE_SAYS: [&str; 5] = [
+///
+/// "may still have its own copy" rather than "still has": `[UninstallDelete]`
+/// removes `%LOCALAPPDATA%\wixen-mail` of the account setup ran as, fixed when
+/// setup wrote the uninstall log (`RecordUninstallDeleteEntries` in
+/// `Projects/Src/Setup.Install.pas` at `is-6_7_3`, read 2026-10-20), so the
+/// account that installed loses its folder when another account uninstalls.
+const WHAT_THE_ALL_USERS_MESSAGE_SAYS: [&str; 6] = [
     r"%LOCALAPPDATA%\wixen-mail",
     "not encrypted",
     "Credential Manager",
     "begin with wixen-mail",
     "sign in to Windows as that account",
+    "may still have its own copy",
 ];
 
 /// When it is shown: uninstalling for everybody, with the program still there,
@@ -2425,7 +2432,8 @@ begin
 
   {condition}
     MsgBox('This clears the data of ' + GetUserNameString + '. If anyone used '
-           + 'Wixen Mail under another account, that account''s mail is in '
+           + 'Wixen Mail under another account, it may still have its own copy: '
+           + 'that account''s mail is in '
            + '%LOCALAPPDATA%\wixen-mail, which is {sentence}, and its entries in '
            + 'Credential Manager begin with wixen-mail. To remove them, sign in '
            + 'to Windows as that account.',
