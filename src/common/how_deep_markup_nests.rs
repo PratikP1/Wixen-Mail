@@ -8,8 +8,11 @@
 //! every time the message is selected (audit finding #17 of 2026-10-14).
 //!
 //! So the depth is asked once, right after each parse whose tree a recursive
-//! walker reads: in `hidden_text::drop_what_the_sender_hid`, in the vendored
-//! `HtmlToText::convert`, and in `long_text`'s reader. The question walks
+//! walker reads: in the vendored `HtmlToText::convert` and in `long_text`'s
+//! reader. `hidden_text::drop_what_the_sender_hid` asked it too until
+//! 2026-10-22, and handed deeper markup on with what its sender hid still in
+//! it; its walk holds one edge at a time since 13.3-19, so it reads markup of
+//! any depth and asks nothing. The question walks
 //! [`ego_tree::NodeRef::traverse`], an iterator holding one edge at a time,
 //! so asking it costs no stack however deep the answer is. Markup deeper than
 //! the limit is read as its words alone, gathered the same way.

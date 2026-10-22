@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 787
+open_count: 788
 waived_count: 0
-fixed_count: 150
-total_count: 937
-last_updated: 2026-10-22T22:00:00.000Z
+fixed_count: 151
+total_count: 939
+last_updated: 2026-10-22T23:30:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -873,7 +873,7 @@ last_updated: 2026-10-22T22:00:00.000Z
 | 856 | 13.2 | todo | .github/workflows/accessibility.yml |  | 13.2-11's pull request 180: the Accessibility run 38803731724's first attempt failed with These windows were not scanned: blocked-senders : the application exited with code 0 before the scan, and its rerun of the failed job passed with every window scanned. 13.2-11 changes nothing the blocked-senders scan target reaches, and no earlier summary or ledger row records that refusal, so it is read as a flake. Why a scan target's process can exit cleanly before the scanner attaches is not diagnosed. Closed when it is diagnosed and made to say its cause, or it has not recurred by 13.2-32's closing read | fixed | Closed on 2026-10-19 by 13.2-32's closing read, on its second condition: read with gh run list on the Accessibility workflow that day, each of the nineteen runs after 38803731724, from 13.2-12's 38833050650 to 13.2-31.9's 39321832990, passed on its first attempt, so the blocked-senders target has not exited before its scan again. Why it did once is still not diagnosed | 2026-10-15T21:35:00.000Z | 2026-10-19T23:00:00.000Z |
 | 857 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12, found and left: html5ever's parse of nested div elements is quadratic in their depth, since every div start tag looks back along the open elements for a p in button scope, and the depth check runs after the parse, so it cannot remove that cost. Timed on 2026-10-16 in a release build at de4df4d6, long_text::pieces_of_markup over div elements nested around two words, three takes each, by a throwaway probe in the session scratchpad run as cargo run --release with the project's Cargo.lock: 5,000 levels 90 ms, 10,000 levels 367 ms, 20,000 levels 2.02 s median (1.48 s to 2.17 s). The preview parses the same markup several times on the window's thread, so a message 20,000 levels deep holds the window for some seconds, and the time grows with the square of the depth. The changelog says so as a known limitation. Closed when a parse past a size or depth bound is refused or done off the window's thread with a case, or Pratik decides the cost may stay | open |  | 2026-10-16T01:15:00.000Z |  |
 | 858 | 13.2 | unrun-verify | src/presentation/reader_text.rs |  | 13.2-12, finding #17 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-12's merge: a message whose layout nests thousands of levels deep, selected and opened in the text reader, says This message's layout is nested too deeply to show as a page, so only its words follow, before its words, and the program stays open. Held by the reader's case past the limit, the audit's message previewed and saved on a 1 MiB thread in processes of their own, and two new records; no NVDA case opens such a message. Closed when he has heard it | open |  | 2026-10-16T01:15:00.000Z |  |
-| 859 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are | open |  | 2026-10-16T01:15:00.000Z |  |
+| 859 | 13.2 | todo | src/common/how_deep_markup_nests.rs |  | 13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are. Corrected 2026-10-22 by 13.3-19 (review item 27): the sentence saying the formatted view still hides what the sender hid was false, since the page's cleaner keeps neither style nor aria-hidden, so the formatted view showed and read those blocks too and said nothing. Fixed 2026-10-22 by 13.3-19 (red 467a0c0c, green beb1492a) on Pratik's yes of 2026-10-20 to item 27: hidden_text's walk holds one edge at a time and its depth check is gone, so the drop runs at any depth before the page's cleaner and long_text's reader; held by application::hidden_text's case past the limit and its 4,000-level case on the window's stack, run in a process of its own, and by the target's page and reader cases. The text reader's half, the vendored converter, never drops what a sender hid at any depth and moved to ledger 938 | fixed |  | 2026-10-16T01:15:00.000Z | 2026-10-22T23:30:00.000Z |
 | 860 | 13.2 | unrun-verify | src/presentation/editor_document.rs |  | 13.2-13, finding #19 of the audit of 2026-10-14, on a build holding 13.2-13's merge: Reply to a real newsletter that carries a tracking pixel, with a loopback proxy or a network log watching, and nothing the newsletter points at is fetched while the editor is open; Forward the same and the sent message still points at the original's pictures. Held by the editor page's cases and a record whose break takes the img-src data: rule out; nothing here has driven a live editor's WebView2 against it. Closed when the reply has been watched on the wire | open |  | 2026-10-16T12:00:00.000Z |  |
 | 861 | 13.2 | unrun-verify | src/application/meeting_changes.rs |  | 13.2-13, finding #21 of the audit of 2026-10-14, heard under NVDA on a build holding 13.2-13's merge: a meeting update from the organiser's address in a message the list shows as Phishing or Spam, opened in a reader window, says Your calendar was not changed, because this message is marked as phishing, so it may not really come from the organiser, and the meeting stays where it was. Held by the decision's cases, the reader's case against a real store, and a record; no NVDA case opens such a message. Closed when he has heard it | open |  | 2026-10-16T12:00:00.000Z |  |
 | 862 | 13.2 | unrun-verify | src/presentation/wx_app.rs |  | 13.2-14, finding #20 of the audit of 2026-10-14, on a build holding 13.2-14's merge with NVDA running: a webcal link to a real published feed followed from a web page says Fetching that calendar., the window answers keys while the feed is fetched, and what follows is heard as before. Held by the client's cases against loopback hosts that never answer or never stop, a reading that the handover's calendar arm waits on nothing, and three records; no real feed has been fetched and no NVDA case follows a calendar link. Closed when he has heard it | open |  | 2026-10-16T12:00:00.000Z |  |
@@ -952,6 +952,8 @@ last_updated: 2026-10-22T22:00:00.000Z
 | 935 | 13.3 | unrun-verify | src/data/message_cache/contacts.rs |  | 13.3-18, review item 23, for the tester at phase 14's sittings: a contact Google, Outlook or a CardDAV address book has just made or changed is read again before its answer is written, so an edit made meanwhile is kept and waits, and a contact deleted meanwhile is owed a deletion there; the Contact Manager saves over the contact as it stands. To see on a real Google account: import a vCard file of a few hundred contacts, and during the first contacts sync after it, edit one contact not yet sent in the Contact Manager and delete another; at the next sync, the edit is at Google and the deleted one is gone there, and neither is here twice. Proven only against scripted address books and a CardDAV test server | open |  | 2026-10-22T22:00:00.000Z |  |
 | 936 | 13.3 | todo | src/application/contacts_sync.rs |  | 13.3-18, premise 4, for Pratik: with Allow Changes off, a contact typed here on a Google or Outlook account goes to create_contact, the write gate refuses it, and the refusal is counted as an error on every contacts sync, where CardDAV's create sends the same refusal to waiting_on_the_setting and says the setting. Not one of the review's 42. Recommended: send a gate refusal from both creates to waiting_on_the_setting, as CardDAV's create and count_the_attempt already do; closed when Pratik answers | open |  | 2026-10-22T22:00:00.000Z |  |
 | 937 | 13.3 | todo | src/presentation/managers.rs |  | 13.3-18, read with the Read tool on 2026-10-22: report() writes a manager's failures to the log with tracing::error, and the Contact Manager names each contact that would not save by its name, so a refused save puts a contact's name in the log people attach to bug reports, the class review item 25 fixed for the sync. Not one of the review's 42. Recommended: name the contact by its id in the log line and keep her name in the sentence on screen; Pratik's to schedule | open |  | 2026-10-22T22:00:00.000Z |  |
+| 938 | 13.3 | todo | src/presentation/reader_text.rs |  | 13.3-19, premise 3, read with the Read tool on 2026-10-20 and again on 2026-10-22: the text reader, the window Enter opens on a message, reads an HTML body through the vendored HtmlToText::convert on the markup as it came (reader_text.rs body_text, :232-250) and never drops what the sender hid, at any depth, so a newsletter's hidden preheader and its padding, and any block hidden by the six style rules or aria-hidden, are read there. Taken over from ledger 859's words-alone half. Not one of the review's 42, and a behaviour change Pratik has not been asked about. Recommended: hand the converter the markup drop_what_the_sender_hid gives, as the formatted view is, and say the sentence about blocks left out above the words when it counted any; Pratik's to decide | open |  | 2026-10-22T23:30:00.000Z |  |
+| 939 | 13.3 | unrun-verify | src/application/hidden_text.rs |  | 13.3-19, review item 27, for the tester's ear: a message nested past 512 levels with a hidden preview line and a hidden block of words below its visible text, opened in the formatted view under NVDA on a build holding 13.3-19's merge, reads neither and says the sentence about one block left out once, at the top. The cases read the page's markup; nobody has heard it | open |  | 2026-10-22T23:30:00.000Z |  |
 
 ````json
 [
@@ -11257,11 +11259,11 @@ last_updated: 2026-10-22T22:00:00.000Z
     "phase": "13.2",
     "file": "src/common/how_deep_markup_nests.rs",
     "line": null,
-    "description": "13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are",
-    "status": "open",
+    "description": "13.2-12: markup nested past the limit is read as its words alone, and hidden_text's drop hands it on unchanged, so its words include text the sender hid with display:none or aria-hidden and the invisible filler a preheader is padded with. The formatted view still hides what the sender hid. Such a message is hostile or broken, which is why the plan left it. Recommended: the_words_alone skips text under an element hidden_text::whether_hidden names and strips filler, both read during the same iteration, so nothing walks recursively. Closed when Pratik answers and the answer is carried out with a case, or he decides the words may stay as they are. Corrected 2026-10-22 by 13.3-19 (review item 27): the sentence saying the formatted view still hides what the sender hid was false, since the page's cleaner keeps neither style nor aria-hidden, so the formatted view showed and read those blocks too and said nothing. Fixed 2026-10-22 by 13.3-19 (red 467a0c0c, green beb1492a) on Pratik's yes of 2026-10-20 to item 27: hidden_text's walk holds one edge at a time and its depth check is gone, so the drop runs at any depth before the page's cleaner and long_text's reader; held by application::hidden_text's case past the limit and its 4,000-level case on the window's stack, run in a process of its own, and by the target's page and reader cases. The text reader's half, the vendored converter, never drops what a sender hid at any depth and moved to ledger 938",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-10-16T01:15:00.000Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-22T23:30:00.000Z"
   },
   {
     "id": 860,
@@ -12197,6 +12199,30 @@ last_updated: 2026-10-22T22:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-22T22:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 938,
+    "kind": "todo",
+    "phase": "13.3",
+    "file": "src/presentation/reader_text.rs",
+    "line": null,
+    "description": "13.3-19, premise 3, read with the Read tool on 2026-10-20 and again on 2026-10-22: the text reader, the window Enter opens on a message, reads an HTML body through the vendored HtmlToText::convert on the markup as it came (reader_text.rs body_text, :232-250) and never drops what the sender hid, at any depth, so a newsletter's hidden preheader and its padding, and any block hidden by the six style rules or aria-hidden, are read there. Taken over from ledger 859's words-alone half. Not one of the review's 42, and a behaviour change Pratik has not been asked about. Recommended: hand the converter the markup drop_what_the_sender_hid gives, as the formatted view is, and say the sentence about blocks left out above the words when it counted any; Pratik's to decide",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T23:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 939,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/application/hidden_text.rs",
+    "line": null,
+    "description": "13.3-19, review item 27, for the tester's ear: a message nested past 512 levels with a hidden preview line and a hidden block of words below its visible text, opened in the formatted view under NVDA on a build holding 13.3-19's merge, reads neither and says the sentence about one block left out once, at the top. The cases read the page's markup; nobody has heard it",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T23:30:00.000Z",
     "resolved_at": null
   }
 ]

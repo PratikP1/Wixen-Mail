@@ -42,6 +42,7 @@ use std::time::Instant;
 
 use wixen_mail::application::long_text::{Piece, pieces_of_markup};
 use wixen_mail::application::pictures::Fetching;
+use wixen_mail::common::how_deep_markup_nests::DEEPEST_MARKUP_WALKED;
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::presentation::HtmlRenderer;
 use wixen_mail::presentation::html_renderer::ThreadPart;
@@ -533,6 +534,73 @@ fn test_a_layout_table_is_read_as_its_blocks_in_order() {
             Piece::Paragraph("Nested".to_string()),
         ]
     );
+}
+
+// ── Markup nested past the limit (item 27 of the review of 2026-10-20) ────
+//
+// The page's cleaner keeps neither `style` nor `aria-hidden`, so a hidden
+// block the drop hands on unchanged is shown and read. Until 13.3-19 the
+// drop handed on every message nested deeper than the readers walk.
+
+/// `body` inside one more `div` than the readers walk. Built here because
+/// the library's `nested` helper belongs to its own tests.
+fn nested_past_the_limit(body: &str) -> String {
+    let depth = DEEPEST_MARKUP_WALKED + 1;
+    format!("{}{body}{}", "<div>".repeat(depth), "</div>".repeat(depth))
+}
+
+/// A hidden preview line padded the way a newsletter platform pads one,
+/// before a message whose layout is nested past the limit, with a piece of
+/// decoration the sender hid from screen readers inside it.
+fn a_padded_preheader_before_deep_content() -> String {
+    let padding = "\u{34f} \u{a0} \u{2007} \u{ad}".repeat(50);
+    format!(
+        "<div style=\"display:none\">Your order has shipped{padding}</div>{}",
+        nested_past_the_limit(
+            "<p>Hello,</p><span aria-hidden=\"true\">\u{2726} \u{2726} \u{2726}</span>\
+             <p>The parcel left the depot this morning.</p>"
+        )
+    )
+}
+
+#[test]
+fn test_markup_nested_past_the_limit_has_its_hidden_blocks_left_out_of_the_page() {
+    // A preheader and its padding: dropped, and nothing said.
+    let page = the_page_for(&a_padded_preheader_before_deep_content());
+    assert!(!page.contains("Your order has shipped"), "{page}");
+    assert!(!page.contains('\u{34f}'), "{page}");
+    assert!(!page.contains('\u{ad}'), "{page}");
+    assert!(!page.contains("&#847;"), "{page}");
+    assert!(!page.contains('\u{2726}'), "{page}");
+    assert!(!page.contains("left out"), "{page}");
+    assert!(!page.contains("held-back-count"), "{page}");
+    assert!(page.contains("The parcel left the depot"), "{page}");
+
+    // A block of words below the visible text: dropped, and said once at
+    // the top.
+    let page = the_page_for(&nested_past_the_limit(
+        "<p>Dear reader,</p>\
+         <div style=\"display:none\">The paragraph the sender hid from the sighted.</div>\
+         <p>Yours.</p>",
+    ));
+    assert!(!page.contains("hid from the sighted"), "{page}");
+    assert_eq!(page.matches(ONE_BLOCK_LEFT_OUT).count(), 1, "{page}");
+    let sentence = page.find(ONE_BLOCK_LEFT_OUT).expect("the sentence");
+    let first_word = page.find("Dear reader").expect("the message");
+    assert!(sentence < first_word, "{page}");
+}
+
+#[test]
+fn test_markup_nested_past_the_limit_is_read_without_what_the_sender_hid() {
+    // The words a list's preview line, search and a description read aloud
+    // are taken from.
+    let words = the_words_of(&pieces_of_markup(&a_padded_preheader_before_deep_content()));
+
+    assert!(!words.contains("Your order has shipped"), "{words}");
+    assert!(!words.contains('\u{34f}'), "{words}");
+    assert!(!words.contains('\u{ad}'), "{words}");
+    assert!(!words.contains('\u{2726}'), "{words}");
+    assert!(words.contains("The parcel left the depot"), "{words}");
 }
 
 // ── The cost ──────────────────────────────────────────────────────────────
