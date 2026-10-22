@@ -441,16 +441,18 @@ end;
 // Skipped, the only thing left aiming at the data folder is the
 // [UninstallDelete] line at the end of this file, and it knows one location:
 // WIXEN_MAIL_DATA moves the folder somewhere that line cannot name. Which
-// account's folder {localappdata} names there is settled by Inno's help, read
-// 2026-10-18 in 6.7.3: {localappdata} is "The path to the current user's local
-// (non-roaming) Application Data folder", and "The "user" constants refer to
-// the profile of the user running Setup. This user is often not the same as
-// the currently logged-in user". So it is the folder of the account the
-// uninstaller runs as: the person, uninstalling for one user, and the account
-// that approved the elevation prompt, uninstalling for everybody. This comment
-// said until that day that it had not been measured. Nothing writes the note
-// in the temporary folder either, because the note is written by the program
-// that never ran.
+// account's folder {localappdata} names there is fixed when setup writes the
+// uninstall log, not when the uninstaller runs. Inno's source at is-6_7_3,
+// Projects/Src/Setup.Install.pas, read 2026-10-20: RecordUninstallDeleteEntries
+// adds each name to the log through ExpandConst as setup records it. So it is
+// the folder of the account setup ran as. Installed for one user, that is the
+// person, who is also the one uninstalling, so the folder goes a moment after
+// the message below. Installed for everybody, it is the account that approved
+// setup's elevation prompt, whoever uninstalls. Until 2026-10-20 this comment
+// said, from Inno's help, that it was the account the uninstaller runs as; the
+// help's "user running Setup" is the run that wrote the log. Nothing writes
+// the note in the temporary folder either, because the note is written by the
+// program that never ran.
 //
 // So the mail cache can stay on the disk, unencrypted, with nobody told. An
 // uninstall has been seen to end that way, and this is the one branch where no
@@ -458,8 +460,9 @@ end;
 //
 // Not an attempt to erase it from here. An uninstaller has no way to reach the
 // Windows credential store, and it would be guessing at the folder for the
-// reason above. Saying plainly what is still there, and where, is what this can
-// do honestly.
+// reason above. Saying plainly what may still be there, and where, is what this
+// can do honestly: "may", because for the usual install the folder named is
+// removed, and the message cannot know which install this was.
 function TheProgramIsAlreadyGone(): Boolean;
 begin
   Result := not FileExists(ExpandConstant('{app}\wixen-mail.exe'));
@@ -522,11 +525,11 @@ begin
   if TheProgramIsAlreadyGone() then
     MsgBox('Wixen Mail could not clear its own data, because the program was '
            + 'already gone from this computer before the uninstall ran.' + #13#10#13#10
-           + 'Your mail and settings are still on this computer, in:' + #13#10
+           + 'Your mail and settings may still be on this computer, in:' + #13#10
            + '%LOCALAPPDATA%\wixen-mail' + #13#10#13#10
-           + 'The downloaded mail in that folder is not encrypted. Paste that '
-           + 'path into File Explorer and delete the folder yourself if you '
-           + 'want it gone. If you told Wixen Mail to keep its files somewhere '
+           + 'The downloaded mail in that folder is not encrypted. If the folder '
+           + 'is still there, paste that path into File Explorer and delete the '
+           + 'folder yourself. If you told Wixen Mail to keep its files somewhere '
            + 'else, look there instead.' + #13#10#13#10
            + 'Your saved passwords and sign-in tokens are still in the Windows '
            + 'credential store. Open Credential Manager, choose Windows '
@@ -538,9 +541,11 @@ begin
     UninstallRun section runs as the uninstaller, so it clears the data of one
     account: the one that approved the elevation prompt, which
     GetUserNameString returns here. Any other account that used Wixen Mail
-    keeps its mail folder, which is not encrypted, and its saved passwords and
-    tokens, and an uninstaller cannot reach either. So it says so (audit
-    finding #43).
+    keeps its saved passwords and tokens, and may keep its mail folder, which
+    is not encrypted; an uninstaller cannot reach either. "May", because the
+    UninstallDelete section removes the folder of the account that installed,
+    which can be one of those others. So it says so (audit finding #43,
+    review item 28).
 
     Only uninstalling for everybody, because uninstalling for one user runs as
     that user, and the erase clears that user's data. Only with the program
@@ -551,7 +556,7 @@ begin
            + 'Wixen Mail kept for the Windows account ' + GetUserNameString
            + ', the account it is running as.' + #13#10#13#10
            + 'If Wixen Mail was used under any other Windows account on this '
-           + 'computer, that account still has its own copy:' + #13#10#13#10
+           + 'computer, that account may still have its own copy:' + #13#10#13#10
            + 'Its mail and settings are in %LOCALAPPDATA%\wixen-mail, or in the '
            + 'folder that account told Wixen Mail to use. The downloaded mail '
            + 'in that folder is not encrypted.' + #13#10#13#10
@@ -689,8 +694,12 @@ Filename: "{app}\wixen-mail.exe"; Parameters: "--erase-all-data"; RunOnceId: "Er
 
 [UninstallDelete]
 ; Belt and braces for the default location, for the case where the step above
-; could not run at all. {localappdata} is "the current user's" folder in Inno's
-; help, and the current user is the account the uninstaller runs as, so this
-; reaches the same one account the step above does and no other (6.7.3, read
-; 2026-10-18).
+; could not run at all. Which account's folder this names is fixed when setup
+; writes the uninstall log, not when the uninstaller runs: Inno's source at
+; is-6_7_3, Projects/Src/Setup.Install.pas, read 2026-10-20, has
+; RecordUninstallDeleteEntries add each name through ExpandConst as setup
+; records it. So this removes the folder of the account setup ran as: the
+; person, installed for one user, and the account that approved setup's
+; elevation prompt, installed for everybody, whichever account uninstalls.
+; Until 2026-10-20 this said it reached the account the uninstaller runs as.
 Type: filesandordirs; Name: "{localappdata}\wixen-mail"
