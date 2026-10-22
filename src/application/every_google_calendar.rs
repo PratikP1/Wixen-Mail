@@ -683,6 +683,62 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other()
+     {
+        let cache = a_cache("every_google_calendar_deleted_from_one");
+        let both_hold_it = StandIn {
+            list: the_main_calendar_and_the_team_calendar(),
+            calendars: vec![
+                (
+                    "primary",
+                    ItsAnswers::always(one_event("shared-evt", "Review")),
+                ),
+                (
+                    THE_TEAM_CALENDAR_IN_AN_ADDRESS,
+                    ItsAnswers::always(one_event("shared-evt", "Review")),
+                ),
+            ],
+        };
+        one_sync(&cache, &both_hold_it, 3, false).await;
+
+        let main = the_main_row(&cache);
+        let team_id = format!("google:acct:{THE_TEAM_CALENDAR}");
+        let copy_in = |calendar_id: &str| {
+            cache
+                .get_events_for_calendar(calendar_id)
+                .expect("the calendar to be readable")
+                .into_iter()
+                .find(|event| event.provider_event_id.as_deref() == Some("shared-evt"))
+        };
+        let the_team_copy = copy_in(&team_id).expect("the team calendar's copy");
+        cache
+            .delete_calendar_event(&the_team_copy.id)
+            .expect("the team calendar's copy to be deleted here");
+
+        let renamed = || ItsAnswers::always(one_event("shared-evt", "Review, moved"));
+        let google_renames_it = StandIn {
+            list: the_main_calendar_and_the_team_calendar(),
+            calendars: vec![
+                ("primary", renamed()),
+                (THE_TEAM_CALENDAR_IN_AN_ADDRESS, renamed()),
+            ],
+        };
+        one_sync(&cache, &google_renames_it, 3, false).await;
+
+        assert_eq!(
+            copy_in(&main.id).map(|event| event.summary),
+            Some("Review, moved".to_string()),
+            "a deletion in the team calendar kept the main calendar's copy from \
+             being brought up to date"
+        );
+        assert_eq!(
+            copy_in(&team_id),
+            None,
+            "the copy deleted here from the team calendar was written back"
+        );
+    }
+
+    #[tokio::test]
     async fn test_each_calendar_keeps_its_own_marker_and_one_refused_is_read_whole() {
         let cache = a_cache("every_google_calendar_markers");
         let with_a_marker = |id: &str, marker: &str| {
