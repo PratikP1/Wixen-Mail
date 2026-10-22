@@ -563,6 +563,9 @@ mod tests {
         /// How many times its cards were asked for, so a test can say that a
         /// read was skipped rather than that it found nothing.
         times_read: Mutex<usize>,
+        /// What the person does in the window while the server takes a card,
+        /// run once, inside the write and before its answer.
+        meanwhile: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     }
 
     impl CardsOnAServer for Scripted {
@@ -596,6 +599,14 @@ mod tests {
                 .lock()
                 .expect("what was written")
                 .push((card_url.to_string(), vcard.to_string()));
+            let meanwhile = self
+                .meanwhile
+                .lock()
+                .expect("what is done meanwhile")
+                .take();
+            if let Some(work) = meanwhile {
+                work();
+            }
             match self.writes {
                 Writes::Accepted => Ok(self.marker_after_a_write.clone()),
                 Writes::RefusedByTheGate => Err(Error::Security(
@@ -758,6 +769,56 @@ mod tests {
             1,
             "the address book was sent the same contact twice"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_edited_while_the_address_book_took_its_card_keeps_the_edit() {
+        // Review item 23. The made-here PUT wrote the copy it read, so an edit
+        // made in the window while the server took the card was written over.
+        let (paths, cache) = cache_for("carddav-create-edited-meanwhile");
+        // A marker that has not moved, so the read that follows the push is
+        // skipped rather than taking her off for a card this script never holds.
+        let mut book = an_address_book(&cache);
+        book.ctag = Some("\"ctag-1\"".to_string());
+        cache.save_address_book(&book).expect("the marker saves");
+        cache
+            .save_contact(&made_here("Ann Example", "ann@example.com"))
+            .expect("she saves");
+        let folder = paths.cache_dir();
+        let server = Scripted {
+            marker: Some("\"ctag-1\"".to_string()),
+            writes: Writes::Accepted,
+            marker_after_a_write: Some("\"v1\"".to_string()),
+            meanwhile: Mutex::new(Some(Box::new(move || {
+                let window = MessageCache::new(folder, None).expect("the window");
+                let mut edited = window
+                    .get_contact("here-1")
+                    .expect("a read")
+                    .expect("she is here");
+                edited.name = "Ann Edited".to_string();
+                window.save_contact(&edited).expect("the edit");
+            }))),
+            ..Scripted::default()
+        };
+
+        sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("a sync");
+
+        let after = cache
+            .get_contact("here-1")
+            .expect("a read")
+            .expect("she is here");
+        assert_eq!(after.name, "Ann Edited", "the edit was written over");
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        let identity = after
+            .known_to
+            .iter()
+            .find(|identity| identity.address_book == filed_under)
+            .expect("the address book's name for her, or the next sync makes her again");
+        assert!(identity.change_is_waiting, "the edit never leaves");
+        assert_eq!(identity.provider_version.as_deref(), Some("\"v1\""));
+        assert!(after.pending);
     }
 
     #[tokio::test]

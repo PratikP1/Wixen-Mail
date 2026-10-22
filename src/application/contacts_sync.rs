@@ -7124,6 +7124,8 @@ mod tests {
         /// asked to delete. Same shape and same reasons as the Google side.
         accepts_a_deletion: bool,
         deleted: std::cell::RefCell<Vec<String>>,
+        /// What the person does meanwhile, as on the Google side.
+        meanwhile: Meanwhile,
     }
 
     impl MicrosoftContactBook for ScriptedMicrosoft {
@@ -7156,6 +7158,7 @@ mod tests {
                     "nothing in this test sends a contact".to_string(),
                 ));
             }
+            the_person_acts(&self.meanwhile);
             Ok(MsGraphContact {
                 id: "AAMkNew".to_string(),
                 odata_etag: self.the_version_it_gives_back.clone(),
@@ -7188,6 +7191,7 @@ mod tests {
             {
                 return Err(outlooks_answer_to_a_marker_it_has_moved_past());
             }
+            the_person_acts(&self.meanwhile);
             Ok(MsGraphContact {
                 id: provider_contact_id.to_string(),
                 odata_etag: self.the_version_it_gives_back.clone(),
@@ -7729,6 +7733,138 @@ mod tests {
             "Google keeps a contact nobody has any more"
         );
         assert_eq!(cache.get_contact("local-1").expect("a read"), None);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_edited_while_outlook_made_it_keeps_the_edit() {
+        // Review item 23, Outlook's create pass, which wrote the copy it read
+        // the same way Google's did.
+        let cache = a_cache("outlook_create_edited_meanwhile");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let folder = cache.path().to_path_buf();
+        let microsoft = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            the_version_it_gives_back: Some("W/\"1\"".to_string()),
+            meanwhile: while_the_address_book_answers(move || {
+                rename_in_the_window(folder, "local-1", "Grace Brewster Hopper")
+            }),
+            ..Default::default()
+        };
+
+        sync_microsoft_contacts(
+            &cache,
+            &microsoft,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a sync");
+
+        let after = the_contact_under(&cache, "local-1");
+        assert_eq!(
+            after.name, "Grace Brewster Hopper",
+            "the edit was written over"
+        );
+        assert_eq!(after.id_in(&AddressBook::Microsoft), Some("AAMkNew"));
+        assert_eq!(
+            version_given_by(&after, &AddressBook::Microsoft).as_deref(),
+            Some("W/\"1\"")
+        );
+        assert!(
+            still_owed_the_change(&after, &AddressBook::Microsoft),
+            "the edit is not waiting for Outlook, so it never leaves"
+        );
+        assert!(after.pending);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_edited_again_while_its_change_was_sent_keeps_the_second_edit() {
+        // Review item 23, the change push. It wrote the copy it read with the
+        // change marked as sent, so a second edit made while the first was at
+        // Google was written over and never left.
+        let cache = a_cache("google_change_edited_meanwhile");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        let mut grace = a_local_contact("Grace Hopper", "grace@example.com");
+        grace.id = "local-1".to_string();
+        grace.pending = true;
+        grace.source_provider = Some(GOOGLE_ADDRESS_BOOK.to_string());
+        grace.known_to = vec![ProviderIdentity {
+            address_book: AddressBook::Google,
+            provider_contact_id: "people/c1".to_string(),
+            provider_version: Some("etag-before".to_string()),
+            change_is_waiting: true,
+        }];
+        cache.save_contact(&grace).expect("she saves");
+        let folder = cache.path().to_path_buf();
+        let google = ScriptedGoogle {
+            accepts_a_change: true,
+            meanwhile: while_the_address_book_answers(move || {
+                rename_in_the_window(folder, "local-1", "Grace Brewster Hopper")
+            }),
+            ..Default::default()
+        };
+
+        sync_google_contacts(&cache, &google, "a token", AN_ACCOUNT, ANYWHERE_IT_IS_KNOWN)
+            .await
+            .expect("a sync");
+
+        let after = the_contact_under(&cache, "local-1");
+        assert_eq!(
+            after.name, "Grace Brewster Hopper",
+            "the second edit was written over"
+        );
+        assert_eq!(
+            after.known_to,
+            vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/c1".to_string(),
+                provider_version: Some("etag-after".to_string()),
+                change_is_waiting: true,
+            }],
+            "the second edit must wait, built on the marker Google gave the first"
+        );
+        assert!(after.pending);
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_an_address_book_would_not_make_is_named_by_its_id() {
+        // Review item 25. Every error a contacts sync collects is written to
+        // the log, which people attach to bug reports, and these two named
+        // the contact where every other sentence in the module uses its id.
+        let cache = a_cache("create_refused_named_by_id");
+        a_contact_typed_here(
+            &cache,
+            "local-1",
+            "Zebediah Quackenbush",
+            "zebediah@example.com",
+        );
+
+        let at_google = sync_google_contacts(
+            &cache,
+            &ScriptedGoogle::default(),
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("a Google sync");
+        let at_outlook = sync_microsoft_contacts(
+            &cache,
+            &ScriptedMicrosoft::default(),
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("an Outlook sync");
+
+        for errors in [&at_google.errors, &at_outlook.errors] {
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            assert!(errors[0].contains("local-1"), "{errors:?}");
+            assert!(!errors[0].contains("Zebediah"), "{errors:?}");
+        }
     }
 
     #[tokio::test]

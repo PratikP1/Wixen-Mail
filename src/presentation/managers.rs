@@ -10150,6 +10150,48 @@ mod saving_the_contact_manager {
     }
 
     #[test]
+    fn test_a_contact_manager_save_keeps_the_name_a_sync_gave_while_it_was_open() {
+        // Review item 23, the window's half. The window saved from the list
+        // it read when it opened. A sync that sent a contact typed here to
+        // Google while it was open gave her Google's name, and saving an edit
+        // from the old list took that name away and marked her new again, so
+        // the next sync made her a second time.
+        let cache = a_cache("contacts_save_keeps_a_name_given_meanwhile");
+        let mut typed_here = as_an_address_book_left_it("c1", "Grace Hopper");
+        typed_here.known_to = Vec::new();
+        typed_here.source_provider = None;
+        typed_here.pending = true;
+        cache.save_contact(&typed_here).expect("she saves");
+        let stored = read_back(&cache);
+        let made_at_google = the_one(&stored, "c1")
+            .also_known_to(AddressBook::Google, "people/new", Some("etag-1"))
+            .told(&AddressBook::Google, Some("etag-1"));
+        cache
+            .save_contact(&made_at_google)
+            .expect("the sync's write");
+        let returned = one_row_edited(&stored, "c1", |row| {
+            row.name = "Grace Brewster Hopper".to_string();
+        });
+
+        let failures = save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = the_one(&read_back(&cache), "c1");
+        assert_eq!(after.name, "Grace Brewster Hopper");
+        assert_eq!(
+            after.known_to,
+            vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/new".to_string(),
+                provider_version: Some("etag-1".to_string()),
+                change_is_waiting: true,
+            }],
+            "the name Google gave was lost, so the next sync makes her again"
+        );
+        assert!(after.pending);
+    }
+
+    #[test]
     fn test_a_contact_added_in_the_manager_is_saved() {
         // The row with no identifier yet. Leaving untouched rows alone must not
         // leave out the one that was never there.
