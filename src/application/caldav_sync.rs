@@ -5843,6 +5843,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_a_moved_day_deleted_in_another_calendar_is_still_written_by_a_feed_refresh() {
+        // The reverse of the case above: the deletion is in the calendar of
+        // one's own, and the feed carries the same meeting under the same
+        // names. Its own series and its own moved day are the feed's to show.
+        for (index, (case, deleted_row)) in [
+            ("the moved day deleted", "cal-my-own-moved"),
+            ("the series deleted", "cal-my-own-series"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let cache = temp_cache(&format!("feed_another_calendars_deletion_{index}"));
+            the_assembly_held_in(&cache, A_CALENDAR_OF_ONES_OWN, true);
+            cache
+                .delete_calendar_event(deleted_row)
+                .expect("the row in the calendar of one's own to be deleted here");
+            let mut calendar = a_subscribed_calendar(THE_SCHOOLS_FEED);
+
+            refreshed_from(
+                &cache,
+                &mut calendar,
+                a_feed_of(&[THE_ASSEMBLY, THE_ASSEMBLY_MOVED]),
+            )
+            .await;
+
+            let in_the_feed = cache
+                .get_events_for_calendar(THE_SCHOOLS_FEED)
+                .expect("the feed's calendar to be readable");
+            let series = in_the_feed
+                .iter()
+                .find(|row| row.provider_event_id.as_deref() == Some("assembly"))
+                .unwrap_or_else(|| panic!("{case}: the feed's series: {in_the_feed:?}"));
+            let moved = in_the_feed
+                .iter()
+                .find(|row| row.provider_event_id.as_deref() == Some(THE_MOVED_TUESDAYS_IDENTITY))
+                .unwrap_or_else(|| panic!("{case}: the feed's moved day: {in_the_feed:?}"));
+            assert!(
+                moved.start_datetime.starts_with("2026-03-10T14:00"),
+                "{case}: the feed's moved day is at {}",
+                moved.start_datetime
+            );
+            assert_eq!(
+                moved.cut_from_event_id.as_deref(),
+                Some(series.id.as_str()),
+                "{case}: the feed's moved day is not cut from the feed's series"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_a_moved_day_deleted_in_one_server_calendar_is_still_written_by_another() {
+        let cache = temp_cache("server_another_calendars_deletion");
+        the_weekly_review_held_in(&cache, "cal-second", true);
+        cache
+            .delete_calendar_event("cal-second-moved")
+            .expect("the second calendar's moved day to be deleted here");
+        let mut first = container("cal-first", "acct");
+        let (address, _heard) = answering(
+            "207 Multi-Status",
+            "application/xml; charset=utf-8",
+            a_multistatus_holding_a_moved_day_with_no_series_present(),
+        )
+        .await;
+        first.caldav_url = Some(format!("http://{address}/cal/"));
+
+        let result = sync_caldav_calendar(
+            &cache,
+            &CalDavClient::new(),
+            &first,
+            "acct",
+            "user",
+            "secret",
+        )
+        .await
+        .expect("the sync to finish");
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+
+        let in_the_first = cache
+            .get_events_for_calendar("cal-first")
+            .expect("the first calendar to be readable");
+        assert_eq!(
+            in_the_first.len(),
+            1,
+            "a day deleted in the second calendar kept the first's own copy off it: \
+             {in_the_first:?}"
+        );
+        assert_eq!(
+            in_the_first[0].provider_event_id.as_deref(),
+            Some("e-1:2026-03-12T09:00:00Z")
+        );
+        assert!(
+            in_the_first[0]
+                .start_datetime
+                .starts_with("2026-03-12T14:00"),
+            "the first calendar's moved day is at {}",
+            in_the_first[0].start_datetime
+        );
+    }
+
+    #[tokio::test]
     async fn test_a_day_one_server_calendar_calls_off_leaves_another_calendars_copy_as_it_was() {
         // Second, the first calendar holding its own copy of the moved day,
         // so the delete of the cancelled day's row has a row of its own to

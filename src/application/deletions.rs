@@ -85,7 +85,7 @@
 //! this cannot tell that apart from somebody making it again elsewhere.
 
 use crate::common::Result;
-use crate::data::message_cache::MessageCache;
+use crate::data::message_cache::{DeletedCalendarEvent, MessageCache};
 use std::collections::HashSet;
 
 /// How long a deletion is remembered after the provider takes it.
@@ -114,6 +114,17 @@ impl FromIterator<String> for DeletedHere {
     fn from_iter<I: IntoIterator<Item = String>>(names: I) -> Self {
         Self(names.into_iter().collect())
     }
+}
+
+/// What a read of one calendar is masked by.
+pub fn deleted_in_one_calendar(
+    notes: impl IntoIterator<Item = DeletedCalendarEvent>,
+    _calendar_id: &str,
+) -> DeletedHere {
+    notes
+        .into_iter()
+        .filter_map(|note| note.provider_event_id)
+        .collect()
 }
 
 /// A moment, written the way a note records the one the provider took it at.
@@ -163,6 +174,59 @@ mod tests {
             !DeletedHere::default().holds("evt1"),
             "an account that has deleted nothing refused to store anything"
         );
+    }
+
+    /// A note written in `calendar_id`, or in no calendar, for `named`.
+    fn a_note(named: Option<&str>, calendar_id: Option<&str>) -> DeletedCalendarEvent {
+        DeletedCalendarEvent {
+            id: format!("note-{}", uuid::Uuid::new_v4()),
+            account_id: "acct".to_string(),
+            provider_event_id: named.map(str::to_string),
+            calendar_id: calendar_id.map(str::to_string),
+            deleted_at: "2026-03-01T00:00:00+00:00".to_string(),
+            event_url: None,
+            provider_recurrence_id: None,
+            so_far: crate::data::message_cache::TheDeletionSoFar::StillOwed,
+        }
+    }
+
+    #[test]
+    fn test_a_note_in_the_calendar_being_read_is_held_for_it() {
+        let deleted =
+            deleted_in_one_calendar([a_note(Some("assembly"), Some("cal-feed"))], "cal-feed");
+
+        assert!(deleted.holds("assembly"));
+    }
+
+    #[test]
+    fn test_a_note_in_another_calendar_is_not_held_for_this_one() {
+        // A provider gives one meeting the same name in every calendar it sits
+        // in, so a deletion in one calendar names the copy in another as well.
+        let deleted =
+            deleted_in_one_calendar([a_note(Some("assembly"), Some("cal-my-own"))], "cal-feed");
+
+        assert!(
+            !deleted.holds("assembly"),
+            "a meeting deleted in one calendar masked its copy in another"
+        );
+    }
+
+    #[test]
+    fn test_a_note_naming_no_calendar_is_held_for_every_calendar() {
+        // Written before notes carried their calendar; which one it was is
+        // not known, so it goes on masking every read rather than none.
+        let notes = || [a_note(Some("assembly"), None)];
+
+        assert!(deleted_in_one_calendar(notes(), "cal-feed").holds("assembly"));
+        assert!(deleted_in_one_calendar(notes(), "cal-my-own").holds("assembly"));
+    }
+
+    #[test]
+    fn test_a_note_with_no_providers_name_masks_nothing() {
+        let deleted = deleted_in_one_calendar([a_note(None, Some("cal-feed"))], "cal-feed");
+
+        assert!(!deleted.holds(""));
+        assert_eq!(deleted.0.len(), 0, "{deleted:?}");
     }
 
     #[test]
