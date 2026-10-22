@@ -1368,6 +1368,16 @@ pub(crate) enum Carried {
 /// A folder the account does not have is passed over with a word in the log
 /// rather than failing the whole sync: a rule naming a folder somebody has
 /// since renamed should not stop their mail arriving.
+///
+/// One destination at a time, each finished before the next: its moves with
+/// the source open, then where the destination holds each, with the
+/// destination open. Settling after every move opened the destination for
+/// the question and the source again for the next move, four commands for
+/// every message filed (item 21 of the review of 2026-10-20). Settling after
+/// the whole loop would open each folder once too, but a row the person moves
+/// while a long loop runs could then be put back where the rule filed it, since
+/// the settle writes the row's folder without asking where it is now; one
+/// group at a time keeps that window to one destination's moves.
 async fn carry_out_the_moves<M: Mailbox + ReplaysAMove>(
     controller: &M,
     cache: &MessageCache,
@@ -1393,90 +1403,106 @@ async fn carry_out_the_moves<M: Mailbox + ReplaysAMove>(
         return (0, every_one_of_them_dropped());
     };
     let mut done = 0;
-    for moving in moves {
-        let Some(into) = the_folder_a_rule_names(&folders, &moving.into) else {
-            could_not.push(no_folder_of_that_name(&moving.into));
-            continue;
-        };
-        // Already where the rule wants it, so there is nothing to do and
-        // nothing to report. Rules run on whatever has just arrived in
-        // whichever folder is being checked, so a rule that files a sender
-        // into a folder goes on matching that sender's mail once it is in
-        // that folder. Asking a server to move a message into the folder it
-        // is in either fails, once per message on every check for mail, or
-        // takes a copy, and nothing anywhere removes duplicates.
-        if into.id == from_id {
-            continue;
-        }
-        // What really happened, not just whether it failed. A server without
-        // MOVE copies instead, which leaves the message in both folders, and
-        // that is somebody's mail being in two places.
-        match controller
-            .move_message(&from.path, moving.uid, &into.path)
-            .await
-        {
-            Ok(crate::service::protocols::imap::Moved::Moved) => {}
-            // Copied, not moved. Not counted as sorted, and the row here is
-            // left where it is: the message really is still in this folder,
-            // so moving the row would hide a second copy that exists. It also
-            // keeps this uid in what the cache holds, which is what stops the
-            // next sync fetching the original again as though it were new mail
-            // and filing a third copy of it.
-            Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
-                could_not.push(copied_and_the_original_marked(&from.name, &into.name));
-                continue;
+    for (into, group) in by_destination(moves, &folders, from_id, &mut could_not) {
+        let mut moved_here = Vec::with_capacity(group.len());
+        for moving in group {
+            // What really happened, not just whether it failed. A server
+            // without MOVE copies instead, which leaves the message in both
+            // folders, and that is somebody's mail being in two places.
+            match controller
+                .move_message(&from.path, moving.uid, &into.path)
+                .await
+            {
+                Ok(crate::service::protocols::imap::Moved::Moved) => {}
+                // Copied, not moved. Not counted as sorted, and the row here
+                // is left where it is: the message really is still in this
+                // folder, so moving the row would hide a second copy that
+                // exists. It also keeps this uid in what the cache holds,
+                // which is what stops the next sync fetching the original
+                // again as though it were new mail and filing a third copy.
+                Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
+                    could_not.push(copied_and_the_original_marked(&from.name, &into.name));
+                    continue;
+                }
+                Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
+                    could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
+                    continue;
+                }
+                Err(why) => {
+                    could_not.push(it_is_still_where_it_was(&into.name, &from.name, &why));
+                    continue;
+                }
             }
-            Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
-                could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
-                continue;
-            }
-            Err(why) => {
-                could_not.push(it_is_still_where_it_was(&into.name, &from.name, &why));
-                continue;
-            }
-        }
-        // The server has it in the new folder; bring this computer into line.
-        // A failure here leaves the two disagreeing until the next read of
-        // either folder, which is worth saying and is not a failed sync.
-        match cache.move_message(moving.message_row, into.id) {
-            Ok(()) => {}
-            Err(why) => {
-                could_not.push(format!(
+            // The server has it in the new folder; bring this computer into
+            // line. A failure here leaves the two disagreeing until the next
+            // read of either folder, which is worth saying and is not a
+            // failed sync.
+            match cache.move_message(moving.message_row, into.id) {
+                Ok(()) => moved_here.push(moving.message_row),
+                Err(why) => could_not.push(format!(
                     "A message was filed into {} at the server but not here yet: {why}",
                     into.name
-                ));
-                continue;
+                )),
             }
         }
-        // Then where the server numbered it, the way a replayed move settles,
-        // or the row filed here sits beside the real message once the
+        // Then where the server numbered each, the way a replayed move
+        // settles, or the row filed here sits beside the real message once the
         // destination is read (#10). A question the server would not answer
         // lets the row go, since nothing waits to ask again. Counted either
         // way: the server has the message where the rule wanted it.
-        if let Err(why) = settle_a_moved_row(
-            controller,
-            cache,
-            moving.message_row,
-            &account_id,
-            &into.path,
-        )
-        .await
-        {
-            tracing::warn!(
-                "Where {} holds a message filed from {} could not be asked: {why}",
-                into.name,
-                from.name
-            );
-            if let Err(why) = cache.let_the_next_read_bring_it(moving.message_row) {
+        for message_row in moved_here {
+            if let Err(why) =
+                settle_a_moved_row(controller, cache, message_row, &account_id, &into.path).await
+            {
                 tracing::warn!(
-                    "A message filed into {} may show there twice until it is read again: {why}",
-                    into.name
+                    "Where {} holds a message filed from {} could not be asked: {why}",
+                    into.name,
+                    from.name
                 );
+                if let Err(why) = cache.let_the_next_read_bring_it(message_row) {
+                    tracing::warn!(
+                        "A message filed into {} may show there twice until it is read again: {why}",
+                        into.name
+                    );
+                }
             }
+            done += 1;
         }
-        done += 1;
     }
     (done, could_not)
+}
+
+/// The moves a check's rules asked for, by the folder each goes into, in the
+/// order each folder is first named.
+///
+/// A move into a folder the account does not have is said and dropped. One
+/// into the folder the message is already in is dropped in silence: rules run
+/// on whatever has just arrived in whichever folder is being checked, so a
+/// rule that files a sender into a folder goes on matching that sender's mail
+/// once it is there, and asking a server to move a message into the folder it
+/// is in either fails, once per message on every check, or takes a copy that
+/// nothing anywhere removes.
+fn by_destination<'a>(
+    moves: &'a [Moving],
+    folders: &'a [CachedFolder],
+    from_id: i64,
+    could_not: &mut Vec<String>,
+) -> Vec<(&'a CachedFolder, Vec<&'a Moving>)> {
+    let mut groups: Vec<(&CachedFolder, Vec<&Moving>)> = Vec::new();
+    for moving in moves {
+        let Some(into) = the_folder_a_rule_names(folders, &moving.into) else {
+            could_not.push(no_folder_of_that_name(&moving.into));
+            continue;
+        };
+        if into.id == from_id {
+            continue;
+        }
+        match groups.iter_mut().find(|(folder, _)| folder.id == into.id) {
+            Some((_, group)) => group.push(moving),
+            None => groups.push((into, vec![moving])),
+        }
+    }
+    groups
 }
 
 /// Carry out the deletes the rules asked for, and say how many happened.

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 893 records have arrived since and have not been through it.
+# 894 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -784,7 +784,7 @@ tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 299 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
     { file = "src/application/every_google_calendar.rs", tests = 14 },
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/printing.rs", tests = 28 },
     { file = "src/application/quick_steps.rs", tests = 27 },
@@ -5493,7 +5493,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/finding_what_was_deleted.rs", tests = 9 },
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A seam the sync reaches past ─────────────────────────────────────────────
@@ -5530,7 +5530,7 @@ red = [
     "application::mail_sync::tests::test_the_sync_asks_the_chosen_way_rather_than_naming_the_comparison",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A folder that was synced before, asked what it holds all over again ──────
@@ -5582,7 +5582,7 @@ red = [
     "application::mail_sync::tests::test_a_folder_with_everything_stored_resumes_from_the_highest_uid_held",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A mailbox counted full and then listed empty ─────────────────────────────
@@ -5638,7 +5638,7 @@ red = [
     "application::mail_sync::tests::test_two_answers_about_one_mailbox_that_disagree_are_not_believed",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A message the server copied is not a message the server moved ───────────
@@ -5654,24 +5654,27 @@ tests_last_seen = [
 # half: with the row filed away, its uid leaves what the cache holds, so the
 # next check for mail fetches the original again as though it were new and the
 # rules file a third copy of it.
+#
+# Rewritten 2026-10-21 by 13.3-16, which put the move loop inside a loop over
+# destinations, so both arms moved four spaces in; the break is the same.
 
 [[guard]]
 name = "a message the server copied rather than moved is not counted as filed"
 file = "src/application/mail_sync.rs"
-before = """            Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
-                could_not.push(copied_and_the_original_marked(&from.name, &into.name));
-                continue;
-            }
-            Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
-                could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
-                continue;
-            }"""
-after = """            Ok(partly) => could_not.push(partly.spoken(&into.name)),"""
+before = """                Ok(crate::service::protocols::imap::Moved::CopiedAndFlagged(_)) => {
+                    could_not.push(copied_and_the_original_marked(&from.name, &into.name));
+                    continue;
+                }
+                Ok(crate::service::protocols::imap::Moved::CopiedAndNotFlagged(said)) => {
+                    could_not.push(copied_and_the_original_left(&from.name, &into.name, &said));
+                    continue;
+                }"""
+after = """                Ok(partly) => could_not.push(partly.spoken(&into.name)),"""
 red = [
     "application::mail_sync::tests::test_a_message_the_server_put_in_two_folders_is_not_counted_as_sorted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── Two reads that were never asked whether they read anything ──────────────
@@ -16161,7 +16164,7 @@ red = [
     "application::mail_sync::tests::test_a_server_that_gives_no_numbering_at_all_discards_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A sign-in that stopped going round the helper ────────────────────────────
@@ -16459,7 +16462,7 @@ red = [
     "application::mail_sync::tests::test_a_sync_over_a_message_with_an_attachment_stores_no_attachment_and_no_file",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── The read of every message on every open ────────────────────────────────
@@ -17381,7 +17384,7 @@ red = [
     "application::mail_sync::tests::test_what_a_list_said_about_leaving_it_reaches_the_row_this_sync_stores",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 [[guard]]
@@ -26156,7 +26159,7 @@ red = [
     "application::mail_sync::tests::test_a_chunk_stops_before_the_next_message_when_asked_to",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # Three failures in a row that are not the gate's refusal end the chunk,
@@ -26180,7 +26183,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # What a person hears when the server stops answering is this program's
@@ -26207,7 +26210,7 @@ red = [
     "application::mail_sync::tests::test_the_whole_list_run_stops_when_the_server_stops_answering_rather_than_asking_for_every_message",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── Every Settings check box stays a check box (#67) ──────────────────────────
@@ -26752,7 +26755,7 @@ red = [
     "application::mail_sync::tests::test_what_arrived_names_each_folder_that_received_something_with_its_count",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A disabled account is never due a check (#37) ───────────────────────────
@@ -29172,7 +29175,7 @@ red = [
     "test_a_rule_with_a_sound_counts_once_per_message_it_matched_and_one_without_counts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
 
@@ -34519,7 +34522,7 @@ red = [
     "test_a_rule_naming_the_label_in_other_capitals_finds_it",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "tests/a_rule_that_adds_a_label_labels_the_message.rs", tests = 8 },
 ]
 
@@ -34564,7 +34567,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -36973,7 +36976,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37011,7 +37014,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_with_changing_mail_off_nothing_is_dialled_and_a_rules_mark_waits_here",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37029,7 +37032,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_the_check_keeps_a_waiting_mark_over_what_the_server_says",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37064,7 +37067,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_mark_the_server_could_not_be_asked_about_waits_and_its_message_is_not_moved",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -37097,7 +37100,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_the_next_check_does_not_bring_back_a_message_a_rule_deleted",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -41011,7 +41014,7 @@ red = [
     "application::mail_sync::tests::test_the_rules_run_over_everything_a_large_arrival_brought",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # A rule's move leaving its row at a reserved number marked as filed here,
@@ -41023,27 +41026,29 @@ tests_last_seen = [
 # failed, these two. The case that a rule's move reaches the server and this
 # computer stays green under it, which is right: the old row is still in the
 # folder, only at a number the server never gave.
+#
+# Rewritten 2026-10-21 by 13.3-16, which settles one destination's moved rows
+# together after its moves: the break takes the settling out of that loop, and
+# the case holding the order of moves and questions goes red with it, since
+# no question is asked.
 [[guard]]
 name = "a message a rule files is settled at the number the server gave it"
 file = "src/application/mail_sync.rs"
 before = '''        // way: the server has the message where the rule wanted it.
-        if let Err(why) = settle_a_moved_row(
-            controller,
-            cache,
-            moving.message_row,
-            &account_id,
-            &into.path,
-        )
-        .await
-        {'''
+        for message_row in moved_here {
+            if let Err(why) =
+                settle_a_moved_row(controller, cache, message_row, &account_id, &into.path).await
+            {'''
 after = '''        // way: the server has the message where the rule wanted it.
-        if let Err(why) = Ok::<(), Error>(()) {'''
+        for message_row in moved_here {
+            if let Err(why) = Ok::<(), Error>(()) {'''
 red = [
     "application::mail_sync::tests::test_a_message_a_rule_filed_is_one_row_at_the_number_the_server_gave_it",
     "application::mail_sync::tests::test_a_rule_filed_message_whose_place_cannot_be_asked_comes_back_once",
+    "application::mail_sync::tests::test_messages_filed_into_two_folders_are_moved_and_settled_one_folder_at_a_time",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # ── A message's text asked for at most once a run (finding #11, 13.2-09) ─────
@@ -41414,7 +41419,7 @@ red = [
     "application::what_rules_tell_the_server::tests::test_a_label_put_on_or_taken_off_elsewhere_reaches_the_row_at_the_next_check",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
 ]
 
@@ -43737,7 +43742,7 @@ red = [
     "application::mail_sync::tests::test_the_check_after_a_download_chunk_runs_the_rules_over_what_arrived",
 ]
 tests_last_seen = [
-    { file = "src/application/mail_sync.rs", tests = 159 },
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # The download counting the mail it left for the check as missing, so a folder
@@ -44036,6 +44041,30 @@ red = [
 tests_last_seen = [
     { file = "src/application/mail_controller.rs", tests = 75 },
     { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+# A check whose rules file messages into several folders settled each message
+# right after moving it, which opened the destination to ask where it was and
+# the source again for the next move: four commands a filed message (13.3-16,
+# review item 21). The moves are grouped by destination and each group is
+# moved and then settled. The break makes every move a group of its own, which
+# is the old order, a settle after every move.
+#
+# Measured by hand on 2026-10-21: the whole library at 9,429 passed and 1
+# failed, this one.
+[[guard]]
+name = "a check's rule moves are moved and settled one destination at a time"
+file = "src/application/mail_sync.rs"
+before = '''        match groups.iter_mut().find(|(folder, _)| folder.id == into.id) {
+            Some((_, group)) => group.push(moving),
+            None => groups.push((into, vec![moving])),
+        }'''
+after = '''        groups.push((into, vec![moving]));'''
+red = [
+    "application::mail_sync::tests::test_messages_filed_into_two_folders_are_moved_and_settled_one_folder_at_a_time",
+]
+tests_last_seen = [
+    { file = "src/application/mail_sync.rs", tests = 160 },
 ]
 
 # A SELECT the server refuses leaves no mailbox selected (RFC 3501, 6.3.1), and
