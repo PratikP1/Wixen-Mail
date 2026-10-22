@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 783
+open_count: 784
 waived_count: 0
 fixed_count: 149
-total_count: 932
-last_updated: 2026-10-22T02:30:00.000Z
+total_count: 933
+last_updated: 2026-10-22T04:55:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -947,6 +947,7 @@ last_updated: 2026-10-22T02:30:00.000Z
 | 930 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-14, premise 1, read in the code on 2026-10-20 by the review's checkers and not timed, older than 13.2: mark_these_read and star_these find each chosen message among the loaded rows with iter_mut().find, one search per message under the state lock, so a mark or a star over a large selection costs the loaded rows times the selection on the interface thread, in either view. Not one of the review's 42; left by 13.3-14, which fixed the rule over the conversation rows beside it (review item 17). Recommended: look the rows up by id through a map built once per command, with an ignored timing like 13.3-14's at 5,000 chosen; Pratik's to schedule | open |  | 2026-10-21T23:50:00.000Z |  |
 | 931 | 13.3 | unrun-verify | src/service/oauth.rs |  | 13.3-15, review items 19 and 20, for the tester at phase 14's sittings: both Google sign-ins now ask for openid (first) and email and read who signed in from Google's userinfo answer, and are asked for, compared with and named as the account's Username. To hear and see on a real account: the mail sign-in kept with Calendar unticked on Google's screen, and mail checked; the separate sign-in kept with Calendar unticked, contacts and tasks arriving; an account whose address box differs from its Username signing in and hearing the Username named; and whether his key in Testing needed openid and userinfo.email added on its Data Access page before Google offered them. Proven only against loopback stand-ins | open |  | 2026-10-22T02:30:00.000Z |  |
 | 932 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-15, read with the Read tool on 2026-10-21 in spawn_calendar_sync and calendar.rs: a Google sync whose permission was unticked on Google's screen gets 403 from Google, and the failure is pushed as "Google calendar: " and the error's text and spoken only as a count, "1 errors", so nothing names the cause, the unticked permission, or the way out, Alt+T or Sign In Again with the box ticked. Not a wrong cause, an absent one; contacts and tasks go the same way. Recommended: read Google's insufficient-permission reason and say which permission is missing and how to give it; Pratik's to schedule | open |  | 2026-10-22T02:30:00.000Z |  |
+| 933 | 13.3 | unrun-verify | src/application/mail_sync.rs |  | 13.3-16, review items 21 and 34, against a real IMAP server: a replayed change now answers its folder's numbering from the SELECT that opened the folder while it is still open, a SELECT the server refuses leaves no folder taken to be open, and a check's rule moves are moved and settled one destination at a time. To see on a real account, from the log or the server's own record: a check whose rules file a large arrival into two folders opening the source once per destination and each destination once, and the Trash emptying at a check opening the Trash once rather than once per message. Held today only by loopback cases in mail_controller and mail_sync | open |  | 2026-10-22T04:55:00.000Z |  |
 
 ````json
 [
@@ -12132,6 +12133,18 @@ last_updated: 2026-10-22T02:30:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-22T02:30:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 933,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/application/mail_sync.rs",
+    "line": null,
+    "description": "13.3-16, review items 21 and 34, against a real IMAP server: a replayed change now answers its folder's numbering from the SELECT that opened the folder while it is still open, a SELECT the server refuses leaves no folder taken to be open, and a check's rule moves are moved and settled one destination at a time. To see on a real account, from the log or the server's own record: a check whose rules file a large arrival into two folders opening the source once per destination and each destination once, and the Trash emptying at a check opening the Trash once rather than once per message. Held today only by loopback cases in mail_controller and mail_sync",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-22T04:55:00.000Z",
     "resolved_at": null
   }
 ]

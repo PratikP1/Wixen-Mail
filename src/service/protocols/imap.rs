@@ -653,6 +653,7 @@ impl ImapClient {
         let mut session = ImapSession {
             session,
             selected: None,
+            numbering_of_the_open_folder: None,
             // Reading only until somebody says otherwise. A session opened
             // without anybody thinking about it should be the one that cannot
             // remove somebody's mail.
@@ -730,6 +731,10 @@ impl ImapClient {
 pub struct ImapSession {
     session: async_imap::Session<ImapStream>,
     selected: Option<String>,
+    /// The UIDVALIDITY the SELECT that opened `selected` read, or nothing
+    /// when that SELECT named none. Set and cleared with `selected`, so it
+    /// never outlives the folder it was read from.
+    numbering_of_the_open_folder: Option<u32>,
     /// Whether this session may change anything on the server.
     ///
     /// Reading a mailbox into the local cache cannot hurt anybody. Setting a
@@ -1116,6 +1121,11 @@ impl ImapSession {
             true => format!("SELECT {} (CONDSTORE)", quoted(path)),
             false => format!("SELECT {}", quoted(path)),
         };
+        // A SELECT that fails leaves no mailbox selected (RFC 3501, 6.3.1),
+        // whichever one was open before it. So nothing is taken to be open
+        // until this one has said it is.
+        self.selected = None;
+        self.numbering_of_the_open_folder = None;
         let said = self
             .read_command(asking, "opening the folder", |response| match response {
                 // What the folder keeps, asked about the one keyword a junk
@@ -1146,8 +1156,7 @@ impl ImapSession {
             })
             .await?;
 
-        self.selected = Some(path.to_string());
-        Ok(MailboxStatus {
+        let opened = MailboxStatus {
             uid_validity: said.iter().find_map(|line| match line {
                 WhatOpeningAFolderSaid::UidValidity(uid) => Some(*uid),
                 _ => None,
@@ -1159,12 +1168,37 @@ impl ImapSession {
             keeps_the_junk_mark: said
                 .iter()
                 .any(|line| matches!(line, WhatOpeningAFolderSaid::KeepsTheJunkMark(true))),
-        })
+        };
+        self.selected = Some(path.to_string());
+        self.numbering_of_the_open_folder = opened.uid_validity;
+        Ok(opened)
     }
 
     /// The mailbox currently selected, if any.
     pub fn selected_folder(&self) -> Option<&str> {
         self.selected.as_deref()
+    }
+
+    /// A folder's numbering, its UIDVALIDITY, or nothing when the server
+    /// does not say: the kept answer while that folder is the one open, and
+    /// otherwise the answer of opening it.
+    ///
+    /// A message's number does not change while its folder stays open on one
+    /// session (RFC 3501, 2.3.1.1), so the numbering the SELECT that opened
+    /// the folder read is still the numbering until another SELECT is sent.
+    /// A run of replayed changes in one folder asks this before every one,
+    /// and the Trash emptying replays up to 500 (item 34 of the review of
+    /// 2026-10-20), so asking the server again each time opened the folder
+    /// once per message.
+    ///
+    /// [`Self::select_folder`] still asks the server every time: a check opens
+    /// each folder with it, and that SELECT is how a numbering changed between
+    /// two checks is seen.
+    pub async fn the_numbering_of(&mut self, path: &str) -> Result<Option<u32>> {
+        if self.selected_folder() == Some(path) {
+            return Ok(self.numbering_of_the_open_folder);
+        }
+        Ok(self.select_folder(path).await?.uid_validity)
     }
 
     /// Search the selected mailbox, returning UIDs oldest first.

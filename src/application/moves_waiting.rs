@@ -550,7 +550,7 @@ pub(crate) trait ReplaysAMove {
 
 impl ReplaysAMove for crate::application::mail_controller::MailController {
     async fn numbering_of(&self, folder: &str) -> Result<Option<u32>> {
-        Ok(self.select_folder(folder).await?.uid_validity)
+        self.the_numbering_of(folder).await
     }
 
     async fn mark_it(&self, folder: &str, uid: u32, marks: MarksFirst) -> Result<()> {

@@ -547,6 +547,16 @@ impl MailController {
         once_more_if_the_connection_went!(self, session, { session.select_folder(folder).await })
     }
 
+    /// A folder's numbering, its UIDVALIDITY, or nothing when the server
+    /// does not say: what a replayed change checks a kept number against.
+    ///
+    /// Answered from the SELECT that opened the folder while it is still the
+    /// one open, so a run of changes in one folder opens it once
+    /// ([`ImapSession::the_numbering_of`] says why that holds).
+    pub async fn the_numbering_of(&self, folder: &str) -> Result<Option<u32>> {
+        once_more_if_the_connection_went!(self, session, { session.the_numbering_of(folder).await })
+    }
+
     /// What the server said it can do, as read at sign-in.
     ///
     /// The default when no session is open, which is the floor every path here
@@ -1393,6 +1403,122 @@ mod against_a_server_that_answers {
             named,
             ["INBOX", "Archive", "INBOX", "Archive", "Drafts"],
             "a command changed a message without opening the folder it named: {:?}",
+            server.transcript().await
+        );
+    }
+
+    /// How many times the server was asked to open this folder.
+    async fn times_opened(server: &Conversation, folder: &str) -> usize {
+        let folder = format!("\"{}\"", folder.to_uppercase());
+        server
+            .transcript()
+            .await
+            .iter()
+            .map(|line| line.to_uppercase())
+            .filter(|said| said.contains("SELECT") && said.contains(&folder))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn test_an_open_folders_numbering_is_answered_without_opening_it_again() {
+        // A message's number cannot change while its folder stays open on one
+        // session (RFC 3501, 2.3.1.1), so the numbering the SELECT read is
+        // still the answer. Asking again cost a command per replayed change.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+        controller
+            .select_folder("INBOX")
+            .await
+            .expect("the folder should open");
+
+        let first = controller.the_numbering_of("INBOX").await;
+        let second = controller.the_numbering_of("INBOX").await;
+
+        assert_eq!(first.ok(), Some(Some(1)));
+        assert_eq!(second.ok(), Some(Some(1)));
+        assert_eq!(
+            times_opened(&server, "INBOX").await,
+            1,
+            "an open folder was opened again to ask its numbering: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_deletes_outright_replayed_one_after_another_open_the_trash_once() {
+        // Emptying the Trash replays a delete outright per message, each one
+        // asking the Trash's numbering first (item 34 of the review of
+        // 2026-10-20). Up to 500 a day, and each used to open the Trash again.
+        use crate::application::moves_waiting::ReplaysAMove;
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+
+        let _ = controller.numbering_of("Trash").await;
+        let _ = controller.delete_it("Trash", 1, None).await;
+        let _ = controller.numbering_of("Trash").await;
+        let _ = controller.delete_it("Trash", 2, None).await;
+
+        assert_eq!(
+            times_opened(&server, "Trash").await,
+            1,
+            "the Trash was opened again for each message: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_another_folders_numbering_opens_that_folder() {
+        // The kept numbering belongs to the folder that is open, and to no
+        // other: asking about another one opens it and reads its own.
+        let server = an_imap_server().await;
+        let controller = signed_in_to(&server).await;
+        controller
+            .select_folder("INBOX")
+            .await
+            .expect("the folder should open");
+
+        let numbering = controller.the_numbering_of("Archive").await;
+
+        assert_eq!(numbering.ok(), Some(Some(1)));
+        assert_eq!(
+            times_opened(&server, "Archive").await,
+            1,
+            "another folder's numbering was answered without opening it: {:?}",
+            server.transcript().await
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_folder_the_server_would_not_open_is_not_taken_to_be_open() {
+        // A SELECT the server refuses leaves no folder open (RFC 3501, 6.3.1),
+        // so the folder opened before it is closed at the server. A change
+        // sent on the strength of it being open would be refused, or reach
+        // nothing, and a numbering answered for it would be one the server
+        // no longer stands behind.
+        let server = a_server_that_refuses("", "SELECT \"Archive\"").await;
+        let controller = signed_in_to(&server).await;
+        controller
+            .select_folder("INBOX")
+            .await
+            .expect("the folder should open");
+
+        assert!(controller.select_folder("Archive").await.is_err());
+        let _ = controller
+            .set_flag(
+                "INBOX",
+                1,
+                crate::service::protocols::imap::flag::SEEN,
+                true,
+            )
+            .await;
+        assert!(controller.select_folder("Archive").await.is_err());
+        let numbering = controller.the_numbering_of("INBOX").await;
+
+        assert_eq!(numbering.ok(), Some(Some(1)));
+        assert_eq!(
+            times_opened(&server, "INBOX").await,
+            3,
+            "a folder was taken to be open after the server refused to open another: {:?}",
             server.transcript().await
         );
     }
