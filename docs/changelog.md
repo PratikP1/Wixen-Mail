@@ -1446,6 +1446,16 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A message nested more than 512 levels deep no longer shows or reads what its sender hid
+  (2026-10-22, LIST-25).** Since 2026-10-15, a message whose layout put more than 512 boxes
+  one inside another went to the formatted view with the blocks its sender had hidden left
+  in. So a hidden preview line was shown and read aloud, with the invisible padding after it,
+  and so was any block the sender had hidden from view or from screen readers, with nothing
+  said about it. Now those blocks are left out at any depth, as in every other message. When
+  a block left out held words below the start of the message, the line at the top says how
+  many blocks the sender did not show were left out, as it does for any message. The list's
+  preview line and search leave them out too. Known limitation: the text reader, the window
+  `Enter` opens on a message, still reads blocks a sender hid, at any depth (ledger 938).
 - **A contact you change while a contacts sync sends it is kept as you left it (2026-10-22,
   REAL-01, PIM-05).** A contacts sync sends each contact you typed here to Google, Outlook or a
   CardDAV address book one at a time, and after a vCard import that can take minutes. If you
