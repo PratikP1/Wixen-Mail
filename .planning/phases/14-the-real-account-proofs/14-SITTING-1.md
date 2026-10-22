@@ -49,9 +49,9 @@ quoted here, the build is right and the sheet is wrong: say what you heard.
 4. Open Tools, Sync Calendar (Alt+T, then D), before any browser sign-in. You should hear, possibly after the counts: "Nothing was asked of Google for this account's calendars. The account signs in to mail with an app password, and Google gives calendars only to a browser sign-in. Open the Account Manager with Ctrl+Shift+A, choose the account and press Sign In for Calendars, Contacts and Tasks." If your key is not placed yet, you hear instead that this copy of Wixen Mail has no Google sign-in key; stop there and tell the agent.
 5. Press Ctrl+Shift+A to open the Account Manager.
 6. Choose your Gmail account in the list.
-7. Press Alt+T, Sign In for Calendars, Contacts and Tasks. You should hear: "Signing in to Google for the account's calendars, contacts and tasks. Finish in the browser."
-8. In the browser, sign in with your Google account. Google says it has not verified this app: that is expected for a key in Testing, and the app is your own project. Choose to continue.
-9. Allow the three permissions Google lists: calendars, contacts and tasks.
+7. Press Alt+T, Sign In for Calendars, Contacts and Tasks. You should hear: "Signing in to Google for this account's calendars, contacts and tasks. In the browser, choose your-address@gmail.com, and finish there.", with the address in the account's Username box where your-address@gmail.com stands. Say which address was named.
+8. In the browser, sign in with the Google account that sentence named. Google says it has not verified this app: that is expected for a key in Testing, and the app is your own project. Choose to continue.
+9. Google first asks whether Wixen Mail may see your name and email address: allow it. Then it lists the three permissions, calendars, contacts and tasks: allow them. If Google shows an error instead of either screen, stop and tell the agent what it says: your key may need openid and userinfo.email on its Data Access page, as Help's step 4 says.
 10. Go back to Wixen Mail. You should hear: "Signed in to Google for this account's calendars, contacts and tasks. They are brought when you close the Account Manager."
 11. Press Alt+C, Close. The three syncs run once by themselves. Say what you heard.
 12. Open Tools, Sync Calendar. You should hear "Calendar sync:" and the counts, "N created, N updated, N deleted", with "N calendars read" added when more than one calendar was read.

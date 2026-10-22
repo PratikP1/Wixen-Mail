@@ -71,8 +71,8 @@ the same address. If it does not, D waits for another account.
 5. Part A: press Ctrl+Shift+A to open the Account Manager.
 6. Choose Add Account (Alt+A).
 7. Fill in the second Google account: its address, its app password, and IMAP for how to read your mail. Then OK. Say what was said about the three modules when the account was added.
-8. With the new account chosen in the Account Manager's list, press Alt+T, Sign In for Calendars, Contacts and Tasks. You should hear: "Signing in to Google for the account's calendars, contacts and tasks. Finish in the browser."
-9. In the browser, sign in with the second Google account, continue past Google's screen saying it has not verified this app, and allow the three permissions.
+8. With the new account chosen in the Account Manager's list, press Alt+T, Sign In for Calendars, Contacts and Tasks. You should hear: "Signing in to Google for this account's calendars, contacts and tasks. In the browser, choose second-address@gmail.com, and finish there.", with the second account's Username where second-address@gmail.com stands.
+9. In the browser, sign in with the second Google account, continue past Google's screen saying it has not verified this app, allow Google to share your name and email address with Wixen Mail, and then allow the three permissions.
 10. Back in Wixen Mail you should hear: "Signed in to Google for this account's calendars, contacts and tasks. They are brought when you close the Account Manager."
 11. Press Alt+C, Close. The three syncs run once. Say what was said.
 12. Part A: tell the agent how many calendars the second Google account has.
