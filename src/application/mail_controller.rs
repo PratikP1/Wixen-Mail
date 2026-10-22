@@ -549,8 +549,12 @@ impl MailController {
 
     /// A folder's numbering, its UIDVALIDITY, or nothing when the server
     /// does not say: what a replayed change checks a kept number against.
+    ///
+    /// Answered from the SELECT that opened the folder while it is still the
+    /// one open, so a run of changes in one folder opens it once
+    /// ([`ImapSession::the_numbering_of`] says why that holds).
     pub async fn the_numbering_of(&self, folder: &str) -> Result<Option<u32>> {
-        Ok(self.select_folder(folder).await?.uid_validity)
+        once_more_if_the_connection_went!(self, session, { session.the_numbering_of(folder).await })
     }
 
     /// What the server said it can do, as read at sign-in.
