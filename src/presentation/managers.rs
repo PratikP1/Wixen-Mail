@@ -2881,21 +2881,41 @@ fn save_what_the_contact_manager_returned(
         if edited.id.trim().is_empty() {
             edited.id = new_id("contact");
         }
-        // The record being replaced carries what the editor does not: the
-        // saved photo, the card the contact was imported from, the date it
-        // was added, and the address books that know it.
-        let replacing = stored.iter().find(|c| c.id == edited.id);
+        // The copy the window opened with, which is what the editor's row
+        // started from.
+        let opened = stored.iter().find(|c| c.id == edited.id);
         // Every row comes back on any edit, not only the one somebody
         // changed, so writing them all marked the whole address book as
         // waiting to be sent. One corrected phone number queued every Google
         // and Outlook contact for a push, and took the photo and the imported
         // card of each of them with it. A row nobody changed is left exactly
         // as it is instead, which is nothing written at all rather than a
-        // rebuilt row that happens to match.
-        if replacing.is_some_and(|existing| !contact_convert::holds_a_change(&edited, existing)) {
+        // rebuilt row that happens to match. Asked against the copy the window
+        // opened with, so a row nobody touched is not written back over what a
+        // sync has written since.
+        if opened.is_some_and(|existing| !contact_convert::holds_a_change(&edited, existing)) {
             continue;
         }
-        let contact = contact_convert::to_stored(&edited, account, replacing);
+        // The record being replaced carries what the editor does not: the
+        // saved photo, the card the contact was imported from, the date it
+        // was added, and the address books that know it. Read again rather
+        // than taken from the copy the window opened with, because a sync may
+        // have run while it was open: one that made a contact typed here at
+        // Google gave her Google's name, and saving from the old copy took it
+        // away, so the next sync made her a second time (review item 23). A
+        // contact gone since the window opened is saved from the copy it
+        // opened with, as before.
+        let replacing = match opened {
+            None => None,
+            Some(opened) => match cache.get_contact(&opened.id) {
+                Ok(now) => Some(now.unwrap_or_else(|| opened.clone())),
+                Err(e) => {
+                    failures.push(format!("{}: {}", edited.name, e));
+                    continue;
+                }
+            },
+        };
+        let contact = contact_convert::to_stored(&edited, account, replacing.as_ref());
         if let Err(e) = cache.save_contact(&contact) {
             failures.push(format!("{}: {}", contact.name, e));
         }
@@ -10147,6 +10167,48 @@ mod saving_the_contact_manager {
             edited.last_synced_at, None,
             "an edit made here is not a copy taken from an address book"
         );
+    }
+
+    #[test]
+    fn test_a_contact_manager_save_keeps_the_name_a_sync_gave_while_it_was_open() {
+        // Review item 23, the window's half. The window saved from the list
+        // it read when it opened. A sync that sent a contact typed here to
+        // Google while it was open gave her Google's name, and saving an edit
+        // from the old list took that name away and marked her new again, so
+        // the next sync made her a second time.
+        let cache = a_cache("contacts_save_keeps_a_name_given_meanwhile");
+        let mut typed_here = as_an_address_book_left_it("c1", "Grace Hopper");
+        typed_here.known_to = Vec::new();
+        typed_here.source_provider = None;
+        typed_here.pending = true;
+        cache.save_contact(&typed_here).expect("she saves");
+        let stored = read_back(&cache);
+        let made_at_google = the_one(&stored, "c1")
+            .also_known_to(AddressBook::Google, "people/new", Some("etag-1"))
+            .told(&AddressBook::Google, Some("etag-1"));
+        cache
+            .save_contact(&made_at_google)
+            .expect("the sync's write");
+        let returned = one_row_edited(&stored, "c1", |row| {
+            row.name = "Grace Brewster Hopper".to_string();
+        });
+
+        let failures = save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert!(failures.is_empty(), "{failures:?}");
+
+        let after = the_one(&read_back(&cache), "c1");
+        assert_eq!(after.name, "Grace Brewster Hopper");
+        assert_eq!(
+            after.known_to,
+            vec![ProviderIdentity {
+                address_book: AddressBook::Google,
+                provider_contact_id: "people/new".to_string(),
+                provider_version: Some("etag-1".to_string()),
+                change_is_waiting: true,
+            }],
+            "the name Google gave was lost, so the next sync makes her again"
+        );
+        assert!(after.pending);
     }
 
     #[test]

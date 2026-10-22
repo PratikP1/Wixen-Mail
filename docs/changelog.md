@@ -1446,6 +1446,26 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A contact you change while a contacts sync sends it is kept as you left it (2026-10-22,
+  REAL-01, PIM-05).** A contacts sync sends each contact you typed here to Google, Outlook or a
+  CardDAV address book one at a time, and after a vCard import that can take minutes. If you
+  edited a contact while it was on its way, the sync wrote the copy it had sent back over your
+  edit, and the edit never left this computer. If you deleted it, it came back here and stayed
+  in the address book. The same happened to an edit made while a change to a contact was being
+  sent. Now your edit stays and goes to the address book at the next sync, and a contact you
+  deleted is deleted there at the next sync too.
+
+  The Contact Manager had a second half of this. If a sync sent a contact while the window was
+  open, saving an edit in the window forgot the address book it had just been added to, so the
+  next sync added it a second time. Saving now keeps it.
+
+  And when Google or Outlook will not add a contact, the log names it by the identifier this
+  program gives it, never by its name, on every contacts sync you start, as every other line
+  about contacts already did.
+
+  Known limits. Nobody has yet tried this with a real Google or Outlook account or a real
+  CardDAV server.
+
 - **Deleting a meeting in one calendar leaves its copy in another alone (2026-10-22,
   REAL-01).** The same meeting can sit in two of your calendars: a school assembly in your own
   calendar and in the school's feed, or one meeting in two of your Google calendars. Deleting
@@ -1971,6 +1991,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   sent, so a first sync of 3,000 contacts read about 4.5 million rows. Each sync now reads
   them once, and reads one contact again just before deciding what to do with her, so an edit
   made while the sync runs is still kept.
+
+  Corrected on 2026-10-22: that held only while the sync read the address book. An edit or a
+  deletion made while the sync sent a contact out was still lost until the entry of 22 October
+  above.
 
   Known limitation: none of these has been tried against a real Google, Outlook or CardDAV
   account.

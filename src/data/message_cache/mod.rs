@@ -28,7 +28,7 @@ pub use calendar::{
     AnsweredHere, DeletedCalendarEvent, OneProvidersCalendar, TheProvidersVersion,
     WhatTheProviderHolds,
 };
-pub use contacts::{CardsRead, MovedBetweenGroups};
+pub use contacts::{CardsRead, MovedBetweenGroups, WhatTheAnswerCameTo};
 pub use folders::WhatTheServerSaid;
 pub use messages::{IncomingMessage, MessageListRow};
 pub use notes::{MovedWhatTheBackendHolds, NoteBody, WhatTheNoteHereWas};
