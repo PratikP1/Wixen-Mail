@@ -108,15 +108,49 @@ impl Filed {
     }
 
     /// Whether this is worth saying for this draft, given the drafts already
-    /// told that an older copy may still be at the server.
+    /// told that an older copy may still be at the server, which this adds to.
+    ///
+    /// A server that can only flag a message for removal leaves an older copy
+    /// at every automatic save, so that answer is said the first time for a
+    /// draft and not again, whatever words the server gave (ledger 912). The
+    /// two refusals say the newest words are not on the server, which stays
+    /// news at every save it is true, so they are said every time.
     pub fn needs_saying_for(
         &self,
-        _draft_id: &str,
-        _told_of_an_older_copy: &mut std::collections::BTreeSet<String>,
+        draft_id: &str,
+        told_of_an_older_copy: &mut std::collections::BTreeSet<String>,
     ) -> bool {
-        self.needs_saying()
+        match self {
+            Self::Replaced => false,
+            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
+                told_of_an_older_copy.insert(draft_id.to_string())
+            }
+            Self::NotFiledAndTheOlderOneIsStillThere(_)
+            | Self::NotFiledAndThereIsNoCopyThere(_) => true,
+        }
+    }
+
+    /// [`Self::needs_saying_for`] over the drafts told so far while the
+    /// program runs.
+    ///
+    /// Kept for the run and not in the database: a server that cannot remove
+    /// one message at a time cannot do it tomorrow either, so the person was
+    /// told what is true for the run, and hearing it once more after a restart
+    /// costs one sentence where a column on the draft's row would be a schema
+    /// change for one.
+    pub fn needs_saying_once_per_draft(&self, draft_id: &str) -> bool {
+        let mut told = TOLD_OF_AN_OLDER_COPY
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.needs_saying_for(draft_id, &mut told)
     }
 }
+
+/// The drafts already told that an older copy may still be at the server.
+/// One for the whole process, as the turn below is, because every save runs
+/// on a worker of its own and carries nothing to the next.
+static TOLD_OF_AN_OLDER_COPY: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
 
 /// A reason with a full stop after it.
 ///
