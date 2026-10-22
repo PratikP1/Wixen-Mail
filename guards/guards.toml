@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 905 records have arrived since and have not been through it.
+# 906 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22066,7 +22066,7 @@ red = [
     "test_the_icon_each_shortcut_names_is_the_one_the_installer_ships",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # ── 07-03 ─────────────────────────────────────────────────────────────────
@@ -22361,7 +22361,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # Guardrail 7, which is the one this project has already been bitten by: a push
@@ -22390,7 +22390,7 @@ red = [
     "test_a_release_still_happens_only_when_somebody_asks_for_one",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # ── 07-08 ─────────────────────────────────────────────────────────────────
@@ -22432,7 +22432,7 @@ red = [
     "test_the_census_of_what_has_to_be_signed_counts_seven_things",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # The break is the half-fix, not the deletion. Taking the publisher comparison
@@ -24982,7 +24982,7 @@ red = [
     "test_a_later_build_orders_above_an_earlier_one_and_below_the_next_stage",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # ── The build counter reaches the file version ───────────────────────────────
@@ -25010,7 +25010,7 @@ red = [
     "test_the_first_alpha_of_1_0_0_sits_above_the_last_0_x_version_the_way_windows_orders_it",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # ── A clone that cannot count is refused ─────────────────────────────────────
@@ -25061,7 +25061,7 @@ red = [
     "test_the_release_workflow_can_publish_the_version_the_tree_already_carries",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # The middle arm of `language_to_use`, which is the whole of the fix for #21:
@@ -43048,9 +43048,12 @@ after = '''    second case this finds no rule, reports success, and leaves the p
   if not (ExecAsOriginalUser(Tool, 'remove-scope', '', SW_HIDE,'''
 red = [
     "test_no_uninstall_step_calls_what_inno_refuses_while_uninstalling",
+    # Since 2026-10-22 (13.3-20): the guide then says the uninstaller's
+    # account and the script runs it as the person who started it.
+    "test_the_search_guide_says_who_runs_remove_scope_as_the_script_does",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # The message after an uninstall for everybody, about what other accounts
@@ -43072,7 +43075,28 @@ red = [
     "test_an_uninstall_for_everybody_says_whose_data_it_cleared_and_what_may_remain",
 ]
 tests_last_seen = [
-    { file = "tests/installer.rs", tests = 28 },
+    { file = "tests/installer.rs", tests = 30 },
+]
+
+# The Windows Search guide, shipped as {app}\docs\windows-search.md, put back
+# to what it said before 13.3-20: `remove-scope` "as the person uninstalling",
+# while the script runs it through Exec, as the uninstaller (review item 29).
+# Anchored on the paragraph's first two lines, which name both commands and the
+# account. Added 2026-10-22 by 13.3-20, measured by hand with `cargo test --test
+# installer`: 29 passed and exactly this one failed.
+[[guard]]
+name = "the search guide says who runs remove-scope as the script does"
+file = "search-handler/README.md"
+suite = "installer"
+before = '''Uninstalling runs `remove-scope` and then `unregister-classes`, both as the
+account the uninstaller runs as, whether or not the box was ever ticked.'''
+after = '''Uninstalling runs `remove-scope` as the person uninstalling and then
+`unregister-classes` elevated, whether or not the box was ever ticked.'''
+red = [
+    "test_the_search_guide_says_who_runs_remove_scope_as_the_script_does",
+]
+tests_last_seen = [
+    { file = "tests/installer.rs", tests = 30 },
 ]
 
 # The update trigger's lowering taken out (13.2-31.2, ledger 836): a message
