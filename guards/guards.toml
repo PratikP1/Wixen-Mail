@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 918 records have arrived since and have not been through it.
+# 919 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -41272,6 +41272,7 @@ before = '''                    let due = lock_state(&state)
                                     focus_home: &focus_home_cell,
                                     waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                     opens_a_handover: &open_a_handover,
+                                    really_quitting: &really_quitting,
                                 },
                             );
                         }
@@ -41303,6 +41304,7 @@ after = '''                    // Every update the workers sent since the last t
                                     focus_home: &focus_home_cell,
                                     waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                     opens_a_handover: &open_a_handover,
+                                    really_quitting: &really_quitting,
                                 },
                             );
                         }
@@ -44624,4 +44626,24 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/update_download.rs", tests = 59 },
+]
+
+# Yes to an installed update closes Wixen Mail the way Quit does, so the
+# notification area setting cannot turn it into a hide (13.3-24, the research's
+# gap 2). Broken by putting back the forced close the handover arm had, which
+# never tells the close handler this is a Quit. Anchored on the comment and the
+# line, so it names the handover's call and not the Quit arm's.
+[[guard]]
+name = "the handover to an installer closes the window as a Quit"
+file = "src/presentation/wx_app.rs"
+before = '''                    // it into a hide while the installer waits for this to end.
+                    really_quit(really_quitting, frame);'''
+after = '''                    // it into a hide while the installer waits for this to end.
+                    frame.close(true);'''
+red = [
+    "application::closing::tests::test_installing_an_update_quits_the_way_quit_does",
+]
+tests_last_seen = [
+    { file = "src/application/closing.rs", tests = 11 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

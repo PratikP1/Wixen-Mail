@@ -5415,14 +5415,10 @@ impl WxMailApp {
                             let href = lock_state(&state).context_link_href.clone();
                             answer_the_links_menu(id, href.as_deref(), &preview_host, &a11y);
                         }
-                        // Quit really quits, and says so to the close handler
-                        // before asking it to close. Both this and the window's
-                        // own close button arrive there, so without the flag
-                        // the menu item that says Quit would hide the window
-                        // and leave a program somebody was sure they had ended.
+                        // Quit really quits, through the one function the
+                        // handover to an installer closes through as well.
                         _ if id == ID_QUIT => {
-                            really_quitting.set(true);
-                            frame.close(false);
+                            really_quit(&really_quitting, &frame);
                         }
                         // Raised by the tray, and handled here so the tray
                         // decides nothing: it hands over an id like every other
@@ -6648,6 +6644,8 @@ impl WxMailApp {
                     Option<chrono::DateTime<chrono::Local>>,
                 > = std::cell::Cell::new(None);
                 let opens_a_handover = std::rc::Rc::clone(&opens_a_handover);
+                // So the handover to an installer closes the window as a Quit.
+                let really_quitting = std::rc::Rc::clone(&really_quitting);
                 // The same layout the menu handler and the paint callback hold,
                 // not a copy of it. An arriving conversation listing decides
                 // whether the Thread column belongs in this folder, and a
@@ -6725,6 +6723,7 @@ impl WxMailApp {
                                     focus_home: &focus_home_cell,
                                     waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                     opens_a_handover: &open_a_handover,
+                                    really_quitting: &really_quitting,
                                 },
                             );
                         }
@@ -23811,6 +23810,14 @@ struct UpdateTargets<'a> {
     /// in it would be paying for this everywhere. A calendar a followed link
     /// asked for comes back through it too, once fetched off this thread.
     opens_a_handover: &'a dyn Fn(Handover),
+    /// Whether this close is a Quit, which the close handler reads.
+    ///
+    /// Here because the handover to an installer closes the window, and a
+    /// close nobody marked as a Quit is the window's own close button: with
+    /// "keep running in the notification area" on, the handler would hide the
+    /// window and say Wixen Mail was still running while the installer waited
+    /// for it to end. See `really_quit`.
+    really_quitting: &'a std::cell::Cell<bool>,
 }
 
 /// The database id of whichever folder is open right now, if any.
@@ -24089,6 +24096,22 @@ fn the_preview_of(
     )
 }
 
+/// Close the window as a Quit: the program ends, whatever the notification
+/// area setting says.
+///
+/// Quit and the handover to an installer both close through this, so neither
+/// can drift from the other. The flag is set first because the close handler
+/// reads it to tell a Quit from the window's own close button, and a close it
+/// reads as the button hides the window when "keep running in the
+/// notification area" is on. That once turned the handover into a hide: the
+/// person heard Wixen Mail was closing and then that it was still running,
+/// and the Trash, the sign-off and the icon were left for a Quit that never
+/// came (13.3-24, gap 2 of the update research).
+fn really_quit(really_quitting: &std::cell::Cell<bool>, frame: &Frame) {
+    really_quitting.set(true);
+    frame.close(false);
+}
+
 /// Process a single UIUpdate, updating widgets + accessibility.
 fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
     let UpdateTargets {
@@ -24109,6 +24132,7 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         focus_home: focus_home_cell,
         waiting_to_be_asked_about,
         opens_a_handover,
+        really_quitting,
     } = targets;
 
     use crate::presentation::accessibility::announcements::Priority;
@@ -24751,7 +24775,9 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // other order leaves nothing running to report a start that failed.
             match update_download::hand_over_to(installer) {
                 Ok(()) => {
-                    frame.close(true);
+                    // As a Quit, so the notification area setting cannot turn
+                    // it into a hide while the installer waits for this to end.
+                    really_quit(really_quitting, frame);
                 }
                 Err(why) => {
                     // Still running, which is the point of this order, so there

@@ -293,6 +293,10 @@ pub fn say_no(installer: Verified) -> Result<()> {
 /// dialog rather than a silence, which is the property that matters, and the
 /// person's answer is to press retry. Nothing here waits on a bound, because
 /// the wait would have to happen inside a process that is trying to exit.
+///
+/// The window then closes the way Quit closes it, through `really_quit` in
+/// `wx_app.rs`, so the notification area setting cannot turn the handover into
+/// a hide that leaves this process running.
 pub fn hand_over_to(installer: &Verified) -> std::result::Result<(), HandoverFailed> {
     if !installer.at.exists() {
         return Err(HandoverFailed::ItIsNoLongerThere);
