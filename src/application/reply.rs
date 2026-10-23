@@ -270,17 +270,20 @@ impl WhatQuotingFinds {
 
 /// Decide what quoting a message finds, from what the store keeps of its text
 /// and whether Wixen Mail is online.
+///
+/// A message that came down with no text, encrypted or only an attachment,
+/// is quoted as nothing: downloading it again brings the same nothing, so a
+/// refusal promising its text would be a promise nothing keeps (ledger 919).
 pub fn what_quoting_finds(
     kept: &crate::data::message_cache::bodies::KeptText,
     reachability: crate::application::sending_later::Reachability,
 ) -> WhatQuotingFinds {
     use crate::application::sending_later::Reachability;
     use crate::data::message_cache::bodies::KeptText;
-    let here = matches!(kept, KeptText::Here(_));
-    match (here, reachability) {
-        (true, _) => WhatQuotingFinds::TheText,
-        (false, Reachability::Online) => WhatQuotingFinds::NotHereYet,
-        (false, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
+    match (kept, reachability) {
+        (KeptText::Here(_) | KeptText::CameWithNoText, _) => WhatQuotingFinds::TheText,
+        (KeptText::NotHere, Reachability::Online) => WhatQuotingFinds::NotHereYet,
+        (KeptText::NotHere, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
     }
 }
 

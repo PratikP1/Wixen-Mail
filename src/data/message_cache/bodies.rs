@@ -496,11 +496,20 @@ impl MessageCache {
 
     /// Read a message body back, if one is cached.
     ///
+    /// A message that came down with no text has none, the same as one never
+    /// fetched; [`Self::the_text_kept_for`] tells the two apart.
+    pub fn get_message_body(&self, message_id: i64) -> Result<Option<MessageBody>> {
+        Ok(self.the_text_kept_for(message_id)?.into_body())
+    }
+
+    /// What the store keeps of a message's text, telling a message that came
+    /// down with no text from one whose text is not here.
+    ///
     /// Both shapes read. Bodies written before packing existed are text in the
     /// old columns and are still there, because a column that shipped is never
     /// dropped; bodies written since are packed blobs. The packed column wins
     /// where a row somehow holds both.
-    pub fn get_message_body(&self, message_id: i64) -> Result<Option<MessageBody>> {
+    pub fn the_text_kept_for(&self, message_id: i64) -> Result<KeptText> {
         let mut stmt = self
             .conn
             .prepare_cached(
@@ -522,8 +531,20 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to query message body: {}", e)))?;
 
         let Some((plain_text, html_text, plain_packed, html_packed)) = stored else {
-            return Ok(None);
+            return Ok(KeptText::NotHere);
         };
+
+        // All four null is what the save writes for a message that came down
+        // with no text part. Decided from the columns and never from what
+        // they decode to, because a packed half that no longer unpacks also
+        // decodes to nothing, and that one has to be fetched again.
+        let came_with_no_text = plain_text.is_none()
+            && html_text.is_none()
+            && plain_packed.is_none()
+            && html_packed.is_none();
+        if came_with_no_text {
+            return Ok(KeptText::CameWithNoText);
+        }
 
         // Each half is decided on its own. A row whose formatted copy is
         // damaged but whose plain copy reads is still worth showing.
@@ -535,18 +556,9 @@ impl MessageCache {
         // Both halves gone is a body that is not there, and saying so is what
         // makes the message be fetched again rather than opened blank.
         if body.body_plain.is_none() && body.body_html.is_none() {
-            return Ok(None);
+            return Ok(KeptText::NotHere);
         }
-        Ok(Some(body))
-    }
-
-    /// What the store keeps of a message's text, telling a message that came
-    /// down with no text from one whose text is not here.
-    pub fn the_text_kept_for(&self, message_id: i64) -> Result<KeptText> {
-        Ok(match self.get_message_body(message_id)? {
-            Some(body) => KeptText::Here(body),
-            None => KeptText::NotHere,
-        })
+        Ok(KeptText::Here(body))
     }
 
     /// Mark a body as just read, so eviction prefers something else.

@@ -3671,20 +3671,12 @@ impl WxMailApp {
                     // loaded body existed and no code ever sent one, so the
                     // preview was empty for every message ever selected.
                     let selected = stands_for.as_ref().map(|row| (row.id, row.uid));
+                    // A message that came down with no text is shown as such
+                    // and goes through the arm below that sends a stored
+                    // body, so it is not downloaded again and its parts are
+                    // still asked after (13.3-24.2, ledger 919).
                     let body = selected.and_then(|(id, _)| {
-                        body_cache
-                            .as_ref()
-                            .and_then(|c| c.get_message_body(id).ok().flatten())
-                            .and_then(|b| match (b.body_html, b.body_plain) {
-                                // The markup half when there is one: it
-                                // carries the sender's headings and link
-                                // text. Which half it is travels with it,
-                                // because the two need opposite handling and
-                                // nothing downstream can tell from the string.
-                                (Some(html), _) => Some(MessageBody::Html(html)),
-                                (None, Some(plain)) => Some(MessageBody::Plain(plain)),
-                                (None, None) => None,
-                            })
+                        what_the_list_shows_of(what_the_store_keeps_of(body_cache.as_deref(), id))
                             .map(|body| (id, body))
                     });
                     match body {
@@ -15861,6 +15853,32 @@ fn body_as_written(stored: Option<crate::data::message_cache::bodies::MessageBod
         (Some(html), None) => MessageBody::Html(html),
         (None, Some(plain)) => MessageBody::Plain(plain),
         (None, None) => MessageBody::Plain(String::new()),
+    }
+}
+
+/// What the preview shows for a message that came down with no text part, an
+/// encrypted message or one that is only an attachment: shown by the fetch
+/// that found it so, and by the list every time the cursor lands on it after.
+const NO_READABLE_BODY: &str = "This message has no readable body.";
+
+/// What the message list's preview shows of a message the store keeps
+/// `kept` of, or nothing when its text is not here and has to be fetched.
+///
+/// The markup half when there is one: it carries the sender's headings and
+/// link text. Which half it is travels with it, because the two need
+/// opposite handling and nothing downstream can tell from the string.
+fn what_the_list_shows_of(
+    kept: crate::data::message_cache::bodies::KeptText,
+) -> Option<MessageBody> {
+    use crate::data::message_cache::bodies::KeptText;
+    match kept {
+        KeptText::Here(stored) => match (stored.body_html, stored.body_plain) {
+            (Some(html), _) => Some(MessageBody::Html(html)),
+            (None, Some(plain)) => Some(MessageBody::Plain(plain)),
+            (None, None) => None,
+        },
+        KeptText::CameWithNoText => Some(MessageBody::Plain(NO_READABLE_BODY.to_string())),
+        KeptText::NotHere => None,
     }
 }
 
@@ -31378,7 +31396,7 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         let body = match (parsed.body_html, parsed.body_plain) {
             (Some(html), _) => MessageBody::Html(html),
             (None, Some(plain)) => MessageBody::Plain(plain),
-            (None, None) => MessageBody::Plain("This message has no readable body.".to_string()),
+            (None, None) => MessageBody::Plain(NO_READABLE_BODY.to_string()),
         };
         handle.block_on(async {
             let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;

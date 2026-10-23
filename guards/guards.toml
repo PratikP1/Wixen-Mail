@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 920 records have arrived since and have not been through it.
+# 922 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -8824,7 +8824,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
@@ -10122,7 +10122,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/service/onenote_page.rs", tests = 48 },
 ]
 
@@ -15051,7 +15051,7 @@ red = [
     "presentation::managers::tests::test_no_offer_is_made_when_there_is_no_account_open_to_fetch_from",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/presentation/managers.rs", tests = 138 },
 ]
@@ -16440,7 +16440,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
 ]
 
 # ── A sync brings down no attachment ───────────────────────────────────────
@@ -16520,7 +16520,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_the_migration_reads_an_index_rather_than_every_message_in_the_file",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -16560,7 +16560,7 @@ red = [
     "data::message_cache::bodies::the_migration_that_runs_on_every_open::test_text_put_back_inline_is_moved_by_the_next_open_however_finished_the_file_looks",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
 ]
 
 # ── Which end of a folder's numbering a filed row takes ────────────────────
@@ -25165,7 +25165,7 @@ red = [
     "data::message_cache::bodies::tests::test_the_audits_message_is_saved_html_only_without_ending_the_program",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -25187,7 +25187,7 @@ red = [
     "data::message_cache::bodies::tests::test_stored_snippets_are_put_right_once_index_included_plain_bodies_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
 ]
 
@@ -25212,7 +25212,7 @@ red = [
     "data::message_cache::bodies::tests::test_snippets_are_put_right_once_and_a_second_call_reads_no_body",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
 ]
 
 # Undo Send taken off the Edit menu, which is the shape the tester met on
@@ -26159,7 +26159,7 @@ red = [
     "data::message_cache::bodies::tests::test_a_listed_message_carries_the_size_the_server_gave_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
 ]
 
 # A chunk of the text pass stops before the next message when it is asked
@@ -26590,7 +26590,7 @@ red = [
     "data::message_cache::bodies::tests::test_under_all_nothing_is_evicted_and_under_a_size_the_old_rule_runs_at_that_size",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
 ]
 
 # ── The check's worker opens its cache with how much text stays (#23) ───────
@@ -29115,7 +29115,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -29145,7 +29145,7 @@ red = [
     "test_the_pass_over_two_thousand_bodies_finishes_and_says_what_it_cost",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "tests/a_snippet_is_the_first_relevant_words.rs", tests = 10 },
 ]
 
@@ -34308,7 +34308,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/parts_left_behind.rs", tests = 5 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 17 },
 ]
 
 # A message this computer holds the only copy of, collected over POP, asked
@@ -34327,7 +34327,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/parts_left_behind.rs", tests = 5 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 17 },
 ]
 
 # The same break seen from the library: a message filed here asked of a
@@ -34422,7 +34422,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 17 },
 ]
 
 # The preview loaded again whenever parts were kept, changed or not: every
@@ -34443,7 +34443,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 15 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 17 },
 ]
 
 # A server that sent no PERMANENTFLAGS has said nothing about what it keeps,
@@ -41689,7 +41689,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 65 },
     { file = "src/common/how_deep_markup_nests.rs", tests = 4 },
-    { file = "src/data/message_cache/bodies.rs", tests = 51 },
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "src/vendor/paperback/mod.rs", tests = 15 },
 ]
@@ -43767,6 +43767,45 @@ tests_last_seen = [
 # nothing. The line it broke was rewritten and one test it named removed, so
 # it could not be measured again. Its successor, "a message that came down
 # with no text is told from one never fetched", breaks the store's reading.
+
+# A message that came down with no text part read as one never fetched, so
+# Reply refused it and the list downloaded it again at every landing, for
+# text it does not have (13.3-24.2, ledger 919). The break reads the row the
+# save writes for it, four null columns, as not here. Measured 2026-10-23 by
+# hand, the break applied and the whole library run: 9,483 passed and this
+# one red. The reply and landing cases build the typed answer themselves and
+# stay green, which is right: the break is in the store.
+[[guard]]
+name = "a message that came down with no text is told from one never fetched"
+file = "src/data/message_cache/bodies.rs"
+before = '''        if came_with_no_text {
+            return Ok(KeptText::CameWithNoText);'''
+after = '''        if came_with_no_text {
+            return Ok(KeptText::NotHere);'''
+red = [
+    "data::message_cache::bodies::tests::test_a_message_that_came_down_with_no_text_is_kept_as_such",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/bodies.rs", tests = 55 },
+]
+
+# Landing in the message list on a message that came down with no text sent
+# it to be fetched again, at every landing (13.3-24.2, ledger 919). The break
+# sends it to the arm for text not here. Measured 2026-10-23 by hand, the
+# break applied and the target run: 16 passed and this one red.
+[[guard]]
+name = "a message that came down with no text is shown in the list and not fetched again"
+file = "src/presentation/wx_app.rs"
+suite = "an_earlier_download_is_fetched_once_for_its_parts"
+before = '''        KeptText::CameWithNoText => Some(MessageBody::Plain(NO_READABLE_BODY.to_string())),'''
+after = '''        KeptText::CameWithNoText => None,'''
+red = [
+    "test_a_message_that_came_down_with_no_text_is_shown_and_not_fetched_again",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/an_earlier_download_is_fetched_once_for_its_parts.rs", tests = 17 },
+]
 
 # Forward from an opened conversation opening no window and saying nothing
 # when the message's text is not here, its call of the refusal taken out
