@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 925 records have arrived since and have not been through it.
+# 927 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -13368,7 +13368,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 [[guard]]
@@ -13439,7 +13439,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
@@ -34923,7 +34923,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # Clearing the sign-in name in Look People Up at Work and saving leaves the
@@ -36423,7 +36423,7 @@ red = [
     "data::message_cache::quick_steps::tests::test_removing_an_account_takes_its_steps_and_leaves_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
     { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
 ]
 
@@ -36955,7 +36955,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_password_the_store_will_not_keep_is_said_with_the_accounts_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # A rule's mark told to the server after the rule's move rather than before
@@ -40818,7 +40818,7 @@ red = [
     "data::message_cache::accounts::tests::test_saving_the_accounts_again_keeps_the_order_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # The store saving a second account on an address another one uses: its
@@ -40842,9 +40842,10 @@ red = [
     # is refused by the table after its password is kept, and the read-back
     # case reads the table's words, measured 2026-10-23.
     "data::message_cache::accounts::tests::test_an_account_the_store_refused_is_not_among_the_accounts_held",
+    "data::message_cache::accounts::tests::test_a_new_account_the_store_refused_keeps_no_browser_sign_in",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # The store saving the accounts before it removes the ones taken away: an
@@ -40885,7 +40886,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_edited_account_may_take_the_address_of_one_removed_beside_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # Moving an account leaving the window's own list alone: the Account Manager
@@ -44770,7 +44771,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_store_that_cannot_be_read_leaves_the_list_from_before_the_visit",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]
 
 # The Account Manager's handler stores first and works everything out from
@@ -44792,4 +44793,36 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
+]
+
+# A new account whose save is refused has every secret it left forgotten
+# (13.3-24.3, ledger 923). Broken by skipping the forgetting, which leaves a
+# browser sign-in or a password under an id no row names.
+[[guard]]
+name = "a new account the store refused has every secret it left forgotten"
+file = "src/data/message_cache/accounts.rs"
+before = '''        if saved.is_err() && !stored.iter().any(|held| held.id == account.id) {'''
+after = '''        if false && saved.is_err() && !stored.iter().any(|held| held.id == account.id) {'''
+red = [
+    "data::message_cache::accounts::tests::test_a_new_account_the_store_refused_keeps_no_browser_sign_in",
+    "data::message_cache::accounts::tests::test_a_new_account_the_table_refused_keeps_no_password",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
+]
+
+# A removal Windows will not let go of is said in one plain sentence, the
+# store's words kept for the log (13.3-24.3, ledger 924). Broken by answering
+# it as a security error carrying the store's reasons, which is what it was.
+[[guard]]
+name = "a refused removal is said in plain words, not the credential store's"
+file = "src/data/message_cache/accounts.rs"
+before = '''            return Err(Error::InPlainWords(not_removed(called, &kept)));'''
+after = '''            return Err(Error::Security(format!("{}: {stayed:?}", not_removed(called, &kept))));'''
+red = [
+    "data::message_cache::accounts::tests::test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence",
+    "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 43 },
 ]

@@ -156,6 +156,10 @@ impl MessageCache {
     /// kept account uses; either is one account's problem, so every other
     /// removal and save still happens. The answer is the first refusal, and
     /// any after it is logged by the account's name.
+    ///
+    /// A new account whose save is refused has every secret it left
+    /// forgotten, through [`MessageCache::save_or_forget_a_new_account`]; an
+    /// account already stored whose edit is refused keeps its own.
     pub fn replace_accounts(&self, accounts: &[crate::data::account::Account]) -> Result<()> {
         let stored = self.load_accounts()?;
         let gone = stored
@@ -175,13 +179,31 @@ impl MessageCache {
         the_first_refusal(outcomes)
     }
 
-    /// Save `account`, one of the list `stored` held or a new one.
+    /// Save `account`, one of the list `stored` held or a new one, and when
+    /// the save of a new one is refused, forget every secret it left.
+    ///
+    /// A new account can have secrets before it has a row: the Add Account
+    /// window's browser sign-in keeps the tokens before OK, and the save keeps
+    /// the password before the table takes the row. Refused, they would sit
+    /// under an id no row names, which neither removing an account nor the
+    /// uninstall erases (ledger 923). An account `stored` held keeps its own,
+    /// since its row still names them.
     fn save_or_forget_a_new_account(
         &self,
         account: &crate::data::account::Account,
-        _stored: &[crate::data::account::Account],
+        stored: &[crate::data::account::Account],
     ) -> Result<()> {
-        self.save_account(account)
+        let saved = self.save_account(account);
+        if saved.is_err() && !stored.iter().any(|held| held.id == account.id) {
+            for (kind, reason) in forget_every_secret_of(&account.id) {
+                tracing::warn!(
+                    "{} was not saved, and Windows would not let go of {}: {reason}",
+                    whose(&account.name),
+                    kind.in_words()
+                );
+            }
+        }
+        saved
     }
 
     /// Store `given` through [`MessageCache::replace_accounts`] and answer
@@ -377,6 +399,13 @@ impl MessageCache {
 
     /// Delete an account from the database. `called` is the account's name,
     /// the one a refusal is said with.
+    ///
+    /// A secret Windows will not let go of keeps the row, and the refusal is
+    /// one sentence naming the account and each kind of secret kept, the way
+    /// the Account Manager says it aloud. The credential store's own words go
+    /// to the log by the account's name: said, they put "Security error"
+    /// twice and a system's reason in the middle of a sentence for a person
+    /// (ledger 924).
     pub fn delete_account(&self, account_id: &str, called: &str) -> Result<()> {
         // The passwords and the tokens go first, and nothing else happens if
         // any of them will not go. This row is the only thing naming those
@@ -391,8 +420,15 @@ impl MessageCache {
         // reported success.
         let stayed = forget_every_secret_of(account_id);
         if !stayed.is_empty() {
+            for (kind, reason) in &stayed {
+                tracing::warn!(
+                    "{} was not removed, because Windows would not let go of {}: {reason}",
+                    whose(called),
+                    kind.in_words()
+                );
+            }
             let kept: Vec<KeptSecret> = stayed.iter().map(|(kind, _)| *kind).collect();
-            return Err(Error::Security(not_removed(called, &kept)));
+            return Err(Error::InPlainWords(not_removed(called, &kept)));
         }
 
         // And so does the mail. This used to remove the account row alone,
@@ -477,15 +513,33 @@ fn forget_every_secret_of(account_id: &str) -> Vec<(KeptSecret, String)> {
     stayed
 }
 
-/// The sentence a removal Windows would not let go of is said with.
-fn not_removed(_called: &str, kept: &[KeptSecret]) -> String {
+/// The sentence a removal Windows would not let go of is said with: the
+/// account by its name, and each kind of secret kept named once, in
+/// [`KeptSecret`]'s order.
+fn not_removed(called: &str, kept: &[KeptSecret]) -> String {
+    let mut kinds = kept.to_vec();
+    kinds.sort();
+    kinds.dedup();
+    let words: Vec<&str> = kinds.into_iter().map(KeptSecret::in_words).collect();
+    let listed = match words.split_last() {
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    };
     format!(
-        "This account has not been removed, because Windows would not let go of {}.",
-        kept.iter()
-            .map(|kind| kind.in_words())
-            .collect::<Vec<_>>()
-            .join(", and ")
+        "{} was not removed, because Windows would not let go of {listed}; try again, and see \
+         When something goes wrong in Help if it keeps happening.",
+        whose(called)
     )
+}
+
+/// The account a sentence names: by the name it was given, or as this
+/// account when the name is blank. Never the id, a long internal code.
+fn whose(called: &str) -> &str {
+    match called.trim() {
+        "" => "This account",
+        name => name,
+    }
 }
 
 /// What the store holds after the Account Manager's list was saved, and why
@@ -1428,10 +1482,10 @@ mod tests {
 
     #[test]
     fn test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence() {
-        // It used to be "Security error: This account has not been removed,
-        // because Windows would not let go of its saved password (Security
-        // error: Could not remove ...)", the layer's name twice and the
-        // store's own words in the middle (ledger 924).
+        // It used to open with "Security error: This account", name what was
+        // kept with the store's own "Security error" words in brackets after
+        // each, and so say the layer's name twice and a system's reason in
+        // the middle of a sentence for a person (ledger 924).
         use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
         let cache = a_cache("a-removal-said-plainly");
         cache
