@@ -529,4 +529,30 @@ mod list_folders_asks_over_the_whole_listing {
             "{listing_wide}{listing_wide}"
         )));
     }
+
+    #[test]
+    fn test_a_role_decided_from_a_listing_of_one_is_compiled_for_tests_only() {
+        // `classify` decides one folder's role with no other folder to ask,
+        // which is finding #9 if anything the program runs calls it. The
+        // compiler refuses such a caller only while the attribute stands;
+        // this is what goes red if somebody takes the attribute off.
+        use crate::common::what_ships::what_ships;
+        const NEEDLE: &str = concat!("pub fn class", "ify(");
+
+        let planted = format!("{NEEDLE}attributes: &[String]) -> FolderType {{\n    Custom\n}}\n");
+        assert!(
+            what_ships(&planted).contains(NEEDLE),
+            "the reading cannot see a function that ships"
+        );
+        let source = include_str!("special_use.rs");
+        assert_eq!(
+            source.matches(NEEDLE).count(),
+            1,
+            "the role from a listing of one is not defined once in the file, so this reads nothing"
+        );
+        assert!(
+            !what_ships(source).contains(NEEDLE),
+            "a normal build holds the way to decide one folder's role from a listing of one"
+        );
+    }
 }
