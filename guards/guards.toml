@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 906 records have arrived since and have not been through it.
+# 908 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -4814,7 +4814,7 @@ red = [
     "application::draft_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]
 
 [[guard]]
@@ -4900,7 +4900,7 @@ red = [
     "test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "tests/house_style.rs", tests = 78 },
 ]
 
@@ -5114,15 +5114,20 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
+# Rewritten 2026-10-22 by 13.3-21 onto the block that asks the once-per-draft
+# rule (ledger 912), with the comment above it as context; the break is the
+# one it was, a log line in place of the saying.
 [[guard]]
 name = "a draft the server would not take is said rather than logged"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
-before = """        if filed.needs_saying() {
+before = """        // An older copy left beside the new one is said once for this draft,
+        // not at every save after it; a refused save is said every time.
+        if filed.needs_saying_once_per_draft(&draft_id) {
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::StatusUpdated(filed.what_happened()))
@@ -7184,7 +7189,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -7202,7 +7207,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -18113,7 +18118,7 @@ red = [
     "presentation::html_renderer::tests::test_two_pictures_keep_their_own_descriptions_in_order",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
     { file = "src/presentation/html_renderer.rs", tests = 96 },
 ]
 
@@ -33870,7 +33875,7 @@ red = [
     "data::message_cache::drafts::tests::test_a_draft_keeps_whether_it_is_to_go_signed_or_encrypted",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
 ]
 
 # A queued message whose key went after it was queued sent plain rather than
@@ -40718,7 +40723,7 @@ red = [
     "application::draft_copy::tests::test_sending_takes_away_exactly_the_copies_the_server_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]
 
 # A sent draft's copy on this computer found and left where it is: the
@@ -40727,16 +40732,22 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-10-14: the whole library at 9,049 passed and 1
 # failed, this one.
+#
+# Rewritten 2026-10-22 by 13.3-21 (review item 38) onto the one statement over
+# every unmarked copy; the break is the statement made to match nothing, and
+# it now reddens the two cases for a second copy and a marked row as well.
 [[guard]]
 name = "a sent draft's copy leaves the Drafts folder on this computer"
 file = "src/data/message_cache/drafts.rs"
-before = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND filed_here = 0",'''
-after = '''                "DELETE FROM messages WHERE folder_id = ?1 AND uid = ?2 AND 0",'''
+before = '''                "DELETE FROM messages WHERE folder_id = ?1 AND message_id = ?2 AND filed_here = 0",'''
+after = '''                "DELETE FROM messages WHERE folder_id = ?1 AND message_id = ?2 AND 0",'''
 red = [
+    "data::message_cache::drafts::tests::test_a_row_filed_here_stays_and_the_unmarked_copy_beside_it_goes",
     "data::message_cache::drafts::tests::test_a_sent_drafts_copy_leaves_the_drafts_folder_here",
+    "data::message_cache::drafts::tests::test_every_unmarked_copy_of_a_sent_draft_leaves_drafts_here",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
 ]
 
 # Every caller handed a lock of its own: a removal no longer waits for a
@@ -40756,7 +40767,7 @@ red = [
     "application::draft_copy::tests::test_a_removal_waits_for_a_filing_that_began_before_it",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]
 
 # The Send arm reading the sent draft and taking nothing away: the row goes
@@ -41611,7 +41622,7 @@ red = [
     "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
@@ -43328,7 +43339,7 @@ red = [
     "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]
 
 # A saved draft's older copies taken from the server's search alone, so a
@@ -43352,7 +43363,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -43369,7 +43380,7 @@ red = [
     "data::message_cache::drafts_left_at_the_server::tests::test_removing_an_accounts_drafts_forgets_its_removals",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/drafts.rs", tests = 9 },
+    { file = "src/data/message_cache/drafts.rs", tests = 12 },
     { file = "src/data/message_cache/drafts_left_at_the_server.rs", tests = 4 },
 ]
 
@@ -43386,7 +43397,7 @@ red = [
     "application::draft_copy::tests::test_a_second_try_that_failed_again_is_forgotten_and_said_with_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 29 },
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]
 
 # The check no longer trying the kept removals: the call in spawn_mail_sync
@@ -44405,4 +44416,41 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 32 },
+]
+
+# The search for a message's copies asking for flagged ones as well: on a
+# server without UIDPLUS every save finds, reads and flags again every copy
+# flagged at the saves before it (13.3-21, ledger 912). Held on the session
+# and through the controller as the save takes it.
+[[guard]]
+name = "the search for a message's copies leaves out the ones flagged for removal"
+file = "src/service/protocols/imap.rs"
+before = '''        self.search_uids(&format!("HEADER MESSAGE-ID {quoted} UNDELETED"))'''
+after = '''        self.search_uids(&format!("HEADER MESSAGE-ID {quoted}"))'''
+red = [
+    "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
+    "service::protocols::imap::against_a_server_that_answers::test_removing_a_saved_draft_searches_flags_and_expunges",
+]
+tests_last_seen = [
+    { file = "src/application/mail_controller.rs", tests = 75 },
+    { file = "src/service/protocols/imap.rs", tests = 102 },
+]
+
+# The rule saying every older copy left beside a saved draft, which on a
+# server without UIDPLUS is a sentence at every automatic save, once a minute
+# (13.3-21, ledger 912).
+[[guard]]
+name = "an older copy of a draft is said once for each draft"
+file = "src/application/draft_copy.rs"
+before = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
+                told_of_an_older_copy.insert(draft_id.to_string())
+            }'''
+after = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
+                told_of_an_older_copy.insert(draft_id.to_string()) || true
+            }'''
+red = [
+    "application::draft_copy::tests::test_an_older_copy_that_may_still_be_there_is_said_once_for_each_draft",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 31 },
 ]

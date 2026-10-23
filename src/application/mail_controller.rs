@@ -2314,7 +2314,7 @@ mod against_a_server_that_answers {
         assert_eq!(filed, crate::application::draft_copy::Filed::Replaced);
         let steps = [
             "SELECT \"Drafts\"",
-            "UID SEARCH HEADER MESSAGE-ID \"<d@x>\"",
+            "UID SEARCH HEADER MESSAGE-ID \"<d@x>\" UNDELETED",
             "APPEND \"Drafts\"",
             "UID STORE 4 +FLAGS (\\Deleted)",
             "UID EXPUNGE 4",

@@ -712,6 +712,11 @@ fn test_a_draft_the_server_would_not_take_reaches_the_person() {
         "the answer is worked out and dropped, which reaches nobody"
     );
     assert!(
+        handler.contains("needs_saying_once_per_draft("),
+        "the handler says an older copy at every save again, a sentence a minute on a \
+         server that cannot remove one message at a time (ledger 912)"
+    );
+    assert!(
         !handler.contains("tracing::warn!"),
         "a failure to file the draft goes to a log and nowhere else again"
     );

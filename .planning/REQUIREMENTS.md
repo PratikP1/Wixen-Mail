@@ -2783,6 +2783,19 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     without UIDPLUS, where each save flags and reads every copy flagged before. The removal
     and the save of a draft's copy still sit under no requirement. No `[D]` clause is added and
     the box stays ticked.
+  - 13.3-21 on 2026-10-22: closes ledger 912, which 14-08.1 recorded here, on Pratik's yes of
+    2026-10-20 (review item 41). The search for a message's copies asks `UNDELETED`, so on a
+    server without UIDPLUS a save no longer finds, reads and flags again every copy flagged
+    before, and the sentence that an older copy may still be on the server is said once for
+    each draft while the program runs; a refused save is still said every time. Send takes a
+    sent draft's copies out of Drafts on this computer in one statement, every unmarked copy
+    and none when the identifier is blank (review item 38). Held by the loopback cases in
+    `src/service/protocols/imap.rs` and `src/application/mail_controller.rs`, two cases in
+    `src/application/draft_copy.rs`, three in `src/data/message_cache/drafts.rs`, a reading in
+    `tests/wired.rs`, two new records and two rewritten. It opens ledger 941, the offline save
+    said every minute, and 942, a server without UIDPLUS. The save and the removal of a
+    draft's copy still sit under no requirement. No `[D]` clause is added and the box stays
+    ticked.
 
 - [x] **FOUND-05**: A held meeting answer says it is held and how to take it back, and says
   the organiser has been told only once it has gone.
@@ -8382,7 +8395,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-01 | Phase 9 | Complete on the tree side, 09-01 at `c0606807`; the dispatch is Pratik's |
 | FOUND-02 | Phase 9 | Complete, 09-02 at `a3554483`; his profile is the tester's |
 | FOUND-03 | Phase 9 | Complete, 09-02 at `a3554483`; his cache is the tester's; phase 13.2, planned 2026-10-14: 13.2-12, adding no `[D]` clause; 13.2-12 done 2026-10-15, an HTML-only message nested past 512 levels is saved with its words as its snippet and index row instead of overflowing the worker's stack (ledger 857) |
-| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, and 2026-10-15: 13.2-31.3 and 13.2-31.4, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845); 13.2-31.3 done 2026-10-19, the Outbox's own Delete leaves a message being sent and says so once, and Undo Send's too-late answer offers Delete only for a message not being sent (ledger 843 fixed, 900 opened); 13.2-31.4 done 2026-10-19, a sent draft's copy Send could not take out of Drafts is kept and tried again at the account's next check, said once if that fails too, and the removal takes only the draft's exact identifier, under no requirement as 13.2-05's was (ledger 845 and 854 fixed, 901 and 902 opened); phase 14, 14-08.1 done 2026-10-20, a saved draft's older copies read for the draft's exact identifier before they are taken out, as Send's removal does, adding no `[D]` clause (ledger 902 fixed, 911 and 912 opened) |
+| FOUND-04 | Phase 9 | Complete, 09-03 at `f58b9271`; phase 13.2, planned 2026-10-14: 13.2-04 and 13.2-05, and 2026-10-15: 13.2-31.3 and 13.2-31.4, adding no `[D]` clause; 13.2-04 done 2026-10-14, the Outbox claims a message before it sends it, so Undo Send never says "Taken back" about a message on its way and no message is sent twice (ledger 842, 843); 13.2-05 done 2026-10-14, Undo Send files a draft's copy only once it caught the message, and Send takes a sent draft's copy out of Drafts, the second sitting under no requirement (ledger 844, 845); 13.2-31.3 done 2026-10-19, the Outbox's own Delete leaves a message being sent and says so once, and Undo Send's too-late answer offers Delete only for a message not being sent (ledger 843 fixed, 900 opened); 13.2-31.4 done 2026-10-19, a sent draft's copy Send could not take out of Drafts is kept and tried again at the account's next check, said once if that fails too, and the removal takes only the draft's exact identifier, under no requirement as 13.2-05's was (ledger 845 and 854 fixed, 901 and 902 opened); phase 14, 14-08.1 done 2026-10-20, a saved draft's older copies read for the draft's exact identifier before they are taken out, as Send's removal does, adding no `[D]` clause (ledger 902 fixed, 911 and 912 opened); phase 13.3, 13.3-21 done 2026-10-22, a draft's older copy at a server without UIDPLUS said once per draft and copies flagged for removal left out of the search, and a sent draft's copies taken out of Drafts on this computer in one statement, adding no `[D]` clause (ledger 912 fixed, 941 and 942 opened) |
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |

@@ -1553,10 +1553,18 @@ impl ImapSession {
     /// cannot end the search key early and turn the criteria into something
     /// else. Nothing found is not an error: a draft saved for the first time
     /// has no previous copy.
+    ///
+    /// Only messages not flagged for removal are asked for (`UNDELETED`, RFC
+    /// 3501, section 6.4.4). A flagged copy is one a server without UIDPLUS or
+    /// MOVE was told to remove and left in place, and no caller is looking for
+    /// it: a draft's save and Send's removal want the live copies, and the
+    /// replayed flag changes, moves and settles want where a message is now.
+    /// Without the key every save on such a server found every copy flagged at
+    /// the saves before it, read each one and flagged it again (ledger 912).
     pub async fn uids_with_message_id(&mut self, message_id: &str) -> Result<Vec<u32>> {
         self.may_i("replace a saved draft")?;
         let quoted = quote_for_search(message_id);
-        self.search_uids(&format!("HEADER MESSAGE-ID {quoted}"))
+        self.search_uids(&format!("HEADER MESSAGE-ID {quoted} UNDELETED"))
             .await
     }
 
@@ -3362,7 +3370,9 @@ pub(crate) mod against_a_server_that_answers {
         let transcript = server.transcript().await;
         assert_eq!(removed, 1);
         let searched = server
-            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\"")
+            // UNDELETED, because a copy flagged at an earlier save on a server
+            // without UIDPLUS is one no caller is looking for (ledger 912).
+            .when_told("UID SEARCH HEADER MESSAGE-ID \"<d@x>\" UNDELETED")
             .await
             .unwrap_or_else(|| panic!("nothing was searched for: {transcript:?}"));
         let flagged = server

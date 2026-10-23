@@ -106,7 +106,51 @@ impl Filed {
     pub fn needs_saying(&self) -> bool {
         !matches!(self, Self::Replaced)
     }
+
+    /// Whether this is worth saying for this draft, given the drafts already
+    /// told that an older copy may still be at the server, which this adds to.
+    ///
+    /// A server that can only flag a message for removal leaves an older copy
+    /// at every automatic save, so that answer is said the first time for a
+    /// draft and not again, whatever words the server gave (ledger 912). The
+    /// two refusals say the newest words are not on the server, which stays
+    /// news at every save it is true, so they are said every time.
+    pub fn needs_saying_for(
+        &self,
+        draft_id: &str,
+        told_of_an_older_copy: &mut std::collections::BTreeSet<String>,
+    ) -> bool {
+        match self {
+            Self::Replaced => false,
+            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
+                told_of_an_older_copy.insert(draft_id.to_string())
+            }
+            Self::NotFiledAndTheOlderOneIsStillThere(_)
+            | Self::NotFiledAndThereIsNoCopyThere(_) => true,
+        }
+    }
+
+    /// [`Self::needs_saying_for`] over the drafts told so far while the
+    /// program runs.
+    ///
+    /// Kept for the run and not in the database: a server that cannot remove
+    /// one message at a time cannot do it tomorrow either, so the person was
+    /// told what is true for the run, and hearing it once more after a restart
+    /// costs one sentence where a column on the draft's row would be a schema
+    /// change for one.
+    pub fn needs_saying_once_per_draft(&self, draft_id: &str) -> bool {
+        let mut told = TOLD_OF_AN_OLDER_COPY
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.needs_saying_for(draft_id, &mut told)
+    }
 }
+
+/// The drafts already told that an older copy may still be at the server.
+/// One for the whole process, as the turn below is, because every save runs
+/// on a worker of its own and carries nothing to the next.
+static TOLD_OF_AN_OLDER_COPY: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
 
 /// A reason with a full stop after it.
 ///
@@ -756,6 +800,64 @@ mod tests {
     async fn test_an_ordinary_save_says_nothing() {
         // Automatic saving runs once a minute for as long as somebody writes.
         assert!(!Filed::Replaced.needs_saying());
+    }
+
+    fn an_older_copy(said_by_the_server: &str) -> Filed {
+        Filed::FiledAndAnOlderCopyMayStillBeThere(said_by_the_server.to_string())
+    }
+
+    #[test]
+    fn test_an_older_copy_that_may_still_be_there_is_said_once_for_each_draft() {
+        // Ledger 912. On a server that can only flag a message for removal,
+        // every automatic save leaves an older copy, so saying it at every save
+        // is a sentence a minute for as long as somebody writes.
+        let mut told = std::collections::BTreeSet::new();
+
+        assert!(!Filed::Replaced.needs_saying_for("d-1", &mut told));
+        assert!(
+            told.is_empty(),
+            "an ordinary save was counted as told: {told:?}"
+        );
+
+        assert!(
+            an_older_copy(CANNOT_REMOVE_ONE).needs_saying_for("d-1", &mut told),
+            "the first older copy of a draft was not said"
+        );
+        assert!(
+            !an_older_copy(CANNOT_REMOVE_ONE).needs_saying_for("d-1", &mut told),
+            "a second older copy of the same draft was said again"
+        );
+        assert!(
+            !an_older_copy("the search was refused").needs_saying_for("d-1", &mut told),
+            "other words from the server made the same draft's older copy news again"
+        );
+        assert!(
+            an_older_copy(CANNOT_REMOVE_ONE).needs_saying_for("d-2", &mut told),
+            "another draft's older copy went unsaid because of the first draft"
+        );
+    }
+
+    #[test]
+    fn test_a_draft_the_server_would_not_take_is_said_at_every_save() {
+        // These say the newest words are not on the server, which is news at
+        // every save it stays true, whether or not an older copy was mentioned.
+        let refused = [
+            Filed::NotFiledAndTheOlderOneIsStillThere("over quota".to_string()),
+            Filed::NotFiledAndThereIsNoCopyThere("over quota".to_string()),
+        ];
+        let mut told = std::collections::BTreeSet::new();
+
+        for filed in &refused {
+            assert!(filed.needs_saying_for("d-1", &mut told), "{filed:?}");
+            assert!(filed.needs_saying_for("d-1", &mut told), "{filed:?}");
+        }
+        assert!(an_older_copy(CANNOT_REMOVE_ONE).needs_saying_for("d-1", &mut told));
+        for filed in &refused {
+            assert!(
+                filed.needs_saying_for("d-1", &mut told),
+                "a refused save went unsaid after an older copy was mentioned: {filed:?}"
+            );
+        }
     }
 
     #[test]

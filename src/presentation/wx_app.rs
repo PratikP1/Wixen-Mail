@@ -20605,8 +20605,9 @@ fn replace_local_draft(
 ///
 /// The order and every answer are decided elsewhere so they can be tested. What
 /// is here is the runtime and the one sentence that comes back, said only when
-/// it is not the ordinary one: this runs on every automatic save, once a minute
-/// for as long as somebody writes.
+/// it is not the ordinary one, and an older copy left beside the new one only
+/// once for each draft: this runs on every automatic save, once a minute for as
+/// long as somebody writes (ledger 912).
 fn spawn_draft_append(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
@@ -20644,7 +20645,9 @@ fn spawn_draft_append(
                 draft_copy::Filed::NotFiledAndTheOlderOneIsStillThere(reason.to_string())
             }
         };
-        if filed.needs_saying() {
+        // An older copy left beside the new one is said once for this draft,
+        // not at every save after it; a refused save is said every time.
+        if filed.needs_saying_once_per_draft(&draft_id) {
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::StatusUpdated(filed.what_happened()))
