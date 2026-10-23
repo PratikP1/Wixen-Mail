@@ -156,23 +156,95 @@ impl MessageCache {
     /// kept account uses; either is one account's problem, so every other
     /// removal and save still happens. The answer is the first refusal, and
     /// any after it is logged by the account's name.
+    ///
+    /// A new account whose save is refused has every secret it left
+    /// forgotten, through [`MessageCache::save_or_forget_a_new_account`]; an
+    /// account already stored whose edit is refused keeps its own.
     pub fn replace_accounts(&self, accounts: &[crate::data::account::Account]) -> Result<()> {
-        let gone: Vec<crate::data::account::Account> = self
-            .load_accounts()?
-            .into_iter()
-            .filter(|stored| !accounts.iter().any(|account| account.id == stored.id))
-            .collect();
+        let stored = self.load_accounts()?;
+        let gone = stored
+            .iter()
+            .filter(|held| !accounts.iter().any(|account| account.id == held.id));
 
         let mut outcomes: Vec<(&str, Result<()>)> = gone
-            .iter()
-            .map(|account| (account.name.as_str(), self.delete_account(&account.id)))
+            .map(|account| {
+                let removed = self.delete_account(&account.id, &account.name);
+                (account.name.as_str(), removed)
+            })
             .collect();
-        outcomes.extend(
-            accounts
-                .iter()
-                .map(|account| (account.name.as_str(), self.save_account(account))),
-        );
+        outcomes.extend(accounts.iter().map(|account| {
+            let saved = self.save_or_forget_a_new_account(account, &stored);
+            (account.name.as_str(), saved)
+        }));
         the_first_refusal(outcomes)
+    }
+
+    /// Save `account`, one of the list `stored` held or a new one, and when
+    /// the save of a new one is refused, forget every secret it left.
+    ///
+    /// A new account can have secrets before it has a row: the Add Account
+    /// window's browser sign-in keeps the tokens before OK, and the save keeps
+    /// the password before the table takes the row. Refused, they would sit
+    /// under an id no row names, which neither removing an account nor the
+    /// uninstall erases (ledger 923). An account `stored` held keeps its own,
+    /// since its row still names them.
+    fn save_or_forget_a_new_account(
+        &self,
+        account: &crate::data::account::Account,
+        stored: &[crate::data::account::Account],
+    ) -> Result<()> {
+        let saved = self.save_account(account);
+        if saved.is_err() && !stored.iter().any(|held| held.id == account.id) {
+            for (kind, reason) in forget_every_secret_of(&account.id) {
+                tracing::warn!(
+                    "{} was not saved, and Windows would not let go of {}: {reason}",
+                    whose(&account.name),
+                    kind.in_words()
+                );
+            }
+        }
+        saved
+    }
+
+    /// Store `given` through [`MessageCache::replace_accounts`] and answer
+    /// the accounts the store holds afterwards, with the refusal if there was
+    /// one. `before` is the list the window held before the visit.
+    ///
+    /// The store's list rather than the one the Account Manager handed back,
+    /// because the window works out its first syncs, its watches, its
+    /// sign-offs and its default from what this answers. Keeping the handed
+    /// list after a refusal listed, synced and signed in an account the store
+    /// did not hold, and signed off one whose removal was refused, until the
+    /// next start brought the store's list back (ledger 922).
+    ///
+    /// When nothing was refused the list given is the list held, and it is
+    /// answered as given, keeping what the table never holds, such as the
+    /// tokens a sign-in has just handed over. When the table cannot be read
+    /// after a refusal, the save refused before it wrote anything, since
+    /// [`MessageCache::replace_accounts`] reads the table first, so the list
+    /// from before the visit is what the store holds.
+    pub fn replace_accounts_and_read_back(
+        &self,
+        given: Vec<crate::data::account::Account>,
+        before: &[crate::data::account::Account],
+    ) -> AccountsAfterTheSave {
+        let Err(refused) = self.replace_accounts(&given) else {
+            return AccountsAfterTheSave {
+                held: given,
+                refused: None,
+            };
+        };
+        let held = self.load_accounts().unwrap_or_else(|unreadable| {
+            tracing::warn!(
+                "The accounts could not be read back after a refused save, so the list from \
+                 before stays: {unreadable}"
+            );
+            before.to_vec()
+        });
+        AccountsAfterTheSave {
+            held,
+            refused: Some(refused),
+        }
     }
 
     /// Load all accounts from the database
@@ -325,8 +397,16 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Delete an account from the database
-    pub fn delete_account(&self, account_id: &str) -> Result<()> {
+    /// Delete an account from the database. `called` is the account's name,
+    /// the one a refusal is said with.
+    ///
+    /// A secret Windows will not let go of keeps the row, and the refusal is
+    /// one sentence naming the account and each kind of secret kept, the way
+    /// the Account Manager says it aloud. The credential store's own words go
+    /// to the log by the account's name: said, they put "Security error"
+    /// twice and a system's reason in the middle of a sentence for a person
+    /// (ledger 924).
+    pub fn delete_account(&self, account_id: &str, called: &str) -> Result<()> {
         // The passwords and the tokens go first, and nothing else happens if
         // any of them will not go. This row is the only thing naming those
         // entries: erasing everything at uninstall works out what to remove by
@@ -338,29 +418,17 @@ impl MessageCache {
         // That rule was written here and nothing enforced it. What would not
         // go was put in a log, the row was deleted anyway, and the delete
         // reported success.
-        //
-        // Both lists come from `oauth::entries_for_account`, so the set erased
-        // here and the set erased at uninstall cannot drift apart.
-        let mut still_stored: Vec<String> = Vec::new();
-        if let Err(e) = credentials::forget(account_id) {
-            still_stored.push(format!("its saved password ({e})"));
-        }
-        if let Err(e) = crate::service::directory::forget_the_password(account_id) {
-            still_stored.push(format!("its directory password ({e})"));
-        }
-        still_stored.extend(
-            crate::service::oauth::forget_every_token_for(account_id)
-                .into_iter()
-                .map(|left_behind| format!("a saved sign-in token ({left_behind})")),
-        );
-        if !still_stored.is_empty() {
-            return Err(Error::Security(format!(
-                "This account has not been removed, because Windows would not let go of {}. \
-                 Removing it now would leave that on this computer with nothing left able to \
-                 name it. Nothing has been changed. Try again, and see When something goes \
-                 wrong in Help if it keeps happening.",
-                still_stored.join(", and ")
-            )));
+        let stayed = forget_every_secret_of(account_id);
+        if !stayed.is_empty() {
+            for (kind, reason) in &stayed {
+                tracing::warn!(
+                    "{} was not removed, because Windows would not let go of {}: {reason}",
+                    whose(called),
+                    kind.in_words()
+                );
+            }
+            let kept: Vec<KeptSecret> = stayed.iter().map(|(kind, _)| *kind).collect();
+            return Err(Error::InPlainWords(not_removed(called, &kept)));
         }
 
         // And so does the mail. This used to remove the account row alone,
@@ -401,6 +469,86 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update last sync: {}", e)))?;
         Ok(())
     }
+}
+
+/// The kinds of secret an account keeps in the Windows credential store, in
+/// the order a refusal names them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum KeptSecret {
+    SavedPassword,
+    DirectoryPassword,
+    BrowserSignIn,
+}
+
+impl KeptSecret {
+    /// The words a sentence about the account names this kind with.
+    fn in_words(self) -> &'static str {
+        match self {
+            Self::SavedPassword => "its saved password",
+            Self::DirectoryPassword => "its directory password",
+            Self::BrowserSignIn => "its browser sign-in",
+        }
+    }
+}
+
+/// Forget every secret one account keeps: its password, its directory
+/// password and each browser sign-in. Answers each that stayed, with the
+/// credential store's reason.
+///
+/// The browser sign-ins come from `oauth::entries_for_account`, so the set
+/// erased here and the set erased at uninstall cannot drift apart.
+fn forget_every_secret_of(account_id: &str) -> Vec<(KeptSecret, String)> {
+    let mut stayed = Vec::new();
+    if let Err(e) = credentials::forget(account_id) {
+        stayed.push((KeptSecret::SavedPassword, e.to_string()));
+    }
+    if let Err(e) = crate::service::directory::forget_the_password(account_id) {
+        stayed.push((KeptSecret::DirectoryPassword, e.to_string()));
+    }
+    stayed.extend(
+        crate::service::oauth::forget_every_token_for(account_id)
+            .into_iter()
+            .map(|reason| (KeptSecret::BrowserSignIn, reason)),
+    );
+    stayed
+}
+
+/// The sentence a removal Windows would not let go of is said with: the
+/// account by its name, and each kind of secret kept named once, in
+/// [`KeptSecret`]'s order.
+fn not_removed(called: &str, kept: &[KeptSecret]) -> String {
+    let mut kinds = kept.to_vec();
+    kinds.sort();
+    kinds.dedup();
+    let words: Vec<&str> = kinds.into_iter().map(KeptSecret::in_words).collect();
+    let listed = match words.split_last() {
+        Some((last, [])) => last.to_string(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+        None => String::new(),
+    };
+    format!(
+        "{} was not removed, because Windows would not let go of {listed}; try again, and see \
+         When something goes wrong in Help if it keeps happening.",
+        whose(called)
+    )
+}
+
+/// The account a sentence names: by the name it was given, or as this
+/// account when the name is blank. Never the id, a long internal code.
+fn whose(called: &str) -> &str {
+    match called.trim() {
+        "" => "This account",
+        name => name,
+    }
+}
+
+/// What the store holds after the Account Manager's list was saved, and why
+/// it refused what it did.
+pub struct AccountsAfterTheSave {
+    /// The accounts the store holds, the list a restart would show.
+    pub held: Vec<crate::data::account::Account>,
+    /// The first refusal, already a sentence for a person, or nothing.
+    pub refused: Option<Error>,
 }
 
 /// The first of several accounts' refusals, each paired with the account's
@@ -870,7 +1018,7 @@ mod tests {
         cache.save_account(&account).expect("the account to save");
 
         crate::service::secret_store::refuse("the credential store is not available");
-        let outcome = cache.delete_account("acc-stuck");
+        let outcome = cache.delete_account("acc-stuck", "Test");
         crate::service::secret_store::allow();
 
         assert!(
@@ -1051,7 +1199,7 @@ mod tests {
         crate::service::secret_store::allow();
 
         let said = outcome.expect_err("the refused removal").to_string();
-        assert!(said.contains("This account has not been removed"), "{said}");
+        assert!(said.starts_with("Work was not removed"), "{said}");
         assert!(!said.contains("already uses"), "{said}");
         let stored = cache.load_accounts().expect("the accounts to load");
         let name_of = |id: &str| {
@@ -1104,6 +1252,302 @@ mod tests {
         );
         assert!(!stored.iter().any(|account| account.id == "acc-second"));
         forget_passwords(&["acc-work", "acc-home", "acc-second"]);
+    }
+
+    /// Each account's id and name, in the order given.
+    fn ids_and_names(accounts: &[crate::data::account::Account]) -> Vec<(&str, &str)> {
+        accounts
+            .iter()
+            .map(|account| (account.id.as_str(), account.name.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn test_an_account_the_store_refused_is_not_among_the_accounts_held() {
+        // The window kept the list the Account Manager handed back whatever
+        // the store answered, so an account it refused was listed, synced
+        // and signed in until the next start (ledger 922).
+        let cache = a_cache("a-refused-account-is-not-held");
+        let work = called("Work", "acc-work", "ada@example.com");
+        cache
+            .save_account(&work)
+            .expect("the first account to save");
+
+        let after = cache.replace_accounts_and_read_back(
+            vec![
+                work.clone(),
+                called("Second", "acc-second", "ada@example.com"),
+            ],
+            std::slice::from_ref(&work),
+        );
+
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert_eq!(
+            after.refused.map(|refused| refused.to_string()).as_deref(),
+            Some(
+                "Work already uses ada@example.com. Edit that account rather than adding the address again."
+            )
+        );
+        forget_passwords(&["acc-work", "acc-second"]);
+    }
+
+    #[test]
+    fn test_an_account_whose_removal_was_refused_is_still_among_the_accounts_held() {
+        let cache = a_cache("a-refused-removal-is-held");
+        let before = vec![
+            called("Work", "acc-work", "ada@example.com"),
+            called("Home", "acc-home", "grace@example.com"),
+        ];
+        for account in &before {
+            cache.save_account(account).expect("the account to save");
+        }
+
+        crate::service::secret_store::refuse_removals("that entry cannot be read");
+        let after = cache.replace_accounts_and_read_back(
+            vec![called("Renamed", "acc-home", "grace@example.com")],
+            &before,
+        );
+        crate::service::secret_store::allow();
+
+        assert_eq!(
+            ids_and_names(&after.held),
+            vec![("acc-work", "Work"), ("acc-home", "Renamed")],
+            "the account whose removal was refused is not held, or the edit beside it was lost"
+        );
+        let said = after.refused.expect("the refused removal").to_string();
+        assert!(said.contains("Windows would not let go of"), "{said}");
+        forget_passwords(&["acc-work", "acc-home"]);
+    }
+
+    #[test]
+    fn test_a_save_nothing_refused_holds_the_list_as_it_was_given() {
+        // A field the table never holds, such as a token the sign-in has just
+        // given, stays as the Account Manager handed it back.
+        let cache = a_cache("a-save-nothing-refused");
+        let mut work = called("Work", "acc-work", "ada@example.com");
+        work.oauth_access_token = "a token the sign-in just gave".to_string();
+
+        let after = cache.replace_accounts_and_read_back(vec![work], &[]);
+
+        assert!(after.refused.is_none());
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert_eq!(
+            after.held[0].oauth_access_token,
+            "a token the sign-in just gave"
+        );
+        forget_passwords(&["acc-work"]);
+    }
+
+    #[test]
+    fn test_a_store_that_cannot_be_read_leaves_the_list_from_before_the_visit() {
+        // The save reads the table before it writes anything, so a table it
+        // cannot read refuses with nothing changed, and the list from before
+        // the visit is what the store holds.
+        let cache = a_cache("a-store-that-cannot-be-read");
+        let work = called("Work", "acc-work", "ada@example.com");
+        cache
+            .save_account(&work)
+            .expect("the first account to save");
+        cache
+            .conn
+            .execute("ALTER TABLE accounts RENAME TO accounts_out_of_reach", [])
+            .expect("the table to be moved out of reach");
+
+        let after = cache.replace_accounts_and_read_back(
+            vec![
+                work.clone(),
+                called("Home", "acc-home", "grace@example.com"),
+            ],
+            std::slice::from_ref(&work),
+        );
+
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert!(
+            after.refused.is_some(),
+            "a store that cannot be read refused nothing"
+        );
+        forget_passwords(&["acc-work", "acc-home"]);
+    }
+
+    /// Keep a browser sign-in for `account_id` under every entry one can be
+    /// kept under, the way the Add Account window's sign-in does before OK.
+    fn sign_in_through_the_browser(account_id: &str) -> Vec<(String, String)> {
+        let entries = crate::service::oauth::entries_for_account(account_id);
+        for (service, user) in &entries {
+            crate::service::secret_store::write(service, user, "a refresh token")
+                .expect("the sign-in to be kept");
+        }
+        entries
+    }
+
+    /// The entries of `entries` the credential store still holds.
+    fn still_held(entries: &[(String, String)]) -> Vec<&str> {
+        entries
+            .iter()
+            .filter(|(service, user)| {
+                crate::service::secret_store::read(service, user)
+                    .expect("the credential store to answer")
+                    .is_some()
+            })
+            .map(|(service, _)| service.as_str())
+            .collect()
+    }
+
+    #[test]
+    fn test_a_new_account_the_store_refused_keeps_no_browser_sign_in() {
+        // The Add Account window's browser sign-in keeps the tokens before
+        // OK, so a save refused after it left them under an id no row names,
+        // which neither removing an account nor the uninstall erases
+        // (ledger 923).
+        let cache = a_cache("a-refused-account-keeps-no-sign-in");
+        let work = called("Work", "acc-work", "ada@example.com");
+        cache
+            .save_account(&work)
+            .expect("the first account to save");
+        let signed_in = sign_in_through_the_browser("acc-second");
+
+        let outcome =
+            cache.replace_accounts(&[work, called("Second", "acc-second", "ada@example.com")]);
+
+        assert_eq!(
+            outcome
+                .expect_err("the second account to be refused")
+                .to_string(),
+            "Work already uses ada@example.com. Edit that account rather than adding the address again."
+        );
+        assert_eq!(
+            still_held(&signed_in),
+            Vec::<&str>::new(),
+            "a refused account's browser sign-in was kept, with no row to name it"
+        );
+        crate::service::oauth::forget_every_token_for("acc-second");
+        forget_passwords(&["acc-work", "acc-second"]);
+    }
+
+    #[test]
+    fn test_an_account_already_stored_whose_edit_was_refused_keeps_its_secrets() {
+        let cache = a_cache("a-refused-edit-keeps-its-secrets");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the first account to save");
+        cache
+            .save_account(&called("Home", "acc-home", "grace@example.com"))
+            .expect("the second account to save");
+        let signed_in = sign_in_through_the_browser("acc-home");
+
+        let outcome = cache.replace_accounts(&[
+            called("Work", "acc-work", "ada@example.com"),
+            called("Home", "acc-home", "ada@example.com"),
+        ]);
+
+        assert!(outcome.is_err(), "Home was moved onto Work's address");
+        assert_eq!(
+            still_held(&signed_in).len(),
+            signed_in.len(),
+            "an account still stored lost its browser sign-in to a refused edit"
+        );
+        assert_eq!(
+            credentials::load("acc-home").expect("the credential store to answer"),
+            Some("acc-home-password".to_string()),
+            "an account still stored lost its password to a refused edit"
+        );
+        crate::service::oauth::forget_every_token_for("acc-home");
+        forget_passwords(&["acc-work", "acc-home"]);
+    }
+
+    #[test]
+    fn test_a_new_account_the_table_refused_keeps_no_password() {
+        // The password reaches the credential store before the row is
+        // written, so a row the table refuses left the password under an id
+        // no row names.
+        let cache = a_cache("a-new-account-the-table-refused");
+        cache
+            .conn
+            .execute_batch(
+                "CREATE TEMP TRIGGER refuse_every_account BEFORE INSERT ON accounts
+                 BEGIN SELECT RAISE(ABORT, 'the table refuses every account'); END;",
+            )
+            .expect("the trigger to be made");
+
+        let outcome = cache.replace_accounts(&[called("Work", "acc-work", "ada@example.com")]);
+
+        assert!(outcome.is_err(), "the table's refusal was not the answer");
+        assert_eq!(
+            credentials::load("acc-work").expect("the credential store to answer"),
+            None,
+            "a refused account's password was kept, with no row to name it"
+        );
+        forget_passwords(&["acc-work"]);
+    }
+
+    #[test]
+    fn test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence() {
+        // It used to open with "Security error: This account", name what was
+        // kept with the store's own "Security error" words in brackets after
+        // each, and so say the layer's name twice and a system's reason in
+        // the middle of a sentence for a person (ledger 924).
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+        let cache = a_cache("a-removal-said-plainly");
+        cache
+            .save_account(&called("Work", "acc-work", "ada@example.com"))
+            .expect("the account to save");
+        let captured = CapturedLogs::default();
+        let _logging = captured.as_the_default();
+
+        crate::service::secret_store::refuse_removals("that entry cannot be read");
+        let outcome = cache.delete_account("acc-work", "Work");
+        crate::service::secret_store::allow();
+
+        assert_eq!(
+            outcome.expect_err("the refused removal").to_string(),
+            "Work was not removed, because Windows would not let go of its saved password, its \
+             directory password and its browser sign-in; try again, and see When something goes \
+             wrong in Help if it keeps happening."
+        );
+        assert!(
+            captured.has(tracing::Level::WARN, "that entry cannot be read"),
+            "the credential store's reason never reached the log: {:?}",
+            captured.events()
+        );
+        assert_eq!(in_order(&cache), vec!["acc-work"]);
+        forget_passwords(&["acc-work"]);
+    }
+
+    #[test]
+    fn test_a_removal_refused_over_one_kind_names_it_alone() {
+        assert_eq!(
+            not_removed("Work", &[KeptSecret::SavedPassword]),
+            "Work was not removed, because Windows would not let go of its saved password; try \
+             again, and see When something goes wrong in Help if it keeps happening."
+        );
+    }
+
+    #[test]
+    fn test_a_removal_refused_names_each_kind_kept_once() {
+        let said = not_removed(
+            "Work",
+            &[
+                KeptSecret::BrowserSignIn,
+                KeptSecret::SavedPassword,
+                KeptSecret::BrowserSignIn,
+            ],
+        );
+        assert!(
+            said.contains("let go of its saved password and its browser sign-in;"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn test_a_removal_refused_for_an_account_with_no_name_says_this_account() {
+        let said = not_removed("  ", &[KeptSecret::DirectoryPassword]);
+        assert!(
+            said.starts_with(
+                "This account was not removed, because Windows would not let go of its \
+                 directory password;"
+            ),
+            "{said}"
+        );
     }
 
     /// What the password column holds, straight out of the table.
@@ -1292,7 +1736,9 @@ mod tests {
             .save_account(&an_account("acc-going", "going@example.com", "secret123"))
             .expect("an account to save");
 
-        cache.delete_account("acc-going").expect("it to be deleted");
+        cache
+            .delete_account("acc-going", "Test")
+            .expect("it to be deleted");
 
         assert_eq!(
             credentials::load("acc-going").expect("the credential store to answer"),
@@ -1314,7 +1760,9 @@ mod tests {
         crate::service::secret_store::write("wixen-mail-directory", "acc-going", "hunter2")
             .expect("the directory password to be kept");
 
-        cache.delete_account("acc-going").expect("it to be deleted");
+        cache
+            .delete_account("acc-going", "Test")
+            .expect("it to be deleted");
 
         assert_eq!(
             crate::service::secret_store::read("wixen-mail-directory", "acc-going")
@@ -1390,7 +1838,7 @@ mod tests {
         }
 
         cache
-            .delete_account("acc-going")
+            .delete_account("acc-going", "Test")
             .expect("the account to be deleted");
 
         assert!(
@@ -1540,7 +1988,7 @@ mod tests {
 
         cache.update_account_last_sync("acc-1").unwrap();
 
-        cache.delete_account("acc-2").unwrap();
+        cache.delete_account("acc-2", "Personal Account").unwrap();
         let remaining = cache.load_accounts().unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].id, "acc-1");

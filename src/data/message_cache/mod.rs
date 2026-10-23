@@ -23,6 +23,7 @@ pub mod in_the_trash;
 mod messages;
 pub mod moves_in_flight;
 pub mod moves_waiting;
+pub use accounts::AccountsAfterTheSave;
 pub use address_books::AddressBookContainer;
 pub use calendar::{
     AnsweredHere, DeletedCalendarEvent, OneProvidersCalendar, TheProvidersVersion,

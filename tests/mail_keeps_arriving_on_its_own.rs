@@ -894,6 +894,92 @@ fn test_the_reading_would_see_the_account_manager_leave_a_watch_running() {
     assert!(what_is_wrong_with_the_watches_it_leaves(Some(stopping)).is_empty());
 }
 
+// ── After a refused save the window holds what the store holds (ledger 922) ──
+
+/// What the Account Manager's handler works out after the save, each with
+/// what it is, for the reading below.
+const WORKED_OUT_AFTER_THE_SAVE: [(&str, &str); 4] = [
+    ("added_in_this_visit(", "the first syncs"),
+    ("which_watches_stop(", "the watches to stop"),
+    ("default_after_change(", "the default for new items"),
+    ("s.accounts =", "the window's list"),
+];
+
+/// What is wrong with what the Account Manager's handler works from; nothing
+/// when it stores the list first, through the call that answers what the
+/// store holds, and works out the first syncs, the watches, the default and
+/// the window's list after it.
+///
+/// The handler used to work everything out from the list the Account Manager
+/// handed back and store it last, so after a refused save the window listed,
+/// synced and signed in an account the store did not hold until the next
+/// start.
+fn what_is_wrong_with_what_it_works_from(manager: Option<&str>) -> Vec<String> {
+    let Some(manager) = manager else {
+        return vec!["the Account Manager has no handler".into()];
+    };
+    let Some(stores) = manager.find("replace_accounts_and_read_back(new") else {
+        return vec![
+            "the Account Manager does not take back what the store holds, so after a refused \
+             save the window lists an account the store does not hold until the next start"
+                .into(),
+        ];
+    };
+    WORKED_OUT_AFTER_THE_SAVE
+        .iter()
+        .filter_map(|(call, what)| match manager.find(call) {
+            None => Some(format!("the Account Manager never works out {what}")),
+            Some(at) if at < stores => Some(format!(
+                "the Account Manager works out {what} from its own list before the store answers"
+            )),
+            Some(_) => None,
+        })
+        .collect()
+}
+
+#[test]
+fn test_the_account_manager_stores_before_it_works_anything_out() {
+    let window = the_window_itself();
+    let wrong = what_is_wrong_with_what_it_works_from(
+        the_item_starting_with(&window, THE_ACCOUNT_MANAGER).as_deref(),
+    );
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+#[test]
+fn test_the_reading_would_see_the_account_manager_work_from_its_own_list() {
+    let today = "fn handle_account_mgr(frame: &Frame) {\n    \
+                 let added = added_in_this_visit(&accounts, &new);\n    \
+                 let stopping = which_watches_stop(&accounts, &new);\n    \
+                 s.default_account_id = chosen;\n    \
+                 if let Some(cache) = cache && let Err(why) = cache.replace_accounts(&new) {}\n    \
+                 s.accounts = new;\n}\n";
+    let syncs_first = "fn handle_account_mgr(frame: &Frame) {\n    \
+                       let added = added_in_this_visit(&accounts, &new);\n    \
+                       let new = cache.replace_accounts_and_read_back(new, &accounts).held;\n    \
+                       let stopping = which_watches_stop(&accounts, &new);\n    \
+                       s.default_account_id = default_after_change(&new, chosen.as_deref());\n    \
+                       s.accounts = new;\n}\n";
+    let stores_first = "fn handle_account_mgr(frame: &Frame) {\n    \
+                        let new = cache.replace_accounts_and_read_back(new, &accounts).held;\n    \
+                        let added = added_in_this_visit(&accounts, &new);\n    \
+                        let stopping = which_watches_stop(&accounts, &new);\n    \
+                        s.default_account_id = default_after_change(&new, chosen.as_deref());\n    \
+                        s.accounts = new;\n}\n";
+
+    assert_eq!(what_is_wrong_with_what_it_works_from(Some(today)).len(), 1);
+    assert_eq!(
+        what_is_wrong_with_what_it_works_from(Some(syncs_first)),
+        vec![
+            "the Account Manager works out the first syncs from its own list before the store \
+             answers"
+                .to_string()
+        ]
+    );
+    let wrong = what_is_wrong_with_what_it_works_from(Some(stores_first));
+    assert!(wrong.is_empty(), "{wrong:?}");
+}
+
 /// What is wrong with whom a watch starts for: nothing when the watch finds
 /// its account by id and by whether it is switched on.
 fn what_is_wrong_with_whom_a_watch_is_for(watch: Option<&str>) -> Vec<String> {

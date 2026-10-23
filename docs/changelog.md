@@ -1468,6 +1468,25 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **When your accounts cannot all be saved, Wixen Mail now shows them as they were really saved
+  (2026-10-23, MAIL-04).** If Wixen Mail could not save a change you made in the Account
+  Manager, the main window went on listing an account that had not been saved, and started
+  bringing its calendars, contacts and tasks, until the next start. An account whose removal had
+  been refused was signed out of and no longer checked for mail, although it was still there.
+  Now the main window, and the Account Manager when you open it again, list the accounts as they
+  were saved, which is the list you would see after a restart. An account that could not be
+  saved no longer leaves its password or its browser sign-in on this computer. And when Windows
+  will not let go of an account's saved password, removing the account is refused in one plain
+  sentence, for example "Work was not removed, because Windows would not let go of its saved
+  password; try again, and see When something goes wrong in Help if it keeps happening." It
+  used to begin "Security error" and carry the credential store's own words, which now go to
+  the log instead.
+
+  Known limits. None of this has been heard with a screen reader yet, and none of it has been
+  tried on a real account. Windows cannot be made to refuse a removal or a browser sign-in on
+  purpose, so those two are checked by tests alone. A password longer than Windows keeps, more
+  than 1,280 characters, is still refused with a sentence that begins "Security error".
+
 - **Reply and Forward from the message list no longer quote "Downloading this message..."
   (2026-10-23, LIST-05).** Pressed in the message list before a message's text had arrived,
   Reply, Reply All, Reply to Sender Only and Forward quoted those words as if the sender had

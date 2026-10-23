@@ -1067,7 +1067,7 @@ mod tests {
             .expect("the other account's search to be stored");
 
         cache
-            .delete_account("acc-going")
+            .delete_account("acc-going", "Test")
             .expect("the account to be removed");
 
         assert!(
