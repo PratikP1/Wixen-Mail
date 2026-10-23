@@ -29,8 +29,10 @@ before anything else; every other plan re-takes them too, because `main` moves u
 
 ## The plans
 
-One plan per wave, chained: plan 13.3-NN is wave NN and depends on 13.3-(NN-1). Every plan
-writes `.planning/ROADMAP.md`, `.planning/STATE.md` and `.planning/REQUIREMENTS.md`, so no two
+One plan per wave, chained: plan 13.3-NN is wave NN and depends on 13.3-(NN-1). Amended
+2026-10-22: 13.3-24.1 to 13.3-24.6 are waves 25 to 30, 13.3-24.7 is wave 31 and, from
+2026-10-23, 13.3-24.8 is wave 32, each depending on the one before and 13.3-24.1 on 13.3-24;
+13.3-25 is wave 33 and depends on 13.3-24.8. Every plan writes `.planning/ROADMAP.md`, `.planning/STATE.md` and `.planning/REQUIREMENTS.md`, so no two
 can share a wave.
 
 The order is the gate first, because a slow gate slows every later commit; then the plans that
@@ -68,7 +70,15 @@ is 2 tasks, M is 3, L is 4.
 | 13.3-22 | 22 | Two functions only tests call are compiled for tests only | 31, 39 | src/data/message_cache/tags.rs (`match_labels_to_keywords`, its rules moved onto `match_these_labels_to_keywords`); src/service/protocols/imap/special_use.rs (`classify`) | No | S |
 | 13.3-23 | 23 | Pratik's word on ship-shape at a blocking checkpoint (the research recommends keeping this program's update code and changing no package); then the update check downloads only what it could run, says what a check at start found without opening a window, runs one check at a time with a folder of its own per download, and gives up on a stalled connection | none of the 42; the research's gaps 1, 3 and 4 | src/service/update_download.rs (`whether_an_installer_could_be_accepted`, `what_to_do_about`, `bring_it_down`); src/service/update_check.rs (the one-check guard, `ask`'s limit); src/presentation/wx_app.rs (`ask_whether_there_is_a_newer_version`, the `AnUpdateDidNotHappen` arm, `open_help`'s doc); src/presentation/ui_types.rs (`AnUpdateDidNotHappen`); docs/privacy.md; docs/installing.md; docs/ALPHA_TESTING.md | Yes: what a check at start says, and the sentence for a second check | L |
 | 13.3-24 | 24 | Installing an update quits the way Quit does, and what the update code says is true: the setting names the installer's real size, and the stale comments and pages are corrected | none of the 42; the research's gaps 2 and 5 | src/presentation/wx_app.rs (the Quit arm, `UpdateTargets`, the `AnUpdateIsReady` arm); src/application/closing.rs (the reading); src/service/update_check.rs (`WHICH_UPDATES_DESCRIPTION`, the module doc); docs/privacy.md (the measured size); docs/BETA_RELEASE.md; comments in update_download.rs, config.rs, outward.rs and main.rs | Yes: the setting's description | M |
-| 13.3-25 | 25 | The full gate once, by hand, and the phase closed | none | `scripts/check.sh all` run by hand once, its output written to a file and its exit status read directly; .planning/ROADMAP.md, .planning/STATE.md and .planning/REQUIREMENTS.md for the phase's marks | No | M |
+| 13.3-24.1 | 25 | The audit names neither advisory of 2026-10-20 | none; ledger 914 | Cargo.lock | No | S |
+| 13.3-24.2 | 26 | A message with no text is quoted as nothing, the list asks the store, and Forward with nothing chosen refuses | none; ledgers 917, 918, 919 | src/data/message_cache/bodies.rs; src/application/reply.rs; src/presentation/wx_app.rs (`the_body_a_command_quotes`, the landing's body load, `msg_info`, the `ID_FORWARD` arm, `start_reply`) | Yes: what Reply, Forward and the preview say | M |
+| 13.3-24.3 | 27 | After a refused account save the window holds what the store holds, a refused new account leaves no secret, and a refused removal says one plain sentence | none; ledgers 922, 923, 924 | src/data/message_cache/accounts.rs (`replace_accounts`, `delete_account`, the read-back and the shared forgetting); src/presentation/wx_app.rs (`handle_account_mgr`); tests/mail_keeps_arriving_on_its_own.rs; src/data/message_cache/identities.rs, quick_steps.rs and saved_searches.rs (a test call each) | Yes: what a refused removal says and what the window lists after a refused save | M |
+| 13.3-24.4 | 28 | A CardDAV answer that is not whole leaves the change marker where it was, so the next sync asks again | none; ledger 928 | src/application/carddav_sync.rs (`sync_carddav_address_book`) | No new words: the contacts summary's existing error count, said on more syncs | S |
+| 13.3-24.5 | 29 | A Google sync refused for a permission the sign-in was not given says which one and the button that gives it | none; ledger 932 | src/service/asked_and_answered.rs; src/service/google_api.rs (`read_the_body`); src/service/tasks_api.rs (the read path); src/application/every_google_calendar.rs (`sync`); src/application/who_holds_the_calendars.rs (two reasons, `why_google_gave_nothing`); src/presentation/wx_app.rs (the Google pass of the three sync spawners); docs/PROVIDER_SETUP.md | Yes: what a calendar, contacts or tasks sync says when Google refuses a permission | M |
+| 13.3-24.6 | 30 | The guard runner stops when a file it broke does not come back, and `--remeasure` takes a fast path for a record flagged only by added tests | none; ledgers 927, 803 | scripts/guards.py; scripts/guards.sh; CLAUDE.md; docs/development/measurements.md | No | L |
+| 13.3-24.7 | 31 | The Test Suite job restores its caches and saves none | none; one ledger row opened | .github/workflows/ci.yml; tests/house_style.rs (`the_job_named`, `the_cache_steps_of`, the test and its companion); guards/guards.toml | No | S |
+| 13.3-24.8 | 32 | A locked session leaves the clipboard tests out and says so | none; ledger 773 closed, 776 amended, two rows opened | scripts/check.sh; scripts/check.test.sh; scripts/session_lock.py; tests/a_locked_key_asks_for_its_passphrase.rs (`the_tests_left_out_while_locked`, `the_tests_that_reach_the_clipboard`, the reading and its companion); guards/guards.toml; CLAUDE.md | No | M |
+| 13.3-25 | 33 | The full gate once, by hand, and the phase closed | none | `scripts/check.sh all` run by hand once, its output written to a file and its exit status read directly; .planning/ROADMAP.md, .planning/STATE.md and .planning/REQUIREMENTS.md for the phase's marks | No | M |
 
 Every plan also writes the files written by rule where it applies: `docs/changelog.md` for a
 user-visible change, `guards/guards.toml` for a guard written, re-measured or retired,
@@ -328,6 +338,7 @@ nothing fits. REAL-01 and REAL-02 are phase 14's, proven by sittings, and are no
 | 13.3-19 | LIST-25 |
 | 13.3-21 | FOUND-04, which 14-08.1 named for ledger 902 |
 | 13.3-23, 13.3-24 | SHIP-02 |
+| 13.3-24.1 to 13.3-24.8 | FOUND-23, LIST-05, MAIL-04, PIM-05, REAL-01, FOUND-21 with FOUND-23, FOUND-23, and FOUND-23, one plan each in that order |
 | the rest | none found by this reading, or the one the planner finds |
 
 ## Decisions that wait on Pratik
@@ -359,7 +370,9 @@ What exists today is `src/service/update_check.rs` and `src/service/update_downl
 signer check 13.2-16 hardened. The research compares the two on what this project needs: the
 signer check, what is spoken and shown while an update arrives, and what the alpha's testers
 meet. The ids 13.3-23 and 13.3-24 are reserved. If the research needs more plans, they go in
-as 13.3-24.1 and onward, before the closing plan, so its id stays 13.3-25.
+as 13.3-24.1 and onward, before the closing plan, so its id stays 13.3-25. Amended 2026-10-22:
+13.3-24.1 to 13.3-24.6 went to the six follow-ups of that day, 13.3-24.7 to the CI change and, on
+2026-10-23, 13.3-24.8 to the gate change; more update plans would go in as 13.3-24.9 onward.
 
 ## Where the order moved from the brief
 
@@ -404,3 +417,34 @@ planner had been given 13.3-25, the closing plan this file reserves, so it was w
 "Decisions that wait on Pratik" about making `encoding_rs` a direct dependency is not asked and
 no package changes. The other corrections made that day are listed in the README, "Corrections
 made when the plans were brought together".
+
+## The follow-ups of 2026-10-22
+
+Six plans, 13.3-24.1 to 13.3-24.6, carry none of the 42 items. They close `todo` and deviation
+rows earlier plans of this phase opened for Pratik to schedule, and ledger 914's lock update, on
+his answers of 2026-10-22, in his words: "Yes to 1. I've added the exclusion as directed in 2.
+yes to 3." The closing read finds them here as it finds the 42 in "Every item, once":
+
+| Row | Plan | What the plan does |
+|-----|------|--------------------|
+| 914 | 13.3-24.1 | fixed |
+| 917 | 13.3-24.2 | fixed; its premise 2 finds the preview never holds decrypted words, so the list reads the store |
+| 918 | 13.3-24.2 | fixed |
+| 919 | 13.3-24.2 | fixed; the record is the row the store already writes, read by a new typed reading |
+| 922 | 13.3-24.3 | fixed |
+| 923 | 13.3-24.3 | fixed |
+| 924 | 13.3-24.3 | fixed |
+| 928 | 13.3-24.4 | fixed |
+| 932 | 13.3-24.5 | fixed |
+| 927 | 13.3-24.6 | fixed |
+| 803 | 13.3-24.6 | amended in both halves with the measurement of 2026-10-22; its closing condition is not met by a measurement, so it stays open unless 13.3-24.6's plan says otherwise |
+
+13.3-24.7 is not among the 42 either. It comes from the CI investigation of 2026-10-22 and
+Pratik's "Let's do all of them" to its speed-ups: the Test Suite job's three cache steps restore
+only. It closes no row and opens one, an `unrun-verify` for the runner's word on the first pull
+request run after its merge.
+
+13.3-24.8 is not among the 42 either. It comes from Pratik's "yes" of 2026-10-23, after the merge
+of 13.3-20 was refused by four clipboard tests on a locked session: while the session is locked
+the commit gate leaves those four out and says so. It closes row 773, amends 776, and opens one
+row for the first real locked run and one for the guard runner.

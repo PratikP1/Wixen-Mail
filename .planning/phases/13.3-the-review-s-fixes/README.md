@@ -12,6 +12,16 @@ gate was phase 13.2's, 11,124 tests at `b1fab9ba`, and `git rev-list origin/main
 answered 332, with this clone's `origin/main` at `01ef4589`. The build Pratik has installed is
 `1.0.0-alpha.1+1118.gd3455792`, made from 14-07's merge on 2026-10-06.
 
+Six more plans, 13.3-24.1 to 13.3-24.6, were planned on 2026-10-22 against `main` at
+`0aff0451`, 13.3-16's merge, while 13.3-17 to 13.3-24 executed, and inserted after 13.3-24 and
+before 13.3-25, one per wave, waves 25 to 30, on Pratik's answers of that day (below). A
+seventh, 13.3-24.7, was planned the same day from the CI investigation and his "Let's do all of
+them" to its speed-ups, at wave 31: the Test Suite job's caches restore only. An eighth,
+13.3-24.8, was planned on 2026-10-23 against `main` at `8745aef9` from his "yes" of that day, at
+wave 32: while the Windows session is locked, the commit gate leaves out the four tests that
+need the clipboard and says so. The phase holds thirty-three plans; 13.3-25 moved to wave 33 and
+depends on 13.3-24.8.
+
 The directory is named the way `gsd-tools generate-slug "The review's fixes"` answers,
 `the-review-s-fixes`.
 
@@ -36,7 +46,11 @@ PIM-04, PIM-05, SCALE-06, SHIP-02 and REAL-01. Three plans name none and each sa
 covers what an uninstall says) and 13.3-22 (whether a function nothing calls ships is not
 something a requirement describes). Those three leave three completion marks, not four. REAL-01
 stays phase 14's to tick: 13.3-15, 13.3-17 and 13.3-18 add lines under it and leave its box
-open.
+open. Amended 2026-10-22: the six follow-ups each name requirements, 13.3-24.1 FOUND-23,
+13.3-24.2 LIST-05, 13.3-24.3 MAIL-04, 13.3-24.4 PIM-05, 13.3-24.5 REAL-01 and 13.3-24.6 FOUND-21
+and FOUND-23, and 13.3-24.7, the CI change, and 13.3-24.8, the gate change, name FOUND-23, so
+thirty plans name requirements, twenty between them with FOUND-21 added, and three name none.
+13.3-24.5 adds a line under REAL-01 and leaves its box open, as 13.3-15 did.
 
 ## Pratik's yes of 2026-10-20
 
@@ -58,6 +72,62 @@ The same day he asked to "consider" ship-shape for the update mechanism, and sai
 published crate." `RESEARCH-the-update-mechanism.md` in this folder compares it with the update
 code Wixen Mail has. Every package change needs his word, so 13.3-23 opens with a blocking
 checkpoint for it, after the recommendation in plain words (see "What waits on Pratik", item 6).
+
+## Pratik's answers of 2026-10-22
+
+In his words: "Yes to 1. I've added the exclusion as directed in 2. yes to 3."
+
+- **1** was the lock update for two advisories, ledger 914: 13.3-24.1. The packages were
+  confirmed the same day, so that plan opens with no checkpoint.
+- **2** was the Windows Defender path exclusion for `C:/Program Files/Git/usr/bin`, the setting
+  13.3-01 asked about. It is in place, it was measured, and it did not help: 13.3-24.6 writes the
+  measurement into ledger 803 and the measurements page, and he is told to remove it. Removing it
+  is his; no plan changes a setting of this machine.
+- **3** was fixing in phase 13.3, before its close, the follow-ups earlier plans left as `todo`
+  rows for him to schedule: 13.3-24.2 to 13.3-24.6.
+
+He also asked, the same day, for a feature request for version 2: a setting for how reply and
+forwarded text is placed and looks (a full or short header, indented text, a different font or
+colour, as Outlook offers). That is an issue for version 2, not a plan of this phase, and none of
+the six plans builds any of it. It was filed the same day as issue #210, "Reply and forward:
+choose how the original is quoted, where your text goes and how it looks (version 2)", read with
+`gh issue list` on 2026-10-22. 13.3-24.2 decides when a quote can be offered and says so in its
+premise 7.
+
+Later the same day he answered "Let's do all of them" to the speed-ups a CI investigation listed,
+relayed to 13.3-24.7's planner by the session that ran it. Every first pull request run since
+2026-10-14 had missed the cache, and the Test Suite job had taken a median 44 minutes against
+about 20 to 26 on a hit, a median 579 s of it packing caches whose save was refused on every miss
+since 2026-09-14, 81 of 81, because Clippy saves the same keys first. 13.3-24.7 makes the Test
+Suite's three cache steps restore only. Whatever else of the speed-ups is planned is not in this
+file unless its planner adds it.
+
+Later again the same day he said "yes" to making a guard re-measurement cheaper without
+weakening it, after 13.3-18's re-measurement, which six tests added to two contacts files had
+flagged on 121 records at 129 to 144 s each, about 4.5 hours, as relayed to the planner that day:
+a record flagged only because the files it names gained tests runs the added tests and its own
+named tests under its break rather than the whole library; if any added test goes red, that record
+takes the whole run, as every record flagged for any other reason does. It went into 13.3-24.6,
+which already changes `scripts/guards.py` for ledger 927, as that plan's tasks 2 to 4. Its planner
+read "the added tests" one way the brief did not spell out, for him to overrule (What waits on
+Pratik, item 10, below): every test added since the record was last measured, in any file its
+suite compiles, not only in the files the record counts, because the count check sees only those
+files, and whole re-measurements found records short on tests added elsewhere twice: on
+2026-09-20 three records thirteen tests short in modules no record named, and on 2026-10-22, in
+13.3-18's own re-measurement, a record one test short on a test 13.3-17 had added to a file
+twenty other records counted.
+
+## Pratik's answer of 2026-10-23
+
+He said "yes" on 2026-10-23 to this: while the Windows session is locked, the commit hook
+(`scripts/check.sh`, run by `.githooks/commit-msg`) skips only the tests that need the clipboard,
+says so in the run's output and its closing summary, which targets, and that CI's Test Suite runs
+them, and runs everything else as before; when the session is unlocked nothing changes. The day
+before, the merge of 13.3-20 was refused after 872 s because four tests of
+`a_passphrase_box_takes_a_real_paste` failed with "OpenClipboard answered error 5 ... Windows says
+this session is locked" (ledger 716), and the train stopped overnight. 13.3-24.8 does it: the four
+are left out by name and said, a red commit naming one is refused on a locked session, a lock
+nobody could read leaves nothing out, and a reading holds the list to the paste target.
 
 ## The plans
 
@@ -94,7 +164,15 @@ by the executor at commit time, after 912 and anything a running plan has taken.
 | 13.3-22 | 22 | Two functions only tests call are compiled for tests only, where they stand, each attribute demanded by a reading that is red first | 31, 39 | none | The executor | None | no |
 | 13.3-23 | 23 | Pratik's word on the update mechanism at a blocking checkpoint; then the update check downloads nothing it could not run, says what a check at start found without a window, runs one check at a time with a folder per download, and gives up on a stalled connection | none; the research's gaps 1, 3 and 4 | SHIP-02 | Pratik answers at task 1; then the executor | One for the ear | yes |
 | 13.3-24 | 24 | Installing an update quits the way Quit does whatever the tray setting; the setting names the installer's real size, about 15 MB, held to a dated measurement; the stale comments and pages corrected | none; the research's gaps 2 and 5 | SHIP-02 | The executor, on any answer but (d) | One deviation opened and fixed; one for the ear; 335 and 339 amended | yes |
-| 13.3-25 | 25 | The closing read of all 42 items and the five gaps, the listening lines, the planning files, the hand-over to 14-08.2, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | none | FOUND-23 | The executor drafts and runs the gate | What the read finds | only if the closing read changes the changelog |
+| 13.3-24.1 | 25 | rustls-webpki 0.103.15 to 0.103.16 and webpki-root-certs 1.0.9 to 1.0.10, in `Cargo.lock` alone, so the audit names neither RUSTSEC-2026-0382 nor RUSTSEC-2026-0383; the move's commit and its merge each run the whole gate through the hook | none of the 42; ledger 914 | FOUND-23 | The executor | 914 fixed | no |
+| 13.3-24.2 | 26 | A message that came down with no text is quoted as nothing and not fetched again at every landing; Reply and Forward from the list ask the store as a conversation does, never quoting a placeholder; Forward with nothing chosen refuses with Reply's words, #75's "Choose a message first." | none of the 42; ledger 917, 918, 919 | LIST-05 | The executor | 917, 918 and 919 fixed; one for the ear; one `todo` (Star's refusal with nothing chosen) | yes |
+| 13.3-24.3 | 27 | After a refused account save the window holds what the store holds; a refused new account leaves no secret in the credential store; a refused removal says one plain sentence and logs the store's reasons | none of the 42; ledger 922, 923, 924 | MAIL-04 | The executor | 922, 923 and 924 fixed; one `unrun-verify`; one `todo` (the sentence of a save the credential store refuses) | yes |
+| 13.3-24.4 | 28 | After a CardDAV answer that is not whole, the address book's change marker stays, so the next sync asks again | none of the 42; ledger 928 | PIM-05 | The executor | 928 fixed; 255 a dated sentence; one `unrun-verify` for a real CardDAV server | no; his to overrule, What waits on Pratik, item 10 |
+| 13.3-24.5 | 29 | A Google calendar, contacts or tasks request refused for an insufficient permission says which permission is missing and to press Sign In for Calendars, Contacts and Tasks (`Alt+T`) or Sign In Again with that box ticked, instead of "1 errors" | none of the 42; ledger 932 | REAL-01 | The executor | 932 fixed; one `unrun-verify` for the tester | yes |
+| 13.3-24.6 | 30 | The guard runner compares each restored file with its saved copy and stops with a plain message when they differ; `--remeasure` measures a record flagged only by added tests on a fast path under its break, falling back to the whole run under the same break on any other answer, and says which path each record took; the fast path timed beside the whole run; `CLAUDE.md`'s re-measuring paragraphs; ledger 803 and the measurements page carry the measurement of 2026-10-22 | none of the 42; ledger 927, 803 | FOUND-21, FOUND-23 | The executor; removing the Defender exclusion is Pratik's | 927 fixed; 803 amended in both halves | no |
+| 13.3-24.7 | 31 | The CI Test Suite job's three cache steps restore only, same path and key, so a run that misses the cache no longer packs a save GitHub refuses; a reading in `tests/house_style.rs` red first, two records | none of the 42; the CI investigation of 2026-10-22 | FOUND-23 | The executor; the runner's word waits for the next plan that pushes | One `unrun-verify` (the first pull request run's steps) | no |
+| 13.3-24.8 | 32 | While Windows says the session is locked, a run of `scripts/check.sh` that reaches `a_passphrase_box_takes_a_real_paste` leaves out its four tests that need the clipboard by name and says so, naming the target and that CI's Test Suite runs them; a red naming one is refused on a locked session; unlocked, or with the lock unread, nothing changes | none of the 42; Pratik's yes of 2026-10-23 | FOUND-23 | The executor; the first real locked run waits for a night the session locks | 773 fixed, 776 amended; one `unrun-verify` (the first locked hook run reaching the four) and one `todo` (the guard runner) | no |
+| 13.3-25 | 33 | The closing read of all 42 items and the five gaps, the listening lines, the planning files, the hand-over to 14-08.2, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | none | FOUND-23 | The executor drafts and runs the gate | What the read finds | only if the closing read changes the changelog |
 
 ## One plan per wave, and why this order
 
@@ -117,12 +195,29 @@ earlier ones' changes in its premises and moves its guard anchors by both readin
   its highest.
 - **13.3-23 and 13.3-24:** the update mechanism, after the research and after every other code
   plan, so Pratik's word is asked as late as it can be and nothing earlier waits on it.
+- **13.3-24.1 to 13.3-24.6, added 2026-10-22:** the follow-ups Pratik said yes to that day, after
+  the update mechanism and before the close. The lock first, so every pull request after it reads
+  the audit clean and the phase's gate can be green; then the rows in the order 13.3-05, 13.3-07,
+  13.3-10 and 13.3-15 opened them; the guard runner last, since it changes no product code.
+- **13.3-24.7, added 2026-10-22:** the Test Suite job's caches restore only, on Pratik's "Let's do
+  all of them" to the CI speed-ups that day; after the follow-ups, since it changes no product
+  code and its proof waits for a pull request, and before the close, so the phase's full gate
+  runs on the workflow as it will stand.
+- **13.3-24.8, added 2026-10-23:** while the Windows session is locked the commit gate leaves out
+  the four tests that need the clipboard and says so, on Pratik's "yes" of that day; last of the
+  eight because the ids order the waves, and before the close, so the phase's full gate runs with
+  the gate as it will stand.
 - **13.3-25 last,** at the highest wave: the closing read and the phase's full gate.
 
 GROUPING.md reserved 13.3-23 and 13.3-24 for the update plans and 13.3-25 for the closing plan.
 If Pratik answers (b) at 13.3-23's checkpoint, 13.3-24.1 and 13.3-24.2 go in before 13.3-25 and
 whoever lands them moves 13.3-25's wave and `depends_on`; on (d), 13.3-23 commits nothing and
 13.3-23 and 13.3-24 move after phase 14's sittings.
+
+Amended 2026-10-22: 13.3-24.1 to 13.3-24.6 went that day to the six follow-ups, after 13.3-23
+recorded Pratik's answer, option (c) of 2026-10-20 (keep Wixen Mail's own update code, fix its
+five gaps, change no package, add no second key), and 13.3-24.7 to the CI change; 13.3-24.8 went
+on 2026-10-23 to the gate change. More update plans would go in as 13.3-24.9 onward.
 
 Added 2026-10-22 by 13.3-20: the plan that moves the lock past ledger 914's two advisories,
 RUSTSEC-2026-0382 and RUSTSEC-2026-0383, takes both out of `awaiting_a_decision` in
@@ -178,11 +273,35 @@ the plan or its checkpoint quotes them rather than asking again.
    after a refused save, tokens a refused browser sign-in leaves), 13.3-14's (the per-message
    scans in `mark_these_read` and `star_these`), 13.3-15's if the calendar sync names a wrong
    cause, 13.3-18's (the write gate's refusal counted as an error), 13.3-19's (the text reader
-   reads blocks a sender hid) and 13.3-21's (the offline save said every minute).
+   reads blocks a sender hid) and 13.3-21's (the offline save said every minute). Amended
+   2026-10-22: 13.3-05's two, 13.3-07's two, 13.3-10's question (ledger 928) and 13.3-15's row
+   932 are scheduled in this phase as 13.3-24.2 to 13.3-24.5, on his yes of that day.
 8. **After 13.3-25's merge: installing the new build** that 14-08.2 makes from that merge, over
    the build he has and never uninstalling first, 5 to 10 minutes and one line back. Build 1403
    is never installed (see the Handover).
 9. **Pushing `main`** stays his word.
+10. **From 2026-10-22: removing the Defender exclusion** for Git's programs that he added for
+    13.3-01's question; 13.3-24.6 records that it did not help. And the choices 13.3-24.1 to
+    13.3-24.8 list for him in their decisions blocks, of which the most worth his look are
+    13.3-24.8's (the lock asked of Windows through a new Python script; a lock nobody could read
+    leaves nothing out; a run by hand, the phase's full gate among them, leaves the four out too
+    and says so; the guard runner left as it is and ledgered), 13.3-24.1's (the red half is the
+    audit's own run, with no red commit), 13.3-24.2's (Reply's refusal takes #75's words, and a
+    reply to an encrypted message opens with nothing quoted and says nothing), 13.3-24.4's (not
+    pushed, though the contacts summary will say its existing error count on every sync against
+    a server that answers in part, where today only the first sync says it; no screen reader
+    test in CI drives a contacts sync, and 13.3-10 decided the same for the same path; pushed if
+    he says so here before it runs) and 13.3-24.6's (the fast path asks every test added since a
+    record was last measured, in any file, not only in the files it counts, which his yes did not
+    spell out, because whole re-measurements found records short on such tests on 2026-09-20 and
+    again in 13.3-18's of 2026-10-22; and a test name gone from any file a record counts sends it
+    to the whole run, which sent 27 of the 122 records 13.3-18 flagged there for two tests
+    13.3-15 replaced in one file). On 2026-10-22 the orchestrator took the planners'
+    recommendations on his standing "go with your recs": the audit's failing run as 13.3-24.1's
+    red half; "Choose a message first." for Reply and Forward, and a reply to a message with no
+    text opening with nothing quoted and no explanation, for now; 13.3-24.4 not pushed; and
+    13.3-24.5 naming only the button that applies to the account. Each stands as planned and
+    stays his to overrule.
 
 ## The version
 
@@ -191,7 +310,11 @@ version", which every plan here follows: `Cargo.toml` reads `version = "1.0.0-al
 exists, and a tester build is not a cut. No plan edits `Cargo.toml` or `Cargo.lock`, and no plan
 adds or moves a package; every plan checks `git diff main -- Cargo.toml Cargo.lock` is empty at
 its merge. If Pratik answers (b) at 13.3-23's checkpoint, the package it names is added by a plan
-of its own after his word, and that plan's summary says so.
+of its own after his word, and that plan's summary says so. Amended 2026-10-22: 13.3-24.1 moves
+two entries of `Cargo.lock`, inside what the crates asking for them allow, on Pratik's "Yes to 1"
+of that day, and is the one plan here that changes the lock. `Cargo.toml` is untouched and the
+version does not move. Every other plan's check, `git diff main -- Cargo.toml Cargo.lock` empty
+at its merge, stands, read against `main` at its own merge.
 
 ## Decisions the planners took
 
@@ -261,6 +384,58 @@ them. The full reasoning is in each plan's `decisions` block or premises.
   `closing.rs`; "about 15 MB" rather than "more than 15 MB"; one ledger row opened and closed.
 - **13.3-25:** written when the plans were brought together, on 13.2-32's pattern.
 
+Taken 2026-10-22 for the six follow-ups:
+
+- **13.3-24.1:** the red half is the audit's own run on the unchanged lock, kept and quoted,
+  with no red commit, since a lock is configuration and an audit verdict is nothing the red
+  gate can name; `--precise` to the two versions he confirmed; both move, though the root list
+  is never compiled for Windows; not pushed.
+- **13.3-24.2:** the row the store already writes for a message with no text is the record,
+  read by a new typed reading, with no column added; such a message is quoted as nothing with
+  no sentence, an encrypted one included; the list path reads the store rather than the
+  preview, which holds nothing the store does not but two placeholders; Reply and Forward both
+  say #75's "Choose a message first.", Star's copy ledgered; pushed.
+- **13.3-24.3:** the window takes back what the store holds through one data-layer call, and
+  everything after the save is worked out from it; a refused account no stored row names has
+  every secret forgotten through the function `delete_account` uses; a refused removal is one
+  sentence naming the account, the store's reasons in the log; the sentence of a save the
+  credential store refuses is ledgered, not changed; pushed.
+- **13.3-24.4:** the old marker kept after an answer that is not whole, written inside the
+  whole-answer block; a part-answering server counted on every sync; ledger 255 given a dated
+  sentence; not pushed, though that count is now said on more syncs, his to overrule (What
+  waits on Pratik, item 10).
+- **13.3-24.5:** the refusal read once where Google's whole answer is held and carried as one
+  error holding Google's word, not a new kind of error; the sentence names only the button that
+  makes this account's sign-in again and says the box is what usually causes it; the calendar
+  sync stops at a refused list; a 401 and `domainPolicy` counted as today; pushed.
+- **13.3-24.6:** the run stops at the first file that does not come back, with no retry, the copy
+  from before the break kept under `target/guards-left-broken/` and named; the measurement of
+  2026-10-22 written with its source said and taken again as the plan's own row; ledger 803
+  stays open. The fast path: the added tests are every test added since the commit `git blame`
+  says last wrote the record, in any file its suite compiles, handed to cargo as their modules;
+  a named test green on the fast question, or any other irregular answer, hands the record to
+  the whole run under the same break; a test name gone from any file the record counts sends it
+  to the whole run; only under `--remeasure`, with no new flag; timed on a probe test taken out
+  again; not pushed and no changelog entry.
+- **13.3-24.7:** restore only in the Test Suite job, same path and key, Clippy saving, rather
+  than a key of its own that would pack on every miss and add a cache when the list held 9.82
+  GiB of 10; the index restored too though nobody saves it; the reading also asks that every key
+  the Test Suite restores is saved by another job; a run whose Clippy fails leaves the next run
+  without a target; not pushed and no changelog entry, the runner's word ledgered for the next
+  plan that pushes.
+
+Taken 2026-10-23 for the gate change:
+
+- **13.3-24.8:** the four tests that need the clipboard left out by name with libtest's
+  `--exact --skip`, rather than the whole target, whose other seven tests pass on a locked
+  session, or a reading of the failures after the run, which would turn a failing cargo into a
+  pass by a sentence; the lock asked of Windows by a new `scripts/session_lock.py`, only when a
+  run reaches the paste target; a lock nobody could read leaves nothing out; a run by hand
+  leaves them out too, the phase's full gate included, and its plan says so; a red naming one
+  refused on a locked session; the list held by a reading in
+  `tests/a_locked_key_asks_for_its_passphrase.rs` and two records; the guard runner left as it
+  is and ledgered; not pushed and no changelog entry.
+
 ## Corrections made when the plans were brought together
 
 Made on 2026-10-20 on branch `13.3-plans`, after all twenty-four planned plans were on disk,
@@ -293,7 +468,9 @@ each edit made in the plan it names.
 - Whether 13.3-08 leaves `mail_sync.rs`'s `Scripted` recording `the_identifier_at` in its list of
   calls, which decides the order 13.3-16's case asserts; 13.3-16 reads it first.
 - Which answer Pratik gives at 13.3-23's checkpoint, which decides whether 13.3-24.1 and 13.3-24.2
-  exist and whether 13.3-23 and 13.3-24 stay in this phase.
+  exist and whether 13.3-23 and 13.3-24 stay in this phase. Settled by the landing of
+  2026-10-23: 13.3-24.1 and 13.3-24.2 are now two of the six follow-ups of 2026-10-22, 13.3-24.7
+  the CI change, and 13.3-24.8 the gate change (see "One plan per wave").
 - 13.3-01 to 13.3-04 lead with an ordinary task where the later plans lead with a tracer. Phase
   13.2's plans used no tracer at all, so both shapes are this project's, and nothing reads the
   difference.
