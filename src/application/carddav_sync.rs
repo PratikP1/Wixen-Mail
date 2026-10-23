@@ -1223,6 +1223,116 @@ mod tests {
         assert_eq!(stored[0].ctag, Some("\"ctag-1\"".to_string()));
     }
 
+    /// The marker the address book is stored under after one sync against
+    /// this server, starting from `ctag-1`.
+    async fn the_marker_kept_after(server: Scripted, label: &str) -> Option<String> {
+        let (_paths, cache) = cache_for(label);
+        let mut book = an_address_book(&cache);
+        book.ctag = Some("\"ctag-1\"".to_string());
+        cache.save_address_book(&book).expect("the marker saves");
+
+        sync_carddav_address_book(&cache, &server, &book)
+            .await
+            .expect("the sync");
+
+        cache
+            .get_address_books_for_account("a1")
+            .expect("the address books")[0]
+            .ctag
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_the_server_stopped_short_leaves_the_change_marker_where_it_was() {
+        // Moved on, the next sync takes the address book as up to date and
+        // never asks for the cards past the server's limit (ledger 928).
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("before-the-limit")],
+            stopped_short: true,
+            ..Scripted::default()
+        };
+
+        let kept = the_marker_kept_after(server, "carddav-short-keeps-marker").await;
+
+        assert_eq!(kept, Some("\"ctag-1\"".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_an_answer_with_a_card_that_could_not_be_read_leaves_the_change_marker_where_it_was()
+     {
+        let server = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("readable")],
+            could_not_be_read: 1,
+            ..Scripted::default()
+        };
+
+        let kept = the_marker_kept_after(server, "carddav-unread-keeps-marker").await;
+
+        assert_eq!(kept, Some("\"ctag-1\"".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_the_cards_past_a_servers_limit_arrive_at_the_next_sync() {
+        // The server's marker does not move between the two syncs: nothing
+        // changed there, it only stopped short the first time.
+        let (_paths, cache) = cache_for("carddav-past-the-limit-arrives");
+        let mut book = an_address_book(&cache);
+        book.ctag = Some("\"ctag-1\"".to_string());
+        cache.save_address_book(&book).expect("the marker saves");
+        let filed_under = book.the_word_its_contacts_are_filed_under();
+        held_as_a_card(&cache, &filed_under, "kept");
+        let stopped_short = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![its_unchanged_card("kept")],
+            stopped_short: true,
+            ..Scripted::default()
+        };
+        sync_carddav_address_book(&cache, &stopped_short, &book)
+            .await
+            .expect("the first sync");
+        let whole = Scripted {
+            marker: Some("\"ctag-2\"".to_string()),
+            cards: vec![
+                its_unchanged_card("kept"),
+                a_card_for(
+                    &the_card_at("past-the-limit"),
+                    "\"v1\"",
+                    "Past Example",
+                    "past@example.com",
+                ),
+            ],
+            ..Scripted::default()
+        };
+        // Read back as the window reads it before each sync.
+        let read_back = cache
+            .get_address_books_for_account("a1")
+            .expect("the address books")
+            .remove(0);
+
+        let second = sync_carddav_address_book(&cache, &whole, &read_back)
+            .await
+            .expect("the second sync");
+
+        assert_eq!(
+            *whole.times_read.lock().expect("the count"),
+            1,
+            "the address book was taken as up to date after an answer that was not whole"
+        );
+        let here = cache.get_contacts_for_account("a1").expect("the contacts");
+        assert!(
+            here.iter().any(|contact| contact.id_in(&filed_under)
+                == Some(the_card_at("past-the-limit").as_str())),
+            "the card past the server's limit never arrived"
+        );
+        assert_eq!(second.deleted_local.count(), 0, "{second:?}");
+        let stored = cache
+            .get_address_books_for_account("a1")
+            .expect("the address books");
+        assert_eq!(stored[0].ctag, Some("\"ctag-2\"".to_string()));
+    }
+
     #[tokio::test]
     async fn test_a_card_that_could_not_be_read_is_counted_rather_than_dropped() {
         let (_paths, cache) = cache_for("carddav-unreadable-card");
