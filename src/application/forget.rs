@@ -660,7 +660,26 @@ mod tests {
     /// mutex name already is: the two have to say the same thing, and a script
     /// nothing reads is a script that drifts.
     const WHAT_AN_UNINSTALL_SAYS_WHEN_IT_COULD_NOT_ERASE: &str =
-        "Your mail and settings are still on this computer";
+        "Your mail and settings may still be on this computer";
+
+    /// What that message must not say: that the folder certainly stays.
+    ///
+    /// The `[UninstallDelete]` line removes `%LOCALAPPDATA%\wixen-mail` of the
+    /// account setup ran as, after the message is shown, so for an install for
+    /// one user the folder the message named is gone a moment later (review
+    /// item 28, 2026-10-20).
+    const WHAT_IT_MUST_NOT_SAY: &str = "are still on this computer";
+
+    /// The script's text with every run of spaces and line breaks made one
+    /// space and adjacent string literals joined, so a sentence wrapped across
+    /// two literals reads as the one sentence it is shown as.
+    fn the_script_as_read(script: &str) -> String {
+        script
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .replace("' + '", "")
+    }
 
     #[test]
     fn test_an_uninstall_that_cannot_run_the_erase_step_says_so() {
@@ -672,13 +691,15 @@ mod tests {
         // The erase step is allowed to be skipped when the program is already
         // gone, and it has to be: without that, an uninstall whose executable
         // had been removed stopped there and left the folder, the shortcut and
-        // the uninstaller behind. Skipped in silence, though, it leaves the
-        // whole data folder, and the mail cache in it is not encrypted.
-        // Nothing writes the note in that case either, because the note is
-        // written by the program that never ran, so the person is told nothing
-        // by anything.
-        let installer = std::fs::read_to_string("installer/Wixen-Mail-Setup.iss")
-            .expect("the installer script");
+        // the uninstaller behind. Skipped, the erase cannot clear a folder that
+        // WIXEN_MAIL_DATA moved, nor any saved sign-in, and the mail cache is
+        // not encrypted. Nothing writes the note in that case either, because
+        // the note is written by the program that never ran, so the message is
+        // the only thing that tells the person anything.
+        let installer = the_script_as_read(
+            &std::fs::read_to_string("installer/Wixen-Mail-Setup.iss")
+                .expect("the installer script"),
+        );
 
         assert!(
             installer.contains("skipifdoesntexist"),
@@ -689,6 +710,11 @@ mod tests {
             installer.contains(WHAT_AN_UNINSTALL_SAYS_WHEN_IT_COULD_NOT_ERASE),
             "an uninstall that could not run the erase step says nothing, so the \
              mail cache is left on the disk with nobody told"
+        );
+        assert!(
+            !installer.contains(WHAT_IT_MUST_NOT_SAY),
+            "an uninstall tells the person their mail folder certainly stays, and \
+             [UninstallDelete] then removes it"
         );
     }
 

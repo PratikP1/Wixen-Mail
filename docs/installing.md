@@ -186,9 +186,11 @@ says which.
 **It removes them for one Windows account.** The uninstaller clears the data of the account
 it runs as. Installed for you alone, that is you. Installed for all users, it is the account
 that approved the administrator prompt, and any other account that used Wixen Mail on this
-computer keeps its own mail folder and its saved sign-ins. The uninstaller says so when it
-finishes, names the account it cleared, and says how to remove the rest: sign in to Windows
-as that account and follow the last paragraph of Checking what an uninstall did, below.
+computer keeps its saved sign-ins and may keep its own mail folder. "May", because the
+uninstall also removes the mail folder of the account that approved the administrator prompt
+when Wixen Mail was installed, which can be one of those other accounts. The uninstaller says so when it finishes, names the account it
+cleared, and says how to remove the rest: sign in to Windows as that account and follow the
+last paragraph of Checking what an uninstall did, below.
 
 **A copy installed before 2026-10-18 cannot uninstall itself.** Its uninstaller stops at an
 error before removing anything. Install a new build over it first, without uninstalling, and

@@ -209,9 +209,15 @@ entries go under `HKEY_LOCAL_MACHINE` and an install for one user cannot write
 there. Both files land in the program folder either way, so you can turn this on
 by hand later from an administrator prompt.
 
-Uninstalling runs `remove-scope` as the person uninstalling and then
-`unregister-classes` elevated, whether or not the box was ever ticked. Both do
-nothing and report success when there is nothing to undo. If either fails,
+Uninstalling runs `remove-scope` and then `unregister-classes`, both as the
+account the uninstaller runs as, whether or not the box was ever ticked.
+Uninstalling for one user, that account is you. Uninstalling for everybody, it
+is the account that approved the administrator prompt, so if you typed another
+account's password there, `remove-scope` finds no rule of that account's,
+reports success, and your own rule stays. When the box was ticked, the message
+an uninstall for everybody shows says Windows Search may still be set to read
+another account's mail, and how to untick it in Indexing Options. Both commands
+do nothing and report success when there is nothing to undo. If either fails,
 uninstall says so and tells you what is left.
 
 This path has been compiled and read. It has not been run: installing needs an

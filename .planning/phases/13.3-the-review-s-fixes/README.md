@@ -124,6 +124,13 @@ If Pratik answers (b) at 13.3-23's checkpoint, 13.3-24.1 and 13.3-24.2 go in bef
 whoever lands them moves 13.3-25's wave and `depends_on`; on (d), 13.3-23 commits nothing and
 13.3-23 and 13.3-24 move after phase 14's sittings.
 
+Added 2026-10-22 by 13.3-20: the plan that moves the lock past ledger 914's two advisories,
+RUSTSEC-2026-0382 and RUSTSEC-2026-0383, takes both out of `awaiting_a_decision` in
+`scripts/audit.sh` in the same commit. 13.3-20 held them open there because its installer
+commit earned the whole gate on this machine and the audit refused on them; once the lock
+moves, the gate refuses until the list is emptied, because a held-open advisory nobody reports
+silences nothing.
+
 ## What waits on Pratik
 
 In the order the plans meet them. If he answers early, his words are written here, dated, and
