@@ -1180,6 +1180,213 @@ fn test_the_quote_reading_complains_at_each_part_left_out() {
     }
 }
 
+// ── From the list too, and with nothing chosen, 13.3-24.2 ─────────────────
+//
+// From the message list the quote was the preview, so Reply or Forward
+// pressed before a message's text arrived quoted the window's own words,
+// "Downloading this message...", as if the sender wrote them (ledger 917).
+// And Forward with no message chosen opened an empty forward where Reply
+// refused, in words #75 had retired (ledger 918). Both commands now read the
+// store for the message they are for, named or not, and refuse no message
+// through one function in #75's words.
+
+const THE_PREVIEW: &str = "message_preview";
+const THE_NAMED_MESSAGE: &str = "acting_on";
+const THE_STORE: &str = "what_the_store_keeps_of(";
+const THE_NO_MESSAGE_REFUSAL: &str = "fn no_message_is_chosen(";
+const THE_NO_MESSAGE_REFUSAL_CALLED: &str = "no_message_is_chosen(";
+const THE_WORDING: &str = "nothing_chosen(Thing::MESSAGE)";
+/// The words Reply used before #75's, which no command says now.
+const THE_RETIRED_WORDS: &str = "no message selected";
+
+/// The quote reads the store for the message it is given, whichever way the
+/// command found it, and never the preview.
+fn the_quote_reads_the_store_and_never_the_preview(app: &str) -> Result<(), String> {
+    let quote = body_of(app, THE_QUOTE)?;
+    if !quote.contains(THE_STORE) {
+        return Err(format!(
+            "{THE_QUOTE} does not reach {THE_STORE}, so it quotes something other than \
+             what the store keeps"
+        ));
+    }
+    for (forbidden, why) in [
+        (
+            THE_PREVIEW,
+            "so a command from the list quotes the window's own placeholder",
+        ),
+        (
+            THE_NAMED_MESSAGE,
+            "so a command from the list reads the store a different way from a conversation",
+        ),
+    ] {
+        if quote.contains(forbidden) {
+            return Err(format!("{THE_QUOTE} holds {forbidden}, {why}"));
+        }
+    }
+    Ok(())
+}
+
+/// `call` is reached in `text` before any compose window opens.
+fn reaches_before_composing(text: &str, call: &str, which: &str) -> Result<(), String> {
+    let refused = text.find(call).ok_or(format!(
+        "{which} never reaches {call}, so with no message chosen it opens a window or \
+         says something else"
+    ))?;
+    match text.find(THE_COMPOSE) {
+        Some(composed) if composed < refused => Err(format!(
+            "{which} opens a compose window before it reaches {call}"
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The text of the Forward arm, from its head to the next command's.
+fn the_forward_arm(app: &str) -> Result<&str, String> {
+    let arm_at = app.find(THE_FORWARD_ARM).ok_or(format!(
+        "{THE_FORWARD_ARM} is no longer in this file, so this reads nothing"
+    ))?;
+    let arm = &app[arm_at + THE_FORWARD_ARM.len()..];
+    Ok(&arm[..arm.find(THE_NEXT_COMMAND_ARM).unwrap_or(arm.len())])
+}
+
+/// One refusal for no message, in #75's words, which Reply and Forward both
+/// reach before they compose; Reply says nothing of its own for it.
+fn reply_and_forward_refuse_no_message_alike(app: &str) -> Result<(), String> {
+    let refusal = body_of(app, THE_NO_MESSAGE_REFUSAL)?;
+    for needed in [THE_SENTENCE, THE_WORDING] {
+        if !refusal.contains(needed) {
+            return Err(format!("{THE_NO_MESSAGE_REFUSAL} does not reach {needed}"));
+        }
+    }
+    let reply = body_of(app, THE_REPLY)?;
+    reaches_before_composing(&reply, THE_NO_MESSAGE_REFUSAL_CALLED, "start_reply")?;
+    for own in [THE_RETIRED_WORDS, THE_WORDING] {
+        if reply.contains(own) {
+            return Err(format!(
+                "start_reply says {own} itself rather than through the one refusal"
+            ));
+        }
+    }
+    reaches_before_composing(
+        the_forward_arm(app)?,
+        THE_NO_MESSAGE_REFUSAL_CALLED,
+        "the Forward arm",
+    )
+}
+
+#[test]
+fn test_reply_and_forward_quote_from_the_store_and_never_the_preview() {
+    the_quote_reads_the_store_and_never_the_preview(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
+fn test_forward_with_no_message_chosen_refuses_as_reply_does() {
+    reply_and_forward_refuse_no_message_alike(&the_main_window())
+        .unwrap_or_else(|why| panic!("{why}"));
+}
+
+/// The places as they should be, holding every anchor the two readings look
+/// for.
+fn a_command_as_it_should_be() -> String {
+    "fn the_body_a_command_quotes(state, cache, message) -> TheQuote {\n    \
+     let kept = what_the_store_keeps_of(cache, message.message_id);\n    \
+     match reply::what_quoting_finds(&kept, reachability_of(state)) {}\n}\n\
+     fn no_message_is_chosen(a11y) {\n    \
+     let _ = a11y.signal(FeedbackEvent::ActionRefused, &nothing_chosen(Thing::MESSAGE));\n}\n\
+     fn start_reply(app) {\n    \
+     let Some(message) = selected else {\n        \
+     return no_message_is_chosen(a11y);\n    };\n    \
+     open_compose(app, frame, cache, a11y, compose);\n}\n\
+     fn dispatch() {\n    match id {\n        \
+     _ if id == ID_FORWARD => match msg_info(&state, cache) {\n            \
+     None => no_message_is_chosen(&a11y),\n            \
+     Some((subject, quote)) => open_compose(app, &frame, &message_cache, &a11y, forward),\n        \
+     },\n        \
+     _ if id == ID_DELETE => {}\n    }\n}\n"
+        .to_string()
+}
+
+#[test]
+fn test_the_list_quote_and_no_message_readings_complain_at_each_part_left_out() {
+    let app = a_command_as_it_should_be();
+    the_quote_reads_the_store_and_never_the_preview(&app).unwrap_or_else(|why| panic!("{why}"));
+    reply_and_forward_refuse_no_message_alike(&app).unwrap_or_else(|why| panic!("{why}"));
+    let quoting: [(&str, &str, &str); 3] = [
+        (
+            "    let kept = what_the_store_keeps_of(cache, message.message_id);\n",
+            "    let kept = stored_body(cache, message.message_id);\n",
+            "does not reach what_the_store_keeps_of(",
+        ),
+        (
+            "    let kept = what_the_store_keeps_of(cache, message.message_id);\n",
+            "    let preview = lock_state(state).message_preview.clone();\n    \
+             let kept = what_the_store_keeps_of(cache, message.message_id);\n",
+            "holds message_preview",
+        ),
+        (
+            "    let kept = what_the_store_keeps_of(cache, message.message_id);\n",
+            "    let named = lock_state(state).acting_on.is_some();\n    \
+             let kept = what_the_store_keeps_of(cache, message.message_id);\n",
+            "holds acting_on",
+        ),
+    ];
+    for (planted, needle, said) in quoting {
+        let broken = app.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, app,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = the_quote_reads_the_store_and_never_the_preview(&broken)
+            .expect_err("a quote that does not read the store was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+    let refusing: [(&str, &str, &str); 6] = [
+        (
+            "    let _ = a11y.signal(FeedbackEvent::ActionRefused, &nothing_chosen(Thing::MESSAGE));\n",
+            "    let _ = a11y.announce(&nothing_chosen(Thing::MESSAGE));\n",
+            "does not reach FeedbackEvent::ActionRefused",
+        ),
+        (
+            "&nothing_chosen(Thing::MESSAGE));\n}\n",
+            "\"no message selected\");\n}\n",
+            "does not reach nothing_chosen(Thing::MESSAGE)",
+        ),
+        (
+            "        return no_message_is_chosen(a11y);\n",
+            "        return;\n",
+            "start_reply never reaches no_message_is_chosen(",
+        ),
+        (
+            "        return no_message_is_chosen(a11y);\n",
+            "        let _ = a11y.signal(FeedbackEvent::ActionRefused, \"no message selected\");\n        \
+             return no_message_is_chosen(a11y);\n",
+            "start_reply says no message selected itself",
+        ),
+        (
+            "            None => no_message_is_chosen(&a11y),\n",
+            "            None => open_compose(app, &frame, &message_cache, &a11y, empty),\n",
+            "the Forward arm never reaches no_message_is_chosen(",
+        ),
+        (
+            "            None => no_message_is_chosen(&a11y),\n",
+            "            None => {\n                open_compose(app, &frame, &message_cache, &a11y, empty);\n                \
+             no_message_is_chosen(&a11y)\n            }\n",
+            "the Forward arm opens a compose window before it reaches no_message_is_chosen(",
+        ),
+    ];
+    for (planted, needle, said) in refusing {
+        let broken = app.replacen(planted, needle, 1);
+        assert_ne!(
+            broken, app,
+            "the plant {planted:?} found nothing to replace"
+        );
+        let why = reply_and_forward_refuse_no_message_alike(&broken)
+            .expect_err("a part of the one refusal left out was passed over");
+        assert!(why.contains(said), "{planted:?}: {why}");
+    }
+}
+
 // ── A message read from the conversation is marked read, 13.2-03.1 ────────
 //
 // The reading timer marked only the message the list's cursor row stands
