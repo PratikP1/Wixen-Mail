@@ -27,15 +27,15 @@ impl MessageCache {
         Ok(())
     }
 
-    /// Make a message's labels match the keywords the server reports.
+    /// The cases' way of matching one message's labels to the server's
+    /// keywords: the rule of [`Self::match_these_labels_to_keywords`], with the
+    /// account's labels read for this message alone.
     ///
-    /// The server is right. A label put on elsewhere arrives, one taken off
-    /// elsewhere goes, and a keyword from a client this knows nothing about is
-    /// left alone rather than turned into a label nobody made.
-    ///
-    /// Only labels that have a keyword take part. One that stays on this
-    /// computer is not touched by what the server does or does not say about
-    /// it, because the server was never told about it in the first place.
+    /// Kept so the cases written against it keep their meaning and so
+    /// `test_labels_read_once_match_keywords_as_reading_them_each_time_did`
+    /// can compare the two. Compiled for tests only, because reading the
+    /// labels once a message over a whole folder is finding #14.
+    #[cfg(test)]
     pub fn match_labels_to_keywords(
         &self,
         message_id: i64,
@@ -63,9 +63,18 @@ impl MessageCache {
     /// Make a message's labels match the keywords the server reports, over
     /// labels already read.
     ///
-    /// What [`Self::match_labels_to_keywords`] does for one message, for a
-    /// pass that reads the account's labels once and asks this of every
-    /// message it holds. A label with no keyword among `labels` is left alone.
+    /// The server is right. A label put on elsewhere arrives, one taken off
+    /// elsewhere goes, and a keyword from a client this knows nothing about is
+    /// left alone rather than turned into a label nobody made.
+    ///
+    /// Only labels that have a keyword take part. One that stays on this
+    /// computer is not touched by what the server does or does not say about
+    /// it, because the server was never told about it in the first place, so
+    /// a label with no keyword among `labels` is left alone.
+    ///
+    /// For a pass that reads the account's labels once, with
+    /// [`Self::labels_with_a_keyword`], and asks this of every message it
+    /// holds.
     pub fn match_these_labels_to_keywords(
         &self,
         message_id: i64,
@@ -730,6 +739,35 @@ mod keyword_tests {
                 .expect("the labels")
                 .is_empty(),
             "an account whose labels carry no keyword read as having some"
+        );
+    }
+
+    #[test]
+    fn test_matching_one_messages_labels_alone_is_compiled_for_tests_only() {
+        // The wrapper reads an account's labels for the one message it is
+        // given. Called once a message over a folder, that is finding #14
+        // again, so a normal build leaves it out. The compiler refuses a
+        // caller only while the attribute stands; this is what goes red if
+        // somebody takes the attribute off to call the wrapper from a loop.
+        use crate::common::what_ships::what_ships;
+        const NEEDLE: &str = concat!("pub fn match_labels", "_to_keywords(");
+
+        let planted = format!(
+            "    {NEEDLE}\n        &self,\n    ) -> Result<usize> {{\n        Ok(0)\n    }}\n"
+        );
+        assert!(
+            what_ships(&planted).contains(NEEDLE),
+            "the reading cannot see a function that ships"
+        );
+        let source = include_str!("tags.rs");
+        assert_eq!(
+            source.matches(NEEDLE).count(),
+            1,
+            "the wrapper is not defined once in the file, so this reads nothing"
+        );
+        assert!(
+            !what_ships(source).contains(NEEDLE),
+            "a normal build holds the wrapper that reads an account's labels for one message"
         );
     }
 }

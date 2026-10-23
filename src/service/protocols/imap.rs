@@ -2715,8 +2715,9 @@ mod tests {
 
     #[test]
     fn test_list_attributes_are_spelled_the_way_special_use_reads_them() {
-        // These strings are the input to `special_use::classify`, so a change
-        // here silently stops the sent folder being the sent folder.
+        // These strings are the input to `special_use::roles_of_the_listing`,
+        // so a change here silently stops the sent folder being the sent
+        // folder.
         assert_eq!(attribute_name(&NameAttribute::Sent), "\\Sent");
         assert_eq!(attribute_name(&NameAttribute::NoSelect), "\\Noselect");
         assert_eq!(
@@ -2734,8 +2735,9 @@ mod tests {
         // each of the other nine arms in turn and nothing noticed, because a
         // deleted arm falls to the one that answers an empty string for an
         // attribute this code has no use for. An empty string is what
-        // `special_use::classify` sees for a folder with no attributes at all,
-        // so a server saying `\Trash` would have been read as saying nothing.
+        // `special_use::roles_of_the_listing` sees for a folder with no
+        // attributes at all, so a server saying `\Trash` would have been read
+        // as saying nothing.
         let spelled = [
             (NameAttribute::NoInferiors, "\\Noinferiors"),
             (NameAttribute::NoSelect, "\\Noselect"),

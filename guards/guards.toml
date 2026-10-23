@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 908 records have arrived since and have not been through it.
+# 910 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -26372,7 +26372,7 @@ red = [
     "test_a_folder_above_the_variable_limit_reads_its_labels_by_folder_without_an_error",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 15 },
+    { file = "src/data/message_cache/tags.rs", tests = 16 },
     { file = "tests/the_list_holds_everything_the_folder_holds.rs", tests = 5 },
 ]
 
@@ -26436,7 +26436,7 @@ red = [
     "test_a_label_view_answers_in_the_order_it_is_handed",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 15 },
+    { file = "src/data/message_cache/tags.rs", tests = 16 },
     { file = "tests/all_inboxes_reads_in_the_sort_that_was_chosen.rs", tests = 7 },
 ]
 
@@ -31437,7 +31437,7 @@ red = [
     "data::message_cache::tags::tests::test_the_order_written_is_the_order_read_back",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/tags.rs", tests = 15 },
+    { file = "src/data/message_cache/tags.rs", tests = 16 },
 ]
 
 # ── Only the first nine labels carry a key on the menu (#48) ────────────────
@@ -40999,7 +40999,7 @@ red = [
     "service::protocols::imap::special_use::tests::test_with_nothing_declared_the_first_name_in_the_roles_list_wins",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap/special_use.rs", tests = 22 },
+    { file = "src/service/protocols/imap/special_use.rs", tests = 23 },
 ]
 
 # Empty Folder counting a message the server only marked, or copied to the
@@ -41442,7 +41442,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
-    { file = "src/data/message_cache/tags.rs", tests = 15 },
+    { file = "src/data/message_cache/tags.rs", tests = 16 },
 ]
 
 [[guard]]
@@ -44453,4 +44453,39 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 31 },
+]
+
+# The attribute that keeps the wrapper reading an account's labels for one
+# message out of a normal build, so nothing the program runs can call it once
+# a message again, which is finding #14 (13.3-22, item 31). Anchored on the
+# attribute and the signature together, since the attribute line alone names
+# every test-only helper in the file.
+[[guard]]
+name = "matching one message's labels alone is compiled for tests only"
+file = "src/data/message_cache/tags.rs"
+before = '''    #[cfg(test)]
+    pub fn match_labels_to_keywords('''
+after = '''    pub fn match_labels_to_keywords('''
+red = [
+    "data::message_cache::tags::keyword_tests::test_matching_one_messages_labels_alone_is_compiled_for_tests_only",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/tags.rs", tests = 16 },
+]
+
+# The attribute that keeps a folder's role decided from a listing of one out
+# of a normal build, so nothing the program runs can take a person's folder
+# called Bin for the Trash again, which is finding #9 (13.3-22, item 39).
+# Anchored on the attribute and the signature together, as the record above.
+[[guard]]
+name = "a role decided from a listing of one is compiled for tests only"
+file = "src/service/protocols/imap/special_use.rs"
+before = '''#[cfg(test)]
+pub fn classify('''
+after = '''pub fn classify('''
+red = [
+    "service::protocols::imap::special_use::list_folders_asks_over_the_whole_listing::test_a_role_decided_from_a_listing_of_one_is_compiled_for_tests_only",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap/special_use.rs", tests = 23 },
 ]

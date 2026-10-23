@@ -73,8 +73,15 @@ pub fn roles_of_the_listing(listing: &[Listed<'_>]) -> Vec<FolderType> {
         .collect()
 }
 
-/// What the server says this mailbox is for, or what its name suggests, for a
+/// The cases' way of asking [`roles_of_the_listing`] about one folder: what
+/// the server says this mailbox is for, or what its name suggests, for a
 /// listing of one.
+///
+/// Compiled for tests only. Outside them a role is never decided one folder
+/// at a time, because whether a folder called Bin is the Trash depends on
+/// whether another folder declared it (finding #9). `pub` so the IMAP
+/// client's own cases can still ask it.
+#[cfg(test)]
 pub fn classify(attributes: &[String], path: &str, delimiter: Option<&str>) -> FolderType {
     roles_of_the_listing(&[Listed {
         attributes,
@@ -485,8 +492,11 @@ mod tests {
 ///
 /// A role decided one folder at a time cannot know whether another folder
 /// declared it, which is finding #9. The behaviour is held by the cases above;
-/// this holds that the listing really goes through them, because a call to
-/// `classify` per folder compiles just as well and passes every one of them.
+/// this holds that the listing really goes through them. A normal build
+/// refuses a call to `classify` per folder, since `classify` is compiled for
+/// tests only, and a reading below holds that it stays so; this reading stays
+/// as well, because a test build would still compile such a call and pass
+/// every case above.
 #[cfg(test)]
 mod list_folders_asks_over_the_whole_listing {
     const THE_LISTING: &str = "src/service/protocols/imap.rs";
@@ -528,5 +538,31 @@ mod list_folders_asks_over_the_whole_listing {
         assert!(!asks_once_over_the_listing(&format!(
             "{listing_wide}{listing_wide}"
         )));
+    }
+
+    #[test]
+    fn test_a_role_decided_from_a_listing_of_one_is_compiled_for_tests_only() {
+        // `classify` decides one folder's role with no other folder to ask,
+        // which is finding #9 if anything the program runs calls it. The
+        // compiler refuses such a caller only while the attribute stands;
+        // this is what goes red if somebody takes the attribute off.
+        use crate::common::what_ships::what_ships;
+        const NEEDLE: &str = concat!("pub fn class", "ify(");
+
+        let planted = format!("{NEEDLE}attributes: &[String]) -> FolderType {{\n    Custom\n}}\n");
+        assert!(
+            what_ships(&planted).contains(NEEDLE),
+            "the reading cannot see a function that ships"
+        );
+        let source = include_str!("special_use.rs");
+        assert_eq!(
+            source.matches(NEEDLE).count(),
+            1,
+            "the role from a listing of one is not defined once in the file, so this reads nothing"
+        );
+        assert!(
+            !what_ships(source).contains(NEEDLE),
+            "a normal build holds the way to decide one folder's role from a listing of one"
+        );
     }
 }
