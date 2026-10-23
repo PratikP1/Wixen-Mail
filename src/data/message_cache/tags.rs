@@ -732,6 +732,35 @@ mod keyword_tests {
             "an account whose labels carry no keyword read as having some"
         );
     }
+
+    #[test]
+    fn test_matching_one_messages_labels_alone_is_compiled_for_tests_only() {
+        // The wrapper reads an account's labels for the one message it is
+        // given. Called once a message over a folder, that is finding #14
+        // again, so a normal build leaves it out. The compiler refuses a
+        // caller only while the attribute stands; this is what goes red if
+        // somebody takes the attribute off to call the wrapper from a loop.
+        use crate::common::what_ships::what_ships;
+        const NEEDLE: &str = concat!("pub fn match_labels", "_to_keywords(");
+
+        let planted = format!(
+            "    {NEEDLE}\n        &self,\n    ) -> Result<usize> {{\n        Ok(0)\n    }}\n"
+        );
+        assert!(
+            what_ships(&planted).contains(NEEDLE),
+            "the reading cannot see a function that ships"
+        );
+        let source = include_str!("tags.rs");
+        assert_eq!(
+            source.matches(NEEDLE).count(),
+            1,
+            "the wrapper is not defined once in the file, so this reads nothing"
+        );
+        assert!(
+            !what_ships(source).contains(NEEDLE),
+            "a normal build holds the wrapper that reads an account's labels for one message"
+        );
+    }
 }
 
 #[cfg(test)]
