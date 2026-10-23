@@ -329,6 +329,9 @@ pub enum Refused {
     NoWayToCheckHere,
     /// The file could not be read to be checked.
     TheFileCouldNotBeRead(String),
+    /// Nothing this project publishes could pass the check yet, because its
+    /// certificate profile is not known, so nothing is fetched to be refused.
+    OurInstallersAreNotSignedYet,
 }
 
 impl Refused {
@@ -379,6 +382,13 @@ impl Refused {
                  it, so it will not run it. The reason given was: {why}. The file has been \
                  deleted. Nothing on this computer has changed. You can download a version \
                  yourself from {page}."
+            ),
+            // No deleted file here either: nothing was fetched, because nothing
+            // fetched could have passed.
+            Self::OurInstallersAreNotSignedYet => format!(
+                "Wixen Mail cannot install updates by itself until its installers are \
+                 signed, so nothing was downloaded. Nothing on this computer has changed. \
+                 You can download the new version yourself from {page}."
             ),
         }
     }
@@ -506,13 +516,40 @@ pub enum NextStep {
     FetchIt(Vec<ReleaseFile>),
     /// Say what the check found and stop there.
     JustSayIt,
+    /// Say the newer version exists, say why it is not being fetched, and
+    /// offer its page, which is the way forward by hand.
+    SendThemToThePage {
+        /// Why nothing is fetched.
+        why: Refused,
+        /// The page about the newer version.
+        page: String,
+    },
 }
 
-/// What to do about a check's answer.
+/// The sentence a check at start adds to what it found, naming the Help menu
+/// item that offers the releases page.
+///
+/// A check at start opens no window, so it says where the page is offered
+/// instead. In the words the Help menu shows, held to the menu by
+/// `test_what_is_said_at_start_names_the_menu_item_that_offers_the_page`.
+pub const WHERE_THE_PAGE_IS_OFFERED: &str =
+    "To open the releases page, choose Check for Updates on the Help menu.";
+
+/// What to do about a check's answer, with the certificate profile this
+/// build ships.
+pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
+    what_to_do_about_with_profile(answer, THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH)
+}
+
+/// What to do about a check's answer, given the certificate profile an
+/// installer must carry.
 ///
 /// An offer leads straight to a fetch. Every other answer leads to a sentence
 /// and nothing else, because there is nothing to fetch.
-pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
+pub fn what_to_do_about_with_profile(
+    answer: &crate::service::update_check::Answer,
+    _profile: &str,
+) -> NextStep {
     match answer {
         crate::service::update_check::Answer::ANewerVersion { files, .. } => {
             NextStep::FetchIt(files.clone())
@@ -627,6 +664,12 @@ pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refu
 #[cfg(not(target_os = "windows"))]
 pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refused> {
     Err(Refused::NoWayToCheckHere)
+}
+
+/// Whether an installer this project publishes could pass the check here,
+/// given the certificate profile it must carry.
+pub fn whether_an_installer_could_be_accepted(_profile: &str) -> std::result::Result<(), Refused> {
+    whether_a_signature_can_be_checked_here()
 }
 
 /// Read the signature off a file.
@@ -1495,10 +1538,224 @@ mod tests {
             channel: ReleaseChannel::PublicReleases,
             files: a_real_release(),
         };
+        // On the pure form with a profile, because the shipped identifier is
+        // empty and an empty one fetches nothing (see the cases below).
+        if whether_a_signature_can_be_checked_here().is_ok() {
+            assert_eq!(
+                what_to_do_about_with_profile(&offer, A_PROFILE),
+                NextStep::FetchIt(a_real_release()),
+                "a kind of version was chosen, so the fetch is the program's own doing"
+            );
+        }
+    }
+
+    /// A newer version on offer, as a check would answer it.
+    fn an_offer() -> crate::service::update_check::Answer {
+        crate::service::update_check::Answer::ANewerVersion {
+            version: "v0.117.0".to_string(),
+            page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0".to_string(),
+            channel: crate::common::version::ReleaseChannel::PublicReleases,
+            files: a_real_release(),
+        }
+    }
+
+    /// What a profile nobody has set is refused for on this platform.
+    fn refused_while_no_profile_is_known() -> Refused {
+        match whether_a_signature_can_be_checked_here() {
+            Ok(()) => Refused::OurInstallersAreNotSignedYet,
+            Err(no_way) => no_way,
+        }
+    }
+
+    #[test]
+    fn test_an_installer_could_be_accepted_only_once_the_profile_is_known() {
+        // Gap 1 of the research on the update mechanism: with the identifier
+        // empty, every installer is refused after it is fetched, about 15.7
+        // MB at every start once a release exists. Asked before the fetch,
+        // the answer is known without a byte.
+        for blank in ["", "   ", "\t"] {
+            assert_eq!(
+                whether_an_installer_could_be_accepted(blank),
+                Err(refused_while_no_profile_is_known()),
+                "a profile of {blank:?} was taken as one an installer could carry"
+            );
+        }
         assert_eq!(
-            what_to_do_about(&offer),
-            NextStep::FetchIt(a_real_release()),
-            "a kind of version was chosen, so the fetch is the program's own doing"
+            whether_an_installer_could_be_accepted(A_PROFILE),
+            whether_a_signature_can_be_checked_here(),
+            "with a profile known, the platform's own answer is the whole answer"
+        );
+    }
+
+    #[test]
+    fn test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page() {
+        assert_eq!(
+            what_to_do_about_with_profile(&an_offer(), ""),
+            NextStep::SendThemToThePage {
+                why: refused_while_no_profile_is_known(),
+                page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0".to_string(),
+            },
+            "an installer nothing could pass is fetched only to be thrown away"
+        );
+    }
+
+    #[test]
+    fn test_the_shipped_identifier_decides_what_an_offer_leads_to() {
+        assert_eq!(
+            what_to_do_about(&an_offer()),
+            what_to_do_about_with_profile(&an_offer(), THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH),
+            "the production form answers something the shipped identifier does not"
+        );
+    }
+
+    #[test]
+    fn test_a_refusal_before_anything_was_fetched_names_no_deleted_file() {
+        let sentence = Refused::OurInstallersAreNotSignedYet.said();
+        for said in [
+            "until its installers are signed",
+            "nothing was downloaded",
+            "Nothing on this computer has changed.",
+        ] {
+            assert!(
+                sentence.contains(said),
+                "the refusal before any fetch does not say {said:?}: {sentence:?}"
+            );
+        }
+        assert!(
+            !sentence.contains("deleted"),
+            "nothing was fetched, so nothing was deleted: {sentence:?}"
+        );
+        assert!(
+            sentence.contains(&the_releases_page()),
+            "the refusal does not say where to download the new version: {sentence:?}"
+        );
+    }
+
+    /// The Help menu's label for an item, as a person reads it: its access
+    /// key's ampersand and any accelerator after a tab taken out.
+    fn as_read(label: &str) -> String {
+        label.split('\t').next().unwrap_or(label).replace('&', "")
+    }
+
+    /// The string written straight after `marker`, with only space between,
+    /// wherever in `source` that happens first.
+    fn the_string_after<'a>(source: &'a str, marker: &str) -> Option<&'a str> {
+        source.match_indices(marker).find_map(|(at, _)| {
+            let after = source[at + marker.len()..].trim_start().strip_prefix('"')?;
+            Some(&after[..after.find('"')?])
+        })
+    }
+
+    #[test]
+    fn test_what_is_said_at_start_names_the_menu_item_that_offers_the_page() {
+        // Read from the window's source, so a menu item renamed there cannot
+        // leave this sentence sending somebody to a name that is not on it.
+        let window = the_window();
+        let item = the_string_after(&window, "ID_CHECK_FOR_UPDATES,")
+            .expect("the Help menu to carry Check for Updates");
+        let menu = the_string_after(&window, ".append(help,")
+            .expect("the menu bar to carry the Help menu");
+        for named in [as_read(item), format!("{} menu", as_read(menu))] {
+            assert!(
+                WHERE_THE_PAGE_IS_OFFERED.contains(&named),
+                "the sentence said at start does not name {named:?}: {WHERE_THE_PAGE_IS_OFFERED:?}"
+            );
+        }
+    }
+
+    /// The window's shipped source, which these readings read rather than run.
+    fn the_window() -> String {
+        let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the window's source to be readable");
+        crate::common::what_ships::what_ships(&source.replace("\r\n", "\n"))
+    }
+
+    /// One arm of the window's update handler, up to the next arm.
+    fn the_arm_for(source: &str, update: &str) -> Option<String> {
+        let handler = source
+            .split_once("fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {")?
+            .1;
+        let handler = &handler[..handler.find("\n}\n").unwrap_or(handler.len())];
+        let marker = format!("\n        UIUpdate::{update} ");
+        let arm = &handler[handler.find(&marker)? + marker.len()..];
+        let end = arm.find("\n        UIUpdate::").unwrap_or(arm.len());
+        Some(arm[..end].to_string())
+    }
+
+    /// Where the brace opened at `open` closes, or the end of `text`.
+    fn where_it_closes(text: &str, open: usize) -> usize {
+        let mut depth = 0_usize;
+        for (at, letter) in text[open..].char_indices() {
+            match letter {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return open + at;
+                    }
+                }
+                _ => {}
+            }
+        }
+        text.len()
+    }
+
+    /// Whether the arm opens its dialog only inside the branch for a check
+    /// asked for by hand.
+    ///
+    /// Reads source, not behaviour: the dialog is modal and waits for a
+    /// person's answer, and the one this guards is the window that opened at
+    /// every start.
+    fn the_dialog_waits_for_a_check_by_hand(arm: &str) -> bool {
+        let (Some(dialog), Some(by_hand)) = (
+            arm.find("MessageDialog::builder"),
+            arm.find("WhoAsked::ByHand =>"),
+        ) else {
+            return false;
+        };
+        let Some(open) = arm[by_hand..].find('{').map(|at| by_hand + at) else {
+            return false;
+        };
+        open < dialog && dialog < where_it_closes(arm, open)
+    }
+
+    #[test]
+    fn test_a_refusal_found_at_start_opens_no_dialog() {
+        // Gap 1 again, from the window's side: a check at start that ends
+        // without an update is said once, and a window that opens by itself
+        // at every start is the flooding guardrail 5 is about.
+        let arm = the_arm_for(&the_window(), "AnUpdateDidNotHappen")
+            .expect("the window to handle an update that did not happen");
+        assert!(
+            the_dialog_waits_for_a_check_by_hand(&arm),
+            "the releases-page dialog opens whoever asked, so a check at start opens a window"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_dialog_opened_whoever_asked() {
+        let whoever_asked = "{ said, page, asked } => {\n\
+             \x20   match asked {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {}\n\
+             \x20   }\n\
+             \x20   let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             }\n";
+        assert!(
+            !the_dialog_waits_for_a_check_by_hand(whoever_asked),
+            "the reading above cannot see a dialog opened after the branch for who asked"
+        );
+        let by_hand_only = "{ said, page, asked } => {\n\
+             \x20   match asked {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {\n\
+             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20       }\n\
+             \x20   }\n\
+             }\n";
+        assert!(
+            the_dialog_waits_for_a_check_by_hand(by_hand_only),
+            "the reading above cannot see a dialog opened only by hand either"
         );
     }
 
@@ -1878,6 +2135,7 @@ mod tests {
             Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("access denied".to_string()),
+            Refused::OurInstallersAreNotSignedYet,
         ];
         let said: Vec<String> = every.iter().map(Refused::said).collect();
         for (which, sentence) in said.iter().enumerate() {
@@ -1904,6 +2162,7 @@ mod tests {
             Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("no".to_string()),
+            Refused::OurInstallersAreNotSignedYet,
         ];
         for refusal in every {
             let sentence = refusal.said();
