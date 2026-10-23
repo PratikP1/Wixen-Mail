@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 791
+open_count: 793
 waived_count: 0
-fixed_count: 152
-total_count: 943
-last_updated: 2026-10-23T16:00:00.000Z
+fixed_count: 153
+total_count: 946
+last_updated: 2026-10-23T20:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -349,11 +349,11 @@ last_updated: 2026-10-23T16:00:00.000Z
 | 332 | 07 | unmet-truth | tests/installer.rs |  | The census reads one Source line as one artefact, so a wildcard naming executables would be a single entry standing for however many files it matched. The installer already carries one wildcard, the line that installs the markdown guides, which the filter drops as prose. If an executable wildcard ever arrives the count is right about the line and wrong about the artefacts, and nothing would say so | open |  | 2026-09-12T18:48:43.841Z |  |
 | 333 | 07 | deviation | .planning/WINDOWS.md |  | gsd-tools windows append writes a description containing a backslash into both halves of the ledger without reconciling the escaping. The JSON half escapes the character and the markdown table half does not, so the two halves disagree and the commit gate refuses the commit. Found on entry 332, whose description quoted a Windows path from the installer script. Worked around by rewording that entry to avoid the character and correcting both halves by hand. Anything appended through the tool that quotes a Windows path or a regular expression meets this, and the failure reads as a ledger the author corrupted rather than as a tool defect | open |  | 2026-09-12T18:58:04.273Z |  |
 | 334 | 07 | unrun-verify | src/service/update_download.rs |  | no installer has ever been fetched over a real connection; the transport has never run outside a fixture | open |  | 2026-09-12T22:37:37.668Z |  |
-| 335 | 07 | unrun-verify | src/service/update_download.rs |  | the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files | open |  | 2026-09-12T22:37:56.351Z |  |
+| 335 | 07 | unrun-verify | src/service/update_download.rs |  | the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files. Amended 2026-10-23 by 13.3-24: the handover now closes the window through really_quit, the way Quit does (row 945); when it first runs, it is also checked with "keep running in the notification area" on that the icon goes and the program ends before the installer's own check | open |  | 2026-09-12T22:37:56.351Z |  |
 | 336 | 07 | unrun-verify | src/service/update_download.rs |  | the publisher check has never seen a genuine Wixen Mail signature, because no release is signed; it was proved against a Microsoft-signed file instead | open |  | 2026-09-12T22:37:57.117Z |  |
 | 337 | 07 | unrun-verify | docs/installing.md |  | plan 07-09 task 3 was not attempted: no screen reader has heard an update happen, a refusal, or the moment the window closes | open |  | 2026-09-12T22:37:57.894Z |  |
 | 338 | 07 | unmet-truth | src/service/outward.rs |  | the outward census has no category for a module whose bytes are executed; plans 07-05 and 07-09 both raised it and neither acted, because the change costs re-measuring ten records | open |  | 2026-09-12T22:37:58.771Z |  |
-| 339 | 07 | unmet-truth | src/service/update_download.rs |  | nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether | open |  | 2026-09-12T22:37:59.641Z |  |
+| 339 | 07 | unmet-truth | src/service/update_download.rs |  | nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether. Amended 2026-10-23 by 13.3-24: the installer is now about 15 MB, measured with ls -l dist/ on 2026-10-23 as 15,725,012 bytes for build 1.0.0-alpha.1+1403.g6fd465c6, and the New versions control says about 15 MB | open |  | 2026-09-12T22:37:59.641Z |  |
 | 340 | 07 | unmet-truth | src/service/update_download.rs |  | the handover cannot remove the mutex race: an installer reaching its own AppMutex check before this process has finished closing will say Wixen Mail is still open | open |  | 2026-09-12T22:38:00.451Z |  |
 | 341 | 07 | deviation | guards/guards.toml |  | plan 07-09 required the ten guard records reading the outward census to be re-measured by hand; CLAUDE.md took guard sweeps off the critical path on 2026-09-03, so they were not run and are owed to the phase sweep | open |  | 2026-09-12T22:38:01.262Z |  |
 | 342 | 07 | unrun-verify | src/service/update_download.rs |  | the revocation policy is not checked against a revoked certificate, because none exists to check against | open |  | 2026-09-12T22:38:02.066Z |  |
@@ -959,6 +959,8 @@ last_updated: 2026-10-23T16:00:00.000Z
 | 942 | 13.3 | unrun-verify | src/application/draft_copy.rs |  | 13.3-21, review items 41 and 38, read in code only: nothing here has met a mail server without UIDPLUS. On such a server, a draft written in for three minutes or more should say once that an older copy may still be on the server and not again, the server's Drafts should hold the older copies marked for removal beside one unmarked copy with the latest words, and the search should read UID SEARCH HEADER MESSAGE-ID "..." UNDELETED. Held by the loopback cases in service::protocols::imap and application::mail_controller and the cases in application::draft_copy. Closed when a server without UIDPLUS has been seen to do this, at a phase 14 sitting or later | open |  | 2026-10-22T23:59:30.000Z |  |
 | 943 | 13.3 | todo | .claude/guardrails/no-sed-awk.js |  | 13.3-22, read 2026-10-23: the hook refusing sed and awk now has a tracked copy in .claude/guardrails/no-sed-awk.js with its 27 tests beside it, and the hook that runs is still the git-ignored .claude/hooks/wixen-no-sed-awk.js, named by the git-ignored .claude/settings.local.json. A GSD reinstall rewrites .claude/hooks, so it would take the running copy with it and the refusal would stop with nothing saying so. The executor left the settings entry, the old copy and CLAUDE.md's sentence alone, because a workflow agent's brief cannot authorise a change to harness configuration or to CLAUDE.md. Recommended: point the first PreToolUse entry, matcher Bash or PowerShell, at .claude/guardrails/no-sed-awk.js, check a call running sed is still refused with exit 2, delete .claude/hooks/wixen-no-sed-awk.js, and add beside CLAUDE.md's mention of tdd-mode-check.js that the guard folder also holds no-sed-awk.js, which refuses sed and awk, tested with node --test .claude/guardrails/no-sed-awk.test.js; Pratik's to do. Closed when the hook that runs is the tracked copy | open |  | 2026-10-23T12:00:00.000Z |  |
 | 944 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-23, the research's gaps 1, 3 and 4, for the tester on a build holding 13.3-23's merge, under NVDA: Help, then Check for Updates, chosen twice within a second; hear once that a check is already under way, and then the check's own answer once. Held by the cases in service::update_check and service::update_download, which read the window's source and drive the guard and the loopback hosts; nothing has been heard. The paths a published release reaches, a newer version said with its page and not downloaded, and the sentence a check at start puts on the status line with no window, cannot be heard until a release exists (row 315). Closed when the tester has heard the two sentences in that order | open |  | 2026-10-23T16:00:00.000Z |  |
+| 945 | 13.3 | deviation | src/presentation/wx_app.rs |  | 13.3-24, the research's gap 2, found by the research of 2026-10-20: the handover to an installer closed the window with frame.close(true) and never set the flag the close handler reads as a Quit, so with "keep running in the notification area" on and the icon showing it hid the window, said Wixen Mail was still running a moment after saying it was closing for the installer, and skipped emptying the Trash where set, signing out and taking the icon away. Nobody could meet it, because no installer passes the signer check yet. Fixed by 13.3-24 in 35f6ec16 (red) and 965e27a9 (green): really_quit in wx_app.rs sets the flag and then closes the window, and the Quit arm and the AnUpdateIsReady arm both call it. Held by application::closing::tests::test_installing_an_update_quits_the_way_quit_does, a reading of wx_app.rs's shipped text with its companion, and the guard record "the handover to an installer closes the window as a Quit". The end state stays unrun until a signed installer exists (row 335) | fixed |  | 2026-10-23T20:00:00.000Z | 2026-10-23T20:00:00.000Z |
+| 946 | 13.3 | unrun-verify | src/service/update_check.rs |  | 13.3-24, the research's gap 5, for the tester on a build holding 13.3-24's merge, under NVDA: Settings, General, New versions; the control's description is heard naming the installer as about 15 MB. Held by service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured, which holds the description to docs/privacy.md's 15,725,012 bytes measured on 2026-10-23, and two guard records; nothing has been heard. Closed when the tester has heard about 15 MB on that control | open |  | 2026-10-23T20:00:00.000Z |  |
 
 ````json
 [
@@ -4976,7 +4978,7 @@ last_updated: 2026-10-23T16:00:00.000Z
     "phase": "07",
     "file": "src/service/update_download.rs",
     "line": null,
-    "description": "the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files",
+    "description": "the handover has never run: no window has closed and been replaced by an installer, and no installer has replaced any files. Amended 2026-10-23 by 13.3-24: the handover now closes the window through really_quit, the way Quit does (row 945); when it first runs, it is also checked with \"keep running in the notification area\" on that the icon goes and the program ends before the installer's own check",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T22:37:56.351Z",
@@ -5024,7 +5026,7 @@ last_updated: 2026-10-23T16:00:00.000Z
     "phase": "07",
     "file": "src/service/update_download.rs",
     "line": null,
-    "description": "nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether",
+    "description": "nothing detects a metered connection, so somebody who chose a channel on a home connection has installers of about 12 MB fetched over a phone tether. Amended 2026-10-23 by 13.3-24: the installer is now about 15 MB, measured with ls -l dist/ on 2026-10-23 as 15,725,012 bytes for build 1.0.0-alpha.1+1403.g6fd465c6, and the New versions control says about 15 MB",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-12T22:37:59.641Z",
@@ -12288,6 +12290,30 @@ last_updated: 2026-10-23T16:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-23T16:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 945,
+    "kind": "deviation",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-24, the research's gap 2, found by the research of 2026-10-20: the handover to an installer closed the window with frame.close(true) and never set the flag the close handler reads as a Quit, so with \"keep running in the notification area\" on and the icon showing it hid the window, said Wixen Mail was still running a moment after saying it was closing for the installer, and skipped emptying the Trash where set, signing out and taking the icon away. Nobody could meet it, because no installer passes the signer check yet. Fixed by 13.3-24 in 35f6ec16 (red) and 965e27a9 (green): really_quit in wx_app.rs sets the flag and then closes the window, and the Quit arm and the AnUpdateIsReady arm both call it. Held by application::closing::tests::test_installing_an_update_quits_the_way_quit_does, a reading of wx_app.rs's shipped text with its companion, and the guard record \"the handover to an installer closes the window as a Quit\". The end state stays unrun until a signed installer exists (row 335)",
+    "status": "fixed",
+    "reason": "",
+    "recorded_at": "2026-10-23T20:00:00.000Z",
+    "resolved_at": "2026-10-23T20:00:00.000Z"
+  },
+  {
+    "id": 946,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/service/update_check.rs",
+    "line": null,
+    "description": "13.3-24, the research's gap 5, for the tester on a build holding 13.3-24's merge, under NVDA: Settings, General, New versions; the control's description is heard naming the installer as about 15 MB. Held by service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured, which holds the description to docs/privacy.md's 15,725,012 bytes measured on 2026-10-23, and two guard records; nothing has been heard. Closed when the tester has heard about 15 MB on that control",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-23T20:00:00.000Z",
     "resolved_at": null
   }
 ]

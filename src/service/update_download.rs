@@ -100,12 +100,14 @@ const MOST_REDIRECTS_FOLLOWED: usize = 5;
 
 /// The most bytes accepted before the download is abandoned.
 ///
-/// Measured rather than guessed: `dist/Wixen-Mail-Setup-0.40.0+gf7e34777.exe`,
-/// the only installer this project has ever built, is 11,604,104 bytes, and the
-/// release executable it now packs is 41,010,688 before compression. So 300 MB
-/// is roughly twenty-five times the real installer and seven times the largest
-/// thing that goes in one, which leaves room for this program to grow a great
-/// deal without the bound ever refusing a genuine file.
+/// Measured rather than guessed, with `ls -l` on 2026-10-23: the newest
+/// installer built here, `dist/Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`,
+/// is 15,725,012 bytes, and `target/release/wixen-mail.exe`, the kind of file
+/// it packs, is 50,291,200 before compression. So 300 MB is about twenty times
+/// the real installer and six times the largest thing that goes in one, which
+/// leaves room for this program to grow a great deal without the bound ever
+/// refusing a genuine file. Until 2026-10-23 this named an 11,604,104-byte
+/// installer and a 41,010,688-byte executable as the only ones built.
 ///
 /// It is enforced by counting what arrives rather than by reading
 /// `content-length`, because a header is what a hostile or broken server says
@@ -293,6 +295,10 @@ pub fn say_no(installer: Verified) -> Result<()> {
 /// dialog rather than a silence, which is the property that matters, and the
 /// person's answer is to press retry. Nothing here waits on a bound, because
 /// the wait would have to happen inside a process that is trying to exit.
+///
+/// The window then closes the way Quit closes it, through `really_quit` in
+/// `wx_app.rs`, so the notification area setting cannot turn the handover into
+/// a hide that leaves this process running.
 pub fn hand_over_to(installer: &Verified) -> std::result::Result<(), HandoverFailed> {
     if !installer.at.exists() {
         return Err(HandoverFailed::ItIsNoLongerThere);
@@ -1100,13 +1106,15 @@ fn its_folder_goes_too(at: &Path) {
     }
 }
 
-/// Empty the folder a downloaded installer waits in.
+/// Empty the folder downloaded installers wait in, whole.
 ///
-/// Called three times over. After a handover, so a machine that has just
-/// updated is not carrying the installer it used. After a refusal, which
-/// [`verify`] does file by file. And at the next start, which is the one that
-/// matters: a program killed between fetching and handing over runs neither of
-/// the first two, and without this the installer would sit there indefinitely.
+/// Called once, at start, the one place the whole folder is emptied.
+/// Everywhere else an installer goes with the folder of its own: a refused one
+/// through [`verify`], a declined one through [`say_no`], and one whose
+/// download fails part way through `write_it_down`. An installer handed over
+/// to is left for here, which after an update is the new version's first
+/// start, and so is one a program killed between fetching and handing over
+/// left behind; without this either would sit there indefinitely.
 pub fn clear_the_waiting_room(paths: &AppPaths) -> Result<()> {
     let room = paths.updates_dir();
     if !room.exists() {

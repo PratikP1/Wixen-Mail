@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 918 records have arrived since and have not been through it.
+# 921 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22192,7 +22192,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/version.rs", tests = 27 },
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # The channel check passing everything through, which is the half-fix rather
@@ -22305,7 +22305,7 @@ red = [
     "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # ── 07-07 ─────────────────────────────────────────────────────────────────
@@ -41272,6 +41272,7 @@ before = '''                    let due = lock_state(&state)
                                     focus_home: &focus_home_cell,
                                     waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                     opens_a_handover: &open_a_handover,
+                                    really_quitting: &really_quitting,
                                 },
                             );
                         }
@@ -41303,6 +41304,7 @@ after = '''                    // Every update the workers sent since the last t
                                     focus_home: &focus_home_cell,
                                     waiting_to_be_asked_about: &waiting_to_be_asked_about,
                                     opens_a_handover: &open_a_handover,
+                                    really_quitting: &really_quitting,
                                 },
                             );
                         }
@@ -44541,7 +44543,7 @@ red = [
     "service::update_check::tests::test_a_second_check_is_refused_while_one_is_held",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # The window's check task holds the one check until it ends, download and all
@@ -44561,7 +44563,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # A check that gets no answer from GitHub is given up on within its limit
@@ -44575,7 +44577,7 @@ red = [
     "service::update_check::tests::test_a_github_that_never_answers_is_given_up_on_within_the_limit",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # A download whose host goes quiet is given up on, before its head or part way
@@ -44624,4 +44626,56 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/update_download.rs", tests = 59 },
+]
+
+# Yes to an installed update closes Wixen Mail the way Quit does, so the
+# notification area setting cannot turn it into a hide (13.3-24, the research's
+# gap 2). Broken by putting back the forced close the handover arm had, which
+# never tells the close handler this is a Quit. Anchored on the comment and the
+# line, so it names the handover's call and not the Quit arm's.
+[[guard]]
+name = "the handover to an installer closes the window as a Quit"
+file = "src/presentation/wx_app.rs"
+before = '''                    // it into a hide while the installer waits for this to end.
+                    really_quit(really_quitting, frame);'''
+after = '''                    // it into a hide while the installer waits for this to end.
+                    frame.close(true);'''
+red = [
+    "application::closing::tests::test_installing_an_update_quits_the_way_quit_does",
+]
+tests_last_seen = [
+    { file = "src/application/closing.rs", tests = 11 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# The New versions control names the installer's size the privacy page
+# measured (13.3-24, the research's gap 5). Broken by moving the description's
+# figure by one, which is more than half a megabyte from 15,725,012 bytes.
+[[guard]]
+name = "the update control names the installer's measured size"
+file = "src/service/update_check.rs"
+before = '''     without asking you, about 15 MB of it. You are then asked once before it is run, and \'''
+after = '''     without asking you, about 16 MB of it. You are then asked once before it is run, and \'''
+red = [
+    "service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 32 },
+]
+
+# The same case from the page's side: the privacy page's measured size is the
+# figure the control is held to (13.3-24, gap 5). Broken by moving the page's
+# byte figure by a million, which is about 16 MB. A record whose `file` is the
+# page couples it to the case wherever `scripts/check.sh` reads records for a
+# changed file; a commit staging only documents does not read them.
+[[guard]]
+name = "the privacy page's measured installer size is what the control is held to"
+file = "docs/privacy.md"
+before = '''`Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`, was 15,725,012 bytes,'''
+after = '''`Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`, was 16,725,012 bytes,'''
+red = [
+    "service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 32 },
 ]

@@ -17,12 +17,13 @@
 //! open. The transport is the half no test here covers, which is stated rather
 //! than hidden.
 //!
-//! # Nothing is downloaded and nothing is run
+//! # This module asks and says; fetching and running are elsewhere
 //!
-//! This module reads a version number and says a sentence. When there is a
-//! newer version somebody is offered the releases page in a browser. Fetching
-//! an installer and running it is plan 07-09's, after signing lands in 07-08,
-//! and nothing here is a step toward doing it without being asked.
+//! This module reads a version number and says what it means. Fetching an
+//! installer, checking who signed it and running it are
+//! [`crate::service::update_download`]'s. While this project's installers are
+//! unsigned that module fetches nothing, and a newer version is said with the
+//! releases page to download it from by hand.
 
 use crate::common::version::{self, Offer, ReleaseChannel, WhichUpdates};
 use serde::Deserialize;
@@ -56,7 +57,7 @@ pub const WHICH_UPDATES_LABEL: &str = "Tell me about new versions";
 /// next true one gets read the same way.
 pub const WHICH_UPDATES_DESCRIPTION: &str = "Wixen Mail asks GitHub which versions have been published. Nothing about you is sent. \
      Choosing either kind of version also means the installer for a newer one is downloaded \
-     without asking you, about 12 MB of it. You are then asked once before it is run, and \
+     without asking you, about 15 MB of it. You are then asked once before it is run, and \
      Wixen Mail will not run an installer it cannot confirm this project signed.";
 
 /// The one host this module ever asks.
@@ -1399,6 +1400,102 @@ mod tests {
             "the control has to say that choosing an answer means installers arrive \
              without being asked for, because that is the whole of what is being \
              agreed to here: {WHICH_UPDATES_DESCRIPTION}"
+        );
+    }
+
+    /// What Windows calls a megabyte, and what File Explorer divides by.
+    const ONE_MB: f64 = 1_048_576.0;
+
+    /// The installer's size the privacy page measured, in bytes, read from its
+    /// "Downloading an update" section: a figure written with thousands
+    /// separators and followed by " bytes".
+    fn the_measured_bytes(page: &str) -> Option<u64> {
+        let (_, section) = page.split_once("\n## Downloading an update")?;
+        let section = section.split("\n## ").next().unwrap_or(section);
+        let joined = section.split_whitespace().collect::<Vec<_>>().join(" ");
+        joined.split(" bytes").find_map(|before| {
+            let figure = before.rsplit(' ').next()?;
+            let groups: Vec<&str> = figure.split(',').collect();
+            let written_with_separators = groups.len() > 1
+                && (1..=3).contains(&groups[0].len())
+                && groups[1..].iter().all(|group| group.len() == 3)
+                && groups
+                    .iter()
+                    .all(|group| group.chars().all(|c| c.is_ascii_digit()));
+            written_with_separators
+                .then(|| groups.concat().parse().ok())
+                .flatten()
+        })
+    }
+
+    /// The size the control's description names, from its "about N MB".
+    fn the_size_said(description: &str) -> Option<u64> {
+        let joined = description.split_whitespace().collect::<Vec<_>>().join(" ");
+        joined.split("about ").skip(1).find_map(|after| {
+            let (number, rest) = after.split_once(' ')?;
+            rest.starts_with("MB")
+                .then(|| number.parse().ok())
+                .flatten()
+        })
+    }
+
+    /// Whether the description's size is the page's measured one, to within
+    /// half a megabyte either side, or why not.
+    fn whether_the_sizes_agree(page: &str, description: &str) -> Result<(), String> {
+        let bytes = the_measured_bytes(page).ok_or(
+            "the privacy page gives no measured size for the installer, in bytes written \
+             with thousands separators, in its section on downloading an update",
+        )?;
+        let said = the_size_said(description)
+            .ok_or("the control's description names no size as \"about N MB\"")?;
+        let measured = bytes as f64 / ONE_MB;
+        if (said as f64 - measured).abs() > 0.5 {
+            return Err(format!(
+                "the control says about {said} MB and the privacy page measured {bytes} bytes, \
+                 which is {measured:.1} MB"
+            ));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_the_control_names_the_size_the_privacy_page_measured() {
+        // Gap 5 of the research into the update mechanism (13.3-24). This
+        // description is where somebody agrees to an unattended download, and
+        // it put the installer at 12 MB when it was 15,725,012 bytes, a
+        // quarter more than the size they agreed to. Held to the page's dated
+        // measurement, so the next build that grows has one sentence to move
+        // and a case that says which.
+        assert_eq!(
+            whether_the_sizes_agree(&the_privacy_page(), WHICH_UPDATES_DESCRIPTION),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_that_size_reading_can_see_a_figure_that_disagrees() {
+        let page = |measured: &str| {
+            format!(
+                "# What Wixen Mail sends\n\n## Downloading an update\n\nIt was {measured} \
+                 when it was last measured, before any bytes are fetched.\n\n## Printing\n\n\
+                 A file of 1,000,000 bytes.\n"
+            )
+        };
+        let measured = page("15,725,012\nbytes");
+        let saying = |megabytes: u32| format!("the installer, about {megabytes} MB of it.");
+
+        assert!(
+            whether_the_sizes_agree(&measured, &saying(12)).is_err(),
+            "a description naming 12 MB, as this one did, passed beside 15,725,012 bytes"
+        );
+        assert_eq!(
+            whether_the_sizes_agree(&measured, &saying(15)),
+            Ok(()),
+            "a description naming 15 MB was refused beside 15,725,012 bytes"
+        );
+        assert!(
+            whether_the_sizes_agree(&page("about fifteen megabytes"), "about 15 MB").is_err(),
+            "a page giving no figure in bytes was passed rather than refused"
         );
     }
 

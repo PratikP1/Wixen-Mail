@@ -567,13 +567,12 @@ const TALKS_BUT_ONLY_READS: [&str; 6] = [
     //
     // One sentence its four neighbours do not need. Every other member of this
     // list fetches something to read or to store; this one fetches an answer
-    // that will, once plan 07-09 lands, decide that an executable is
-    // downloaded. That is not a write at somebody's account and it is not the
-    // harmless read this list's name implies either, so the categories here do
-    // not quite describe it. Whether this census wants a third list is a real
-    // question and is raised in 07-05's summary rather than answered on the way
-    // past: a file that ten guard records fingerprint is not somewhere to
-    // settle it.
+    // that decides whether an executable is downloaded. That is not a write at
+    // somebody's account and it is not the harmless read this list's name
+    // implies either, so the categories here do not quite describe it. Whether
+    // this census wants a third list is a real question, raised in 07-05's
+    // summary and held open as ledger 322 rather than answered on the way past:
+    // a file that ten guard records fingerprint is not somewhere to settle it.
     "src/service/update_check.rs",
     // Fetches the installer for a newer version. A GET, and nothing else:
     // nothing at anybody's account changes, and there is no account, because

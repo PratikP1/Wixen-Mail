@@ -901,9 +901,11 @@ somebody at your address downloaded this version of Wixen Mail.
 what is sent, it is a plain fact about what turns up, and it deserves saying on its own.
 If you have chosen a kind of version under "Tell me about new versions", then when a newer
 one is published, and once this project's installers are signed, Wixen Mail downloads its
-installer on its own, without asking you at that moment. How large that download is has not been measured, because no release has been
-published yet; the target is about 12 MB, and this sentence will give the measured size
-with its date once there is a release to measure. It goes in
+installer on its own, without asking you at that moment. The installer is about 15 MB.
+Measured on 2026-10-23 with `ls -l dist/`, the newest test build of this version,
+`Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`, was 15,725,012 bytes,
+which File Explorer shows as 14.9 MB. It grows as the program does, so a later version may
+be larger. It goes in
 `%LOCALAPPDATA%\wixen-mail\updates`, in a folder of its own for each download, and that
 folder goes with it: straight away if the download fails part way or the installer turns out
 not to be signed by this project, when you answer No, and otherwise the next time Wixen Mail
