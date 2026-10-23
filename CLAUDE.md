@@ -207,6 +207,10 @@ is right and has its own tests:
 node --test .claude/guardrails/tdd-mode-check.test.js
 ```
 
+The guard folder also holds `no-sed-awk.js`, a PreToolUse hook, registered in each machine's
+`.claude/settings.local.json`, that refuses a shell command running sed or awk, tested with
+`node --test .claude/guardrails/no-sed-awk.test.js` (ledger 943, finished 2026-10-23).
+
 The setting and the check exist rather than only this paragraph, for the reason the rest of this
 file keeps giving: a rule that lives in a document is one somebody has to notice being broken.
 The only exceptions are the ones GSD already lists for `tdd="true"`: configuration-only files,
@@ -447,6 +451,30 @@ because a pull request waits for CI's runs: read with `gh run view` on
 2026-09-23, the Test Suite job took 20.7 minutes in run 35839954808 and 20.6 in
 run 35876075831, and the NVDA job 24.0 in run 35839954840 and 25.0 in run
 35876075636.
+
+**Since 2026-10-22 plans run as a merge train, on Pratik's decisions of that
+day.** The next plan starts from the previous plan's branch while GitHub checks
+it, before that branch is merged, and a merger merges each plan in order with
+`git merge --no-ff`. A phase's closing plan, and any landing of new plans, waits
+until the train has drained, so the full gate above still runs once on a `main`
+nothing is moving under. A pushed plan merges once its NVDA and Accessibility
+runs pass; CI's Test Suite is not waited for, and the next merger reads its
+result and stops the train on a red one. An executor runs by hand only a red
+commit's named targets and the count check, the integration targets a change to
+a shared store needs, and a check a refusal names; otherwise the hook's run is
+the run. `main` is pushed to GitHub when phase 13.3 closes, after every change
+to `Cargo.lock` and at least once a week, so a pull request can reuse `main`'s CI
+caches; tags and releases stay his word. Why, from the measurement of 2026-10-22
+behind it: plans 13.3-01 to 13.3-16 took 37.4 hours, 2.3 hours a plan, of which
+waiting on CI was 49%, commit hooks 18% and tests run by hand 11%. Every first
+pull request run from 2026-10-14 missed CI's cache, because GitHub's `main` went
+unpushed from 2026-10-04 and a cache expires after 7 days, and on a miss the Test
+Suite job spent a median 579 s packing a cache whose save was refused 81 times in
+81, which 13.3-24.7 fixes. Two Windows Defender exclusions were measured and not
+taken: one for `target/` (3,000 small files written in 2.2 to 2.4 s, a fresh
+126 MB test binary started in 0.1 to 0.2 s), and one for Git's `usr/bin` (a
+program started from Git's bash in 240 to 268 ms either way, against 24 ms from
+PowerShell).
 
 `which-checks.sh` answers `all` for anything it cannot place, including an
 empty branch name and a detached `HEAD`. A check that cannot tell where it is
