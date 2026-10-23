@@ -608,10 +608,12 @@ pub struct AppConfig {
     /// at all.
     ///
     /// **Two of its three answers mean an installer gets fetched without being
-    /// asked for**, once the updater lands in plan 07-09. Nothing is downloaded
-    /// today. The control on the settings screen says both halves of that,
-    /// because consent to an unattended download is given where somebody
-    /// chooses, not in a document they may never open.
+    /// asked for** whenever one could be accepted. While this project's
+    /// installers are unsigned none could, so nothing is fetched and a newer
+    /// version is said with its releases page. The control on the settings
+    /// screen says that choosing an answer means the download, because consent
+    /// to an unattended download is given where somebody chooses, not in a
+    /// document they may never open.
     ///
     /// Deliberately not called `check_updates`. A `pub check_updates: bool`
     /// defaulting to `true` was removed on 2026-08-24 by `cb7caa2`, and serde
@@ -3072,8 +3074,8 @@ mod permission_tests {
     fn test_a_fresh_installation_is_not_looking_for_new_versions() {
         // The single thing here most worth getting wrong. A default that asks
         // for anything puts a request on the wire for somebody who never chose
-        // to make one, and once the updater lands it fetches an installer over
-        // whatever connection they are on.
+        // to make one, and wherever an installer could be accepted it fetches
+        // one over whatever connection they are on.
         assert_eq!(
             AppConfig::default().which_updates,
             crate::common::version::WhichUpdates::NotLooking

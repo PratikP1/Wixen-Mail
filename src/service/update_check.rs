@@ -17,12 +17,13 @@
 //! open. The transport is the half no test here covers, which is stated rather
 //! than hidden.
 //!
-//! # Nothing is downloaded and nothing is run
+//! # This module asks and says; fetching and running are elsewhere
 //!
-//! This module reads a version number and says a sentence. When there is a
-//! newer version somebody is offered the releases page in a browser. Fetching
-//! an installer and running it is plan 07-09's, after signing lands in 07-08,
-//! and nothing here is a step toward doing it without being asked.
+//! This module reads a version number and says what it means. Fetching an
+//! installer, checking who signed it and running it are
+//! [`crate::service::update_download`]'s. While this project's installers are
+//! unsigned that module fetches nothing, and a newer version is said with the
+//! releases page to download it from by hand.
 
 use crate::common::version::{self, Offer, ReleaseChannel, WhichUpdates};
 use serde::Deserialize;
