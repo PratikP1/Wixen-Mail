@@ -23448,6 +23448,45 @@ fn handle_account_mgr(
         a11y,
         cache.as_ref(),
     ) {
+        // Written here, not only held in memory. Nothing wrote an account at
+        // all until this line: startup read a table nothing filled in, so
+        // every account was gone on the next start, and the uninstall, which
+        // decides what to erase from the credential store by walking that
+        // table, found none of them and left every OAuth token behind.
+        //
+        // Stored first, and everything below is worked out from what the
+        // store holds afterwards. Working it out from the Account Manager's
+        // list and storing it last meant a refused save left the window
+        // listing, syncing and signing in an account the store did not hold,
+        // and signing off one whose removal was refused, until the next start
+        // (ledger 922). Now a refusal leaves the window holding what a restart
+        // would show. The dialog's list is moved into the call, so nothing
+        // below can reach it.
+        //
+        // Said rather than swallowed. An account that looks saved and is not
+        // is the case where somebody most needs to know, because they will
+        // close the program believing it is set up.
+        //
+        // The reason is said, not filed. It used to end "The reason is in the
+        // log", which is a place somebody working by ear has no way to open
+        // and no reason to think of. Every error that reaches here is already
+        // written as a sentence for a person: a refused removal says which
+        // account and why, and a credential store that will not answer says
+        // that.
+        let new = match cache {
+            Some(cache) => {
+                let after = cache.replace_accounts_and_read_back(new, &accounts);
+                if let Some(why) = after.refused {
+                    tracing::error!("The accounts could not be saved: {why}");
+                    let _ = a11y.announce(
+                        &format!("The accounts could not all be saved. {why}"),
+                        crate::presentation::accessibility::announcements::Priority::High,
+                    );
+                }
+                after.held
+            }
+            None => new,
+        };
         // An account that has gone is signed out of rather than left holding a
         // session. Worked out before the list is replaced, because afterwards
         // there is nothing left to compare against.
@@ -23499,38 +23538,20 @@ fn handle_account_mgr(
         } else {
             s.active_account_id = None;
         }
+        // The default the Account Manager chose, corrected against what the
+        // store holds the way startup corrects it, so a refused save cannot
+        // leave it naming an account that is not there. When nothing was
+        // refused the Account Manager has already corrected it against the
+        // same list, and this changes nothing.
+        //
         // Written straight away rather than at shutdown. Somebody who sets the
         // default and then loses power should not have to set it twice.
-        if chosen != s.default_account_id {
-            persist_default_account(chosen.as_deref());
+        let default = crate::application::new_item::default_after_change(&new, chosen.as_deref());
+        if default != s.default_account_id {
+            persist_default_account(default.as_deref());
         }
-        s.default_account_id = chosen;
+        s.default_account_id = default;
         tracing::info!("Accounts updated: {}", new.len());
-        // Written here, not only held in memory. Nothing wrote an account at
-        // all until this line: startup read a table nothing filled in, so
-        // every account was gone on the next start, and the uninstall, which
-        // decides what to erase from the credential store by walking that
-        // table, found none of them and left every OAuth token behind.
-        //
-        // Said rather than swallowed. An account that looks saved and is not
-        // is the case where somebody most needs to know, because they will
-        // close the program believing it is set up.
-        //
-        // The reason is said, not filed. It used to end "The reason is in the
-        // log", which is a place somebody working by ear has no way to open
-        // and no reason to think of. Every error that reaches here is already
-        // written as a sentence for a person: a refused removal says which
-        // account and why, and a credential store that will not answer says
-        // that.
-        if let Some(cache) = cache
-            && let Err(why) = cache.replace_accounts(&new)
-        {
-            tracing::error!("The accounts could not be saved: {why}");
-            let _ = a11y.announce(
-                &format!("The accounts could not all be saved. {why}"),
-                crate::presentation::accessibility::announcements::Priority::High,
-            );
-        }
         s.accounts = new;
         // Let go before anything is said to a server. This lock is the window's
         // own, and a sign-off is a round trip.

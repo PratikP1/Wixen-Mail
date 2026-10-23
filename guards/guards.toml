@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 923 records have arrived since and have not been through it.
+# 925 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -13361,9 +13361,12 @@ red = [
     # address saves and the refused removal is not the answer, measured
     # 2026-10-21.
     "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
+    # 13.3-24.3: the removal let through leaves the store without the account
+    # the read-back is held to keep, measured 2026-10-23.
+    "data::message_cache::accounts::tests::test_an_account_whose_removal_was_refused_is_still_among_the_accounts_held",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 [[guard]]
@@ -13434,7 +13437,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_old_copy_left_in_the_database_is_cleared_the_next_time_too",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # Rewritten 2026-09-19 by 11-07: the line after the refusal reads the
@@ -26887,7 +26890,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── A watch that never started is asked about before the branch returns ─────
@@ -26918,7 +26921,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── The network coming back starts the watches at once (#37) ────────────────
@@ -26945,7 +26948,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── The timer checks the accounts that are due (#37) ────────────────────────
@@ -26973,7 +26976,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── The schedule reads the interval off the account row (#37) ───────────────
@@ -27009,7 +27012,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── A start checks without a keystroke (#37) ────────────────────────────────
@@ -27035,7 +27038,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── A check that went through nowhere asks for no download (#37) ────────────
@@ -27067,7 +27070,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # ── A spelling language chosen for a region is shown as chosen, not as the checker's answer ──
@@ -34915,7 +34918,7 @@ red = [
     "data::message_cache::accounts::tests::test_deleting_an_account_takes_its_directory_password_with_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # Clearing the sign-in name in Look People Up at Work and saving leaves the
@@ -36415,7 +36418,7 @@ red = [
     "data::message_cache::quick_steps::tests::test_removing_an_account_takes_its_steps_and_leaves_another_accounts",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
     { file = "src/data/message_cache/quick_steps.rs", tests = 10 },
 ]
 
@@ -36947,7 +36950,7 @@ red = [
     "data::message_cache::accounts::tests::test_a_password_the_store_will_not_keep_is_said_with_the_accounts_name",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # A rule's mark told to the server after the rule's move rather than before
@@ -40810,7 +40813,7 @@ red = [
     "data::message_cache::accounts::tests::test_saving_the_accounts_again_keeps_the_order_somebody_chose",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # The store saving a second account on an address another one uses: its
@@ -40830,9 +40833,13 @@ red = [
     # words and after the password is kept, measured 2026-10-21.
     "data::message_cache::accounts::tests::test_a_refused_save_does_not_throw_away_the_edits_after_it",
     "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
+    # 13.3-24.3: with the refusal skipped, the second account on the address
+    # is refused by the table after its password is kept, and the read-back
+    # case reads the table's words, measured 2026-10-23.
+    "data::message_cache::accounts::tests::test_an_account_the_store_refused_is_not_among_the_accounts_held",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # The store saving the accounts before it removes the ones taken away: an
@@ -40869,7 +40876,7 @@ red = [
     "data::message_cache::accounts::tests::test_an_edited_account_may_take_the_address_of_one_removed_beside_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/accounts.rs", tests = 32 },
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
 ]
 
 # Moving an account leaving the window's own list alone: the Account Manager
@@ -40926,10 +40933,13 @@ before = '''        let stopping =
 after = '''        let stopping: Vec<String> = Vec::new();'''
 red = [
     "test_the_account_manager_stops_the_watch_of_an_account_it_removed_or_switched_off",
+    # 13.3-24.3: the reading of what the handler works from finds no
+    # which_watches_stop either, measured 2026-10-23.
+    "test_the_account_manager_stores_before_it_works_anything_out",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # The watch finding its account by id alone: the end of a check already
@@ -40949,7 +40959,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # A watch waking checking its account whether or not it is switched on, and
@@ -40969,7 +40979,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # A folder's role taken from its last name at any depth, beside a folder the
@@ -41421,7 +41431,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 22 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]
 
 # A check's flag pass reads the account's labels that carry a keyword once
@@ -44734,4 +44744,43 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/update_check.rs", tests = 32 },
+]
+
+# After a refused save the store's list is answered, not the one the Account
+# Manager handed back (13.3-24.3, ledger 922). Broken by answering the list
+# given in place of what the store reads back, which is the window keeping an
+# account the store refused.
+[[guard]]
+name = "a refused account save answers the accounts the store holds"
+file = "src/data/message_cache/accounts.rs"
+before = '''        let held = self.load_accounts().unwrap_or_else(|unreadable| {'''
+after = '''        let held = Ok(given).unwrap_or_else(|unreadable: Error| {'''
+red = [
+    "data::message_cache::accounts::tests::test_an_account_the_store_refused_is_not_among_the_accounts_held",
+    "data::message_cache::accounts::tests::test_an_account_whose_removal_was_refused_is_still_among_the_accounts_held",
+    "data::message_cache::accounts::tests::test_a_store_that_cannot_be_read_leaves_the_list_from_before_the_visit",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/accounts.rs", tests = 36 },
+]
+
+# The Account Manager's handler stores first and works everything out from
+# what the store holds (13.3-24.3, ledger 922). Broken by putting back the old
+# shape, the dialog's list kept whatever the save answered, which compiles and
+# which the reading sees.
+[[guard]]
+name = "the Account Manager works out what follows from what the store holds"
+file = "src/presentation/wx_app.rs"
+suite = "mail_keeps_arriving_on_its_own"
+before = '''                let after = cache.replace_accounts_and_read_back(new, &accounts);'''
+after = '''                let after = crate::data::message_cache::AccountsAfterTheSave {
+                    refused: cache.replace_accounts(&new).err(),
+                    held: new,
+                };'''
+red = [
+    "test_the_account_manager_stores_before_it_works_anything_out",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/mail_keeps_arriving_on_its_own.rs", tests = 24 },
 ]

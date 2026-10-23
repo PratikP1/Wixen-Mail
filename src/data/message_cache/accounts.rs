@@ -177,16 +177,42 @@ impl MessageCache {
 
     /// Store `given` through [`MessageCache::replace_accounts`] and answer
     /// the accounts the store holds afterwards, with the refusal if there was
-    /// one.
+    /// one. `before` is the list the window held before the visit.
+    ///
+    /// The store's list rather than the one the Account Manager handed back,
+    /// because the window works out its first syncs, its watches, its
+    /// sign-offs and its default from what this answers. Keeping the handed
+    /// list after a refusal listed, synced and signed in an account the store
+    /// did not hold, and signed off one whose removal was refused, until the
+    /// next start brought the store's list back (ledger 922).
+    ///
+    /// When nothing was refused the list given is the list held, and it is
+    /// answered as given, keeping what the table never holds, such as the
+    /// tokens a sign-in has just handed over. When the table cannot be read
+    /// after a refusal, the save refused before it wrote anything, since
+    /// [`MessageCache::replace_accounts`] reads the table first, so the list
+    /// from before the visit is what the store holds.
     pub fn replace_accounts_and_read_back(
         &self,
         given: Vec<crate::data::account::Account>,
-        _before: &[crate::data::account::Account],
+        before: &[crate::data::account::Account],
     ) -> AccountsAfterTheSave {
-        let refused = self.replace_accounts(&given).err();
+        let Err(refused) = self.replace_accounts(&given) else {
+            return AccountsAfterTheSave {
+                held: given,
+                refused: None,
+            };
+        };
+        let held = self.load_accounts().unwrap_or_else(|unreadable| {
+            tracing::warn!(
+                "The accounts could not be read back after a refused save, so the list from \
+                 before stays: {unreadable}"
+            );
+            before.to_vec()
+        });
         AccountsAfterTheSave {
-            held: given,
-            refused,
+            held,
+            refused: Some(refused),
         }
     }
 
