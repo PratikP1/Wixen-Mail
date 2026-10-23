@@ -18,11 +18,14 @@
 use chrono::Datelike;
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::new_item::ItemKind;
+use wixen_mail::application::time_blocks::{self, Block};
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::{
     Clock, DateOrder, DateSettings, DateStyle, DateWording,
 };
-use wixen_mail::presentation::wx_item_form::{Chrome, build_item_form_dialog, clamp_day_to_month};
+use wixen_mail::presentation::wx_item_form::{
+    Chrome, Timekeeping, build_item_form_dialog, clamp_day_to_month,
+};
 use wxdragon::prelude::*;
 
 /// One outcome this file checked: its name, and why it was wrong. Empty
@@ -61,6 +64,18 @@ fn twelve_hour_settings() -> DateSettings {
     }
 }
 
+/// Ten to midnight on the last day of a year: the moment a new event's start,
+/// the next half-hour boundary, falls on another day, month and year.
+///
+/// Pinned rather than read off the clock. CI's run 39868858825 on 2026-10-22
+/// opened this form at 23:30 UTC, the start rolled to the next day, and a test
+/// expecting the day the form opened failed: "got 23, want 22".
+fn ten_to_midnight_on_new_years_eve() -> chrono::NaiveDateTime {
+    chrono::NaiveDate::from_ymd_opt(2026, 12, 31)
+        .and_then(|day| day.and_hms_opt(23, 50, 0))
+        .expect("a real moment")
+}
+
 #[test]
 fn test_date_and_time_fields_are_real_separate_controls() {
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
@@ -69,11 +84,22 @@ fn test_date_and_time_fields_are_real_separate_controls() {
         wxdragon::main(move |app| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
-            let now = chrono::Local::now();
+            let opened = ten_to_midnight_on_new_years_eve();
+            // Where the form's own rule puts a new event's start: the next
+            // boundary after it opened, which here is the next day, month and
+            // year. Not the day it opened, which is what this file expected
+            // until CI opened it at half past eleven at night.
+            let starts_at = time_blocks::next_boundary(opened, Block::Thirty);
+            expect(
+                "the pinned moment's start falls in the next year, or this case proves nothing",
+                starts_at.year(),
+                opened.year() + 1,
+                &mut wrong,
+            );
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
-            // ── Opens on today, twenty-four hour clock: no AM/PM choice,
-            // ── the hour spinner reads nought to twenty-three. ─────────────
+            // ── Opens on the next block boundary, twenty-four hour clock: no
+            // ── AM/PM choice, the hour spinner reads nought to twenty-three. ──
             let widgets = build_item_form_dialog(
                 &frame,
                 ItemKind::Event,
@@ -84,7 +110,11 @@ fn test_date_and_time_fields_are_real_separate_controls() {
                     a11y: &a11y,
                     asking: None,
                 },
-                twenty_four_hour_settings(),
+                Timekeeping {
+                    settings: twenty_four_hour_settings(),
+                    now: opened,
+                    block: Block::Thirty,
+                },
                 None,
             )
             .expect("an Event has fields to ask for");
@@ -139,25 +169,25 @@ fn test_date_and_time_fields_are_real_separate_controls() {
             );
             day_first.dialog.destroy();
             expect(
-                "starts: month defaults to this month",
+                "starts: month is the month of the next block boundary",
                 starts
                     .month
                     .get_selection()
                     .map(|i| i as i32 + 1)
                     .unwrap_or(-1),
-                now.month() as i32,
+                starts_at.month() as i32,
                 &mut wrong,
             );
             expect(
-                "starts: day defaults to today",
+                "starts: day is the day of the next block boundary",
                 starts.day.value(),
-                now.day() as i32,
+                starts_at.day() as i32,
                 &mut wrong,
             );
             expect(
-                "starts: year defaults to this year",
+                "starts: year is the year of the next block boundary",
                 starts.year.value(),
-                now.year(),
+                starts_at.year(),
                 &mut wrong,
             );
 

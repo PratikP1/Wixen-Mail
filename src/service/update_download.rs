@@ -18,16 +18,20 @@
 //! the first check would be worse than one with no check at all, because it
 //! would print the word verified over an executable a stranger signed.
 //!
-//! # Nothing is signed yet, so everything is refused
+//! # Nothing is signed yet, so nothing is fetched
 //!
 //! No release has ever been published from this repository and no certificate
-//! exists, so as this ships every real installer fails the second check and is
-//! deleted. That is the designed behaviour rather than a defect, and it is said
-//! plainly in `docs/changelog.md` and on `docs/installing.md` rather than left
-//! for somebody to discover. When there is a certificate, the name it carries is
-//! the one [`WHO_SIGNS_THIS`] already expects, and the profile it comes from is
-//! written into [`THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH`], which is empty until
-//! then and refuses everything while it is.
+//! exists, so as this ships every real installer would fail the second check.
+//! Since 2026-10-23 (13.3-23) nothing is fetched while that is so:
+//! [`what_to_do_about`] asks [`whether_an_installer_could_be_accepted`] first,
+//! and a newer version is said, with its page, rather than downloaded and
+//! deleted. Until then the whole installer was fetched and refused at every
+//! start. That is said plainly in `docs/changelog.md` and on
+//! `docs/installing.md` rather than left for somebody to discover. When there is
+//! a certificate, the name it carries is the one [`WHO_SIGNS_THIS`] already
+//! expects, and the profile it comes from is written into
+//! [`THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH`], which is empty until then and
+//! refuses everything while it is.
 //!
 //! # What no test here reaches
 //!
@@ -250,7 +254,8 @@ pub fn what_is_said_before_the_window_closes(installer: &Verified) -> String {
 
 /// Somebody said no. Throw the installer away.
 ///
-/// The file goes rather than waiting in case they change their mind. A declined
+/// The file goes, with the folder of its own it was downloaded into, rather
+/// than waiting in case they change their mind. A declined
 /// installer sitting on the disk is a file somebody can find and run by hand
 /// having decided not to, and the next check will fetch it again in seconds if
 /// they change their mind.
@@ -263,7 +268,9 @@ pub fn say_no(installer: Verified) -> Result<()> {
             "Could not remove {}: {why}",
             installer.at.display()
         ))
-    })
+    })?;
+    its_folder_goes_too(&installer.at);
+    Ok(())
 }
 
 /// Start the installer and leave it to replace this program.
@@ -329,13 +336,17 @@ pub enum Refused {
     NoWayToCheckHere,
     /// The file could not be read to be checked.
     TheFileCouldNotBeRead(String),
+    /// Nothing this project publishes could pass the check yet, because its
+    /// certificate profile is not known, so nothing is fetched to be refused.
+    OurInstallersAreNotSignedYet,
 }
 
 impl Refused {
     /// The sentence somebody hears and reads.
     ///
-    /// Every one of them says the file was deleted and says where to go
-    /// instead, because a refusal that leaves somebody with no way forward is
+    /// Every one of them says where to go instead, and each made after a
+    /// fetch says the file was deleted, because a refusal that leaves somebody
+    /// with no way forward is
     /// how a person ends up downloading an installer by hand from wherever a
     /// search engine offers one.
     pub fn said(&self) -> String {
@@ -379,6 +390,13 @@ impl Refused {
                  it, so it will not run it. The reason given was: {why}. The file has been \
                  deleted. Nothing on this computer has changed. You can download a version \
                  yourself from {page}."
+            ),
+            // No deleted file here either: nothing was fetched, because nothing
+            // fetched could have passed.
+            Self::OurInstallersAreNotSignedYet => format!(
+                "Wixen Mail cannot install updates by itself until its installers are \
+                 signed, so nothing was downloaded. Nothing on this computer has changed. \
+                 You can download the new version yourself from {page}."
             ),
         }
     }
@@ -503,21 +521,71 @@ impl From<NotArrivedBecause> for NotArrived {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextStep {
     /// Fetch the installer from these files. Nobody is asked first.
-    FetchIt(Vec<ReleaseFile>),
+    FetchIt {
+        /// The version on offer, as it was published.
+        version: String,
+        /// The page about it, the way forward by hand if the fetch fails.
+        page: String,
+        /// The files published beside it.
+        files: Vec<ReleaseFile>,
+    },
     /// Say what the check found and stop there.
     JustSayIt,
+    /// Say the newer version exists, say why it is not being fetched, and
+    /// offer its page, which is the way forward by hand.
+    SendThemToThePage {
+        /// Why nothing is fetched.
+        why: Refused,
+        /// The page about the newer version.
+        page: String,
+    },
 }
 
-/// What to do about a check's answer.
+/// The sentence a check at start adds to what it found, naming the Help menu
+/// item that offers the releases page.
 ///
-/// An offer leads straight to a fetch. Every other answer leads to a sentence
-/// and nothing else, because there is nothing to fetch.
+/// A check at start opens no window, so it says where the page is offered
+/// instead. In the words the Help menu shows, held to the menu by
+/// `test_what_is_said_at_start_names_the_menu_item_that_offers_the_page`.
+pub const WHERE_THE_PAGE_IS_OFFERED: &str =
+    "To open the releases page, choose Check for Updates on the Help menu.";
+
+/// What to do about a check's answer, with the certificate profile this
+/// build ships.
 pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
-    match answer {
-        crate::service::update_check::Answer::ANewerVersion { files, .. } => {
-            NextStep::FetchIt(files.clone())
-        }
-        _ => NextStep::JustSayIt,
+    what_to_do_about_with_profile(answer, THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH)
+}
+
+/// What to do about a check's answer, given the certificate profile an
+/// installer must carry.
+///
+/// An offer leads straight to a fetch where an installer could pass the check,
+/// and to its page where none could, so nothing is downloaded only to be
+/// thrown away. Every other answer leads to a sentence and nothing else,
+/// because there is nothing to fetch.
+pub fn what_to_do_about_with_profile(
+    answer: &crate::service::update_check::Answer,
+    profile: &str,
+) -> NextStep {
+    let crate::service::update_check::Answer::ANewerVersion {
+        version,
+        page,
+        files,
+        ..
+    } = answer
+    else {
+        return NextStep::JustSayIt;
+    };
+    match whether_an_installer_could_be_accepted(profile) {
+        Ok(()) => NextStep::FetchIt {
+            version: version.clone(),
+            page: page.clone(),
+            files: files.clone(),
+        },
+        Err(why) => NextStep::SendThemToThePage {
+            why,
+            page: page.clone(),
+        },
     }
 }
 
@@ -627,6 +695,22 @@ pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refu
 #[cfg(not(target_os = "windows"))]
 pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refused> {
     Err(Refused::NoWayToCheckHere)
+}
+
+/// Whether an installer this project publishes could pass the check here,
+/// given the certificate profile it must carry.
+///
+/// Asked before anything is fetched, for the reason
+/// [`whether_a_signature_can_be_checked_here`] is: while the profile is blank,
+/// [`whether_that_signer_is_ours`] refuses every installer, so fetching one
+/// spends a whole installer's worth of somebody's connection, at every start
+/// once a release exists, to learn what this already knows.
+pub fn whether_an_installer_could_be_accepted(profile: &str) -> std::result::Result<(), Refused> {
+    whether_a_signature_can_be_checked_here()?;
+    if profile.trim().is_empty() {
+        return Err(Refused::OurInstallersAreNotSignedYet);
+    }
+    Ok(())
 }
 
 /// Read the signature off a file.
@@ -992,6 +1076,27 @@ fn throw_it_away(at: &Path) {
         && let Err(why) = std::fs::remove_file(at)
     {
         tracing::warn!("A refused installer could not be deleted from {at:?}: {why}");
+        return;
+    }
+    its_folder_goes_too(at);
+}
+
+/// Remove the folder a downloaded installer sat in, once the installer has
+/// gone.
+///
+/// Each download has a folder of its own under the updates folder, and a
+/// folder left behind there is one the privacy page would have to describe.
+/// `remove_dir` rather than `remove_dir_all`, because it removes only an empty
+/// folder: an installer kept anywhere else can take nothing with it but
+/// itself. A folder that cannot be removed is logged rather than raised, as a
+/// file that cannot be deleted is, because the file going is what matters.
+fn its_folder_goes_too(at: &Path) {
+    if let Some(folder) = at.parent()
+        && let Err(why) = std::fs::remove_dir(folder)
+    {
+        tracing::warn!(
+            "The folder an installer sat in could not be removed from {folder:?}: {why}"
+        );
     }
 }
 
@@ -1084,14 +1189,52 @@ async fn bring_it_down(
     installer: &ReleaseFile,
     paths: &AppPaths,
 ) -> std::result::Result<Downloaded, NotArrived> {
-    use std::io::Write;
+    bring_it_down_within(
+        version,
+        installer,
+        paths,
+        A_DOWNLOAD_HAS_THIS_LONG_TO_CONNECT,
+        A_DOWNLOAD_MAY_GO_QUIET_FOR,
+    )
+    .await
+}
+
+/// How long a download waits for the host to accept the connection.
+const A_DOWNLOAD_HAS_THIS_LONG_TO_CONNECT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long a download waits with nothing arriving before giving up.
+///
+/// A wait between reads, through `ClientBuilder::read_timeout`, which reqwest
+/// 0.13.4 resets after every read that succeeds and applies to waiting for the
+/// answer's head as well. Never a bound on the whole download, which would
+/// cut a slow one that keeps arriving (the research's gap 4, 13.3-23).
+const A_DOWNLOAD_MAY_GO_QUIET_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Where one download is written, as the folder and the file in it: a folder
+/// of its own under the updates folder, named afresh, holding the published
+/// name made safe.
+///
+/// A folder per download rather than one shared file, because two checks that
+/// both reached a fetch would otherwise write the same path, and one could be
+/// writing over the installer the other has just checked and is about to run
+/// (the research's gap 3, 13.3-23). The published name is kept, since it is
+/// what a person sees if they open the folder.
+fn where_this_download_goes(paths: &AppPaths, published: &str) -> (PathBuf, PathBuf) {
+    let folder = paths.updates_dir().join(uuid::Uuid::new_v4().to_string());
+    let at = folder.join(a_name_safe_to_write(published));
+    (folder, at)
+}
+
+/// [`bring_it_down`], with the time it gives a host to connect and to go quiet.
+async fn bring_it_down_within(
+    version: &str,
+    installer: &ReleaseFile,
+    paths: &AppPaths,
+    connect: std::time::Duration,
+    quiet: std::time::Duration,
+) -> std::result::Result<Downloaded, NotArrived> {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU8, Ordering};
-
-    let room = paths.updates_dir();
-    std::fs::create_dir_all(&room)
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", room.display())))?;
-    let at = room.join(a_name_safe_to_write(&installer.name));
 
     // Why a redirect was refused, carried out of the policy callback. The
     // callback cannot return a reason of its own, and "the download failed" in
@@ -1122,8 +1265,13 @@ async fn bring_it_down(
         _ => NotArrived::TheConnectionFailed,
     };
 
+    // A limit on connecting and a limit on silence, never one on the whole
+    // download, which would cut a slow one that keeps arriving. A client that
+    // cannot be built with them is not built at all: the limits are the point.
     let client = reqwest::Client::builder()
         .redirect(follower)
+        .connect_timeout(connect)
+        .read_timeout(quiet)
         .build()
         .map_err(|_| NotArrived::TheConnectionFailed)?;
     // Through the gate that cannot change anything, rather than on a client of
@@ -1140,31 +1288,46 @@ async fn bring_it_down(
         return Err(why_it_stopped());
     }
 
-    let mut file = std::fs::File::create(&at)
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
-    let mut so_far: u64 = 0;
-    loop {
-        let arrived = response.chunk().await.map_err(|_| {
-            let _ = std::fs::remove_file(&at);
-            NotArrived::TheConnectionFailed
-        })?;
-        let Some(chunk) = arrived else { break };
-        so_far = so_far.saturating_add(chunk.len() as u64);
-        if let Err(too_big) = whether_this_much_may_still_arrive(so_far) {
-            drop(file);
-            let _ = std::fs::remove_file(&at);
-            return Err(too_big);
+    // Made only now the host has answered with a success, so a download that
+    // fails before a byte arrives leaves no folder behind.
+    let (folder, at) = where_this_download_goes(paths, &installer.name);
+    std::fs::create_dir_all(&folder)
+        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", folder.display())))?;
+    if let Err(why) = write_it_down(&mut response, &at).await {
+        // Whole, which is safe because this call made the folder fresh and it
+        // holds nothing but this download's file, part written or not.
+        if let Err(stuck) = std::fs::remove_dir_all(&folder) {
+            tracing::warn!("A download that failed could not be cleared from {folder:?}: {stuck}");
         }
-        file.write_all(&chunk)
-            .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
+        return Err(why);
     }
-    file.flush()
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
-
     Ok(Downloaded {
         at,
         version: version.to_string(),
     })
+}
+
+/// Write a response's body to `at` as it arrives, bounded in size.
+async fn write_it_down(
+    response: &mut reqwest::Response,
+    at: &Path,
+) -> std::result::Result<(), NotArrived> {
+    use std::io::Write;
+
+    let not_kept =
+        |why: std::io::Error| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display()));
+    let mut file = std::fs::File::create(at).map_err(not_kept)?;
+    let mut so_far: u64 = 0;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| NotArrived::TheConnectionFailed)?
+    {
+        so_far = so_far.saturating_add(chunk.len() as u64);
+        whether_this_much_may_still_arrive(so_far)?;
+        file.write_all(&chunk).map_err(not_kept)?;
+    }
+    file.flush().map_err(not_kept)
 }
 
 /// Where the releases are, for a refusal to point at.
@@ -1495,10 +1658,245 @@ mod tests {
             channel: ReleaseChannel::PublicReleases,
             files: a_real_release(),
         };
+        // On the pure form with a profile, because the shipped identifier is
+        // empty and an empty one fetches nothing (see the cases below).
+        if whether_a_signature_can_be_checked_here().is_ok() {
+            assert_eq!(
+                what_to_do_about_with_profile(&offer, A_PROFILE),
+                NextStep::FetchIt {
+                    version: "v0.117.0".to_string(),
+                    page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0"
+                        .to_string(),
+                    files: a_real_release(),
+                },
+                "a kind of version was chosen, so the fetch is the program's own doing"
+            );
+        }
+    }
+
+    /// A newer version on offer, as a check would answer it.
+    fn an_offer() -> crate::service::update_check::Answer {
+        crate::service::update_check::Answer::ANewerVersion {
+            version: "v0.117.0".to_string(),
+            page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0".to_string(),
+            channel: crate::common::version::ReleaseChannel::PublicReleases,
+            files: a_real_release(),
+        }
+    }
+
+    /// What a profile nobody has set is refused for on this platform.
+    fn refused_while_no_profile_is_known() -> Refused {
+        match whether_a_signature_can_be_checked_here() {
+            Ok(()) => Refused::OurInstallersAreNotSignedYet,
+            Err(no_way) => no_way,
+        }
+    }
+
+    #[test]
+    fn test_an_installer_could_be_accepted_only_once_the_profile_is_known() {
+        // Gap 1 of the research on the update mechanism: with the identifier
+        // empty, every installer is refused after it is fetched, the whole
+        // file at every start once a release exists. Asked before the fetch,
+        // the answer is known without a byte.
+        for blank in ["", "   ", "\t"] {
+            assert_eq!(
+                whether_an_installer_could_be_accepted(blank),
+                Err(refused_while_no_profile_is_known()),
+                "a profile of {blank:?} was taken as one an installer could carry"
+            );
+        }
         assert_eq!(
-            what_to_do_about(&offer),
-            NextStep::FetchIt(a_real_release()),
-            "a kind of version was chosen, so the fetch is the program's own doing"
+            whether_an_installer_could_be_accepted(A_PROFILE),
+            whether_a_signature_can_be_checked_here(),
+            "with a profile known, the platform's own answer is the whole answer"
+        );
+    }
+
+    #[test]
+    fn test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page() {
+        assert_eq!(
+            what_to_do_about_with_profile(&an_offer(), ""),
+            NextStep::SendThemToThePage {
+                why: refused_while_no_profile_is_known(),
+                page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0".to_string(),
+            },
+            "an installer nothing could pass is fetched only to be thrown away"
+        );
+    }
+
+    #[test]
+    fn test_the_shipped_identifier_decides_what_an_offer_leads_to() {
+        assert_eq!(
+            what_to_do_about(&an_offer()),
+            what_to_do_about_with_profile(&an_offer(), THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH),
+            "the production form answers something the shipped identifier does not"
+        );
+    }
+
+    #[test]
+    fn test_a_refusal_before_anything_was_fetched_names_no_deleted_file() {
+        let sentence = Refused::OurInstallersAreNotSignedYet.said();
+        for said in [
+            "until its installers are signed",
+            "nothing was downloaded",
+            "Nothing on this computer has changed.",
+        ] {
+            assert!(
+                sentence.contains(said),
+                "the refusal before any fetch does not say {said:?}: {sentence:?}"
+            );
+        }
+        assert!(
+            !sentence.contains("deleted"),
+            "nothing was fetched, so nothing was deleted: {sentence:?}"
+        );
+        assert!(
+            sentence.contains(&the_releases_page()),
+            "the refusal does not say where to download the new version: {sentence:?}"
+        );
+    }
+
+    /// The Help menu's label for an item, as a person reads it: its access
+    /// key's ampersand and any accelerator after a tab taken out.
+    fn as_read(label: &str) -> String {
+        label.split('\t').next().unwrap_or(label).replace('&', "")
+    }
+
+    /// The string written straight after `marker`, with only space between,
+    /// wherever in `source` that happens first.
+    fn the_string_after<'a>(source: &'a str, marker: &str) -> Option<&'a str> {
+        source.match_indices(marker).find_map(|(at, _)| {
+            let after = source[at + marker.len()..].trim_start().strip_prefix('"')?;
+            Some(&after[..after.find('"')?])
+        })
+    }
+
+    #[test]
+    fn test_what_is_said_at_start_names_the_menu_item_that_offers_the_page() {
+        // Read from the window's source, so a menu item renamed there cannot
+        // leave this sentence sending somebody to a name that is not on it.
+        let window = the_window();
+        let item = the_string_after(&window, "ID_CHECK_FOR_UPDATES,")
+            .expect("the Help menu to carry Check for Updates");
+        let menu = the_string_after(&window, ".append(help,")
+            .expect("the menu bar to carry the Help menu");
+        for named in [as_read(item), format!("{} menu", as_read(menu))] {
+            assert!(
+                WHERE_THE_PAGE_IS_OFFERED.contains(&named),
+                "the sentence said at start does not name {named:?}: {WHERE_THE_PAGE_IS_OFFERED:?}"
+            );
+        }
+    }
+
+    /// The window's shipped source, which these readings read rather than run.
+    fn the_window() -> String {
+        let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the window's source to be readable");
+        crate::common::what_ships::what_ships(&source.replace("\r\n", "\n"))
+    }
+
+    /// One arm of the window's update handler, up to the next arm.
+    fn the_arm_for(source: &str, update: &str) -> Option<String> {
+        let handler = source
+            .split_once("fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {")?
+            .1;
+        let handler = &handler[..handler.find("\n}\n").unwrap_or(handler.len())];
+        let marker = format!("\n        UIUpdate::{update} ");
+        let arm = &handler[handler.find(&marker)? + marker.len()..];
+        let end = arm.find("\n        UIUpdate::").unwrap_or(arm.len());
+        Some(arm[..end].to_string())
+    }
+
+    /// Where the brace opened at `open` closes, or the end of `text`.
+    fn where_it_closes(text: &str, open: usize) -> usize {
+        let mut depth = 0_usize;
+        for (at, letter) in text[open..].char_indices() {
+            match letter {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return open + at;
+                    }
+                }
+                _ => {}
+            }
+        }
+        text.len()
+    }
+
+    /// Whether the arm opens its dialog only inside the branch for a check
+    /// asked for by hand.
+    ///
+    /// Reads source, not behaviour: the dialog is modal and waits for a
+    /// person's answer, and the one this guards is the window that opened at
+    /// every start.
+    fn the_dialog_waits_for_a_check_by_hand(arm: &str) -> bool {
+        const ON_WHO_ASKED: &str = "match asked {";
+        let (Some(dialog), Some(by_hand), Some(choice)) = (
+            arm.find("MessageDialog::builder"),
+            arm.find("WhoAsked::ByHand =>"),
+            arm.find(ON_WHO_ASKED),
+        ) else {
+            return false;
+        };
+        let Some(open) = arm[by_hand..].find('{').map(|at| by_hand + at) else {
+            return false;
+        };
+        let chosen_on_who_asked =
+            choice < by_hand && by_hand < where_it_closes(arm, choice + ON_WHO_ASKED.len() - 1);
+        chosen_on_who_asked && open < dialog && dialog < where_it_closes(arm, open)
+    }
+
+    #[test]
+    fn test_a_refusal_found_at_start_opens_no_dialog() {
+        // Gap 1 again, from the window's side: a check at start that ends
+        // without an update is said once, and a window that opens by itself
+        // at every start is the flooding guardrail 5 is about.
+        let arm = the_arm_for(&the_window(), "AnUpdateDidNotHappen")
+            .expect("the window to handle an update that did not happen");
+        assert!(
+            the_dialog_waits_for_a_check_by_hand(&arm),
+            "the releases-page dialog opens whoever asked, so a check at start opens a window"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_dialog_opened_whoever_asked() {
+        let whoever_asked = "{ said, page, asked } => {\n\
+             \x20   match asked {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {}\n\
+             \x20   }\n\
+             \x20   let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             }\n";
+        assert!(
+            !the_dialog_waits_for_a_check_by_hand(whoever_asked),
+            "the reading above cannot see a dialog opened after the branch for who asked"
+        );
+        let on_a_fixed_answer = "{ said, page, asked } => {\n\
+             \x20   match &WhoAsked::ByHand {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {\n\
+             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20       }\n\
+             \x20   }\n\
+             }\n";
+        assert!(
+            !the_dialog_waits_for_a_check_by_hand(on_a_fixed_answer),
+            "the reading above cannot see a branch that ignores who asked"
+        );
+        let by_hand_only = "{ said, page, asked } => {\n\
+             \x20   match asked {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {\n\
+             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20       }\n\
+             \x20   }\n\
+             }\n";
+        assert!(
+            the_dialog_waits_for_a_check_by_hand(by_hand_only),
+            "the reading above cannot see a dialog opened only by hand either"
         );
     }
 
@@ -1878,6 +2276,7 @@ mod tests {
             Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("access denied".to_string()),
+            Refused::OurInstallersAreNotSignedYet,
         ];
         let said: Vec<String> = every.iter().map(Refused::said).collect();
         for (which, sentence) in said.iter().enumerate() {
@@ -1904,6 +2303,7 @@ mod tests {
             Refused::NotSignedWithOurCertificate,
             Refused::NoWayToCheckHere,
             Refused::TheFileCouldNotBeRead("no".to_string()),
+            Refused::OurInstallersAreNotSignedYet,
         ];
         for refusal in every {
             let sentence = refusal.said();
@@ -2155,6 +2555,207 @@ mod tests {
                 Err(Refused::NothingSignedIt | Refused::TheSignatureIsNotValid { .. })
             ),
             "a file nothing signed was not refused"
+        );
+    }
+
+    // ── A folder of its own for each download, and a limit on a host that
+    // ── goes quiet (13.3-23, the research's gaps 3 and 4) ──────────────────
+
+    /// The limits these cases give a host, short so a case that waits on
+    /// purpose waits half a second rather than the thirty production gives.
+    const A_SHORT_LIMIT: std::time::Duration = std::time::Duration::from_millis(500);
+
+    /// The installer as a release would publish it, served from `address`.
+    fn published_at(address: std::net::SocketAddr) -> ReleaseFile {
+        ReleaseFile {
+            name: "Wixen-Mail-Setup-0.117.0.exe".to_string(),
+            from: format!("http://{address}/Wixen-Mail-Setup-0.117.0.exe"),
+        }
+    }
+
+    /// What is under `folder`, or nothing where the folder is not there.
+    fn whatever_is_in(folder: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(folder)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+            .unwrap_or_default()
+    }
+
+    /// A host that answers with a head promising a megabyte, sends a little of
+    /// it, and then goes quiet with the connection still open.
+    async fn a_host_that_goes_quiet_partway() -> std::net::SocketAddr {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                        Content-Length: 1048576\r\n\r\nMZ the first few bytes of it";
+            let _ = stream.write_all(head.as_bytes()).await;
+            std::future::pending::<()>().await;
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn test_a_download_host_that_never_answers_is_given_up_on() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let address = crate::common::answering::never_answering().await;
+
+        let started = std::time::Instant::now();
+        let arrived = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            bring_it_down_within(
+                "v0.117.0",
+                &published_at(address),
+                &paths,
+                A_SHORT_LIMIT,
+                A_SHORT_LIMIT,
+            ),
+        )
+        .await
+        .expect("the download waited past its limit for a host that never answers");
+
+        assert_eq!(arrived, Err(NotArrived::TheConnectionFailed));
+        assert!(
+            started.elapsed() < A_SHORT_LIMIT + std::time::Duration::from_secs(5),
+            "given up on after {:?}",
+            started.elapsed()
+        );
+        assert!(
+            !paths.updates_dir().exists(),
+            "a download that never got an answer made a folder for it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_download_that_goes_quiet_partway_is_given_up_on_and_leaves_nothing() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let address = a_host_that_goes_quiet_partway().await;
+
+        let arrived = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            bring_it_down_within(
+                "v0.117.0",
+                &published_at(address),
+                &paths,
+                A_SHORT_LIMIT,
+                A_SHORT_LIMIT,
+            ),
+        )
+        .await
+        .expect("the download waited past its limit for a host that went quiet");
+
+        assert_eq!(arrived, Err(NotArrived::TheConnectionFailed));
+        assert_eq!(
+            whatever_is_in(&paths.updates_dir()),
+            Vec::<PathBuf>::new(),
+            "a download given up on part way left something behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_downloads_of_one_name_are_two_files() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let mut kept = Vec::new();
+        for body in ["MZ the first", "MZ the second"] {
+            let (address, _asked) = crate::common::answering::answering(
+                "200 OK",
+                "application/octet-stream",
+                body.to_string(),
+            )
+            .await;
+            let downloaded = tokio::time::timeout(
+                crate::common::answering::LONG_ENOUGH,
+                bring_it_down_within(
+                    "v0.117.0",
+                    &published_at(address),
+                    &paths,
+                    A_SHORT_LIMIT,
+                    A_SHORT_LIMIT,
+                ),
+            )
+            .await
+            .expect("a host that answers to be heard within the bound")
+            .expect("a host that answers to be downloaded from");
+            kept.push(downloaded.at().to_path_buf());
+        }
+
+        assert_ne!(
+            kept[0], kept[1],
+            "two downloads of one name were written to one file, so one can write over \
+             an installer the other has checked"
+        );
+        for at in &kept {
+            assert!(
+                at.starts_with(paths.updates_dir()),
+                "{at:?} is outside the updates folder"
+            );
+            assert_eq!(
+                at.file_name().and_then(|name| name.to_str()),
+                Some("Wixen-Mail-Setup-0.117.0.exe"),
+                "the published name was not kept"
+            );
+            assert!(at.exists(), "{at:?} was not written");
+        }
+    }
+
+    /// An unsigned installer in a folder of its own under the updates folder,
+    /// as a download leaves one.
+    fn an_installer_in_its_own_folder(paths: &AppPaths) -> PathBuf {
+        let folder = paths.updates_dir().join("one-download");
+        std::fs::create_dir_all(&folder).unwrap();
+        let at = folder.join("Wixen-Mail-Setup-0.117.0.exe");
+        std::fs::write(&at, b"not an installer").unwrap();
+        at
+    }
+
+    #[test]
+    fn test_a_refused_installer_takes_its_folder_with_it() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let at = an_installer_in_its_own_folder(&paths);
+
+        let refused = verify(Downloaded {
+            at: at.clone(),
+            version: "v0.117.0".to_string(),
+        });
+
+        assert!(refused.is_err(), "an unsigned file was accepted");
+        assert!(!at.exists(), "the refused installer was left behind");
+        assert!(
+            at.parent().is_some_and(|folder| !folder.exists()),
+            "the refused installer's folder was left behind"
+        );
+        assert!(
+            paths.updates_dir().exists(),
+            "the updates folder itself went too"
+        );
+    }
+
+    #[test]
+    fn test_a_declined_installer_takes_its_folder_with_it() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let at = an_installer_in_its_own_folder(&paths);
+
+        say_no(a_checked_installer(at.clone())).expect("declining to work");
+
+        assert!(!at.exists(), "the declined installer was left behind");
+        assert!(
+            at.parent().is_some_and(|folder| !folder.exists()),
+            "the declined installer's folder was left behind"
+        );
+        assert!(
+            paths.updates_dir().exists(),
+            "the updates folder itself went too"
         );
     }
 }

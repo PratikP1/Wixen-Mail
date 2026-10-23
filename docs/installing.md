@@ -83,9 +83,13 @@ Everything Wixen Mail stores about you is in one folder:
 
 Paste `%LOCALAPPDATA%\wixen-mail` into File Explorer's address bar to open it.
 
-`updates\` exists only while Wixen Mail is fetching a new version, and it holds one file. Wixen
-Mail empties it when the update is installed, when the installer is refused, and again the next
-time it starts, so a download cut short does not leave an installer behind.
+`updates\` exists only while Wixen Mail is fetching a new version or one is waiting for your
+answer. Each download gets a folder of its own inside it, holding the installer, and that folder
+goes with its installer when a download fails part way, when the installer is refused, and when
+you answer No to one that passed. Wixen Mail empties the whole of `updates\` the next time it
+starts, which after an update is the new version's first start, so a download cut short does not
+leave an installer behind. Until this project's installers are signed, nothing is downloaded at
+all.
 
 `oauth.toml` is a file you put there yourself, holding your own Google or Microsoft sign-in
 key, and Wixen Mail reads it each time it signs in through the browser or brings calendars,
@@ -141,9 +145,10 @@ versions", the setting "Tell me about new versions" has three answers, and it st
 not look for new versions". Choose "Released versions" or "Released versions and test
 versions" and two things follow.
 
-**The fetch is automatic. The install is not.** When a newer version is published, Wixen Mail
-downloads the installer for it without asking you at that moment, which is what you agreed to
-by choosing. Then it asks you once, and only about running it. Answering no leaves the version
+**The fetch is automatic, once installers are signed. The install is not.** When a newer
+version is published and this project's installers are signed, Wixen Mail downloads the
+installer for it without asking you at that moment, which is what you agreed to by choosing.
+Then it asks you once, and only about running it. Answering no leaves the version
 you are running exactly as it was and deletes the file. Answering yes closes Wixen Mail and
 opens the installer; you are told that is about to happen before it does.
 
@@ -159,10 +164,14 @@ not enough: a certificate in the name Pratik Patel can be had by anyone who shar
 so since 2026-10-16 the check also reads the certificate itself. A file failing any check is
 deleted and you are told which check it failed. You are never asked whether to run it anyway.
 
-**Today that refuses everything.** Nothing this project publishes is signed yet, so an update
-will download, be refused, and send you to the
-[releases page](https://github.com/PratikP1/Wixen-Mail/releases) to fetch it by hand. That is
-the intended behaviour rather than a fault: the refusal was built before the signing, so that
+**Today that would refuse everything, so nothing is downloaded.** Nothing this project
+publishes is signed yet, so since 2026-10-23 Wixen Mail says a newer version has been
+published and sends you to the
+[releases page](https://github.com/PratikP1/Wixen-Mail/releases) to fetch it by hand, without
+downloading it first. Until that day it downloaded the installer, refused it, and then sent you
+there. A check when Wixen Mail starts says this once, on the status line, without opening a
+window; Help, then Check for Updates, also offers to open the page. That is the intended
+behaviour rather than a fault: the refusal was built before the signing, so that
 it could never be added afterwards to something already running installers. The signing
 certificate the third check looks for does not exist yet either, so even a signed installer
 would be refused until this project's own certificate is set up and a version that knows it

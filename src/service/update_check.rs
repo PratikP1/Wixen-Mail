@@ -101,6 +101,74 @@ pub const fn channel_for(setting: WhichUpdates, asked: WhoAsked) -> Option<Relea
     }
 }
 
+/// One check for a newer version at a time.
+///
+/// Two checks running together could both fetch an installer, and the second
+/// could write while the first is about to run what it checked (the
+/// research's gap 3, 13.3-23). So a check asks for a [`CheckUnderWay`] before
+/// it starts and holds it until it ends, download and all; while one is held,
+/// no other is given.
+pub struct OneCheckAtATime {
+    under_way: std::sync::atomic::AtomicBool,
+}
+
+impl OneCheckAtATime {
+    /// Nothing under way yet.
+    pub const fn new() -> Self {
+        Self {
+            under_way: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    /// A check may start, or `None` while another is under way.
+    pub fn begin(&self) -> Option<CheckUnderWay<'_>> {
+        let another_was_under_way = self
+            .under_way
+            .swap(true, std::sync::atomic::Ordering::AcqRel);
+        (!another_was_under_way).then_some(CheckUnderWay {
+            under_way: &self.under_way,
+        })
+    }
+}
+
+impl Default for OneCheckAtATime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// A check under way. Dropped, however its holder ends, it lets the next
+/// check start.
+pub struct CheckUnderWay<'a> {
+    under_way: &'a std::sync::atomic::AtomicBool,
+}
+
+impl Drop for CheckUnderWay<'_> {
+    fn drop(&mut self) {
+        self.under_way
+            .store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+
+/// The one the program's checks share.
+pub static ONE_CHECK: OneCheckAtATime = OneCheckAtATime::new();
+
+/// What a check asked for while another is under way says, if anything.
+///
+/// Asked for by hand, one sentence, because somebody pressed something and a
+/// key that seems to do nothing gets pressed again. At start, nothing: the
+/// program asked, nobody is waiting, and a line in the log is enough.
+pub fn what_a_second_check_says(asked: WhoAsked) -> Option<String> {
+    match asked {
+        WhoAsked::ByHand => Some(
+            "A check for a newer version is already under way, with its download if there \
+             is one. What it finds will be said when it finishes."
+                .to_string(),
+        ),
+        WhoAsked::AtStart => None,
+    }
+}
+
 /// What came back, reduced to the three things any rule here reads.
 ///
 /// A struct of its own rather than a `reqwest::Response`, so every rule below
@@ -549,9 +617,31 @@ fn the_newest_offer_among(
 /// change anything is the honest one, and the gate is then a fact about the
 /// value rather than a promise in a comment.
 pub async fn ask(channel: ReleaseChannel) -> Answer {
-    let gate = crate::service::outward::Outward::read_only(reqwest::Client::new());
+    ask_at(&endpoint(channel), channel, A_CHECK_HAS_THIS_LONG).await
+}
+
+/// How long a check waits for GitHub's whole answer before giving up.
+///
+/// Thirty seconds for the request from start to finish, through
+/// `ClientBuilder::timeout`, because the answer is one page of JSON and a
+/// person who chose Check for Updates is waiting for it. Without a bound a
+/// connection that stalls holds the check for good, and a check by hand that
+/// said nothing yet says nothing ever (the research's gap 4, 13.3-23).
+const A_CHECK_HAS_THIS_LONG: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Ask `address`, giving it `limit` to answer, and say what came back.
+///
+/// A client that cannot be built with the limit answers as no answer would,
+/// rather than asking without one: the limit is the point.
+async fn ask_at(address: &str, channel: ReleaseChannel, limit: std::time::Duration) -> Answer {
+    let Ok(client) = reqwest::Client::builder().timeout(limit).build() else {
+        return Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        };
+    };
+    let gate = crate::service::outward::Outward::read_only(client);
     let sent = gate
-        .reading(&endpoint(channel))
+        .reading(address)
         .header(reqwest::header::USER_AGENT, who_is_asking())
         .send()
         .await;
@@ -1394,6 +1484,211 @@ mod tests {
             screen.contains("\"Appearance\""),
             "the reading cannot find a heading that is typed into the screen, so it \
              would find nothing however many were"
+        );
+    }
+
+    // ── One check at a time, and a limit on a stalled answer (13.3-23) ─────
+
+    #[test]
+    fn test_a_second_check_is_refused_while_one_is_held() {
+        let one = OneCheckAtATime::new();
+        let first = one.begin();
+        assert!(
+            first.is_some(),
+            "the first check was refused with nothing under way"
+        );
+        assert!(
+            one.begin().is_none(),
+            "a second check was given while the first was under way, so two could \
+             write the same installer"
+        );
+    }
+
+    #[test]
+    fn test_a_check_given_back_lets_the_next_one_run() {
+        let one = OneCheckAtATime::new();
+        drop(one.begin());
+        assert!(
+            one.begin().is_some(),
+            "a check that ended still holds the way, so no check can run again \
+             until Wixen Mail restarts"
+        );
+    }
+
+    #[test]
+    fn test_a_check_that_panics_still_lets_the_next_one_run() {
+        let one = OneCheckAtATime::new();
+        let ended = std::panic::catch_unwind(|| {
+            let _under_way = one.begin();
+            panic!("a check that ends badly");
+        });
+        assert!(
+            ended.is_err(),
+            "the holder did not panic, so this proves nothing"
+        );
+        assert!(
+            one.begin().is_some(),
+            "a check that panicked still holds the way"
+        );
+    }
+
+    #[test]
+    fn test_a_second_check_asked_for_by_hand_is_told_one_is_under_way() {
+        let said = what_a_second_check_says(WhoAsked::ByHand)
+            .expect("somebody who pressed Check for Updates to be told something");
+        for words in ["already", "under way"] {
+            assert!(
+                said.contains(words),
+                "the sentence for a second check does not say {words:?}: {said:?}"
+            );
+        }
+        for answer in [
+            Answer::ThisIsTheNewest {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::NothingPublishedYet {
+                channel: ReleaseChannel::PublicReleases,
+            },
+            Answer::NothingPublishedYet {
+                channel: ReleaseChannel::DevelopmentReleases,
+            },
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer,
+            },
+            Answer::CouldNotBeUnderstood { entries: 0 },
+        ] {
+            assert_ne!(
+                said,
+                answer.said(),
+                "a second check says what a finished one says"
+            );
+        }
+        assert_eq!(
+            what_a_second_check_says(WhoAsked::AtStart),
+            None,
+            "a check at start that is dropped says something nobody asked for"
+        );
+    }
+
+    /// The window's shipped source, which the readings below read rather
+    /// than run.
+    fn the_window() -> String {
+        let source = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the window's source to be readable");
+        crate::common::what_ships::what_ships(&source.replace("\r\n", "\n"))
+    }
+
+    /// The text of one function in `source`, up to its closing brace in the
+    /// first column.
+    fn the_function(source: &str, signature: &str) -> Option<String> {
+        let after = &source[source.find(signature)?..];
+        Some(after[..after.find("\n}\n").unwrap_or(after.len())].to_string())
+    }
+
+    /// Whether a function takes the one check before it starts its task and
+    /// hands it to the task, so it is held until the task ends.
+    ///
+    /// Reads source, not behaviour: the task runs on a runtime the window
+    /// owns, and what matters is where the guard is taken and where it goes.
+    fn the_task_holds_the_one_check(function: &str) -> bool {
+        let (Some(taken), Some(spawned)) = (
+            function.find("ONE_CHECK.begin()"),
+            function.find("rt.spawn("),
+        ) else {
+            return false;
+        };
+        if taken > spawned {
+            return false;
+        }
+        let before = &function[..taken];
+        let Some(bound) = before.rfind("let Some(") else {
+            return false;
+        };
+        let Some((binding, between)) = before[bound + "let Some(".len()..].split_once(')') else {
+            return false;
+        };
+        let binding = binding.trim();
+        let bound_to_the_check = between.trim_start().starts_with('=') && !between.contains(';');
+        let named_in_the_task = function[spawned..]
+            .split(|letter: char| !(letter.is_alphanumeric() || letter == '_'))
+            .any(|word| word == binding);
+        bound_to_the_check && binding != "_" && named_in_the_task
+    }
+
+    #[test]
+    fn test_the_window_takes_the_one_check_before_it_starts_the_task() {
+        let function = the_function(&the_window(), "fn ask_whether_there_is_a_newer_version(")
+            .expect("the window to ask whether there is a newer version");
+        assert!(
+            the_task_holds_the_one_check(&function),
+            "the window starts a check without holding the one check for its whole \
+             task, so a second check can run beside it"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_check_let_go_before_the_task() {
+        let dropped_at_once = "fn go() {\n\
+             \x20   let Some(channel) = channel_for(chosen, asked) else { return; };\n\
+             \x20   let _ = update_check::ONE_CHECK.begin();\n\
+             \x20   rt.spawn(async move { ask(channel).await; });\n\
+             }\n";
+        assert!(
+            !the_task_holds_the_one_check(dropped_at_once),
+            "the reading above cannot see a check let go the moment it is taken"
+        );
+        let never_handed_over = "fn go() {\n\
+             \x20   let Some(under_way) = update_check::ONE_CHECK.begin() else { return; };\n\
+             \x20   rt.spawn(async move { let _under_way = (); });\n\
+             }\n";
+        assert!(
+            !the_task_holds_the_one_check(never_handed_over),
+            "the reading above cannot see a check held by the function and not the task"
+        );
+        let never_taken = "fn go() {\n\
+             \x20   rt.spawn(async move { ask(channel).await; });\n\
+             }\n";
+        assert!(
+            !the_task_holds_the_one_check(never_taken),
+            "the reading above cannot see a check that never asks"
+        );
+        let held_by_the_task = "fn go() {\n\
+             \x20   let Some(under_way) = update_check::ONE_CHECK.begin() else { return; };\n\
+             \x20   rt.spawn(async move { let _under_way = under_way; });\n\
+             }\n";
+        assert!(
+            the_task_holds_the_one_check(held_by_the_task),
+            "the reading above cannot see a check the task holds either"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_github_that_never_answers_is_given_up_on_within_the_limit() {
+        let limit = std::time::Duration::from_millis(500);
+        let address = crate::common::answering::never_answering().await;
+
+        let started = std::time::Instant::now();
+        let answer = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            ask_at(
+                &format!("http://{address}/repos/PratikP1/Wixen-Mail/releases/latest"),
+                ReleaseChannel::PublicReleases,
+                limit,
+            ),
+        )
+        .await
+        .expect("the check waited past its limit for a GitHub that never answers");
+
+        assert_eq!(
+            answer,
+            Answer::CouldNotBeFetched {
+                why: NotFetched::NoAnswer
+            }
+        );
+        assert!(
+            started.elapsed() < limit + std::time::Duration::from_secs(5),
+            "given up on after {:?}, against a limit of {limit:?}",
+            started.elapsed()
         );
     }
 }
