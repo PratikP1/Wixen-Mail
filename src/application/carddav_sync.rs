@@ -234,10 +234,18 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
         )?;
     }
 
-    // Every card is in every read, so a card the server no longer holds was
-    // deleted there, and nothing took it off here on any read. Not when the
-    // answer is not whole: a card missing from one the server stopped short,
-    // or from one with cards that could not be read, may only be one of those.
+    // Only a whole answer speaks for the whole address book, so only a whole
+    // answer takes off who it left out and moves the marker on. Every card is
+    // in every read, so a card the server no longer holds was deleted there,
+    // and nothing took it off here on any read. A card missing from an answer
+    // the server stopped short, or from one with cards that could not be read,
+    // may only be one of those.
+    //
+    // The marker says what this computer has seen, so it is written down only
+    // after a read that succeeded and held everything. Moved on after a read
+    // that failed or came back in part, the cards it missed are never asked
+    // for again until something else in the address book changes; kept, the
+    // next sync asks for them (ledger 928).
     if arrived.is_whole() {
         let named = arrived.cards.iter().map(|card| card.url.as_str()).collect();
         contacts_sync::take_off_who_a_whole_answer_left_out(
@@ -247,13 +255,10 @@ pub async fn sync_carddav_address_book<B: CardsOnAServer>(
             &named,
             &mut result,
         )?;
+        let mut seen = book.clone();
+        seen.ctag = marker_now;
+        cache.save_address_book(&seen)?;
     }
-
-    // Written down only after the read succeeded. Moved on after a read that
-    // failed, everything that changed in between is never asked for again.
-    let mut seen = book.clone();
-    seen.ctag = marker_now;
-    cache.save_address_book(&seen)?;
 
     Ok(result)
 }

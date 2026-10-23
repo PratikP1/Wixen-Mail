@@ -499,7 +499,7 @@ red = [
     "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -520,7 +520,7 @@ red = [
     "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -1191,7 +1191,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_changed_in_both_places_is_held_for_somebody_to_choose",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -1380,7 +1380,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_change_answered_for_a_contact_deleted_meanwhile_leaves_the_note_it_had",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
     { file = "src/data/message_cache/contacts.rs", tests = 107 },
     { file = "src/data/message_cache/taking_back.rs", tests = 10 },
@@ -1436,7 +1436,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -1483,7 +1483,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_here_is_not_written_back_down",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
     { file = "src/data/message_cache/contacts.rs", tests = 107 },
 ]
@@ -2149,7 +2149,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
     { file = "src/application/every_google_calendar.rs", tests = 15 },
     { file = "src/application/notes_sync.rs", tests = 31 },
@@ -2184,7 +2184,7 @@ red = [
     "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -21535,7 +21535,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
 ]
 
 # ── A second answer to which copy of a contact wins ─────────────────────────
@@ -21578,7 +21578,7 @@ red = [
     "application::carddav_sync::tests::test_nothing_here_decides_a_winner_of_its_own",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
 ]
 
 # ── An address book added by a screen that never asked a server ─────────────
@@ -42407,7 +42407,7 @@ red = [
     "application::carddav_sync::tests::test_a_card_sync_reads_the_contacts_here_as_often_for_two_hundred_cards_as_for_two",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
 ]
 
 # The contact a person matches is read again by id before her fate is
@@ -42508,6 +42508,11 @@ tests_last_seen = [
 # Both anchored on the whole-answer question since 2026-10-21 (13.3-10), which
 # also asks whether the server stopped short, so the second break reddens the
 # case for a stopped answer as well.
+#
+# The same question holds the change marker since 2026-10-23 (13.3-24.4, ledger
+# 928): only a whole answer writes it down. So the first break also leaves a
+# whole answer's marker unwritten, and the second writes a partial answer's,
+# and each reddens the marker cases that belong to its half. Measured that day.
 [[guard]]
 name = "a CardDAV read takes off a card the server no longer holds"
 file = "src/application/carddav_sync.rs"
@@ -42516,9 +42521,11 @@ after = '''    if arrived.is_whole() && false {'''
 red = [
     "application::carddav_sync::tests::test_a_card_the_server_no_longer_holds_is_taken_off_here",
     "application::carddav_sync::tests::test_a_contact_deleted_at_the_address_book_while_changed_here_stops_being_sent",
+    "application::carddav_sync::tests::test_the_cards_are_asked_for_when_the_change_marker_has_moved",
+    "application::carddav_sync::tests::test_the_cards_past_a_servers_limit_arrive_at_the_next_sync",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
 ]
 
 [[guard]]
@@ -42529,9 +42536,12 @@ after = '''    if arrived.is_whole() || true {'''
 red = [
     "application::carddav_sync::tests::test_a_read_with_cards_that_could_not_be_read_takes_nobody_off",
     "application::carddav_sync::tests::test_an_answer_the_server_stopped_short_takes_nobody_off_and_says_so",
+    "application::carddav_sync::tests::test_an_answer_the_server_stopped_short_leaves_the_change_marker_where_it_was",
+    "application::carddav_sync::tests::test_an_answer_with_a_card_that_could_not_be_read_leaves_the_change_marker_where_it_was",
+    "application::carddav_sync::tests::test_the_cards_past_a_servers_limit_arrive_at_the_next_sync",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
 ]
 
 # A CardDAV answer is whole only when the reader can vouch for every card it
@@ -42625,7 +42635,7 @@ red = [
     "application::contacts_sync::tests::test_an_outlook_read_after_an_expired_link_takes_off_who_outlook_no_longer_holds",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
 ]
 
@@ -44360,7 +44370,7 @@ red = [
     "application::contacts_sync::tests::test_a_contact_edited_while_outlook_made_it_keeps_the_edit",
 ]
 tests_last_seen = [
-    { file = "src/application/carddav_sync.rs", tests = 21 },
+    { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
     { file = "src/data/message_cache/contacts.rs", tests = 107 },
 ]
