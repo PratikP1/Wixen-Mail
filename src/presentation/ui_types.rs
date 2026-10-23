@@ -524,28 +524,31 @@ pub enum UIUpdate {
     /// and the answer to a key somebody just pressed can be the one that is
     /// dropped.
     CommandAnswered(String),
-    /// A version check found something newer, and there is a page about it.
+    /// A newer version is published and this check did not leave an installer
+    /// ready to run: nothing could pass the signer check, so nothing was
+    /// fetched, or the fetch failed or was refused. There is a page about it.
     ///
     /// Separate from [`Self::CommandAnswered`] because this answer has an act
-    /// attached to it. The sentence is said the same way, above the ordinary
-    /// run of status, and then somebody is asked whether to open the releases
-    /// page. An announcement carries no control, so an answer that ends "and
-    /// here is where to get it" with nothing to press is an answer that leaves
-    /// a person to find the page themselves.
+    /// attached to it. Carries the finished sentence and the address, because
+    /// the words are worked out in `service::update_check` and
+    /// `service::update_download`, where they can be argued about in a test,
+    /// and because a dialog may only be opened on the interface thread while
+    /// the check runs on a worker.
     ///
-    /// Carries the finished sentence and the address, because the words are
-    /// worked out by `service::update_check::Answer::said`, where they can be
-    /// argued about in a test, and because a dialog may only be opened on the
-    /// interface thread while the check runs on a worker.
-    ///
-    /// The page opens in a browser through `open::that`. Sent when a download
-    /// did not produce something to run, so the way forward by hand is still
-    /// offered rather than only described.
+    /// `asked` decides how it is said. Asked for by hand, it is the answer to a
+    /// key: said above the ordinary run of status, and then somebody is asked
+    /// whether to open the releases page in a browser, because an announcement
+    /// carries no control. At start nobody pressed anything, so it goes to the
+    /// status line and is said once at normal priority with a sentence naming
+    /// the Help menu item that offers the page, and no window opens: a dialog
+    /// at every start is the flooding guardrail 5 is about.
     AnUpdateDidNotHappen {
         /// What is said and written to the status bar.
         said: String,
         /// The releases page, which is the way forward by hand.
         page: String,
+        /// Whether somebody chose Check for Updates or the program started.
+        asked: crate::service::update_check::WhoAsked,
     },
     /// An installer was downloaded, checked, and signed by this project.
     ///

@@ -18,16 +18,20 @@
 //! the first check would be worse than one with no check at all, because it
 //! would print the word verified over an executable a stranger signed.
 //!
-//! # Nothing is signed yet, so everything is refused
+//! # Nothing is signed yet, so nothing is fetched
 //!
 //! No release has ever been published from this repository and no certificate
-//! exists, so as this ships every real installer fails the second check and is
-//! deleted. That is the designed behaviour rather than a defect, and it is said
-//! plainly in `docs/changelog.md` and on `docs/installing.md` rather than left
-//! for somebody to discover. When there is a certificate, the name it carries is
-//! the one [`WHO_SIGNS_THIS`] already expects, and the profile it comes from is
-//! written into [`THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH`], which is empty until
-//! then and refuses everything while it is.
+//! exists, so as this ships every real installer would fail the second check.
+//! Since 2026-10-23 (13.3-23) nothing is fetched while that is so:
+//! [`what_to_do_about`] asks [`whether_an_installer_could_be_accepted`] first,
+//! and a newer version is said, with its page, rather than downloaded and
+//! deleted. Until then the whole installer was fetched and refused at every
+//! start. That is said plainly in `docs/changelog.md` and on
+//! `docs/installing.md` rather than left for somebody to discover. When there is
+//! a certificate, the name it carries is the one [`WHO_SIGNS_THIS`] already
+//! expects, and the profile it comes from is written into
+//! [`THE_CERTIFICATE_PROFILE_IT_SIGNS_WITH`], which is empty until then and
+//! refuses everything while it is.
 //!
 //! # What no test here reaches
 //!
@@ -337,8 +341,9 @@ pub enum Refused {
 impl Refused {
     /// The sentence somebody hears and reads.
     ///
-    /// Every one of them says the file was deleted and says where to go
-    /// instead, because a refusal that leaves somebody with no way forward is
+    /// Every one of them says where to go instead, and each made after a
+    /// fetch says the file was deleted, because a refusal that leaves somebody
+    /// with no way forward is
     /// how a person ends up downloading an installer by hand from wherever a
     /// search engine offers one.
     pub fn said(&self) -> String {
@@ -513,7 +518,14 @@ impl From<NotArrivedBecause> for NotArrived {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NextStep {
     /// Fetch the installer from these files. Nobody is asked first.
-    FetchIt(Vec<ReleaseFile>),
+    FetchIt {
+        /// The version on offer, as it was published.
+        version: String,
+        /// The page about it, the way forward by hand if the fetch fails.
+        page: String,
+        /// The files published beside it.
+        files: Vec<ReleaseFile>,
+    },
     /// Say what the check found and stop there.
     JustSayIt,
     /// Say the newer version exists, say why it is not being fetched, and
@@ -544,17 +556,33 @@ pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextSt
 /// What to do about a check's answer, given the certificate profile an
 /// installer must carry.
 ///
-/// An offer leads straight to a fetch. Every other answer leads to a sentence
-/// and nothing else, because there is nothing to fetch.
+/// An offer leads straight to a fetch where an installer could pass the check,
+/// and to its page where none could, so nothing is downloaded only to be
+/// thrown away. Every other answer leads to a sentence and nothing else,
+/// because there is nothing to fetch.
 pub fn what_to_do_about_with_profile(
     answer: &crate::service::update_check::Answer,
-    _profile: &str,
+    profile: &str,
 ) -> NextStep {
-    match answer {
-        crate::service::update_check::Answer::ANewerVersion { files, .. } => {
-            NextStep::FetchIt(files.clone())
-        }
-        _ => NextStep::JustSayIt,
+    let crate::service::update_check::Answer::ANewerVersion {
+        version,
+        page,
+        files,
+        ..
+    } = answer
+    else {
+        return NextStep::JustSayIt;
+    };
+    match whether_an_installer_could_be_accepted(profile) {
+        Ok(()) => NextStep::FetchIt {
+            version: version.clone(),
+            page: page.clone(),
+            files: files.clone(),
+        },
+        Err(why) => NextStep::SendThemToThePage {
+            why,
+            page: page.clone(),
+        },
     }
 }
 
@@ -668,8 +696,18 @@ pub fn whether_a_signature_can_be_checked_here() -> std::result::Result<(), Refu
 
 /// Whether an installer this project publishes could pass the check here,
 /// given the certificate profile it must carry.
-pub fn whether_an_installer_could_be_accepted(_profile: &str) -> std::result::Result<(), Refused> {
-    whether_a_signature_can_be_checked_here()
+///
+/// Asked before anything is fetched, for the reason
+/// [`whether_a_signature_can_be_checked_here`] is: while the profile is blank,
+/// [`whether_that_signer_is_ours`] refuses every installer, so fetching one
+/// spends a whole installer's worth of somebody's connection, at every start
+/// once a release exists, to learn what this already knows.
+pub fn whether_an_installer_could_be_accepted(profile: &str) -> std::result::Result<(), Refused> {
+    whether_a_signature_can_be_checked_here()?;
+    if profile.trim().is_empty() {
+        return Err(Refused::OurInstallersAreNotSignedYet);
+    }
+    Ok(())
 }
 
 /// Read the signature off a file.
@@ -1543,7 +1581,12 @@ mod tests {
         if whether_a_signature_can_be_checked_here().is_ok() {
             assert_eq!(
                 what_to_do_about_with_profile(&offer, A_PROFILE),
-                NextStep::FetchIt(a_real_release()),
+                NextStep::FetchIt {
+                    version: "v0.117.0".to_string(),
+                    page: "https://github.com/PratikP1/Wixen-Mail/releases/tag/v0.117.0"
+                        .to_string(),
+                    files: a_real_release(),
+                },
                 "a kind of version was chosen, so the fetch is the program's own doing"
             );
         }
@@ -1570,8 +1613,8 @@ mod tests {
     #[test]
     fn test_an_installer_could_be_accepted_only_once_the_profile_is_known() {
         // Gap 1 of the research on the update mechanism: with the identifier
-        // empty, every installer is refused after it is fetched, about 15.7
-        // MB at every start once a release exists. Asked before the fetch,
+        // empty, every installer is refused after it is fetched, the whole
+        // file at every start once a release exists. Asked before the fetch,
         // the answer is known without a byte.
         for blank in ["", "   ", "\t"] {
             assert_eq!(
@@ -1707,16 +1750,20 @@ mod tests {
     /// person's answer, and the one this guards is the window that opened at
     /// every start.
     fn the_dialog_waits_for_a_check_by_hand(arm: &str) -> bool {
-        let (Some(dialog), Some(by_hand)) = (
+        const ON_WHO_ASKED: &str = "match asked {";
+        let (Some(dialog), Some(by_hand), Some(choice)) = (
             arm.find("MessageDialog::builder"),
             arm.find("WhoAsked::ByHand =>"),
+            arm.find(ON_WHO_ASKED),
         ) else {
             return false;
         };
         let Some(open) = arm[by_hand..].find('{').map(|at| by_hand + at) else {
             return false;
         };
-        open < dialog && dialog < where_it_closes(arm, open)
+        let chosen_on_who_asked =
+            choice < by_hand && by_hand < where_it_closes(arm, choice + ON_WHO_ASKED.len() - 1);
+        chosen_on_who_asked && open < dialog && dialog < where_it_closes(arm, open)
     }
 
     #[test]
@@ -1744,6 +1791,18 @@ mod tests {
         assert!(
             !the_dialog_waits_for_a_check_by_hand(whoever_asked),
             "the reading above cannot see a dialog opened after the branch for who asked"
+        );
+        let on_a_fixed_answer = "{ said, page, asked } => {\n\
+             \x20   match &WhoAsked::ByHand {\n\
+             \x20       WhoAsked::AtStart => {}\n\
+             \x20       WhoAsked::ByHand => {\n\
+             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20       }\n\
+             \x20   }\n\
+             }\n";
+        assert!(
+            !the_dialog_waits_for_a_check_by_hand(on_a_fixed_answer),
+            "the reading above cannot see a branch that ignores who asked"
         );
         let by_hand_only = "{ said, page, asked } => {\n\
              \x20   match asked {\n\

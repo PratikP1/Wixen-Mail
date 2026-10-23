@@ -11662,11 +11662,6 @@ fn refuse_a_command(tx: &Sender<UIUpdate>, why: &str) {
     let _ = tx.try_send(UIUpdate::CommandRefused(why.to_string()));
 }
 
-/// Open one page of help in the browser.
-///
-/// Said when it fails, because a menu entry that appears to do nothing is the
-/// worst kind of broken: somebody presses it again, and then decides help does
-/// not work rather than that one page is missing.
 /// Ask GitHub whether a newer version has been published, and say what it said.
 ///
 /// Off the interface thread, always. This is a network call, and a window that
@@ -11688,7 +11683,7 @@ fn ask_whether_there_is_a_newer_version(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
 ) {
-    use crate::service::update_check::{self, Answer, WhoAsked};
+    use crate::service::update_check::{self, WhoAsked};
 
     let chosen = crate::data::config::ConfigManager::load_stored()
         .map(|stored| stored.app_config().which_updates)
@@ -11705,80 +11700,96 @@ fn ask_whether_there_is_a_newer_version(
     let say_everything = asked == WhoAsked::ByHand;
     let tx = tx.clone();
     rt.spawn(async move {
-        use crate::service::update_download::{self, Fetched, NextStep};
+        use crate::service::update_download::{self, NextStep};
 
         let answer = update_check::ask(channel).await;
-        let NextStep::FetchIt(files) = update_download::what_to_do_about(&answer) else {
-            if say_everything {
+        // Every step by name and no wildcard, so a step added later does not
+        // compile until somebody decides what it says.
+        match update_download::what_to_do_about(&answer) {
+            NextStep::JustSayIt if say_everything => {
                 let _ = tx.try_send(UIUpdate::CommandAnswered(answer.said()));
-            } else {
+            }
+            NextStep::JustSayIt => {
                 tracing::info!("Update check at start: {}", answer.said());
             }
-            return;
-        };
-        let (version, page) = match &answer {
-            Answer::ANewerVersion { version, page, .. } => (version.clone(), page.clone()),
-            // Unreachable: `what_to_do_about` only answers `FetchIt` for an
-            // offer. Written as a return rather than a panic because this
-            // handles a reply from a server and nothing on that path may
-            // decide to end the program.
-            other => {
-                tracing::error!("An offer led to a fetch and was not an offer: {other:?}");
-                return;
+            // Nothing is fetched, because nothing fetched could pass. What was
+            // found and why it stops there go together, with the page.
+            NextStep::SendThemToThePage { why, page } => {
+                let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
+                    said: format!("{} {}", answer.said(), why.said()),
+                    page,
+                    asked,
+                });
             }
-        };
-
-        // One sentence before the fetch, and only where somebody pressed
-        // something and is waiting for an answer. An unattended fetch says
-        // nothing here at all: it can start while somebody is reading a
-        // message, weeks after they chose a kind of version, and announcing
-        // the start of work nobody asked for at this moment is an
-        // interruption rather than news. What it has to say, it says when it
-        // is finished. That is guardrail 5 both ways round: not flooding, and
-        // not coalescing away the one sentence that matters.
-        if say_everything {
-            let _ = tx.try_send(UIUpdate::CommandAnswered(format!(
-                "{} Downloading it now.",
-                answer.said()
-            )));
-        } else {
-            tracing::info!("Update check at start: {}", answer.said());
-        }
-
-        let Ok(paths) = crate::common::paths::AppPaths::resolve() else {
-            let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
-                said: "Wixen Mail could not work out where to keep a downloaded update, so \
-                       nothing was downloaded."
-                    .to_string(),
+            NextStep::FetchIt {
+                version,
                 page,
-            });
-            return;
-        };
-        // Nobody is asked here. The consent for the fetch was given at the
-        // setting, whose description says installers are downloaded without
-        // asking again, or by pressing Check for Updates. The only question in
-        // this feature is whether to run what arrived, and it belongs to a file
-        // that has passed both checks.
-        match update_download::fetch(&version, &files, &paths).await {
-            Fetched::Ready(installer) => {
-                let _ = tx.try_send(UIUpdate::AnUpdateIsReady { installer });
-            }
-            Fetched::Refused(why) => {
-                let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
-                    said: why.said(),
-                    page,
-                });
-            }
-            Fetched::NotArrived(why) => {
-                let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
-                    said: why.said(),
-                    page,
-                });
+                files,
+            } => {
+                // One sentence before the fetch, and only where somebody
+                // pressed something and is waiting for an answer. An
+                // unattended fetch says nothing here at all: it can start
+                // while somebody is reading a message, weeks after they chose
+                // a kind of version, and announcing the start of work nobody
+                // asked for at this moment is an interruption rather than
+                // news. What it has to say, it says when it is finished. That
+                // is guardrail 5 both ways round: not flooding, and not
+                // coalescing away the one sentence that matters.
+                if say_everything {
+                    let _ = tx.try_send(UIUpdate::CommandAnswered(format!(
+                        "{} Downloading it now.",
+                        answer.said()
+                    )));
+                } else {
+                    tracing::info!("Update check at start: {}", answer.said());
+                }
+                fetch_the_installer(&version, page, &files, asked, &tx).await;
             }
         }
     });
 }
 
+/// Fetch and check a newer version's installer, and send what came of it.
+///
+/// Nobody is asked here. The consent for the fetch was given at the setting,
+/// whose description says installers are downloaded without asking again, or
+/// by pressing Check for Updates. The only question in this feature is whether
+/// to run what arrived, and it belongs to a file that has passed both checks.
+async fn fetch_the_installer(
+    version: &str,
+    page: String,
+    files: &[crate::service::update_download::ReleaseFile],
+    asked: crate::service::update_check::WhoAsked,
+    tx: &Sender<UIUpdate>,
+) {
+    use crate::service::update_download::{self, Fetched};
+
+    let Ok(paths) = crate::common::paths::AppPaths::resolve() else {
+        let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen {
+            said: "Wixen Mail could not work out where to keep a downloaded update, so \
+                   nothing was downloaded."
+                .to_string(),
+            page,
+            asked,
+        });
+        return;
+    };
+    let said = match update_download::fetch(version, files, &paths).await {
+        Fetched::Ready(installer) => {
+            let _ = tx.try_send(UIUpdate::AnUpdateIsReady { installer });
+            return;
+        }
+        Fetched::Refused(why) => why.said(),
+        Fetched::NotArrived(why) => why.said(),
+    };
+    let _ = tx.try_send(UIUpdate::AnUpdateDidNotHappen { said, page, asked });
+}
+
+/// Open one page of help in the browser.
+///
+/// Said when it fails, because a menu entry that appears to do nothing is the
+/// worst kind of broken: somebody presses it again, and then decides help does
+/// not work rather than that one page is missing.
 fn open_help(topic: &crate::application::help::Topic, tx: &Sender<UIUpdate>, rt: &Arc<Runtime>) {
     use crate::application::help::plain;
     match crate::presentation::help_page::open(topic.file) {
@@ -24619,39 +24630,57 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // coalesced away by the status a sync is producing underneath it.
             let _ = a11y.announce_topic(said, Priority::High, "command");
         }
-        UIUpdate::AnUpdateDidNotHappen { said, page } => {
-            {
-                let mut s = lock_state(state);
-                s.status_message = said.clone();
-            }
-            frame.set_status_text(said, 0);
-            // Said the way an answer to a pressed key is said, on the same
-            // topic. A download that was refused is the loudest thing this
-            // feature has to say, and it must not be coalesced away by the
-            // status a sync is producing underneath it.
-            let _ = a11y.announce_topic(said, Priority::High, "command");
+        UIUpdate::AnUpdateDidNotHappen { said, page, asked } => {
+            use crate::service::update_check::WhoAsked;
+            use crate::service::update_download::WHERE_THE_PAGE_IS_OFFERED;
 
-            // And then a control, because the answer has an act attached to it
-            // and an announcement carries none. It is about opening a page in a
-            // browser, never about running the file: a question offering to run
-            // an installer that failed its check is the one thing this feature
-            // may not do. Enter answers no, so nothing opens for somebody who
-            // pressed Enter to dismiss the sentence.
-            let asked = MessageDialog::builder(
-                frame,
-                &format!("{said}\n\nOpen the releases page in your browser?"),
-                "Update",
-            )
-            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-            .build()
-            .show_modal();
-            if asked != ID_YES {
-                return;
-            }
-            if open::that(page).is_err() {
-                let could_not = format!("Could not open a browser. The page is {page}");
-                frame.set_status_text(&could_not, 0);
-                let _ = a11y.announce_topic(&could_not, Priority::High, "command");
+            match asked {
+                // Nobody pressed anything, so this is news rather than the
+                // answer to a key: said once, at normal priority under a topic
+                // of its own, with where the page is offered, and no window. A
+                // dialog that opened by itself at every start is the flooding
+                // guardrail 5 is about.
+                WhoAsked::AtStart => {
+                    let shown = format!("{said} {WHERE_THE_PAGE_IS_OFFERED}");
+                    {
+                        let mut s = lock_state(state);
+                        s.status_message = shown.clone();
+                    }
+                    frame.set_status_text(&shown, 0);
+                    let _ = a11y.announce_topic(&shown, Priority::Normal, "new version");
+                }
+                WhoAsked::ByHand => {
+                    {
+                        let mut s = lock_state(state);
+                        s.status_message = said.clone();
+                    }
+                    frame.set_status_text(said, 0);
+                    // Said the way an answer to a pressed key is said, on the
+                    // same topic, so it is not coalesced away by the status a
+                    // sync is producing underneath it.
+                    let _ = a11y.announce_topic(said, Priority::High, "command");
+
+                    // And then a control, because the answer has an act
+                    // attached to it and an announcement carries none. It is
+                    // about opening a page in a browser, never about running
+                    // the file: a question offering to run an installer that
+                    // failed its check is the one thing this feature may not
+                    // do. Enter answers no, so nothing opens for somebody who
+                    // pressed Enter to dismiss the sentence.
+                    let answered = MessageDialog::builder(
+                        frame,
+                        &format!("{said}\n\nOpen the releases page in your browser?"),
+                        "Update",
+                    )
+                    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+                    .build()
+                    .show_modal();
+                    if answered == ID_YES && open::that(page).is_err() {
+                        let could_not = format!("Could not open a browser. The page is {page}");
+                        frame.set_status_text(&could_not, 0);
+                        let _ = a11y.announce_topic(&could_not, Priority::High, "command");
+                    }
+                }
             }
         }
         UIUpdate::AnUpdateIsReady { installer } => {

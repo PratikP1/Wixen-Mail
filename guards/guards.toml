@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 910 records have arrived since and have not been through it.
+# 912 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22481,7 +22481,7 @@ red = [
     "service::update_download::tests::test_the_usages_read_off_a_signed_file_include_code_signing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 47 },
+    { file = "src/service/update_download.rs", tests = 54 },
 ]
 
 # An installer carrying this project's name is refused unless its certificate
@@ -22501,7 +22501,7 @@ red = [
     "service::update_download::tests::test_while_the_profile_is_unknown_even_our_name_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 47 },
+    { file = "src/service/update_download.rs", tests = 54 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -22542,7 +22542,7 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 47 },
+    { file = "src/service/update_download.rs", tests = 54 },
 ]
 
 # The person chose whether the day comes before the month and whether the month
@@ -44488,4 +44488,43 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/protocols/imap/special_use.rs", tests = 23 },
+]
+
+# The rule that nothing is fetched while no installer could pass the signer
+# check, because the certificate profile is blank (13.3-23, the research's gap
+# 1). Broken by letting a blank profile through, so an offer is fetched only
+# to be refused.
+[[guard]]
+name = "a blank certificate profile fetches nothing"
+file = "src/service/update_download.rs"
+before = '''    whether_a_signature_can_be_checked_here()?;
+    if profile.trim().is_empty() {'''
+after = '''    whether_a_signature_can_be_checked_here()?;
+    if profile.trim() == "not set" {'''
+red = [
+    "service::update_download::tests::test_an_installer_could_be_accepted_only_once_the_profile_is_known",
+    "service::update_download::tests::test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 54 },
+]
+
+# The window's releases-page dialog waits for a check asked for by hand, so a
+# check at start opens no window (13.3-23, the research's gap 1). Broken by
+# choosing on a fixed answer rather than on who asked, which opens the dialog
+# whoever asked. Anchored on the match and the comment under it, since
+# `match asked {` alone names two places in the window.
+[[guard]]
+name = "a check at start opens no releases-page dialog"
+file = "src/presentation/wx_app.rs"
+before = '''            match asked {
+                // Nobody pressed anything, so this is news rather than the'''
+after = '''            match &WhoAsked::ByHand {
+                // Nobody pressed anything, so this is news rather than the'''
+red = [
+    "service::update_download::tests::test_a_refusal_found_at_start_opens_no_dialog",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/service/update_download.rs", tests = 54 },
 ]
