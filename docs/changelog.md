@@ -801,6 +801,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The New versions setting names the installer's real size, about 15 MB (2026-10-23,
+  SHIP-02).** Its description, under Settings, then General, said an update download was about
+  12 MB. The newest installer built is 15,725,012 bytes, which File Explorer shows as 14.9 MB,
+  and the privacy page now gives that measurement with its date.
+
 - **The update check no longer downloads an installer it could only refuse (2026-10-23,
   SHIP-02).** Nothing this project publishes is signed yet, so every installer Wixen Mail
   fetched was refused and deleted, and once a newer version was published that would have
@@ -1463,6 +1468,13 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Installing an update from inside Wixen Mail now closes it the way Quit does (2026-10-23,
+  SHIP-02).** With "Keep Wixen Mail running in the notification area" on, answering Yes to
+  install an update would have hidden Wixen Mail in the notification area while the installer
+  waited for it to close, and you would have heard that Wixen Mail was still running just after
+  hearing it was closing. Now it empties the Trash where you set that, signs out, takes its
+  icon out of the notification area and ends, as Quit does. Nobody could meet this yet,
+  because no installer passes the signature check until this project's installers are signed.
 - **Automatic saving no longer says every minute that an older copy of a draft may still be on
   the server (2026-10-22, FOUND-04).** Some mail servers cannot take away one message at a
   time; they can only mark it for removal. On those, every automatic save of a draft, once a

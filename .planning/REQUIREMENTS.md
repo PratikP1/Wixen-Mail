@@ -1899,6 +1899,13 @@ write path added by this milestone passes through that gate.
     folder of its own that goes with its file; the check is given up on after 30 seconds and the
     download after 30 seconds without connecting or 30 of silence. This narrows what is fetched
     under the first `[D]` line and adds no `[D]` clause; the box stays open. Ledger 944.
+  - 13.3-24 on 2026-10-23, the research's gaps 2 and 5: answering Yes to installing an update
+    closes Wixen Mail through the function Quit closes through, so the notification area
+    setting cannot turn the handover into a hide; the New versions control names the
+    installer as about 15 MB, held by a case to the privacy page's 15,725,012 bytes measured
+    that day; the update comments and the release page say what the code does now. The second
+    `[D]` line is unchanged, no `[D]` clause is added and the box stays open. Ledger 945 opened
+    and fixed, 946 opened, 335 and 339 amended.
 
 - [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
@@ -8387,7 +8394,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FEEDBACK-02 | Phase 6 | Complete; phase 13.2: 13.2-30 merged 2026-10-18, one translation system and the two picture words as pinned literals, adding no `[D]` clause. Until 13.2-30 "Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause" |
 | FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
-| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870; phase 13.3: 13.3-23 done 2026-10-23, nothing fetched while no installer could pass, a check at start opens no window, one check at a time, limits on a stalled connection, adding no `[D]` clause, ledger 944 |
+| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870; phase 13.3: 13.3-23 done 2026-10-23, nothing fetched while no installer could pass, a check at start opens no window, one check at a time, limits on a stalled connection, adding no `[D]` clause, ledger 944; 13.3-24 done 2026-10-23, Yes to an update quits the way Quit does, the control names about 15 MB held to the measured size, adding no `[D]` clause, ledger 945 and 946 |
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
