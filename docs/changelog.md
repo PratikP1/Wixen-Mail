@@ -1468,6 +1468,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Contacts a CardDAV address book left out of one sync now arrive at a later one (2026-10-23,
+  PIM-05).** When a CardDAV server sent only part of an address book, because it stopped at its
+  own limit or sent cards Wixen Mail cannot read, Wixen Mail still took the address book as up
+  to date. It did not ask for the cards again until something else in the address book changed,
+  so the contacts the server left out stayed missing here and only the first sync said there
+  was a problem. Now the next sync asks for the whole address book again, and the contacts
+  arrive once the server sends them. Until it does, each sync counts the problem in its
+  summary.
+
+  Known limits. This has not been tried against a real address book; the tests use the
+  program's own stand-in server. A server that always sends only part of its cards is now read
+  in full at every sync you ask for.
+
 - **When your accounts cannot all be saved, Wixen Mail now shows them as they were really saved
   (2026-10-23, MAIL-04).** If Wixen Mail could not save a change you made in the Account
   Manager, the main window went on listing an account that had not been saved, and started
