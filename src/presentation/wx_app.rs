@@ -11691,6 +11691,18 @@ fn ask_whether_there_is_a_newer_version(
     let Some(channel) = update_check::channel_for(chosen, asked) else {
         return;
     };
+    // One check at a time, held by the task below until it ends however it
+    // ends, so a second check cannot fetch beside this one's download or write
+    // over the installer it checked.
+    let Some(under_way) = update_check::ONE_CHECK.begin() else {
+        match update_check::what_a_second_check_says(asked) {
+            Some(said) => {
+                let _ = tx.try_send(UIUpdate::CommandAnswered(said));
+            }
+            None => tracing::info!("Update check at start dropped: another check is under way"),
+        }
+        return;
+    };
 
     // Said only where somebody pressed something. A check at start that
     // announces "you are up to date" every morning is the flooding guardrail 5
@@ -11702,6 +11714,8 @@ fn ask_whether_there_is_a_newer_version(
     rt.spawn(async move {
         use crate::service::update_download::{self, NextStep};
 
+        // Moved in here, so it is let go when this task ends, download and all.
+        let _under_way = under_way;
         let answer = update_check::ask(channel).await;
         // Every step by name and no wildcard, so a step added later does not
         // compile until somebody decides what it says.

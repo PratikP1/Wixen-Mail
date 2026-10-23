@@ -254,7 +254,8 @@ pub fn what_is_said_before_the_window_closes(installer: &Verified) -> String {
 
 /// Somebody said no. Throw the installer away.
 ///
-/// The file goes rather than waiting in case they change their mind. A declined
+/// The file goes, with the folder of its own it was downloaded into, rather
+/// than waiting in case they change their mind. A declined
 /// installer sitting on the disk is a file somebody can find and run by hand
 /// having decided not to, and the next check will fetch it again in seconds if
 /// they change their mind.
@@ -267,7 +268,9 @@ pub fn say_no(installer: Verified) -> Result<()> {
             "Could not remove {}: {why}",
             installer.at.display()
         ))
-    })
+    })?;
+    its_folder_goes_too(&installer.at);
+    Ok(())
 }
 
 /// Start the installer and leave it to replace this program.
@@ -1073,6 +1076,27 @@ fn throw_it_away(at: &Path) {
         && let Err(why) = std::fs::remove_file(at)
     {
         tracing::warn!("A refused installer could not be deleted from {at:?}: {why}");
+        return;
+    }
+    its_folder_goes_too(at);
+}
+
+/// Remove the folder a downloaded installer sat in, once the installer has
+/// gone.
+///
+/// Each download has a folder of its own under the updates folder, and a
+/// folder left behind there is one the privacy page would have to describe.
+/// `remove_dir` rather than `remove_dir_all`, because it removes only an empty
+/// folder: an installer kept anywhere else can take nothing with it but
+/// itself. A folder that cannot be removed is logged rather than raised, as a
+/// file that cannot be deleted is, because the file going is what matters.
+fn its_folder_goes_too(at: &Path) {
+    if let Some(folder) = at.parent()
+        && let Err(why) = std::fs::remove_dir(folder)
+    {
+        tracing::warn!(
+            "The folder an installer sat in could not be removed from {folder:?}: {why}"
+        );
     }
 }
 
@@ -1186,9 +1210,19 @@ const A_DOWNLOAD_HAS_THIS_LONG_TO_CONNECT: std::time::Duration = std::time::Dura
 /// cut a slow one that keeps arriving (the research's gap 4, 13.3-23).
 const A_DOWNLOAD_MAY_GO_QUIET_FOR: std::time::Duration = std::time::Duration::from_secs(30);
 
-/// Where one download is written: the published name, made safe.
-fn where_this_download_goes(paths: &AppPaths, published: &str) -> PathBuf {
-    paths.updates_dir().join(a_name_safe_to_write(published))
+/// Where one download is written, as the folder and the file in it: a folder
+/// of its own under the updates folder, named afresh, holding the published
+/// name made safe.
+///
+/// A folder per download rather than one shared file, because two checks that
+/// both reached a fetch would otherwise write the same path, and one could be
+/// writing over the installer the other has just checked and is about to run
+/// (the research's gap 3, 13.3-23). The published name is kept, since it is
+/// what a person sees if they open the folder.
+fn where_this_download_goes(paths: &AppPaths, published: &str) -> (PathBuf, PathBuf) {
+    let folder = paths.updates_dir().join(uuid::Uuid::new_v4().to_string());
+    let at = folder.join(a_name_safe_to_write(published));
+    (folder, at)
 }
 
 /// [`bring_it_down`], with the time it gives a host to connect and to go quiet.
@@ -1196,17 +1230,11 @@ async fn bring_it_down_within(
     version: &str,
     installer: &ReleaseFile,
     paths: &AppPaths,
-    _connect: std::time::Duration,
-    _quiet: std::time::Duration,
+    connect: std::time::Duration,
+    quiet: std::time::Duration,
 ) -> std::result::Result<Downloaded, NotArrived> {
-    use std::io::Write;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU8, Ordering};
-
-    let room = paths.updates_dir();
-    std::fs::create_dir_all(&room)
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", room.display())))?;
-    let at = where_this_download_goes(paths, &installer.name);
 
     // Why a redirect was refused, carried out of the policy callback. The
     // callback cannot return a reason of its own, and "the download failed" in
@@ -1237,8 +1265,13 @@ async fn bring_it_down_within(
         _ => NotArrived::TheConnectionFailed,
     };
 
+    // A limit on connecting and a limit on silence, never one on the whole
+    // download, which would cut a slow one that keeps arriving. A client that
+    // cannot be built with them is not built at all: the limits are the point.
     let client = reqwest::Client::builder()
         .redirect(follower)
+        .connect_timeout(connect)
+        .read_timeout(quiet)
         .build()
         .map_err(|_| NotArrived::TheConnectionFailed)?;
     // Through the gate that cannot change anything, rather than on a client of
@@ -1255,31 +1288,46 @@ async fn bring_it_down_within(
         return Err(why_it_stopped());
     }
 
-    let mut file = std::fs::File::create(&at)
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
-    let mut so_far: u64 = 0;
-    loop {
-        let arrived = response.chunk().await.map_err(|_| {
-            let _ = std::fs::remove_file(&at);
-            NotArrived::TheConnectionFailed
-        })?;
-        let Some(chunk) = arrived else { break };
-        so_far = so_far.saturating_add(chunk.len() as u64);
-        if let Err(too_big) = whether_this_much_may_still_arrive(so_far) {
-            drop(file);
-            let _ = std::fs::remove_file(&at);
-            return Err(too_big);
+    // Made only now the host has answered with a success, so a download that
+    // fails before a byte arrives leaves no folder behind.
+    let (folder, at) = where_this_download_goes(paths, &installer.name);
+    std::fs::create_dir_all(&folder)
+        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", folder.display())))?;
+    if let Err(why) = write_it_down(&mut response, &at).await {
+        // Whole, which is safe because this call made the folder fresh and it
+        // holds nothing but this download's file, part written or not.
+        if let Err(stuck) = std::fs::remove_dir_all(&folder) {
+            tracing::warn!("A download that failed could not be cleared from {folder:?}: {stuck}");
         }
-        file.write_all(&chunk)
-            .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
+        return Err(why);
     }
-    file.flush()
-        .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display())))?;
-
     Ok(Downloaded {
         at,
         version: version.to_string(),
     })
+}
+
+/// Write a response's body to `at` as it arrives, bounded in size.
+async fn write_it_down(
+    response: &mut reqwest::Response,
+    at: &Path,
+) -> std::result::Result<(), NotArrived> {
+    use std::io::Write;
+
+    let not_kept =
+        |why: std::io::Error| NotArrived::CouldNotBeKept(format!("{}: {why}", at.display()));
+    let mut file = std::fs::File::create(at).map_err(not_kept)?;
+    let mut so_far: u64 = 0;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| NotArrived::TheConnectionFailed)?
+    {
+        so_far = so_far.saturating_add(chunk.len() as u64);
+        whether_this_much_may_still_arrive(so_far)?;
+        file.write_all(&chunk).map_err(not_kept)?;
+    }
+    file.flush().map_err(not_kept)
 }
 
 /// Where the releases are, for a refusal to point at.

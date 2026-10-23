@@ -122,7 +122,10 @@ impl OneCheckAtATime {
 
     /// A check may start, or `None` while another is under way.
     pub fn begin(&self) -> Option<CheckUnderWay<'_>> {
-        Some(CheckUnderWay {
+        let another_was_under_way = self
+            .under_way
+            .swap(true, std::sync::atomic::Ordering::AcqRel);
+        (!another_was_under_way).then_some(CheckUnderWay {
             under_way: &self.under_way,
         })
     }
@@ -155,8 +158,15 @@ pub static ONE_CHECK: OneCheckAtATime = OneCheckAtATime::new();
 /// Asked for by hand, one sentence, because somebody pressed something and a
 /// key that seems to do nothing gets pressed again. At start, nothing: the
 /// program asked, nobody is waiting, and a line in the log is enough.
-pub fn what_a_second_check_says(_asked: WhoAsked) -> Option<String> {
-    None
+pub fn what_a_second_check_says(asked: WhoAsked) -> Option<String> {
+    match asked {
+        WhoAsked::ByHand => Some(
+            "A check for a newer version is already under way, with its download if there \
+             is one. What it finds will be said when it finishes."
+                .to_string(),
+        ),
+        WhoAsked::AtStart => None,
+    }
 }
 
 /// What came back, reduced to the three things any rule here reads.
@@ -620,8 +630,16 @@ pub async fn ask(channel: ReleaseChannel) -> Answer {
 const A_CHECK_HAS_THIS_LONG: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Ask `address`, giving it `limit` to answer, and say what came back.
-async fn ask_at(address: &str, channel: ReleaseChannel, _limit: std::time::Duration) -> Answer {
-    let gate = crate::service::outward::Outward::read_only(reqwest::Client::new());
+///
+/// A client that cannot be built with the limit answers as no answer would,
+/// rather than asking without one: the limit is the point.
+async fn ask_at(address: &str, channel: ReleaseChannel, limit: std::time::Duration) -> Answer {
+    let Ok(client) = reqwest::Client::builder().timeout(limit).build() else {
+        return Answer::CouldNotBeFetched {
+            why: NotFetched::NoAnswer,
+        };
+    };
+    let gate = crate::service::outward::Outward::read_only(client);
     let sent = gate
         .reading(address)
         .header(reqwest::header::USER_AGENT, who_is_asking())

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 912 records have arrived since and have not been through it.
+# 918 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22192,7 +22192,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/version.rs", tests = 27 },
-    { file = "src/service/update_check.rs", tests = 23 },
+    { file = "src/service/update_check.rs", tests = 30 },
 ]
 
 # The channel check passing everything through, which is the half-fix rather
@@ -22305,7 +22305,7 @@ red = [
     "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 23 },
+    { file = "src/service/update_check.rs", tests = 30 },
 ]
 
 # ── 07-07 ─────────────────────────────────────────────────────────────────
@@ -22481,7 +22481,7 @@ red = [
     "service::update_download::tests::test_the_usages_read_off_a_signed_file_include_code_signing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 54 },
+    { file = "src/service/update_download.rs", tests = 59 },
 ]
 
 # An installer carrying this project's name is refused unless its certificate
@@ -22501,7 +22501,7 @@ red = [
     "service::update_download::tests::test_while_the_profile_is_unknown_even_our_name_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 54 },
+    { file = "src/service/update_download.rs", tests = 59 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -22542,7 +22542,7 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 54 },
+    { file = "src/service/update_download.rs", tests = 59 },
 ]
 
 # The person chose whether the day comes before the month and whether the month
@@ -44506,7 +44506,7 @@ red = [
     "service::update_download::tests::test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 54 },
+    { file = "src/service/update_download.rs", tests = 59 },
 ]
 
 # The window's releases-page dialog waits for a check asked for by hand, so a
@@ -44526,5 +44526,102 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/update_download.rs", tests = 54 },
+    { file = "src/service/update_download.rs", tests = 59 },
+]
+
+# One check for a newer version at a time: while one is under way no other is
+# given (13.3-23, the research's gap 3). Broken by giving a check whether or
+# not another was under way.
+[[guard]]
+name = "a second check is refused while one is under way"
+file = "src/service/update_check.rs"
+before = '''        (!another_was_under_way).then_some(CheckUnderWay {'''
+after = '''        (another_was_under_way || !another_was_under_way).then_some(CheckUnderWay {'''
+red = [
+    "service::update_check::tests::test_a_second_check_is_refused_while_one_is_held",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 30 },
+]
+
+# The window's check task holds the one check until it ends, download and all
+# (13.3-23, the research's gap 3). Broken by leaving the guard with the
+# function, which returns as soon as the task is started, so it is let go
+# before the check begins. Anchored on the comment and the line, since the
+# line alone is also written in update_check.rs's reading.
+[[guard]]
+name = "the window's check task holds the one check until it ends"
+file = "src/presentation/wx_app.rs"
+before = '''        // Moved in here, so it is let go when this task ends, download and all.
+        let _under_way = under_way;'''
+after = '''        // Moved in here, so it is let go when this task ends, download and all.
+        let _under_way = ();'''
+red = [
+    "service::update_check::tests::test_the_window_takes_the_one_check_before_it_starts_the_task",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/service/update_check.rs", tests = 30 },
+]
+
+# A check that gets no answer from GitHub is given up on within its limit
+# (13.3-23, the research's gap 4). Broken by building the client without it.
+[[guard]]
+name = "a check that gets no answer is given up on"
+file = "src/service/update_check.rs"
+before = '''    let Ok(client) = reqwest::Client::builder().timeout(limit).build() else {'''
+after = '''    let Ok(client) = reqwest::Client::builder().build() else {'''
+red = [
+    "service::update_check::tests::test_a_github_that_never_answers_is_given_up_on_within_the_limit",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 30 },
+]
+
+# A download whose host goes quiet is given up on, before its head or part way
+# through its body (13.3-23, the research's gap 4). Broken by taking the limit
+# on silence away and keeping the one on connecting.
+[[guard]]
+name = "a download that goes quiet is given up on"
+file = "src/service/update_download.rs"
+before = '''        .connect_timeout(connect)
+        .read_timeout(quiet)'''
+after = '''        .connect_timeout(connect)'''
+red = [
+    "service::update_download::tests::test_a_download_host_that_never_answers_is_given_up_on",
+    "service::update_download::tests::test_a_download_that_goes_quiet_partway_is_given_up_on_and_leaves_nothing",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 59 },
+]
+
+# Each download is written into a folder of its own, so two downloads of one
+# name are two files (13.3-23, the research's gap 3). Broken by writing every
+# download into the shared updates folder.
+[[guard]]
+name = "each download is written into a folder of its own"
+file = "src/service/update_download.rs"
+before = '''    let folder = paths.updates_dir().join(uuid::Uuid::new_v4().to_string());'''
+after = '''    let folder = paths.updates_dir();'''
+red = [
+    "service::update_download::tests::test_two_downloads_of_one_name_are_two_files",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 59 },
+]
+
+# A refused or declined installer takes the folder of its own with it (13.3-23,
+# the folder rule premise 2 of the plan added). Broken by asking about the
+# folder rather than removing it.
+[[guard]]
+name = "a refused or declined installer takes its folder with it"
+file = "src/service/update_download.rs"
+before = '''        && let Err(why) = std::fs::remove_dir(folder)'''
+after = '''        && let Err(why) = std::fs::metadata(folder).map(|_| ())'''
+red = [
+    "service::update_download::tests::test_a_declined_installer_takes_its_folder_with_it",
+    "service::update_download::tests::test_a_refused_installer_takes_its_folder_with_it",
+]
+tests_last_seen = [
+    { file = "src/service/update_download.rs", tests = 59 },
 ]
