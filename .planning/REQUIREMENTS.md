@@ -1444,6 +1444,12 @@ write path added by this milestone passes through that gate.
     card is kept and waits, and a contact deleted meanwhile is owed a deletion there. Held by a
     case in `carddav_sync.rs`, red first; the tester's half is ledger 935. No `[D]` clause is
     added and the box stays ticked.
+  - 13.3-24.4 on 2026-10-23 (ledger 928, Pratik's yes of 2026-10-22): the address book's
+    change marker is written down only after a whole answer, inside the block that takes off
+    who that answer left out, so after an answer the server stopped short or one with cards
+    that could not be read the next sync asks for the address book again and the cards it left
+    out arrive. Held by three cases in `carddav_sync.rs`, red first; a real server's half is
+    ledger 951. No `[D]` clause is added and the box stays ticked.
 
 ### How the application speaks
 
@@ -8421,7 +8427,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | PIM-04 | Phase 5 | Pending; phase 13.2: 13.2-20 merged 2026-10-17, the notes editor's Save marks the note waiting so an edit is sent, adding no `[D]` clause; phase 13.3: 13.3-11 done 2026-10-21, an edit, pin, move or delete made while a notes read fetches a newer copy is kept, adding no `[D]` clause. Until 13.2-20 "Pending; phase 13.2, planned 2026-10-14: 13.2-20, adding no `[D]` clause" |
 | PIM-07 | Phase 5 | Pending |
 | PIM-08 | Phase 5 | Pending |
-| PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause; phase 13.3: 13.3-10 done 2026-10-21, a CardDAV answer stopped short, half read or unsplittable takes nobody off (ledger 255 a dated line, 928 opened), adding no `[D]` clause; 13.3-18 done 2026-10-22, the made-here PUT and the change push read the contact again before writing the answer, ledger 935 opened, adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
+| PIM-05 | Phase 5 | Complete; phase 13.2: 13.2-19 merged 2026-10-16, the address book's XML decoder is the one every calendar reader uses, adding no `[D]` clause; phase 13.3: 13.3-10 done 2026-10-21, a CardDAV answer stopped short, half read or unsplittable takes nobody off (ledger 255 a dated line, 928 opened), adding no `[D]` clause; 13.3-18 done 2026-10-22, the made-here PUT and the change push read the contact again before writing the answer, ledger 935 opened, adding no `[D]` clause; 13.3-24.4 done 2026-10-23, the change marker kept after an answer that is not whole, so the next sync asks again (ledger 928 fixed, 255 a dated line, 951 opened), adding no `[D]` clause. Until 13.2-19 "Complete; phase 13.2, planned 2026-10-14: 13.2-19, adding no `[D]` clause" |
 | FEEDBACK-01 | Phase 6 | Pending |
 | FEEDBACK-02 | Phase 6 | Complete; phase 13.2: 13.2-30 merged 2026-10-18, one translation system and the two picture words as pinned literals, adding no `[D]` clause. Until 13.2-30 "Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause" |
 | FEEDBACK-03 | Phase 6 | Complete |
