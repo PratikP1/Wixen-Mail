@@ -1165,6 +1165,40 @@ async fn bring_it_down(
     installer: &ReleaseFile,
     paths: &AppPaths,
 ) -> std::result::Result<Downloaded, NotArrived> {
+    bring_it_down_within(
+        version,
+        installer,
+        paths,
+        A_DOWNLOAD_HAS_THIS_LONG_TO_CONNECT,
+        A_DOWNLOAD_MAY_GO_QUIET_FOR,
+    )
+    .await
+}
+
+/// How long a download waits for the host to accept the connection.
+const A_DOWNLOAD_HAS_THIS_LONG_TO_CONNECT: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// How long a download waits with nothing arriving before giving up.
+///
+/// A wait between reads, through `ClientBuilder::read_timeout`, which reqwest
+/// 0.13.4 resets after every read that succeeds and applies to waiting for the
+/// answer's head as well. Never a bound on the whole download, which would
+/// cut a slow one that keeps arriving (the research's gap 4, 13.3-23).
+const A_DOWNLOAD_MAY_GO_QUIET_FOR: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Where one download is written: the published name, made safe.
+fn where_this_download_goes(paths: &AppPaths, published: &str) -> PathBuf {
+    paths.updates_dir().join(a_name_safe_to_write(published))
+}
+
+/// [`bring_it_down`], with the time it gives a host to connect and to go quiet.
+async fn bring_it_down_within(
+    version: &str,
+    installer: &ReleaseFile,
+    paths: &AppPaths,
+    _connect: std::time::Duration,
+    _quiet: std::time::Duration,
+) -> std::result::Result<Downloaded, NotArrived> {
     use std::io::Write;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU8, Ordering};
@@ -1172,7 +1206,7 @@ async fn bring_it_down(
     let room = paths.updates_dir();
     std::fs::create_dir_all(&room)
         .map_err(|why| NotArrived::CouldNotBeKept(format!("{}: {why}", room.display())))?;
-    let at = room.join(a_name_safe_to_write(&installer.name));
+    let at = where_this_download_goes(paths, &installer.name);
 
     // Why a redirect was refused, carried out of the policy callback. The
     // callback cannot return a reason of its own, and "the download failed" in
@@ -2473,6 +2507,207 @@ mod tests {
                 Err(Refused::NothingSignedIt | Refused::TheSignatureIsNotValid { .. })
             ),
             "a file nothing signed was not refused"
+        );
+    }
+
+    // ── A folder of its own for each download, and a limit on a host that
+    // ── goes quiet (13.3-23, the research's gaps 3 and 4) ──────────────────
+
+    /// The limits these cases give a host, short so a case that waits on
+    /// purpose waits half a second rather than the thirty production gives.
+    const A_SHORT_LIMIT: std::time::Duration = std::time::Duration::from_millis(500);
+
+    /// The installer as a release would publish it, served from `address`.
+    fn published_at(address: std::net::SocketAddr) -> ReleaseFile {
+        ReleaseFile {
+            name: "Wixen-Mail-Setup-0.117.0.exe".to_string(),
+            from: format!("http://{address}/Wixen-Mail-Setup-0.117.0.exe"),
+        }
+    }
+
+    /// What is under `folder`, or nothing where the folder is not there.
+    fn whatever_is_in(folder: &Path) -> Vec<PathBuf> {
+        std::fs::read_dir(folder)
+            .map(|entries| entries.flatten().map(|entry| entry.path()).collect())
+            .unwrap_or_default()
+    }
+
+    /// A host that answers with a head promising a megabyte, sends a little of
+    /// it, and then goes quiet with the connection still open.
+    async fn a_host_that_goes_quiet_partway() -> std::net::SocketAddr {
+        use tokio::io::AsyncWriteExt;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("a loopback port");
+        let address = listener.local_addr().expect("the port that was taken");
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let head = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\n\
+                        Content-Length: 1048576\r\n\r\nMZ the first few bytes of it";
+            let _ = stream.write_all(head.as_bytes()).await;
+            std::future::pending::<()>().await;
+        });
+        address
+    }
+
+    #[tokio::test]
+    async fn test_a_download_host_that_never_answers_is_given_up_on() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let address = crate::common::answering::never_answering().await;
+
+        let started = std::time::Instant::now();
+        let arrived = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            bring_it_down_within(
+                "v0.117.0",
+                &published_at(address),
+                &paths,
+                A_SHORT_LIMIT,
+                A_SHORT_LIMIT,
+            ),
+        )
+        .await
+        .expect("the download waited past its limit for a host that never answers");
+
+        assert_eq!(arrived, Err(NotArrived::TheConnectionFailed));
+        assert!(
+            started.elapsed() < A_SHORT_LIMIT + std::time::Duration::from_secs(5),
+            "given up on after {:?}",
+            started.elapsed()
+        );
+        assert!(
+            !paths.updates_dir().exists(),
+            "a download that never got an answer made a folder for it"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_download_that_goes_quiet_partway_is_given_up_on_and_leaves_nothing() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let address = a_host_that_goes_quiet_partway().await;
+
+        let arrived = tokio::time::timeout(
+            crate::common::answering::LONG_ENOUGH,
+            bring_it_down_within(
+                "v0.117.0",
+                &published_at(address),
+                &paths,
+                A_SHORT_LIMIT,
+                A_SHORT_LIMIT,
+            ),
+        )
+        .await
+        .expect("the download waited past its limit for a host that went quiet");
+
+        assert_eq!(arrived, Err(NotArrived::TheConnectionFailed));
+        assert_eq!(
+            whatever_is_in(&paths.updates_dir()),
+            Vec::<PathBuf>::new(),
+            "a download given up on part way left something behind"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_two_downloads_of_one_name_are_two_files() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let mut kept = Vec::new();
+        for body in ["MZ the first", "MZ the second"] {
+            let (address, _asked) = crate::common::answering::answering(
+                "200 OK",
+                "application/octet-stream",
+                body.to_string(),
+            )
+            .await;
+            let downloaded = tokio::time::timeout(
+                crate::common::answering::LONG_ENOUGH,
+                bring_it_down_within(
+                    "v0.117.0",
+                    &published_at(address),
+                    &paths,
+                    A_SHORT_LIMIT,
+                    A_SHORT_LIMIT,
+                ),
+            )
+            .await
+            .expect("a host that answers to be heard within the bound")
+            .expect("a host that answers to be downloaded from");
+            kept.push(downloaded.at().to_path_buf());
+        }
+
+        assert_ne!(
+            kept[0], kept[1],
+            "two downloads of one name were written to one file, so one can write over \
+             an installer the other has checked"
+        );
+        for at in &kept {
+            assert!(
+                at.starts_with(paths.updates_dir()),
+                "{at:?} is outside the updates folder"
+            );
+            assert_eq!(
+                at.file_name().and_then(|name| name.to_str()),
+                Some("Wixen-Mail-Setup-0.117.0.exe"),
+                "the published name was not kept"
+            );
+            assert!(at.exists(), "{at:?} was not written");
+        }
+    }
+
+    /// An unsigned installer in a folder of its own under the updates folder,
+    /// as a download leaves one.
+    fn an_installer_in_its_own_folder(paths: &AppPaths) -> PathBuf {
+        let folder = paths.updates_dir().join("one-download");
+        std::fs::create_dir_all(&folder).unwrap();
+        let at = folder.join("Wixen-Mail-Setup-0.117.0.exe");
+        std::fs::write(&at, b"not an installer").unwrap();
+        at
+    }
+
+    #[test]
+    fn test_a_refused_installer_takes_its_folder_with_it() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let at = an_installer_in_its_own_folder(&paths);
+
+        let refused = verify(Downloaded {
+            at: at.clone(),
+            version: "v0.117.0".to_string(),
+        });
+
+        assert!(refused.is_err(), "an unsigned file was accepted");
+        assert!(!at.exists(), "the refused installer was left behind");
+        assert!(
+            at.parent().is_some_and(|folder| !folder.exists()),
+            "the refused installer's folder was left behind"
+        );
+        assert!(
+            paths.updates_dir().exists(),
+            "the updates folder itself went too"
+        );
+    }
+
+    #[test]
+    fn test_a_declined_installer_takes_its_folder_with_it() {
+        let dir = TempDir::new().unwrap();
+        let paths = AppPaths::under(dir.path().join("wixen-mail"));
+        let at = an_installer_in_its_own_folder(&paths);
+
+        say_no(a_checked_installer(at.clone())).expect("declining to work");
+
+        assert!(!at.exists(), "the declined installer was left behind");
+        assert!(
+            at.parent().is_some_and(|folder| !folder.exists()),
+            "the declined installer's folder was left behind"
+        );
+        assert!(
+            paths.updates_dir().exists(),
+            "the updates folder itself went too"
         );
     }
 }
