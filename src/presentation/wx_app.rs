@@ -5624,24 +5624,19 @@ impl WxMailApp {
                         _ if id == ID_REPLY_SENDER => {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
-                        _ if id == ID_FORWARD => {
-                            let (subj, quote) = msg_info(&state, message_cache.as_deref());
-                            match quote {
-                                TheQuote::NotHere(not_here) => {
-                                    the_text_is_not_here_yet(app, &a11y, not_here)
-                                }
-                                TheQuote::Here(body) => open_compose(
-                                    app,
-                                    &frame,
-                                    &message_cache,
-                                    &a11y,
-                                    ComposeMode::Forward {
-                                        subject: subj,
-                                        body,
-                                    },
-                                ),
+                        _ if id == ID_FORWARD => match msg_info(&state, message_cache.as_deref()) {
+                            None => no_message_is_chosen(&a11y),
+                            Some((_, TheQuote::NotHere(not_here))) => {
+                                the_text_is_not_here_yet(app, &a11y, not_here)
                             }
-                        }
+                            Some((subject, TheQuote::Here(body))) => open_compose(
+                                app,
+                                &frame,
+                                &message_cache,
+                                &a11y,
+                                ComposeMode::Forward { subject, body },
+                            ),
+                        },
                         // Delete acts on whatever is in front of you. In Mail
                         // that is a message, with server semantics behind it;
                         // in the other five it is the row the panel is on.
@@ -19568,8 +19563,7 @@ fn start_reply(
         )
     };
     let Some(message) = selected else {
-        let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
-        return;
+        return no_message_is_chosen(a11y);
     };
     // Every address you send from is yours, the other addresses an account
     // keeps as much as its own, so Reply All sends none of them a copy.
@@ -19888,24 +19882,22 @@ fn file_name_of(path: &std::path::Path) -> String {
 }
 
 /// What Forward takes from the message a command is for: its subject and
-/// the text it quotes.
+/// the text it quotes, or nothing when no message is for it.
 ///
 /// Forward's alone, and it works out no reply address because a forward has
 /// none: Reply goes through `start_reply`, and the Reply-To rule lives in
 /// `application::reply`.
-fn msg_info(state: &Arc<StdMutex<WxUIState>>, cache: Option<&MessageCache>) -> (String, TheQuote) {
+fn msg_info(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> Option<(String, TheQuote)> {
     let message = state
         .lock()
         .map(|s| s.the_message_a_command_is_for().cloned())
         .ok()
-        .flatten();
-    match message {
-        Some(message) => {
-            let quote = the_body_a_command_quotes(state, cache, &message);
-            (message.subject, quote)
-        }
-        None => (String::new(), TheQuote::Here(MessageBody::default())),
-    }
+        .flatten()?;
+    let quote = the_body_a_command_quotes(state, cache, &message);
+    Some((message.subject, quote))
 }
 
 /// What a reply or a forward has to quote.
@@ -19924,27 +19916,23 @@ struct NotHere {
 }
 
 /// The text a reply or a forward quotes of `message`, the message the
-/// command is for: when an opened conversation named it, read from the store
-/// while its command runs (13.2-03); otherwise the preview, which holds the
-/// message the cursor row stands for.
+/// command is for, read from the store while its command runs, whether an
+/// opened conversation named it (13.2-03) or the list's cursor row stands for
+/// it (13.3-24.2).
 ///
-/// Never the preview while a message is named, because the preview holds
-/// the list row's message and a reply would quote a message nobody chose.
-/// And never nothing: a named message whose text is not here answers that
-/// (13.3-05), so the command says so and fetches it rather than quoting an
-/// empty body somebody would send believing it held the message.
+/// Never the preview, which is the landing's alone. It holds what the store
+/// holds, or the window's own words while the text is not here, and a
+/// forward sent from it in that moment passed those words on as the
+/// sender's (ledger 917). And never nothing: a message whose text is not
+/// here answers that (13.3-05), so the command says so and fetches it rather
+/// than quoting an empty body somebody would send believing it held the
+/// message. A message that came down with no text has none to fetch, and is
+/// quoted as nothing (ledger 919).
 fn the_body_a_command_quotes(
     state: &Arc<StdMutex<WxUIState>>,
     cache: Option<&MessageCache>,
     message: &MessageItem,
 ) -> TheQuote {
-    let (named, preview) = {
-        let s = lock_state(state);
-        (s.acting_on.is_some(), s.message_preview.clone())
-    };
-    if !named {
-        return TheQuote::Here(preview);
-    }
     let id = message.message_id;
     let kept = what_the_store_keeps_of(cache, id);
     match crate::application::reply::what_quoting_finds(&kept, reachability_of(state)) {
@@ -19969,6 +19957,16 @@ fn the_text_is_not_here_yet(app: AppHandles<'_>, a11y: &Arc<Accessibility>, not_
     if let Some(sentence) = not_here.finds.refusal() {
         let _ = a11y.signal(FeedbackEvent::ActionRefused, sentence);
     }
+}
+
+/// Refuse a reply or a forward that no message is for: nothing chosen, or a
+/// conversation whose list was reloaded under it. In #75's words, the ones
+/// every window says when nothing was chosen (13.3-24.2, ledger 918).
+fn no_message_is_chosen(a11y: &Arc<Accessibility>) {
+    let _ = a11y.signal(
+        FeedbackEvent::ActionRefused,
+        &nothing_chosen(Thing::MESSAGE),
+    );
 }
 
 /// The other addresses each account sends from, as the store keeps them,

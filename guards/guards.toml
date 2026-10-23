@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 922 records have arrived since and have not been through it.
+# 923 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40507,7 +40507,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # The same break read by the library: the rule that tells a key-down which
@@ -40548,7 +40548,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # Ctrl+R in the conversation tree's keys given another command: inside an
@@ -40572,7 +40572,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_thread_view.rs", tests = 17 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # The reading timer's answer back to the row's own message alone: a message
@@ -40595,7 +40595,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # The message view's half of the rule answering nothing: a message chosen in
@@ -40616,7 +40616,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # The Space reading's forgetting taken out: a message read aloud from its own
@@ -40639,7 +40639,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # The Outbox's claim taken out of its condition: every caller is told the
@@ -43811,18 +43811,43 @@ tests_last_seen = [
 # when the message's text is not here, its call of the refusal taken out
 # (13.3-05, review item 4). Measured 2026-10-20 by hand, the break applied and
 # the target run: this one red.
+#
+# Its anchor moved on 2026-10-23 when 13.3-24.2 made the Forward arm one
+# match over msg_info's answer, so the call sits four spaces further left
+# under the arm for a quote that is not here; taken again by hand that day,
+# the target run: 37 passed and this one red.
 [[guard]]
 name = "Forward on a message whose text is not here says so and fetches it"
 file = "src/presentation/wx_app.rs"
 suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
-before = '''                                    the_text_is_not_here_yet(app, &a11y, not_here)'''
-after = '''                                    drop(not_here)'''
+before = '''                            Some((_, TheQuote::NotHere(not_here))) => {
+                                the_text_is_not_here_yet(app, &a11y, not_here)'''
+after = '''                            Some((_, TheQuote::NotHere(not_here))) => {
+                                drop(not_here)'''
 red = [
     "test_reply_and_forward_say_the_text_is_not_here_and_fetch_it",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 35 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
+]
+
+# Forward with no message chosen opened an empty forward where Reply refused
+# (13.3-24.2, ledger 918). The break takes the Forward arm's call of the one
+# refusal for no message out. Measured 2026-10-23 by hand, the break applied
+# and the target run: 37 passed and this one red.
+[[guard]]
+name = "Forward with no message chosen refuses as Reply does"
+file = "src/presentation/wx_app.rs"
+suite = "the_conversation_window_acts_on_the_message_under_its_cursor"
+before = '''                            None => no_message_is_chosen(&a11y),'''
+after = '''                            None => {}'''
+red = [
+    "test_forward_with_no_message_chosen_refuses_as_reply_does",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "tests/the_conversation_window_acts_on_the_message_under_its_cursor.rs", tests = 38 },
 ]
 
 # A chunk of the download taking the mail that arrived while it ran, with no
