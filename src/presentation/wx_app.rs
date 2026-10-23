@@ -3671,20 +3671,12 @@ impl WxMailApp {
                     // loaded body existed and no code ever sent one, so the
                     // preview was empty for every message ever selected.
                     let selected = stands_for.as_ref().map(|row| (row.id, row.uid));
+                    // A message that came down with no text is shown as such
+                    // and goes through the arm below that sends a stored
+                    // body, so it is not downloaded again and its parts are
+                    // still asked after (13.3-24.2, ledger 919).
                     let body = selected.and_then(|(id, _)| {
-                        body_cache
-                            .as_ref()
-                            .and_then(|c| c.get_message_body(id).ok().flatten())
-                            .and_then(|b| match (b.body_html, b.body_plain) {
-                                // The markup half when there is one: it
-                                // carries the sender's headings and link
-                                // text. Which half it is travels with it,
-                                // because the two need opposite handling and
-                                // nothing downstream can tell from the string.
-                                (Some(html), _) => Some(MessageBody::Html(html)),
-                                (None, Some(plain)) => Some(MessageBody::Plain(plain)),
-                                (None, None) => None,
-                            })
+                        what_the_list_shows_of(what_the_store_keeps_of(body_cache.as_deref(), id))
                             .map(|body| (id, body))
                     });
                     match body {
@@ -5632,24 +5624,19 @@ impl WxMailApp {
                         _ if id == ID_REPLY_SENDER => {
                             start_reply(app, &frame, &message_cache, &a11y, ReplyMode::Sender);
                         }
-                        _ if id == ID_FORWARD => {
-                            let (subj, quote) = msg_info(&state, message_cache.as_deref());
-                            match quote {
-                                TheQuote::NotHere(not_here) => {
-                                    the_text_is_not_here_yet(app, &a11y, not_here)
-                                }
-                                TheQuote::Here(body) => open_compose(
-                                    app,
-                                    &frame,
-                                    &message_cache,
-                                    &a11y,
-                                    ComposeMode::Forward {
-                                        subject: subj,
-                                        body,
-                                    },
-                                ),
+                        _ if id == ID_FORWARD => match msg_info(&state, message_cache.as_deref()) {
+                            None => no_message_is_chosen(&a11y),
+                            Some((_, TheQuote::NotHere(not_here))) => {
+                                the_text_is_not_here_yet(app, &a11y, not_here)
                             }
-                        }
+                            Some((subject, TheQuote::Here(body))) => open_compose(
+                                app,
+                                &frame,
+                                &message_cache,
+                                &a11y,
+                                ComposeMode::Forward { subject, body },
+                            ),
+                        },
                         // Delete acts on whatever is in front of you. In Mail
                         // that is a message, with server semantics behind it;
                         // in the other five it is the row the panel is on.
@@ -15864,6 +15851,48 @@ fn body_as_written(stored: Option<crate::data::message_cache::bodies::MessageBod
     }
 }
 
+/// What the preview shows for a message that came down with no text part, an
+/// encrypted message or one that is only an attachment: shown by the fetch
+/// that found it so, and by the list every time the cursor lands on it after.
+const NO_READABLE_BODY: &str = "This message has no readable body.";
+
+/// What the message list's preview shows of a message the store keeps
+/// `kept` of, or nothing when its text is not here and has to be fetched.
+///
+/// The markup half when there is one: it carries the sender's headings and
+/// link text. Which half it is travels with it, because the two need
+/// opposite handling and nothing downstream can tell from the string.
+fn what_the_list_shows_of(
+    kept: crate::data::message_cache::bodies::KeptText,
+) -> Option<MessageBody> {
+    use crate::data::message_cache::bodies::KeptText;
+    match kept {
+        KeptText::Here(stored) => match (stored.body_html, stored.body_plain) {
+            (Some(html), _) => Some(MessageBody::Html(html)),
+            (None, Some(plain)) => Some(MessageBody::Plain(plain)),
+            (None, None) => None,
+        },
+        KeptText::CameWithNoText => Some(MessageBody::Plain(NO_READABLE_BODY.to_string())),
+        KeptText::NotHere => None,
+    }
+}
+
+/// What the store keeps of message `id`'s text. A store that cannot be read,
+/// or none at all, keeps nothing here, so the text is fetched rather than
+/// quoted as nothing; the log says why.
+fn what_the_store_keeps_of(
+    cache: Option<&MessageCache>,
+    id: i64,
+) -> crate::data::message_cache::bodies::KeptText {
+    use crate::data::message_cache::bodies::KeptText;
+    cache.map_or(KeptText::NotHere, |cache| {
+        cache.the_text_kept_for(id).unwrap_or_else(|e| {
+            tracing::warn!("The text of message {id} could not be read: {e}");
+            KeptText::NotHere
+        })
+    })
+}
+
 /// Where focus belongs once the preview has finished loading a message.
 ///
 /// A WebView takes focus when a document loads and does not ask first.
@@ -19534,8 +19563,7 @@ fn start_reply(
         )
     };
     let Some(message) = selected else {
-        let _ = a11y.signal(FeedbackEvent::ActionRefused, "no message selected");
-        return;
+        return no_message_is_chosen(a11y);
     };
     // Every address you send from is yours, the other addresses an account
     // keeps as much as its own, so Reply All sends none of them a copy.
@@ -19854,24 +19882,22 @@ fn file_name_of(path: &std::path::Path) -> String {
 }
 
 /// What Forward takes from the message a command is for: its subject and
-/// the text it quotes.
+/// the text it quotes, or nothing when no message is for it.
 ///
 /// Forward's alone, and it works out no reply address because a forward has
 /// none: Reply goes through `start_reply`, and the Reply-To rule lives in
 /// `application::reply`.
-fn msg_info(state: &Arc<StdMutex<WxUIState>>, cache: Option<&MessageCache>) -> (String, TheQuote) {
+fn msg_info(
+    state: &Arc<StdMutex<WxUIState>>,
+    cache: Option<&MessageCache>,
+) -> Option<(String, TheQuote)> {
     let message = state
         .lock()
         .map(|s| s.the_message_a_command_is_for().cloned())
         .ok()
-        .flatten();
-    match message {
-        Some(message) => {
-            let quote = the_body_a_command_quotes(state, cache, &message);
-            (message.subject, quote)
-        }
-        None => (String::new(), TheQuote::Here(MessageBody::default())),
-    }
+        .flatten()?;
+    let quote = the_body_a_command_quotes(state, cache, &message);
+    Some((message.subject, quote))
 }
 
 /// What a reply or a forward has to quote.
@@ -19890,38 +19916,28 @@ struct NotHere {
 }
 
 /// The text a reply or a forward quotes of `message`, the message the
-/// command is for: when an opened conversation named it, read from the store
-/// while its command runs (13.2-03); otherwise the preview, which holds the
-/// message the cursor row stands for.
+/// command is for, read from the store while its command runs, whether an
+/// opened conversation named it (13.2-03) or the list's cursor row stands for
+/// it (13.3-24.2).
 ///
-/// Never the preview while a message is named, because the preview holds
-/// the list row's message and a reply would quote a message nobody chose.
-/// And never nothing: a named message whose text is not here answers that
-/// (13.3-05), so the command says so and fetches it rather than quoting an
-/// empty body somebody would send believing it held the message.
+/// Never the preview, which is the landing's alone. It holds what the store
+/// holds, or the window's own words while the text is not here, and a
+/// forward sent from it in that moment passed those words on as the
+/// sender's (ledger 917). And never nothing: a message whose text is not
+/// here answers that (13.3-05), so the command says so and fetches it rather
+/// than quoting an empty body somebody would send believing it held the
+/// message. A message that came down with no text has none to fetch, and is
+/// quoted as nothing (ledger 919).
 fn the_body_a_command_quotes(
     state: &Arc<StdMutex<WxUIState>>,
     cache: Option<&MessageCache>,
     message: &MessageItem,
 ) -> TheQuote {
-    let (named, preview) = {
-        let s = lock_state(state);
-        (s.acting_on.is_some(), s.message_preview.clone())
-    };
-    if !named {
-        return TheQuote::Here(preview);
-    }
     let id = message.message_id;
-    let stored = cache.and_then(|cache| {
-        cache
-            .get_message_body(id)
-            .map_err(|e| tracing::warn!("The text of message {id} could not be read: {e}"))
-            .ok()
-            .flatten()
-    });
-    match crate::application::reply::what_quoting_finds(stored.as_ref(), reachability_of(state)) {
+    let kept = what_the_store_keeps_of(cache, id);
+    match crate::application::reply::what_quoting_finds(&kept, reachability_of(state)) {
         crate::application::reply::WhatQuotingFinds::TheText => {
-            TheQuote::Here(body_as_written(stored))
+            TheQuote::Here(body_as_written(kept.into_body()))
         }
         finds => TheQuote::NotHere(NotHere {
             message_row_id: id,
@@ -19941,6 +19957,16 @@ fn the_text_is_not_here_yet(app: AppHandles<'_>, a11y: &Arc<Accessibility>, not_
     if let Some(sentence) = not_here.finds.refusal() {
         let _ = a11y.signal(FeedbackEvent::ActionRefused, sentence);
     }
+}
+
+/// Refuse a reply or a forward that no message is for: nothing chosen, or a
+/// conversation whose list was reloaded under it. In #75's words, the ones
+/// every window says when nothing was chosen (13.3-24.2, ledger 918).
+fn no_message_is_chosen(a11y: &Arc<Accessibility>) {
+    let _ = a11y.signal(
+        FeedbackEvent::ActionRefused,
+        &nothing_chosen(Thing::MESSAGE),
+    );
 }
 
 /// The other addresses each account sends from, as the store keeps them,
@@ -31368,7 +31394,7 @@ fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
         let body = match (parsed.body_html, parsed.body_plain) {
             (Some(html), _) => MessageBody::Html(html),
             (None, Some(plain)) => MessageBody::Plain(plain),
-            (None, None) => MessageBody::Plain("This message has no readable body.".to_string()),
+            (None, None) => MessageBody::Plain(NO_READABLE_BODY.to_string()),
         };
         handle.block_on(async {
             let _ = tx.send(UIUpdate::MessageBodyLoaded(body)).await;

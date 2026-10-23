@@ -1468,6 +1468,22 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Reply and Forward from the message list no longer quote "Downloading this message..."
+  (2026-10-23, LIST-05).** Pressed in the message list before a message's text had arrived,
+  Reply, Reply All, Reply to Sender Only and Forward quoted those words as if the sender had
+  written them. Now they say that the text is not on this computer yet, open nothing, and Wixen
+  Mail downloads it, so the same key works a moment later; while you work offline they say it
+  cannot be downloaded until you go back online. That is what they already did in an opened
+  conversation. A message that came down with no text, such as an encrypted message or one that
+  is only an attachment, now opens Reply and Forward with nothing quoted. Since the previous fix
+  these keys said such a message was downloading every time you pressed them, and the message
+  list downloaded it again each time you landed on it; now the list shows that the message has
+  no readable body and downloads nothing more. Forward with no message chosen says "Choose a
+  message first." and opens nothing, and Reply now says the same words.
+
+  Known limits. None of this has been heard with a screen reader yet. A reply to an encrypted
+  message opens with nothing quoted and does not say why.
+
 - **The libraries that check a secure server's certificate, and one that encrypts, have their
   published security fixes (2026-10-23, FOUND-23).** Three advisories were published that week
   against versions Wixen Mail already used. RUSTSEC-2026-0382: a certificate signed through an
@@ -1747,6 +1763,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the same way and its text never arrives, so these keys cannot open it from a conversation;
   before, they opened it with nothing quoted. Forward and Reply from the message list are
   unchanged: pressed before a message's text arrives, they quote "Downloading this message...".
+  Both limits were fixed on 2026-10-23, in the entry about the message list above.
 
 - **A change to a message reaches that message's own account (2026-10-20, LIST-04,
   LIST-21).** In All Inboxes, marking a conversation read or unread, starring it or labelling

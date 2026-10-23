@@ -539,6 +539,81 @@ fn the_cursor_handler_fetches_the_parts_left_behind(app: &str) -> Result<(), Str
     }
 }
 
+const THE_KEPT_TEXT: &str = "what_the_store_keeps_of(";
+const WHAT_THE_LIST_SHOWS: &str = "fn what_the_list_shows_of(";
+const THE_LIST_SHOWS: &str = "what_the_list_shows_of(";
+const THE_ARM_WITH_NO_TEXT: &str = "KeptText::CameWithNoText =>";
+const THE_SENTENCE: &str = "NO_READABLE_BODY";
+const THE_SENTENCE_DECLARED: &str = "const NO_READABLE_BODY: &str =";
+/// The part of the sentence the reading counts, so a second copy of it in
+/// the window is found however its first word is spelled.
+const THE_WORDS: &str = "has no readable body";
+const THE_BODY_FETCHED: &str = "spawn_body_fetch(";
+const THE_UNTYPED_READING: &str = "get_message_body(";
+
+/// Landing on a message that came down with no text shows the sentence its
+/// first download showed and downloads nothing again (13.3-24.2, ledger
+/// 919): the handler asks the store's typed reading, a message with no text
+/// is shown through the arm that sends a stored body, so its parts are still
+/// asked after, and only the arm for text not here fetches. The sentence is
+/// one constant, which the fetch's own arm for no text uses too.
+fn the_cursor_handler_shows_a_message_with_no_text_and_does_not_fetch_it(
+    app: &str,
+) -> Result<(), String> {
+    let handler = between(app, THE_CURSOR_HANDLER.0, THE_CURSOR_HANDLER.1)?;
+    reaches(
+        handler,
+        "the cursor handler",
+        &[THE_KEPT_TEXT, THE_LIST_SHOWS],
+    )?;
+    holds_none_of(handler, "the cursor handler", &[THE_UNTYPED_READING])?;
+    let stored = between(handler, A_STORED_BODY.0, A_STORED_BODY.1)?;
+    holds_none_of(
+        stored,
+        "the arm that sends a stored body",
+        &[THE_BODY_FETCHED],
+    )?;
+    // Found by `between` above, so both anchors are there and in this order.
+    let not_here = handler
+        .split_once(A_STORED_BODY.0)
+        .and_then(|(_, rest)| rest.split_once(A_STORED_BODY.1))
+        .map_or("", |(_, rest)| rest);
+    reaches(not_here, "the arm for text not here", &[THE_BODY_FETCHED])?;
+
+    let shows = body_of(app, WHAT_THE_LIST_SHOWS)?;
+    let no_text = shows
+        .lines()
+        .find(|line| line.contains(THE_ARM_WITH_NO_TEXT))
+        .ok_or(format!(
+            "{WHAT_THE_LIST_SHOWS} has no arm {THE_ARM_WITH_NO_TEXT}"
+        ))?;
+    if !(no_text.contains("Some(") && no_text.contains(THE_SENTENCE)) {
+        return Err(format!(
+            "{WHAT_THE_LIST_SHOWS} sends a message with no text to be fetched rather than \
+             showing {THE_SENTENCE}: {}",
+            no_text.trim()
+        ));
+    }
+    reaches(
+        &body_of(app, THE_BODY_FETCH)?,
+        THE_BODY_FETCH,
+        &[THE_SENTENCE],
+    )?;
+
+    let written = app.matches(THE_WORDS).count();
+    let declared = app
+        .lines()
+        .any(|line| line.contains(THE_SENTENCE_DECLARED) && line.contains(THE_WORDS));
+    if written != 1 || !declared {
+        return Err(format!(
+            "the sentence for a message with no text is written {written} times, and \
+             {THE_SENTENCE_DECLARED} holding it is {}",
+            if declared { "there" } else { "not there" }
+        ));
+    }
+    Ok(())
+}
+
 /// The parts fetch keeps what it fetched and tells the preview only through
 /// its own update, and never announces, stores text or speaks.
 fn the_parts_fetch_keeps_them_and_says_nothing(app: &str) -> Result<(), String> {
@@ -600,6 +675,14 @@ fn test_selecting_a_message_whose_parts_were_left_behind_starts_their_fetch() {
 }
 
 #[test]
+fn test_a_message_that_came_down_with_no_text_is_shown_and_not_fetched_again() {
+    the_cursor_handler_shows_a_message_with_no_text_and_does_not_fetch_it(&what_ships_in(
+        THE_MAIN_WINDOW,
+    ))
+    .unwrap_or_else(|why| panic!("{why}"));
+}
+
+#[test]
 fn test_the_parts_fetch_keeps_them_and_says_nothing() {
     the_parts_fetch_keeps_them_and_says_nothing(&what_ships_in(THE_MAIN_WINDOW))
         .unwrap_or_else(|why| panic!("{why}"));
@@ -635,6 +718,8 @@ fn test_the_download_of_everything_never_keeps_every_file() {
 /// anchors cannot pass by finding nothing.
 const A_WINDOW_AS_IT_SHOULD_BE: &str = "            msg_list.on_item_focused({
                 move |event| {
+                    let body = what_the_list_shows_of(what_the_store_keeps_of(body_cache.as_deref(), id))
+                        .map(|body| (id, body));
                     match body {
                         Some((id, body)) => {
                             let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));
@@ -667,8 +752,21 @@ fn the_whole_message_from_its_own_account(cache: &MessageCache) -> Option<Vec<u8
     None
 }
 
+const NO_READABLE_BODY: &str = \"This message has no readable body.\";
+
+fn what_the_list_shows_of(kept: KeptText) -> Option<MessageBody> {
+    match kept {
+        KeptText::Here(stored) => Some(MessageBody::Plain(stored)),
+        KeptText::CameWithNoText => Some(MessageBody::Plain(NO_READABLE_BODY.to_string())),
+        KeptText::NotHere => None,
+    }
+}
+
 fn spawn_body_fetch(app: AppHandles<'_>, message_row_id: i64, uid: u32) {
     let raw = the_whole_message_from_its_own_account(&cache);
+    let body = match (parsed.body_html, parsed.body_plain) {
+        (None, None) => MessageBody::Plain(NO_READABLE_BODY.to_string()),
+    };
     let _ = tx.send(UIUpdate::MessageBodyLoaded(body));
 }
 
@@ -696,6 +794,7 @@ const A_DOWNLOAD_AS_IT_SHOULD_BE: &str = "async fn fetch_and_store_one<M: Mailbo
 
 fn every_reading_over(app: &str, sync: &str) -> Result<(), String> {
     the_cursor_handler_fetches_the_parts_left_behind(app)?;
+    the_cursor_handler_shows_a_message_with_no_text_and_does_not_fetch_it(app)?;
     the_parts_fetch_keeps_them_and_says_nothing(app)?;
     both_fetches_go_through_the_messages_own_account(app)?;
     the_arm_loads_the_preview_again_only_when_it_changed(app)?;
@@ -828,4 +927,57 @@ fn test_the_readings_complain_when_the_preview_is_loaded_regardless() {
         why.contains("loads before it reads the page it holds"),
         "{why}"
     );
+}
+
+#[test]
+fn test_the_no_text_reading_complains_at_each_part_left_out() {
+    let window = A_WINDOW_AS_IT_SHOULD_BE;
+    for (what, with, said) in [
+        (
+            "what_the_store_keeps_of(body_cache.as_deref(), id)",
+            "body_cache.get_message_body(id)",
+            "the cursor handler does not reach what_the_store_keeps_of(",
+        ),
+        (
+            "                    let body = what_the_list_shows_of(",
+            "                    let read = body_cache.get_message_body(id);\n                    let body = what_the_list_shows_of(",
+            "the cursor handler holds get_message_body(",
+        ),
+        (
+            "        KeptText::CameWithNoText => Some(MessageBody::Plain(NO_READABLE_BODY.to_string())),\n",
+            "        KeptText::CameWithNoText => None,\n",
+            "sends a message with no text to be fetched",
+        ),
+        (
+            "                            let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));\n",
+            "                            let _ = ui_tx.try_send(UIUpdate::MessageBodyLoaded(body));\n                            spawn_body_fetch(app, id, uid);\n",
+            "the arm that sends a stored body holds spawn_body_fetch(",
+        ),
+        (
+            "                            spawn_body_fetch(app, id, uid);\n                        }\n                    }\n",
+            "                        }\n                    }\n",
+            "the arm for text not here does not reach spawn_body_fetch(",
+        ),
+        (
+            "        (None, None) => MessageBody::Plain(NO_READABLE_BODY.to_string()),\n",
+            "        (None, None) => MessageBody::Plain(String::new()),\n",
+            "fn spawn_body_fetch( does not reach NO_READABLE_BODY",
+        ),
+        (
+            "fn spawn_parts_fetch(",
+            "/// Shows that a message has no readable body.\nfn spawn_parts_fetch(",
+            "is written 2 times",
+        ),
+        (
+            "const NO_READABLE_BODY: &str =",
+            "const NO_TEXT: &str =",
+            "is not there",
+        ),
+    ] {
+        let broken = planted(window, what, with);
+        assert_ne!(broken, window, "the plant {what:?} changed nothing");
+        let why = the_cursor_handler_shows_a_message_with_no_text_and_does_not_fetch_it(&broken)
+            .expect_err("a part of the no-text reading left out was passed over");
+        assert!(why.contains(said), "{what:?}: {why}");
+    }
 }

@@ -268,21 +268,22 @@ impl WhatQuotingFinds {
     }
 }
 
-/// Decide what quoting a message finds, from what the store holds of its text
+/// Decide what quoting a message finds, from what the store keeps of its text
 /// and whether Wixen Mail is online.
 ///
-/// A stored row holding neither half is no text, as the list's cursor reads
-/// it: that is a message to download, not one to quote as nothing.
+/// A message that came down with no text, encrypted or only an attachment,
+/// is quoted as nothing: downloading it again brings the same nothing, so a
+/// refusal promising its text would be a promise nothing keeps (ledger 919).
 pub fn what_quoting_finds(
-    stored: Option<&crate::data::message_cache::bodies::MessageBody>,
+    kept: &crate::data::message_cache::bodies::KeptText,
     reachability: crate::application::sending_later::Reachability,
 ) -> WhatQuotingFinds {
     use crate::application::sending_later::Reachability;
-    let here = stored.is_some_and(|body| body.body_plain.is_some() || body.body_html.is_some());
-    match (here, reachability) {
-        (true, _) => WhatQuotingFinds::TheText,
-        (false, Reachability::Online) => WhatQuotingFinds::NotHereYet,
-        (false, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
+    use crate::data::message_cache::bodies::KeptText;
+    match (kept, reachability) {
+        (KeptText::Here(_) | KeptText::CameWithNoText, _) => WhatQuotingFinds::TheText,
+        (KeptText::NotHere, Reachability::Online) => WhatQuotingFinds::NotHereYet,
+        (KeptText::NotHere, Reachability::Offline) => WhatQuotingFinds::NotHereWhileOffline,
     }
 }
 
@@ -874,30 +875,35 @@ mod tests {
     // said.
 
     use crate::application::sending_later::Reachability;
-    use crate::data::message_cache::bodies::MessageBody;
+    use crate::data::message_cache::bodies::{KeptText, MessageBody};
 
-    fn stored(plain: Option<&str>, html: Option<&str>) -> MessageBody {
-        MessageBody {
+    fn stored(plain: Option<&str>, html: Option<&str>) -> KeptText {
+        KeptText::Here(MessageBody {
             body_plain: plain.map(str::to_string),
             body_html: html.map(str::to_string),
-        }
+        })
     }
 
     #[test]
     fn test_a_message_with_no_stored_text_is_fetched_before_it_is_quoted() {
-        let finds = what_quoting_finds(None, Reachability::Online);
+        let finds = what_quoting_finds(&KeptText::NotHere, Reachability::Online);
         assert_eq!(finds, WhatQuotingFinds::NotHereYet);
         assert!(finds.fetches());
         assert_eq!(finds.refusal(), Some(NOT_HERE_YET));
     }
 
     #[test]
-    fn test_a_stored_row_holding_neither_half_is_not_here_yet() {
-        // Read the way the list's cursor reads it: neither half is no text.
-        let neither = stored(None, None);
-        let finds = what_quoting_finds(Some(&neither), Reachability::Online);
-        assert_eq!(finds, WhatQuotingFinds::NotHereYet);
-        assert!(finds.fetches());
+    fn test_a_message_that_came_down_with_no_text_is_quoted_as_nothing() {
+        // An encrypted message, or one that is only an attachment, was
+        // downloaded and had no text part. Downloading it again brings the
+        // same nothing, so it is quoted as nothing, online and offline, and
+        // nothing is fetched or said (13.3-24.2, ledger 919).
+        for reachability in [Reachability::Online, Reachability::Offline] {
+            let finds = what_quoting_finds(&KeptText::CameWithNoText, reachability);
+            assert_eq!(finds, WhatQuotingFinds::TheText, "{reachability:?}");
+            assert!(!finds.fetches(), "{reachability:?} fetches");
+            assert_eq!(finds.refusal(), None, "{reachability:?} refuses");
+        }
     }
 
     #[test]
@@ -910,7 +916,7 @@ mod tests {
             stored(Some(""), None),
         ] {
             for reachability in [Reachability::Online, Reachability::Offline] {
-                let finds = what_quoting_finds(Some(&body), reachability);
+                let finds = what_quoting_finds(&body, reachability);
                 assert_eq!(
                     finds,
                     WhatQuotingFinds::TheText,
@@ -924,12 +930,10 @@ mod tests {
 
     #[test]
     fn test_offline_a_message_with_no_text_here_is_not_fetched_and_says_why() {
-        for nothing_here in [None, Some(stored(None, None))] {
-            let finds = what_quoting_finds(nothing_here.as_ref(), Reachability::Offline);
-            assert_eq!(finds, WhatQuotingFinds::NotHereWhileOffline);
-            assert!(!finds.fetches(), "offline starts no download");
-            assert_eq!(finds.refusal(), Some(NOT_HERE_WHILE_OFFLINE));
-        }
+        let finds = what_quoting_finds(&KeptText::NotHere, Reachability::Offline);
+        assert_eq!(finds, WhatQuotingFinds::NotHereWhileOffline);
+        assert!(!finds.fetches(), "offline starts no download");
+        assert_eq!(finds.refusal(), Some(NOT_HERE_WHILE_OFFLINE));
     }
 
     #[test]
