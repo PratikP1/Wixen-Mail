@@ -56,7 +56,7 @@ pub const WHICH_UPDATES_LABEL: &str = "Tell me about new versions";
 /// next true one gets read the same way.
 pub const WHICH_UPDATES_DESCRIPTION: &str = "Wixen Mail asks GitHub which versions have been published. Nothing about you is sent. \
      Choosing either kind of version also means the installer for a newer one is downloaded \
-     without asking you, about 12 MB of it. You are then asked once before it is run, and \
+     without asking you, about 15 MB of it. You are then asked once before it is run, and \
      Wixen Mail will not run an installer it cannot confirm this project signed.";
 
 /// The one host this module ever asks.
@@ -1461,7 +1461,7 @@ mod tests {
     fn test_the_control_names_the_size_the_privacy_page_measured() {
         // Gap 5 of the research into the update mechanism (13.3-24). This
         // description is where somebody agrees to an unattended download, and
-        // it said about 12 MB of an installer that was 15,725,012 bytes, a
+        // it put the installer at 12 MB when it was 15,725,012 bytes, a
         // quarter more than the size they agreed to. Held to the page's dated
         // measurement, so the next build that grows has one sentence to move
         // and a case that says which.
@@ -1481,15 +1481,16 @@ mod tests {
             )
         };
         let measured = page("15,725,012\nbytes");
+        let saying = |megabytes: u32| format!("the installer, about {megabytes} MB of it.");
 
         assert!(
-            whether_the_sizes_agree(&measured, "the installer, about 12 MB of it.").is_err(),
-            "a description naming about 12 MB passed beside 15,725,012 bytes"
+            whether_the_sizes_agree(&measured, &saying(12)).is_err(),
+            "a description naming 12 MB, as this one did, passed beside 15,725,012 bytes"
         );
         assert_eq!(
-            whether_the_sizes_agree(&measured, "the installer, about 15 MB of it."),
+            whether_the_sizes_agree(&measured, &saying(15)),
             Ok(()),
-            "a description naming about 15 MB was refused beside 15,725,012 bytes"
+            "a description naming 15 MB was refused beside 15,725,012 bytes"
         );
         assert!(
             whether_the_sizes_agree(&page("about fifteen megabytes"), "about 15 MB").is_err(),

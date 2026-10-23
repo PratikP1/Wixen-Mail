@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 919 records have arrived since and have not been through it.
+# 921 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22192,7 +22192,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/common/version.rs", tests = 27 },
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # The channel check passing everything through, which is the half-fix rather
@@ -22305,7 +22305,7 @@ red = [
     "service::update_check::tests::test_nothing_published_is_neither_an_error_nor_being_up_to_date",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # ── 07-07 ─────────────────────────────────────────────────────────────────
@@ -44543,7 +44543,7 @@ red = [
     "service::update_check::tests::test_a_second_check_is_refused_while_one_is_held",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # The window's check task holds the one check until it ends, download and all
@@ -44563,7 +44563,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # A check that gets no answer from GitHub is given up on within its limit
@@ -44577,7 +44577,7 @@ red = [
     "service::update_check::tests::test_a_github_that_never_answers_is_given_up_on_within_the_limit",
 ]
 tests_last_seen = [
-    { file = "src/service/update_check.rs", tests = 30 },
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
 
 # A download whose host goes quiet is given up on, before its head or part way
@@ -44646,4 +44646,36 @@ red = [
 tests_last_seen = [
     { file = "src/application/closing.rs", tests = 11 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# The New versions control names the installer's size the privacy page
+# measured (13.3-24, the research's gap 5). Broken by moving the description's
+# figure by one, which is more than half a megabyte from 15,725,012 bytes.
+[[guard]]
+name = "the update control names the installer's measured size"
+file = "src/service/update_check.rs"
+before = '''     without asking you, about 15 MB of it. You are then asked once before it is run, and \'''
+after = '''     without asking you, about 16 MB of it. You are then asked once before it is run, and \'''
+red = [
+    "service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 32 },
+]
+
+# The same case from the page's side: the privacy page's measured size is the
+# figure the control is held to (13.3-24, gap 5). Broken by moving the page's
+# byte figure by a million, which is about 16 MB. A record whose `file` is the
+# page couples it to the case wherever `scripts/check.sh` reads records for a
+# changed file; a commit staging only documents does not read them.
+[[guard]]
+name = "the privacy page's measured installer size is what the control is held to"
+file = "docs/privacy.md"
+before = '''`Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`, was 15,725,012 bytes,'''
+after = '''`Wixen-Mail-Setup-1.0.0-alpha.1+1403.g6fd465c6.exe`, was 16,725,012 bytes,'''
+red = [
+    "service::update_check::tests::test_the_control_names_the_size_the_privacy_page_measured",
+]
+tests_last_seen = [
+    { file = "src/service/update_check.rs", tests = 32 },
 ]
