@@ -228,4 +228,145 @@ mod tests {
         assert!(said.contains("notification area"), "{said}");
         assert!(said.contains("Quit"), "{said}");
     }
+
+    /// The window's source as a release build compiles it.
+    fn the_window_as_shipped() -> String {
+        let whole = std::fs::read_to_string("src/presentation/wx_app.rs")
+            .expect("the window's source to be readable")
+            .replace("\r\n", "\n");
+        crate::common::what_ships::what_ships(&whole)
+    }
+
+    /// The text from `opening` to the first of `endings` after it, or to the
+    /// end of `source` when none follows.
+    fn from_to<'a>(source: &'a str, opening: &str, endings: &[&str]) -> Option<&'a str> {
+        let (_, after) = source.split_once(opening)?;
+        let end = endings
+            .iter()
+            .filter_map(|ending| after.find(ending))
+            .min()
+            .unwrap_or(after.len());
+        Some(&after[..end])
+    }
+
+    /// Whether the window's source closes for an installed update the way it
+    /// closes for Quit, or why not.
+    ///
+    /// Asked of source because the handover cannot be reached from a test:
+    /// its arm takes a `Verified`, which only `update_download::verify` makes,
+    /// out of an installer signed by this project, and no test holds one.
+    /// What this asks is the shape that makes the two the same path. One
+    /// function sets the flag the close handler reads as a Quit and only then
+    /// closes the frame; the Quit arm and the arm for a ready update both call
+    /// it, and neither closes the frame on its own.
+    fn whether_the_handover_quits_the_way_quit_does(window: &str) -> Result<(), String> {
+        let shared = from_to(window, "\nfn really_quit(", &["\n}\n"])
+            .ok_or("the window has no `fn really_quit(` for Quit and the handover to share")?;
+        let flagged = shared
+            .find(".set(true)")
+            .ok_or("`really_quit` never tells the close handler this is a Quit")?;
+        let closed = shared
+            .find(".close(")
+            .ok_or("`really_quit` never closes the frame")?;
+        if closed < flagged {
+            return Err(
+                "`really_quit` closes the frame before it says this is a Quit, so \
+                        the close handler reads a close of the window"
+                    .into(),
+            );
+        }
+
+        let quit = from_to(window, "_ if id == ID_QUIT =>", &["_ if id =="])
+            .ok_or("the window has no arm for ID_QUIT")?;
+        if !quit.contains("really_quit(") || quit.contains(".close(") {
+            return Err("the Quit arm does not close through `really_quit` alone".into());
+        }
+
+        let handler = from_to(
+            window,
+            "fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {",
+            &["\n}\n"],
+        )
+        .ok_or("the window has no update handler")?;
+        let ready = from_to(
+            handler,
+            "\n        UIUpdate::AnUpdateIsReady",
+            &["\n        UIUpdate::"],
+        )
+        .ok_or("the update handler has no arm for AnUpdateIsReady")?;
+        if !ready.contains("really_quit(") || ready.contains(".close(") {
+            return Err(
+                "the arm for a ready update does not close through `really_quit` \
+                        alone, so with the notification area setting on the close handler \
+                        hides the window instead of quitting"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_installing_an_update_quits_the_way_quit_does() {
+        // Gap 2 of the research into the update mechanism (13.3-24). The
+        // handover closed the window without saying it was a Quit, so with
+        // "keep running in the notification area" on and the icon showing,
+        // the close handler hid the window and said Wixen Mail was still
+        // running, a moment after saying it was closing for the installer,
+        // and skipped Quit's own work on the way out.
+        assert_eq!(
+            whether_the_handover_quits_the_way_quit_does(&the_window_as_shipped()),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_handover_that_closes_on_its_own() {
+        // A reading that answers yes to everything would pass above against
+        // the defect it is for, so it is shown a window that is right and two
+        // that each carry one of the two ways to be wrong.
+        let shaped = |shared: &str, handover: &str| {
+            format!(
+                "\nfn really_quit(really_quitting: &Cell<bool>, frame: &Frame) {{\n{shared}\n}}\n\
+                 \x20                       _ if id == ID_QUIT => {{\n\
+                 \x20                           really_quit(&really_quitting, &frame);\n\
+                 \x20                       }}\n\
+                 \x20                       _ if id == ID_OPEN_WINDOW => {{}}\n\
+                 fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {{\n\
+                 \x20   match update {{\n\
+                 \x20       UIUpdate::AnUpdateIsReady {{ installer }} => {{\n\
+                 \x20           {handover}\n\
+                 \x20       }}\n\
+                 \x20       UIUpdate::CommandRefused(why) => {{}}\n\
+                 \x20   }}\n\
+                 }}\n"
+            )
+        };
+        let flag_then_close = "    really_quitting.set(true);\n    frame.close(false);";
+        let close_then_flag = "    frame.close(false);\n    really_quitting.set(true);";
+
+        assert_eq!(
+            whether_the_handover_quits_the_way_quit_does(&shaped(
+                flag_then_close,
+                "really_quit(really_quitting, frame);"
+            )),
+            Ok(()),
+            "a window that is right was refused"
+        );
+        assert!(
+            whether_the_handover_quits_the_way_quit_does(&shaped(
+                flag_then_close,
+                "frame.close(true);"
+            ))
+            .is_err(),
+            "a handover that closes the frame on its own was passed"
+        );
+        assert!(
+            whether_the_handover_quits_the_way_quit_does(&shaped(
+                close_then_flag,
+                "really_quit(really_quitting, frame);"
+            ))
+            .is_err(),
+            "a shared function that closes before it says Quit was passed"
+        );
+    }
 }
