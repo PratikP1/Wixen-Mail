@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 909 records have arrived since and have not been through it.
+# 910 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -40999,7 +40999,7 @@ red = [
     "service::protocols::imap::special_use::tests::test_with_nothing_declared_the_first_name_in_the_roles_list_wins",
 ]
 tests_last_seen = [
-    { file = "src/service/protocols/imap/special_use.rs", tests = 22 },
+    { file = "src/service/protocols/imap/special_use.rs", tests = 23 },
 ]
 
 # Empty Folder counting a message the server only marked, or copied to the
@@ -44471,4 +44471,21 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/tags.rs", tests = 16 },
+]
+
+# The attribute that keeps a folder's role decided from a listing of one out
+# of a normal build, so nothing the program runs can take a person's folder
+# called Bin for the Trash again, which is finding #9 (13.3-22, item 39).
+# Anchored on the attribute and the signature together, as the record above.
+[[guard]]
+name = "a role decided from a listing of one is compiled for tests only"
+file = "src/service/protocols/imap/special_use.rs"
+before = '''#[cfg(test)]
+pub fn classify('''
+after = '''pub fn classify('''
+red = [
+    "service::protocols::imap::special_use::list_folders_asks_over_the_whole_listing::test_a_role_decided_from_a_listing_of_one_is_compiled_for_tests_only",
+]
+tests_last_seen = [
+    { file = "src/service/protocols/imap/special_use.rs", tests = 23 },
 ]
