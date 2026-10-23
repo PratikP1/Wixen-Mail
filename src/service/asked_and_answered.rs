@@ -152,6 +152,24 @@ fn is_a_reason_word(candidate: &str) -> bool {
             .all(|letter| letter.is_ascii_alphabetic() || letter == '_')
 }
 
+/// Whether Google's refusal says the sign-in was not given the permission
+/// the request needs.
+pub fn names_a_permission_not_given(body: &str) -> bool {
+    let _ = body;
+    false
+}
+
+/// The one error for a refusal over a permission the sign-in was not given.
+pub fn a_permission_not_given() -> crate::common::Error {
+    crate::common::Error::Other(String::new())
+}
+
+/// Whether an error is the one [`a_permission_not_given`] builds.
+pub fn is_a_permission_not_given(error: &crate::common::Error) -> bool {
+    let _ = error;
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,6 +293,85 @@ mod tests {
         assert_eq!(the_reason_word(&too_long), None);
         assert_eq!(the_reason_word("not json at all"), None);
         assert_eq!(the_reason_word(r#"{"items":[]}"#), None);
+    }
+
+    /// Google's refusal of a request from a sign-in that was not given the
+    /// permission it needs, in the newer shape People's interface answers
+    /// with: the reason in an `ErrorInfo` under `details`, the word Google's
+    /// own list of error reasons gives (`google/api/error_reason.proto`).
+    const NO_PERMISSION_THE_NEWER_WAY: &str = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","status":"PERMISSION_DENIED","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"ACCESS_TOKEN_SCOPE_INSUFFICIENT","domain":"googleapis.com","metadata":{"service":"people.googleapis.com","method":"google.people.v1.PeopleService.ListConnections"}}]}}"#;
+
+    /// Google's older shape with another reason in it.
+    fn refused_for(reason: &str) -> String {
+        NO_TASKS_PERMISSION.replace("insufficientPermissions", reason)
+    }
+
+    #[test]
+    fn test_a_refusal_for_a_permission_not_given_is_told_from_every_other_refusal() {
+        // Ledger 932: a box left unticked on Google's screen is answered by
+        // signing in again, and nothing else Google refuses with is.
+        assert!(names_a_permission_not_given(NO_TASKS_PERMISSION));
+        assert!(names_a_permission_not_given(NO_PERMISSION_THE_NEWER_WAY));
+        for another in [
+            "rateLimitExceeded",
+            "userRateLimitExceeded",
+            "quotaExceeded",
+            "forbiddenForNonOrganizer",
+            "domainPolicy",
+            // Compared whole: a word that only holds the reason is not it.
+            "insufficientPermissionsAndMore",
+        ] {
+            assert!(
+                !names_a_permission_not_given(&refused_for(another)),
+                "{another} was read as a permission not given"
+            );
+        }
+        for not_this in [
+            NOT_TURNED_ON,
+            // The sign-in service's refusal, which 13.3-15's question meets.
+            r#"{"error":"insufficient_scope"}"#,
+            "<html><body>403 Forbidden insufficientPermissions</body></html>",
+            "",
+        ] {
+            assert!(
+                !names_a_permission_not_given(not_this),
+                "read as a permission not given: {not_this}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_the_one_error_for_a_permission_not_given_is_known_and_no_other_is() {
+        use crate::common::Error;
+        let refused = a_permission_not_given();
+        assert!(is_a_permission_not_given(&refused), "{refused}");
+        // Google's word and no body, so the log line and the error say the
+        // same thing and nothing Google wrote reaches either.
+        assert_eq!(
+            refused.to_string(),
+            "API error from google (HTTP 403): insufficientPermissions"
+        );
+        for another in [
+            Error::Api {
+                status: 403,
+                provider: "google".into(),
+                message: "accessNotConfigured".into(),
+            },
+            Error::Api {
+                status: 401,
+                provider: "google".into(),
+                message: "insufficientPermissions".into(),
+            },
+            Error::Api {
+                status: 403,
+                provider: "microsoft".into(),
+                message: "insufficientPermissions".into(),
+            },
+            Error::Authentication("insufficientPermissions".into()),
+            Error::Network("insufficientPermissions".into()),
+        ] {
+            assert!(!is_a_permission_not_given(&another), "{another}");
+        }
     }
 
     /// Every line written at info or above.
