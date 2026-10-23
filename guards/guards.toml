@@ -13350,10 +13350,10 @@ tests_last_seen = [
 [[guard]]
 name = "an account whose password or tokens will not go is not deleted"
 file = "src/data/message_cache/accounts.rs"
-before = """        if !still_stored.is_empty() {
-            return Err(Error::Security(format!("""
-after = """        if false {
-            return Err(Error::Security(format!("""
+before = """        let stayed = forget_every_secret_of(account_id);
+        if !stayed.is_empty() {"""
+after = """        let stayed = forget_every_secret_of(account_id);
+        if false {"""
 red = [
     "data::message_cache::accounts::tests::test_an_account_whose_secrets_will_not_go_is_not_deleted",
     "data::message_cache::accounts::tests::test_one_account_that_will_not_go_does_not_throw_away_the_other_edits",
@@ -13364,6 +13364,8 @@ red = [
     # 13.3-24.3: the removal let through leaves the store without the account
     # the read-back is held to keep, measured 2026-10-23.
     "data::message_cache::accounts::tests::test_an_account_whose_removal_was_refused_is_still_among_the_accounts_held",
+    # And the removal said plainly is no refusal at all.
+    "data::message_cache::accounts::tests::test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 36 },
@@ -34912,10 +34914,13 @@ tests_last_seen = [
 [[guard]]
 name = "removing an account forgets its directory password"
 file = "src/data/message_cache/accounts.rs"
-before = '''        if let Err(e) = crate::service::directory::forget_the_password(account_id) {'''
-after = '''        if let Err(e) = Ok::<(), Error>(()) {'''
+before = '''    if let Err(e) = crate::service::directory::forget_the_password(account_id) {'''
+after = '''    if let Err(e) = Ok::<(), Error>(()) {'''
 red = [
     "data::message_cache::accounts::tests::test_deleting_an_account_takes_its_directory_password_with_it",
+    # 13.3-24.3: the forgetting moved into forget_every_secret_of, and the
+    # plain sentence no longer names a directory password that went.
+    "data::message_cache::accounts::tests::test_a_removal_windows_will_not_let_go_of_is_said_in_one_plain_sentence",
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 36 },
@@ -40853,22 +40858,26 @@ tests_last_seen = [
 name = "the store removes the accounts taken away before it saves the rest"
 file = "src/data/message_cache/accounts.rs"
 before = '''        let mut outcomes: Vec<(&str, Result<()>)> = gone
-            .iter()
-            .map(|account| (account.name.as_str(), self.delete_account(&account.id)))
+            .map(|account| {
+                let removed = self.delete_account(&account.id, &account.name);
+                (account.name.as_str(), removed)
+            })
             .collect();
-        outcomes.extend(
-            accounts
-                .iter()
-                .map(|account| (account.name.as_str(), self.save_account(account))),
-        );'''
+        outcomes.extend(accounts.iter().map(|account| {
+            let saved = self.save_or_forget_a_new_account(account, &stored);
+            (account.name.as_str(), saved)
+        }));'''
 after = '''        let mut outcomes: Vec<(&str, Result<()>)> = accounts
             .iter()
-            .map(|account| (account.name.as_str(), self.save_account(account)))
+            .map(|account| {
+                let saved = self.save_or_forget_a_new_account(account, &stored);
+                (account.name.as_str(), saved)
+            })
             .collect();
-        outcomes.extend(
-            gone.iter()
-                .map(|account| (account.name.as_str(), self.delete_account(&account.id))),
-        );'''
+        outcomes.extend(gone.map(|account| {
+            let removed = self.delete_account(&account.id, &account.name);
+            (account.name.as_str(), removed)
+        }));'''
 red = [
     "data::message_cache::accounts::tests::test_a_removal_that_will_not_go_is_the_answer_and_keeps_no_password_for_its_address",
     "data::message_cache::accounts::tests::test_an_account_removed_and_added_back_on_its_address_in_one_sitting_saves",

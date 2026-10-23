@@ -484,7 +484,7 @@ mod tests {
             .expect("the other account's step to be kept");
 
         cache
-            .delete_account("acc-going")
+            .delete_account("acc-going", "Test")
             .expect("the account to be removed");
 
         assert!(
