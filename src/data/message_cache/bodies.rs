@@ -59,6 +59,33 @@ pub struct MessageBody {
     pub body_html: Option<String>,
 }
 
+/// What the store keeps of a message's text.
+///
+/// Three answers, because a message with no text here is two different
+/// things. One never fetched, evicted since or damaged has to be downloaded.
+/// One that came down with no text part, an encrypted message or one that is
+/// only an attachment, never will have any, and downloading it again brings
+/// the same nothing (ledger 919).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KeptText {
+    /// Nothing readable is kept: never fetched, evicted, or damaged.
+    NotHere,
+    /// The message was downloaded and had no text part.
+    CameWithNoText,
+    /// The text, at least one half of it readable.
+    Here(MessageBody),
+}
+
+impl KeptText {
+    /// The text, when any is kept.
+    pub fn into_body(self) -> Option<MessageBody> {
+        match self {
+            KeptText::Here(body) => Some(body),
+            KeptText::NotHere | KeptText::CameWithNoText => None,
+        }
+    }
+}
+
 /// How hard to work at packing message text.
 ///
 /// Six is deflate's own default and the measured knee: nine costs noticeably
@@ -511,6 +538,15 @@ impl MessageCache {
             return Ok(None);
         }
         Ok(Some(body))
+    }
+
+    /// What the store keeps of a message's text, telling a message that came
+    /// down with no text from one whose text is not here.
+    pub fn the_text_kept_for(&self, message_id: i64) -> Result<KeptText> {
+        Ok(match self.get_message_body(message_id)? {
+            Some(body) => KeptText::Here(body),
+            None => KeptText::NotHere,
+        })
     }
 
     /// Mark a body as just read, so eviction prefers something else.
@@ -1550,6 +1586,118 @@ mod tests {
         let cache = body_test_cache();
         let id = cache.save_message(&cached(1, "No body yet")).unwrap();
         assert!(cache.get_message_body(id).unwrap().is_none());
+    }
+
+    // ── What the store keeps of a message's text, 13.3-24.2 ─────────────
+    //
+    // A message downloaded with no text part and a message never downloaded
+    // both read as no body, so Reply refused the first at every press and the
+    // list downloaded it again at every landing, for text it does not have.
+    // The save already writes the first down, as a row whose four text columns
+    // are all null; these hold the reading that tells it apart.
+
+    /// How many rows the store holds for `id`, and how many of them have all
+    /// four text columns null: the shape a fixture has to be in before what
+    /// is read of it means anything.
+    fn rows_and_empty_rows(cache: &MessageCache, id: i64) -> (i64, i64) {
+        cache
+            .conn
+            .query_row(
+                "SELECT COUNT(*),
+                        COUNT(CASE WHEN body_plain IS NULL AND body_html IS NULL
+                                    AND body_plain_packed IS NULL
+                                    AND body_html_packed IS NULL THEN 1 END)
+                 FROM message_bodies WHERE message_id = ?1",
+                rusqlite::params![id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_message_that_came_down_with_no_text_is_kept_as_such() {
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Only a file")).unwrap();
+
+        // What a download writes for a message with no text part.
+        cache.save_message_body(id, None, None).unwrap();
+
+        assert_eq!(rows_and_empty_rows(&cache, id), (1, 1), "the fixture");
+        assert_eq!(
+            cache.the_text_kept_for(id).unwrap(),
+            KeptText::CameWithNoText
+        );
+        assert_eq!(
+            cache.get_message_body(id).unwrap(),
+            None,
+            "get_message_body's own answer does not move"
+        );
+    }
+
+    #[test]
+    fn test_a_packed_half_that_no_longer_unpacks_is_not_here() {
+        // Damaged text decodes to nothing, the same as no text, and it has to
+        // be fetched again; read from what decoded it would be taken for a
+        // message with no text and never fetched again.
+        let cache = body_test_cache();
+        let id = cache.save_message(&cached(1, "Quarterly report")).unwrap();
+        cache
+            .save_message_body(id, Some(&"The quarterly figures. ".repeat(60)), None)
+            .unwrap();
+        cache
+            .conn
+            .execute(
+                "UPDATE message_bodies SET body_plain_packed = ?1 WHERE message_id = ?2",
+                rusqlite::params![vec![0x78u8, 0x9c, 0x00, 0x01], id],
+            )
+            .unwrap();
+
+        assert_eq!(rows_and_empty_rows(&cache, id), (1, 0), "the fixture");
+        assert_eq!(cache.the_text_kept_for(id).unwrap(), KeptText::NotHere);
+    }
+
+    #[test]
+    fn test_a_message_never_fetched_is_not_here() {
+        let cache = body_test_cache();
+        let never = cache.save_message(&cached(1, "Never fetched")).unwrap();
+        let evicted = cache.save_message(&cached(2, "Evicted")).unwrap();
+        cache
+            .save_message_body(evicted, Some("aaaaaaaaaa"), None)
+            .unwrap();
+        assert_eq!(cache.evict_bodies_over(0).unwrap(), 10);
+
+        for id in [never, evicted] {
+            assert_eq!(rows_and_empty_rows(&cache, id), (0, 0), "the fixture");
+            assert_eq!(cache.the_text_kept_for(id).unwrap(), KeptText::NotHere);
+        }
+    }
+
+    #[test]
+    fn test_the_kept_text_reads_as_get_message_body_reads_it() {
+        let cache = body_test_cache();
+        let long = "The quarterly figures. ".repeat(60);
+        let cases: [(Option<&str>, Option<&str>); 4] = [
+            (Some("plain"), None),
+            (None, Some("<p>markup</p>")),
+            (Some(long.as_str()), Some("<p>markup</p>")),
+            // An empty text part is still a text that came down.
+            (Some(""), None),
+        ];
+        for (n, (plain, html)) in cases.into_iter().enumerate() {
+            let id = cache.save_message(&cached(n as u32 + 1, "Text")).unwrap();
+            cache.save_message_body(id, plain, html).unwrap();
+            let expected = MessageBody {
+                body_plain: plain.map(str::to_string),
+                body_html: html.map(str::to_string),
+            };
+
+            assert_eq!(
+                cache.the_text_kept_for(id).unwrap(),
+                KeptText::Here(expected.clone()),
+                "{plain:?} {html:?}"
+            );
+            assert_eq!(cache.get_message_body(id).unwrap(), Some(expected));
+        }
     }
 
     #[test]

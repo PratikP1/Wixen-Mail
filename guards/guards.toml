@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 921 records have arrived since and have not been through it.
+# 920 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -43759,22 +43759,14 @@ tests_last_seen = [
     { file = "tests/nothing_sends_a_flag_change_unasked.rs", tests = 19 },
 ]
 
-# A stored row holding neither half of a message's text read as text that is
-# here (13.3-05, review item 4), so a reply or a forward from an opened
-# conversation quoted nothing and said nothing. Measured 2026-10-20 by hand,
-# the break applied and the module run: these two red.
-[[guard]]
-name = "a stored row holding neither half of the text is not here yet for a quote"
-file = "src/application/reply.rs"
-before = '''    let here = stored.is_some_and(|body| body.body_plain.is_some() || body.body_html.is_some());'''
-after = '''    let here = stored.is_some();'''
-red = [
-    "application::reply::tests::test_a_stored_row_holding_neither_half_is_not_here_yet",
-    "application::reply::tests::test_offline_a_message_with_no_text_here_is_not_fetched_and_says_why",
-]
-tests_last_seen = [
-    { file = "src/application/reply.rs", tests = 40 },
-]
+# "a stored row holding neither half of the text is not here yet for a quote"
+# stood here from 13.3-05 (2026-10-20) and was retired by 13.3-24.2 on
+# 2026-10-23. Its rule, a stored row holding neither half is a message to
+# download, is the one that plan reversed on Pratik's yes to ledger 919: such
+# a row is a message that came down with no text, and it is quoted as
+# nothing. The line it broke was rewritten and one test it named removed, so
+# it could not be measured again. Its successor, "a message that came down
+# with no text is told from one never fetched", breaks the store's reading.
 
 # Forward from an opened conversation opening no window and saying nothing
 # when the message's text is not here, its call of the refusal taken out

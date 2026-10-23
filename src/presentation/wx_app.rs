@@ -15864,6 +15864,22 @@ fn body_as_written(stored: Option<crate::data::message_cache::bodies::MessageBod
     }
 }
 
+/// What the store keeps of message `id`'s text. A store that cannot be read,
+/// or none at all, keeps nothing here, so the text is fetched rather than
+/// quoted as nothing; the log says why.
+fn what_the_store_keeps_of(
+    cache: Option<&MessageCache>,
+    id: i64,
+) -> crate::data::message_cache::bodies::KeptText {
+    use crate::data::message_cache::bodies::KeptText;
+    cache.map_or(KeptText::NotHere, |cache| {
+        cache.the_text_kept_for(id).unwrap_or_else(|e| {
+            tracing::warn!("The text of message {id} could not be read: {e}");
+            KeptText::NotHere
+        })
+    })
+}
+
 /// Where focus belongs once the preview has finished loading a message.
 ///
 /// A WebView takes focus when a document loads and does not ask first.
@@ -19912,16 +19928,10 @@ fn the_body_a_command_quotes(
         return TheQuote::Here(preview);
     }
     let id = message.message_id;
-    let stored = cache.and_then(|cache| {
-        cache
-            .get_message_body(id)
-            .map_err(|e| tracing::warn!("The text of message {id} could not be read: {e}"))
-            .ok()
-            .flatten()
-    });
-    match crate::application::reply::what_quoting_finds(stored.as_ref(), reachability_of(state)) {
+    let kept = what_the_store_keeps_of(cache, id);
+    match crate::application::reply::what_quoting_finds(&kept, reachability_of(state)) {
         crate::application::reply::WhatQuotingFinds::TheText => {
-            TheQuote::Here(body_as_written(stored))
+            TheQuote::Here(body_as_written(kept.into_body()))
         }
         finds => TheQuote::NotHere(NotHere {
             message_row_id: id,
