@@ -101,11 +101,18 @@ set -euo pipefail
 # both: the commit that runs `cargo update -p rustls-webpki -p
 # webpki-root-certs` takes them out, and this gate refuses until it does,
 # because a held-open advisory nobody reports any more silences nothing.
+#
+# A third since 2026-10-23, published that day and met by 13.3-20's merge,
+# whose whole gate refused on it: also row 914, also a move inside the lock
+# only, ctutils reached through ghash, polyval and universal-hash. Exit
+# condition: the commit that runs `cargo update -p ctutils` takes it out.
 awaiting_a_decision=(
     # rustls-webpki 0.103.15 may accept distrusted intermediates; fixed in 0.103.16.
     "RUSTSEC-2026-0382"
     # webpki-root-certs 1.0.9 trusts distrusted emSign intermediates; fixed in 1.0.10.
     "RUSTSEC-2026-0383"
+    # ctutils 0.4.2 generates masks and compares u128 in non-constant time; fixed in 0.4.4.
+    "RUSTSEC-2026-0385"
 )
 
 if [ "${1:-}" = "--awaiting-a-decision" ]; then
