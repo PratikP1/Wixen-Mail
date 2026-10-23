@@ -175,6 +175,21 @@ impl MessageCache {
         the_first_refusal(outcomes)
     }
 
+    /// Store `given` through [`MessageCache::replace_accounts`] and answer
+    /// the accounts the store holds afterwards, with the refusal if there was
+    /// one.
+    pub fn replace_accounts_and_read_back(
+        &self,
+        given: Vec<crate::data::account::Account>,
+        _before: &[crate::data::account::Account],
+    ) -> AccountsAfterTheSave {
+        let refused = self.replace_accounts(&given).err();
+        AccountsAfterTheSave {
+            held: given,
+            refused,
+        }
+    }
+
     /// Load all accounts from the database
     pub fn load_accounts(&self) -> Result<Vec<crate::data::account::Account>> {
         let mut stmt = self
@@ -401,6 +416,15 @@ impl MessageCache {
             .map_err(|e| Error::Other(format!("Failed to update last sync: {}", e)))?;
         Ok(())
     }
+}
+
+/// What the store holds after the Account Manager's list was saved, and why
+/// it refused what it did.
+pub struct AccountsAfterTheSave {
+    /// The accounts the store holds, the list a restart would show.
+    pub held: Vec<crate::data::account::Account>,
+    /// The first refusal, already a sentence for a person, or nothing.
+    pub refused: Option<Error>,
 }
 
 /// The first of several accounts' refusals, each paired with the account's
@@ -1104,6 +1128,121 @@ mod tests {
         );
         assert!(!stored.iter().any(|account| account.id == "acc-second"));
         forget_passwords(&["acc-work", "acc-home", "acc-second"]);
+    }
+
+    /// Each account's id and name, in the order given.
+    fn ids_and_names(accounts: &[crate::data::account::Account]) -> Vec<(&str, &str)> {
+        accounts
+            .iter()
+            .map(|account| (account.id.as_str(), account.name.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn test_an_account_the_store_refused_is_not_among_the_accounts_held() {
+        // The window kept the list the Account Manager handed back whatever
+        // the store answered, so an account it refused was listed, synced
+        // and signed in until the next start (ledger 922).
+        let cache = a_cache("a-refused-account-is-not-held");
+        let work = called("Work", "acc-work", "ada@example.com");
+        cache
+            .save_account(&work)
+            .expect("the first account to save");
+
+        let after = cache.replace_accounts_and_read_back(
+            vec![
+                work.clone(),
+                called("Second", "acc-second", "ada@example.com"),
+            ],
+            std::slice::from_ref(&work),
+        );
+
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert_eq!(
+            after.refused.map(|refused| refused.to_string()).as_deref(),
+            Some(
+                "Work already uses ada@example.com. Edit that account rather than adding the address again."
+            )
+        );
+        forget_passwords(&["acc-work", "acc-second"]);
+    }
+
+    #[test]
+    fn test_an_account_whose_removal_was_refused_is_still_among_the_accounts_held() {
+        let cache = a_cache("a-refused-removal-is-held");
+        let before = vec![
+            called("Work", "acc-work", "ada@example.com"),
+            called("Home", "acc-home", "grace@example.com"),
+        ];
+        for account in &before {
+            cache.save_account(account).expect("the account to save");
+        }
+
+        crate::service::secret_store::refuse_removals("that entry cannot be read");
+        let after = cache.replace_accounts_and_read_back(
+            vec![called("Renamed", "acc-home", "grace@example.com")],
+            &before,
+        );
+        crate::service::secret_store::allow();
+
+        assert_eq!(
+            ids_and_names(&after.held),
+            vec![("acc-work", "Work"), ("acc-home", "Renamed")],
+            "the account whose removal was refused is not held, or the edit beside it was lost"
+        );
+        let said = after.refused.expect("the refused removal").to_string();
+        assert!(said.contains("Windows would not let go of"), "{said}");
+        forget_passwords(&["acc-work", "acc-home"]);
+    }
+
+    #[test]
+    fn test_a_save_nothing_refused_holds_the_list_as_it_was_given() {
+        // A field the table never holds, such as a token the sign-in has just
+        // given, stays as the Account Manager handed it back.
+        let cache = a_cache("a-save-nothing-refused");
+        let mut work = called("Work", "acc-work", "ada@example.com");
+        work.oauth_access_token = "a token the sign-in just gave".to_string();
+
+        let after = cache.replace_accounts_and_read_back(vec![work], &[]);
+
+        assert!(after.refused.is_none());
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert_eq!(
+            after.held[0].oauth_access_token,
+            "a token the sign-in just gave"
+        );
+        forget_passwords(&["acc-work"]);
+    }
+
+    #[test]
+    fn test_a_store_that_cannot_be_read_leaves_the_list_from_before_the_visit() {
+        // The save reads the table before it writes anything, so a table it
+        // cannot read refuses with nothing changed, and the list from before
+        // the visit is what the store holds.
+        let cache = a_cache("a-store-that-cannot-be-read");
+        let work = called("Work", "acc-work", "ada@example.com");
+        cache
+            .save_account(&work)
+            .expect("the first account to save");
+        cache
+            .conn
+            .execute("ALTER TABLE accounts RENAME TO accounts_out_of_reach", [])
+            .expect("the table to be moved out of reach");
+
+        let after = cache.replace_accounts_and_read_back(
+            vec![
+                work.clone(),
+                called("Home", "acc-home", "grace@example.com"),
+            ],
+            std::slice::from_ref(&work),
+        );
+
+        assert_eq!(ids_and_names(&after.held), vec![("acc-work", "Work")]);
+        assert!(
+            after.refused.is_some(),
+            "a store that cannot be read refused nothing"
+        );
+        forget_passwords(&["acc-work", "acc-home"]);
     }
 
     /// What the password column holds, straight out of the table.
