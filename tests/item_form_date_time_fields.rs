@@ -18,7 +18,7 @@
 use chrono::Datelike;
 use std::sync::{Arc, Mutex};
 use wixen_mail::application::new_item::ItemKind;
-use wixen_mail::application::time_blocks::Block;
+use wixen_mail::application::time_blocks::{self, Block};
 use wixen_mail::presentation::accessibility::Accessibility;
 use wixen_mail::presentation::date_display::{
     Clock, DateOrder, DateSettings, DateStyle, DateWording,
@@ -85,9 +85,20 @@ fn test_date_and_time_fields_are_real_separate_controls() {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let opened = ten_to_midnight_on_new_years_eve();
+            // Where the form's own rule puts a new event's start: the next
+            // boundary after it opened, which here is the next day, month and
+            // year. Not the day it opened, which is what this file expected
+            // until CI opened it at half past eleven at night.
+            let starts_at = time_blocks::next_boundary(opened, Block::Thirty);
+            expect(
+                "the pinned moment's start falls in the next year, or this case proves nothing",
+                starts_at.year(),
+                opened.year() + 1,
+                &mut wrong,
+            );
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
-            // ── Opens on the day it was opened, twenty-four hour clock: no
+            // ── Opens on the next block boundary, twenty-four hour clock: no
             // ── AM/PM choice, the hour spinner reads nought to twenty-three. ──
             let widgets = build_item_form_dialog(
                 &frame,
@@ -158,25 +169,25 @@ fn test_date_and_time_fields_are_real_separate_controls() {
             );
             day_first.dialog.destroy();
             expect(
-                "starts: month defaults to this month",
+                "starts: month is the month of the next block boundary",
                 starts
                     .month
                     .get_selection()
                     .map(|i| i as i32 + 1)
                     .unwrap_or(-1),
-                opened.month() as i32,
+                starts_at.month() as i32,
                 &mut wrong,
             );
             expect(
-                "starts: day defaults to today",
+                "starts: day is the day of the next block boundary",
                 starts.day.value(),
-                opened.day() as i32,
+                starts_at.day() as i32,
                 &mut wrong,
             );
             expect(
-                "starts: year defaults to this year",
+                "starts: year is the year of the next block boundary",
                 starts.year.value(),
-                opened.year(),
+                starts_at.year(),
                 &mut wrong,
             );
 
