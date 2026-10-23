@@ -801,6 +801,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The update check no longer downloads an installer it could only refuse (2026-10-23,
+  SHIP-02).** Nothing this project publishes is signed yet, so every installer Wixen Mail
+  fetched was refused and deleted, and once a newer version was published that would have
+  happened at every start. Now nothing is downloaded until installers are signed: you are told
+  the new version has been published, that Wixen Mail cannot install updates by itself until
+  its installers are signed, and where to download it by hand. A check when Wixen Mail starts
+  says what it found once, on the status line and at normal priority, without opening a window,
+  and adds that Check for Updates on the Help menu opens the releases page. Choosing Check for
+  Updates while a check or its download is still running says one is already under way rather
+  than starting a second. A check that gets no answer from GitHub is given up on after 30
+  seconds, and a download after 30 seconds without connecting or 30 seconds with nothing
+  arriving, so a slow download that keeps arriving is never cut short; each says what a failed
+  connection says. Each download, once there is one, goes in a folder of its own inside
+  `updates`, which goes with it when the download fails, when it is refused, and when you answer
+  No. None of this has been heard with a screen reader, and the paths a published release
+  reaches cannot be heard until there is one.
+
 - **The zip reader moved from version 7.2.0 to 9.0.4 (2026-10-19, FOUND-23).** Three security
   advisories were published in October 2026 against version 7.2.0 of the zip library Wixen Mail
   uses to import a zip of mail and a sound scheme pack: RUSTSEC-2026-0367, RUSTSEC-2026-0368 and
@@ -4306,9 +4323,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   anyway.
 
   **Today that refuses everything, because nothing this project publishes is
-  signed.** There is no certificate yet. Until there is, an update will be
-  downloaded, refused, deleted, and you will be pointed at the releases page.
-  That is deliberate: the refusal is the feature, and it was built before the
+  signed.** There is no certificate yet. Until 2026-10-23 this said that until
+  there is, an update would be downloaded, refused, deleted, and you pointed at
+  the releases page; since that day nothing is downloaded until there is, and
+  you are pointed at the page straight away. The refusal is deliberate: the refusal is the feature, and it was built before the
   signing so that it could never be added as an afterthought to something that
   was already running installers.
 
@@ -4326,10 +4344,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
   Where the bytes come from: `github.com`, which passes the request on to
   `objects.githubusercontent.com`. Neither carries an account or anything about
-  you. The installer waits in `%LOCALAPPDATA%\wixen-mail\updates`, holds one
-  file, and is emptied when the update is done with, when an installer is
-  refused, and again the next time Wixen Mail starts, so a download interrupted
-  by a crash leaves nothing behind. A download that is sent to an address that
+  you. The installer waits in `%LOCALAPPDATA%\wixen-mail\updates`, and the
+  folder is emptied again the next time Wixen Mail starts, so a download
+  interrupted by a crash leaves nothing behind. Until 2026-10-23 this said the
+  folder held one file and was emptied when the update was done with and when
+  an installer was refused; since that day each download has a folder of its
+  own inside it, which goes with the installer when the download fails, when it
+  is refused and when you answer No, and the whole folder is emptied at the next
+  start. A download that is sent to an address that
   is not secure, passed around too many times, or larger than Wixen Mail will
   accept is stopped and thrown away, and you are told which.
   [What Wixen Mail sends, and where](privacy.md) says all of it in full.

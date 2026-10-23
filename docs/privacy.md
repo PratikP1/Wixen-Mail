@@ -30,12 +30,15 @@ Everything Wixen Mail stores is in one folder on your computer:
     security.key      only on a machine upgraded from an older version
 ```
 
-`updates\` is there only while Wixen Mail is fetching a new version, and it holds one file:
-the installer. It is emptied when the update is installed, emptied straight away if the
-installer turns out not to be signed by this project, and emptied again the next time Wixen
-Mail starts, so a download interrupted by a crash or a power cut does not leave an installer
-sitting on your disk. If you have "Tell me about new versions" set to not look, nothing is
-ever put there.
+`updates\` is there only while Wixen Mail is fetching a new version or one is waiting for your
+answer. Each download gets a folder of its own inside it, holding one file, the installer, and
+that folder goes with its installer: straight away when a download fails part way or the
+installer turns out not to be signed by this project, and when you answer No to one that
+passed. The whole of `updates\` is emptied the next time Wixen Mail starts, which after an
+update is the new version's first start, so a download interrupted by a crash or a power cut
+does not leave an installer sitting on your disk. Until this project's installers are signed,
+nothing is downloaded at all. If you have "Tell me about new versions" set to not look, nothing
+is ever put there.
 
 **One exception, on a computer where Windows cannot tell Wixen Mail where your local
 application data lives.** That is rare and it is usually a sign something else is wrong with
@@ -875,9 +878,11 @@ is current when it did not find out.
 folder names, not your mail, and no identifier that would let two requests be recognised as
 coming from the same installation.
 
-**Something is downloaded, and nothing is run until you say so.** When the check finds a newer
-version, Wixen Mail fetches the installer for it and checks who signed it, without asking you
-first. Then it asks you once, and only about installing it.
+**Once this project's installers are signed, something is downloaded, and nothing is run until
+you say so.** When the check finds a newer version, Wixen Mail will fetch the installer for it
+and check who signed it, without asking you first. Then it asks you once, and only about
+installing it. Until the installers are signed, nothing is downloaded: the check says the new
+version has been published and where to get it.
 [Downloading an update](#downloading-an-update) below says what that fetch sends, which
 computers it reaches, and what arrives on your disk.
 
@@ -895,14 +900,15 @@ somebody at your address downloaded this version of Wixen Mail.
 **A file arrives on your computer without you asking for it.** This is not a promise about
 what is sent, it is a plain fact about what turns up, and it deserves saying on its own.
 If you have chosen a kind of version under "Tell me about new versions", then when a newer
-one is published Wixen Mail downloads its installer on its own, without asking you at that
-moment. How large that download is has not been measured, because no release has been
+one is published, and once this project's installers are signed, Wixen Mail downloads its
+installer on its own, without asking you at that moment. How large that download is has not been measured, because no release has been
 published yet; the target is about 12 MB, and this sentence will give the measured size
 with its date once there is a release to measure. It goes in
-`%LOCALAPPDATA%\wixen-mail\updates`. It is
-removed when the update is installed, removed straight away if it turns out not to be signed
-by this project, and removed again the next time Wixen Mail starts. If the setting is left on
-"Do not look for new versions", none of this ever happens.
+`%LOCALAPPDATA%\wixen-mail\updates`, in a folder of its own for each download, and that
+folder goes with it: straight away if the download fails part way or the installer turns out
+not to be signed by this project, when you answer No, and otherwise the next time Wixen Mail
+starts, which after an update is the new version's first start. If the setting is left on "Do
+not look for new versions", none of this ever happens.
 
 **Nothing is run without you saying so.** Once the installer has been downloaded and checked,
 Wixen Mail asks you once whether to install it, and that is the only question this feature
@@ -920,8 +926,10 @@ On a computer with no way to check a signature at all, nothing is downloaded eit
 question is asked before any bytes are fetched, so your connection is not spent on a file
 Wixen Mail could never look at.
 
-Today that check refuses everything, because nothing this project publishes is signed yet.
-Until it is, an update will download, be refused, and point you at the releases page.
+Today that check would refuse everything, because nothing this project publishes is signed
+yet. So since 2026-10-23 nothing is downloaded until it is: a newer version is said, with the
+releases page, and never fetched. Until that day an update was downloaded, refused, and
+pointed you at the releases page.
 
 ## Printing
 

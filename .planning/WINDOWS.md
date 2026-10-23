@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 790
+open_count: 791
 waived_count: 0
 fixed_count: 152
-total_count: 942
-last_updated: 2026-10-22T23:59:30.000Z
+total_count: 943
+last_updated: 2026-10-23T16:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -958,6 +958,7 @@ last_updated: 2026-10-22T23:59:30.000Z
 | 941 | 13.3 | todo | src/presentation/wx_app.rs |  | 13.3-21, premise 5, read with the Read tool on 2026-10-22: while the mail server cannot be reached, every automatic save answers NotFiledAndTheOlderOneIsStillThere in spawn_draft_append and says the draft is on this computer and the server would not take it, once a minute for as long as somebody writes. Not ledger 912 and not review item 41, so 13.3-21 left it. Recommended: extend the once-per-draft rule in Filed::needs_saying_for to that answer until a save of the draft is taken, so it is heard once and again only after the server took a copy and then refused one; Pratik's to decide | open |  | 2026-10-22T23:59:30.000Z |  |
 | 942 | 13.3 | unrun-verify | src/application/draft_copy.rs |  | 13.3-21, review items 41 and 38, read in code only: nothing here has met a mail server without UIDPLUS. On such a server, a draft written in for three minutes or more should say once that an older copy may still be on the server and not again, the server's Drafts should hold the older copies marked for removal beside one unmarked copy with the latest words, and the search should read UID SEARCH HEADER MESSAGE-ID "..." UNDELETED. Held by the loopback cases in service::protocols::imap and application::mail_controller and the cases in application::draft_copy. Closed when a server without UIDPLUS has been seen to do this, at a phase 14 sitting or later | open |  | 2026-10-22T23:59:30.000Z |  |
 | 943 | 13.3 | todo | .claude/guardrails/no-sed-awk.js |  | 13.3-22, read 2026-10-23: the hook refusing sed and awk now has a tracked copy in .claude/guardrails/no-sed-awk.js with its 27 tests beside it, and the hook that runs is still the git-ignored .claude/hooks/wixen-no-sed-awk.js, named by the git-ignored .claude/settings.local.json. A GSD reinstall rewrites .claude/hooks, so it would take the running copy with it and the refusal would stop with nothing saying so. The executor left the settings entry, the old copy and CLAUDE.md's sentence alone, because a workflow agent's brief cannot authorise a change to harness configuration or to CLAUDE.md. Recommended: point the first PreToolUse entry, matcher Bash or PowerShell, at .claude/guardrails/no-sed-awk.js, check a call running sed is still refused with exit 2, delete .claude/hooks/wixen-no-sed-awk.js, and add beside CLAUDE.md's mention of tdd-mode-check.js that the guard folder also holds no-sed-awk.js, which refuses sed and awk, tested with node --test .claude/guardrails/no-sed-awk.test.js; Pratik's to do. Closed when the hook that runs is the tracked copy | open |  | 2026-10-23T12:00:00.000Z |  |
+| 944 | 13.3 | unrun-verify | src/presentation/wx_app.rs |  | 13.3-23, the research's gaps 1, 3 and 4, for the tester on a build holding 13.3-23's merge, under NVDA: Help, then Check for Updates, chosen twice within a second; hear once that a check is already under way, and then the check's own answer once. Held by the cases in service::update_check and service::update_download, which read the window's source and drive the guard and the loopback hosts; nothing has been heard. The paths a published release reaches, a newer version said with its page and not downloaded, and the sentence a check at start puts on the status line with no window, cannot be heard until a release exists (row 315). Closed when the tester has heard the two sentences in that order | open |  | 2026-10-23T16:00:00.000Z |  |
 
 ````json
 [
@@ -12275,6 +12276,18 @@ last_updated: 2026-10-22T23:59:30.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-23T12:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 944,
+    "kind": "unrun-verify",
+    "phase": "13.3",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.3-23, the research's gaps 1, 3 and 4, for the tester on a build holding 13.3-23's merge, under NVDA: Help, then Check for Updates, chosen twice within a second; hear once that a check is already under way, and then the check's own answer once. Held by the cases in service::update_check and service::update_download, which read the window's source and drive the guard and the loopback hosts; nothing has been heard. The paths a published release reaches, a newer version said with its page and not downloaded, and the sentence a check at start puts on the status line with no window, cannot be heard until a release exists (row 315). Closed when the tester has heard the two sentences in that order",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-23T16:00:00.000Z",
     "resolved_at": null
   }
 ]

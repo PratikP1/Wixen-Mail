@@ -1892,6 +1892,13 @@ write path added by this milestone passes through that gate.
     profile are ledger 870, beside 329. Held by the rule's rows and the Windows case on a
     System32 file's usages in `service::update_download`, and two guard records. No `[D]`
     clause; the box stays open.
+  - 13.3-23 on 2026-10-23, the research's gaps 1, 3 and 4, on Pratik's option (c) of
+    2026-10-20: while the certificate profile identifier is empty nothing is fetched, and a
+    newer version is said with its page; a check at start says what it found once on the status
+    line, at normal priority, with no window; one check runs at a time, each download in a
+    folder of its own that goes with its file; the check is given up on after 30 seconds and the
+    download after 30 seconds without connecting or 30 of silence. This narrows what is fetched
+    under the first `[D]` line and adds no `[D]` clause; the box stays open. Ledger 944.
 
 - [x] **SHIP-03**: The installed shortcuts carry the application icon. Narrowed 2026-08-29:
   the shortcuts themselves are already built.
@@ -8380,7 +8387,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FEEDBACK-02 | Phase 6 | Complete; phase 13.2: 13.2-30 merged 2026-10-18, one translation system and the two picture words as pinned literals, adding no `[D]` clause. Until 13.2-30 "Complete; phase 13.2, planned 2026-10-14: 13.2-30, adding no `[D]` clause" |
 | FEEDBACK-03 | Phase 6 | Complete |
 | SHIP-01 | Phase 7 | Pending |
-| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870 |
+| SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870; phase 13.3: 13.3-23 done 2026-10-23, nothing fetched while no installer could pass, a check at start opens no window, one check at a time, limits on a stalled connection, adding no `[D]` clause, ledger 944 |
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
 | SHIP-05 | Phase 7 | Pending |
