@@ -1468,6 +1468,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The libraries that check a secure server's certificate, and one that encrypts, have their
+  published security fixes (2026-10-23, FOUND-23).** Three advisories were published that week
+  against versions Wixen Mail already used. RUSTSEC-2026-0382: a certificate signed through an
+  intermediate authority that is no longer trusted could still be accepted. RUSTSEC-2026-0383:
+  the list of trusted authorities that travels with the checker still trusted the distrusted
+  emSign intermediates; that list is not part of the Windows build. RUSTSEC-2026-0385: an
+  encryption helper could take measurably different time over some comparisons, which can leak
+  what it compares. Each update stays within the versions the program already asked for, and
+  the security check this project runs on every change no longer reports any of them. Which
+  connections check a certificate this way rather than through Windows, and which of the
+  program's own encryption reaches those comparisons, was not read, so this entry says neither
+  that the program was exposed nor that it was not.
 - **Installing an update from inside Wixen Mail now closes it the way Quit does (2026-10-23,
   SHIP-02).** With "Keep Wixen Mail running in the notification area" on, answering Yes to
   install an update would have hidden Wixen Mail in the notification area while the installer
