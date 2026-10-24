@@ -113,6 +113,29 @@ guards_that_read_the_whole_tree=(house_style wired the_planning_files_agree_with
 the_targets_that_read_documents=(house_style docs_links wired checkbox_labels manager_delete_stays_open the_planning_files_agree_with_themselves the_words_that_say_nothing every_number_carries_its_command_and_its_date)
 the_modules_that_read_documents=(help_page:: presentation::what_the_scans_can_judge::)
 
+# The target whose tests need the clipboard, and those tests by name, which a
+# run on a locked session leaves out. Added 2026-10-23 by 13.3-24.8, on Pratik's
+# "yes" of that day. Windows refuses the clipboard to every program while the
+# session is locked (ledger 716), so these tests fail there whatever the code
+# does: on 2026-10-22 they refused the merge of 13.3-20 after 872 s and the
+# merge train stood still overnight. CI's Test Suite runs them on every push and
+# pull request, and an unlocked session runs them here as before.
+#
+# Held to the code by `test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard`
+# in `tests/a_locked_key_asks_for_its_passphrase.rs`, which reads this list and
+# names a test on it that reaches no clipboard, or one off it that does, and a
+# guard record on this file routes every commit that changes the list to it.
+# What that reading cannot see is a test reaching the clipboard through a
+# function of another file. One name to a line, because the reading and
+# `check.test.sh` read it a line at a time.
+the_target_that_needs_the_clipboard=a_passphrase_box_takes_a_real_paste
+the_tests_that_need_the_clipboard=(
+    test_a_pasted_passphrase_is_taken_and_ok_hands_it_back
+    test_the_paste_reading_sees_a_field_that_refuses_one
+    test_a_clipboard_held_throughout_is_refused_naming_the_window_that_held_it
+    test_a_clipboard_held_briefly_is_waited_for
+)
+
 # What each `scripts/*.test.sh` reads, so a suite runs on the commits that stage
 # one of its inputs and not on the others. Added 2026-09-23 by 12-03.2, on
 # Pratik's answer that day that each suite runs only for its own inputs: the
@@ -131,7 +154,8 @@ the_modules_that_read_documents=(help_page:: presentation::what_the_scans_can_ju
 #                 in its real run and no case reaches
 #   check         its suite and this script, the guard records the coupling
 #                 reads, and what this script calls: `which-checks.sh`,
-#                 `red-commit.sh` and `audit.sh` with what `audit.sh` reads; and
+#                 `red-commit.sh`, `session_lock.py`, and `audit.sh` with
+#                 what `audit.sh` reads; and
 #                 every other suite, because the reading of the lists lives in
 #                 this suite and reads every suite
 #   red-commit    its suite and `red-commit.sh`
@@ -145,7 +169,7 @@ the_modules_that_read_documents=(help_page:: presentation::what_the_scans_can_ju
 # reaches owe none.
 declare -A the_inputs_of_a_suite
 the_inputs_of_a_suite[audit]="scripts/audit.test.sh scripts/audit.sh .cargo/audit.toml Cargo.lock"
-the_inputs_of_a_suite[check]="scripts/check.test.sh scripts/check.sh guards/guards.toml scripts/which-checks.sh scripts/red-commit.sh scripts/audit.sh .cargo/audit.toml Cargo.lock scripts/audit.test.sh scripts/red-commit.test.sh scripts/which-checks.test.sh"
+the_inputs_of_a_suite[check]="scripts/check.test.sh scripts/check.sh scripts/session_lock.py guards/guards.toml scripts/which-checks.sh scripts/red-commit.sh scripts/audit.sh .cargo/audit.toml Cargo.lock scripts/audit.test.sh scripts/red-commit.test.sh scripts/which-checks.test.sh"
 the_inputs_of_a_suite[red-commit]="scripts/red-commit.test.sh scripts/red-commit.sh"
 the_inputs_of_a_suite[which-checks]="scripts/which-checks.test.sh scripts/which-checks.sh scripts/red-commit.sh"
 what_every_suite_is_owed_for=(scripts/shell-suite.sh .githooks/commit-msg)
@@ -615,6 +639,100 @@ if [ "${1:-}" = "--scoped-runs-for" ]; then
     exit 0
 fi
 
+# Whether the words of a cargo test line reach the target whose tests need the
+# clipboard: `--all-targets`, or `--test` followed by that target.
+the_words_reach_the_clipboard_target() {
+    local previous="" word
+    for word in "$@"; do
+        [ "$word" = --all-targets ] && return 0
+        [ "$previous" = --test ] && [ "$word" = "$the_target_that_needs_the_clipboard" ] && return 0
+        previous="$word"
+    done
+    return 1
+}
+
+# What a cargo test line hands libtest after its own words on a locked session:
+# `--exact` and one `--skip` for each test on the list, so each is counted
+# filtered out and never read as passed. One line when the lock answer is
+# `locked` and the words reach the target; nothing otherwise, an unlocked
+# session and a lock nobody could read included.
+#
+#     what_a_locked_session_leaves_out <lock answer> <cargo test words...>
+what_a_locked_session_leaves_out() {
+    local lock="$1" words="-- --exact" name
+    shift
+    [ "$lock" = locked ] || return 0
+    the_words_reach_the_clipboard_target "$@" || return 0
+    for name in "${the_tests_that_need_the_clipboard[@]}"; do
+        words+=" --skip $name"
+    done
+    echo "$words"
+}
+
+# The rule on its own, so `scripts/check.test.sh` can ask it without a lock:
+#
+#     check.sh --what-a-locked-session-leaves-out <lock answer> <cargo test words...>
+if [ "${1:-}" = "--what-a-locked-session-leaves-out" ]; then
+    shift
+    what_a_locked_session_leaves_out "$@"
+    exit 0
+fi
+
+# Whether Windows says this session is locked, asked of
+# `scripts/session_lock.py`: `locked`, `unlocked`, or `not said: ` and why,
+# with what came back and its status when Python did not answer as it should.
+# Never the process list and never the clipboard, for the reasons that script
+# gives. On 2026-10-14 a Store alias made `python` stop answering on this
+# machine, which is the shape of the last answer here.
+this_sessions_lock() {
+    local said status=0
+    said="$(python -I "$the_scripts_folder/session_lock.py" 2>&1)" || status=$?
+    said="${said//$'\r'/}"
+    case "$status:$said" in
+        "0:locked" | "0:unlocked" | "0:not said: "*) echo "$said" ;;
+        *) echo "not said: python answered '${said//$'\n'/ }' with status $status" ;;
+    esac
+}
+
+# Decided before each cargo test line that can reach the target whose tests
+# need the clipboard, and only for those lines, so most runs start no extra
+# process. Fills `left_out_while_locked`, which the line hands cargo after its
+# own words, and says what it did: on a locked session the tests left out and
+# where they do run, on a lock nobody could read that it could not ask and why,
+# and on an unlocked session nothing.
+left_out_while_locked=()
+the_session_was_locked=""
+leave_out_what_a_locked_session_cannot_run() {
+    local lock
+    left_out_while_locked=()
+    the_words_reach_the_clipboard_target "$@" || return 0
+    lock="$(this_sessions_lock)"
+    case "$lock" in
+        locked)
+            read -ra left_out_while_locked <<< "$(what_a_locked_session_leaves_out locked "$@")"
+            the_session_was_locked=yes
+            echo "-- the session is locked, so the tests that need the clipboard do not run"
+            echo "   here. Windows refuses the clipboard to every program while a session is"
+            echo "   locked (ledger 716). CI's Test Suite runs them on every push and pull"
+            echo "   request. Left out, from $the_target_that_needs_the_clipboard:"
+            printf '   %s\n' "${the_tests_that_need_the_clipboard[@]}"
+            ;;
+        unlocked) ;;
+        *)
+            echo "-- could not ask whether this session is locked (${lock#not said: }),"
+            echo "   so the tests that need the clipboard run. If it is locked they fail,"
+            echo "   saying so."
+            ;;
+    esac
+}
+
+# The sentence each mode's closing words gain when the session was locked.
+say_what_the_lock_left_out() {
+    [ -n "$the_session_was_locked" ] || return 0
+    echo "The tests that need the clipboard did not run, because the session is"
+    echo "locked; CI's Test Suite runs them."
+}
+
 # The mode `which-checks.sh` gives the commit being made: from the staged
 # paths, the branch, the message, and since 2026-09-23 (12-03.2) whether the
 # commit is a merge, which git says by leaving `MERGE_HEAD` while one is in
@@ -868,7 +986,9 @@ case "$mode" in
         echo "  Or --shell-suites-owed <mode> [--message-file=F] [--staged | path ...]" >&2
         echo "  for which scripts/*.test.sh a commit owes, --scoped-runs-for" >&2
         echo "  [--merge] <registry> [path ...] for what the scoped run hands cargo," >&2
-        echo "  or --mode-for-this-commit [--message-file=F] for the mode it runs." >&2
+        echo "  --mode-for-this-commit [--message-file=F] for the mode it runs, or" >&2
+        echo "  --what-a-locked-session-leaves-out <lock answer> <a cargo line's words>" >&2
+        echo "  for what a run on a locked session hands libtest." >&2
         exit 64
         ;;
 esac
@@ -987,6 +1107,10 @@ the_run_ends() {
     for index in "${!stage_names[@]}"; do
         stages+="${stages:+, }${stage_names[$index]} ${stage_seconds[$index]} s"
     done
+    if [ -n "$the_session_was_locked" ]; then
+        stages+="; left out because the session is locked: ${#the_tests_that_need_the_clipboard[@]}"
+        stages+=" tests of $the_target_that_needs_the_clipboard, which CI's Test Suite runs"
+    fi
     echo "check.sh: $mode $outcome after $SECONDS s: $stages" >&2
     return "$status"
 }
@@ -1236,7 +1360,12 @@ run_the_integration_targets() {
     # refuses `--no-fail-fast` given twice, before it selects a target,
     # measured 2026-09-23 at `481a7918`, so a builder line carrying it too
     # would make every scoped run fail.
-    cargo test --no-fail-fast "$@" >> "$run_log" 2>&1
+    #
+    # On a locked session, the tests that need the clipboard are left out by the
+    # words after the targets, since 2026-10-23 (13.3-24.8); the function above
+    # the line says why and what it prints.
+    leave_out_what_a_locked_session_cannot_run "$@"
+    cargo test --no-fail-fast "$@" "${left_out_while_locked[@]+"${left_out_while_locked[@]}"}" >> "$run_log" 2>&1
 }
 
 # The RED half of red/green. The commit named the tests that must fail; the run
@@ -1262,6 +1391,7 @@ if [ "$mode" = "red" ]; then
     echo "Formatting, clippy, and a red that is exactly the one this commit"
     echo "named. The green commit that follows runs the same tests and must"
     echo "carry no marker."
+    say_what_the_lock_left_out
     exit 0
 fi
 
@@ -1279,6 +1409,7 @@ if [ "$mode" = "affected" ]; then
     echo "tree-reading guards passed. The rest of the suite and the release"
     echo "build did not run. They run once a phase, by hand in its closing plan"
     echo "(scripts/check.sh all)."
+    say_what_the_lock_left_out
     exit 0
 fi
 
@@ -1336,7 +1467,11 @@ begin_stage "tests"
 # started. That is how a broken guard record once reached main while this gate
 # looked like it had checked it. The run still fails; it just says everything
 # that is wrong rather than the first thing.
-cargo test --all-targets --no-fail-fast
+#
+# On a locked session the tests that need the clipboard are left out by name,
+# since 2026-10-23 (13.3-24.8), and the run says so here and on its last line.
+leave_out_what_a_locked_session_cannot_run --all-targets --no-fail-fast
+cargo test --all-targets --no-fail-fast "${left_out_while_locked[@]+"${left_out_while_locked[@]}"}"
 
 begin_stage "release build"
 cargo build --release
@@ -1362,3 +1497,4 @@ echo "Formatting, clippy, the script suites, the tests, the release build and"
 echo "the advisory check passed. That is five of CI's seven jobs. The debug"
 echo "build, the setup executable and the search handler's own checks did not"
 echo "run here."
+say_what_the_lock_left_out

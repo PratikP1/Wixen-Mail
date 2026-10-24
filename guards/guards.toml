@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 940 records have arrived since and have not been through it.
+# 942 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -33759,7 +33759,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_passphrase.rs", tests = 2 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
 ]
 
 # A single message opened in a reader window no longer asking for the
@@ -33780,7 +33780,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
 ]
 
 # A PGP signature said to hold once a key in the list is the one it names,
@@ -38121,6 +38121,8 @@ tests_last_seen = [
 # counted as one more target reaching the clipboard and the allowance names
 # nothing. Written 2026-10-02 by 13-44.6.1, measured by hand with
 # `cargo test --no-fail-fast --test a_locked_key_asks_for_its_passphrase`.
+# Since 2026-10-24 (13.3-24.8) the reading of what a locked session leaves out
+# reads the same file and goes red with it, found by `--remeasure`.
 [[guard]]
 name = "only the real paste target opens the clipboard"
 file = "tests/a_locked_key_asks_for_its_passphrase.rs"
@@ -38130,9 +38132,53 @@ after = '''const THE_REAL_PASTE: &str = "tests/a_paste_target_no_file_is.rs";'''
 red = [
     "test_no_target_but_the_real_paste_opens_the_clipboard",
     "test_the_real_paste_target_is_where_the_clipboard_is_opened",
+    "test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
+]
+
+# A test that needs the clipboard dropped from the list a locked session leaves
+# out, so every locked run fails it over nothing the code did (ledger 716,
+# 13.3-24.8). Written 2026-10-24, measured by hand with
+# `cargo test --test a_locked_key_asks_for_its_passphrase` run whole: the
+# reading went red naming the dropped test, and nothing else did. This record
+# is what routes a commit changing the list to that reading.
+[[guard]]
+name = "a locked session leaves out every test that needs the clipboard"
+file = "scripts/check.sh"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''    test_a_clipboard_held_throughout_is_refused_naming_the_window_that_held_it
+    test_a_clipboard_held_briefly_is_waited_for
+)'''
+after = '''    test_a_clipboard_held_throughout_is_refused_naming_the_window_that_held_it
+)'''
+red = [
+    "test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
+]
+
+# A test of the paste target that comes to reach the clipboard, here through
+# the harvest, while the gate's list stays as it was, so a locked run would fail
+# it (13.3-24.8). Written 2026-10-24, measured by hand the same way as the
+# record above, with the same result.
+[[guard]]
+name = "a test that comes to need the clipboard is one a locked session leaves out"
+file = "tests/a_passphrase_box_takes_a_real_paste.rs"
+suite = "a_locked_key_asks_for_its_passphrase"
+before = '''fn test_the_lock_state_is_asked_of_windows_and_answered() {
+    let lock = this_sessions_lock();'''
+after = '''fn test_the_lock_state_is_asked_of_windows_and_answered() {
+    let _ = the_harvest();
+    let lock = this_sessions_lock();'''
+red = [
+    "test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard",
+]
+tests_last_seen = [
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
+    { file = "tests/a_passphrase_box_takes_a_real_paste.rs", tests = 11 },
 ]
 
 # A refused clipboard told the lock state without asking Windows, so a locked
@@ -38233,7 +38279,7 @@ red = [
     "test_the_key_census_sees_a_desktop_not_named_for_its_run",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
 ]
 
 # The modifier census lets every file through, so a target sending keys
@@ -38252,7 +38298,7 @@ red = [
     "test_the_modifier_census_sees_a_sender_that_sets_no_modifiers",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
 ]
 
 # M pressed with the keyboard state as it stands rather than with no
@@ -38340,7 +38386,7 @@ red = [
     "test_the_browser_rule_sees_a_planted_page_typed_into_on_the_screen",
 ]
 tests_last_seen = [
-    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 16 },
+    { file = "tests/a_locked_key_asks_for_its_passphrase.rs", tests = 18 },
 ]
 
 # The subject kept when a message is taken off this computer, so the words
