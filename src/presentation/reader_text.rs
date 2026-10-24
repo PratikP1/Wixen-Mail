@@ -246,12 +246,21 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
         return (nothing_to_read(), Vec::new());
     }
 
+    // What the sender hid is taken out before the converter sees the markup,
+    // as the formatted view takes it out before its cleaner (ledger 938). This
+    // window is where most screen reader users of this program read mail, so
+    // a hidden preview line read twice, its padding read as symbols, or a
+    // block the sender marked `aria-hidden` read anyway, is heard here first.
+    // The fallback below is handed the same markup, so nothing hidden comes
+    // back through it.
+    let (shown, blocks_left_out) =
+        crate::application::hidden_text::drop_what_the_sender_hid(trimmed);
     let mut converter = HtmlToText::with_render_tables_inline(true);
-    if !converter.convert(trimmed, HtmlSourceMode::NativeHtml) {
+    if !converter.convert(&shown, HtmlSourceMode::NativeHtml) {
         // Not swallowed: a body we could not parse is still shown, because the
         // raw text of a broken message is worth more than nothing at all.
         tracing::warn!("Message body could not be parsed as HTML; showing it as text");
-        return (trimmed.to_string(), Vec::new());
+        return (shown, Vec::new());
     }
 
     let mut landmarks: Vec<Landmark> = converter
@@ -271,6 +280,21 @@ fn body_text(body: &MessageBody) -> (String, Vec<Landmark>) {
             "A message's markup nested too deep to read as a page; its words are read alone"
         );
         text = format!("{NESTED_TOO_DEEPLY}\n\n{text}");
+    }
+    // The formatted view's sentence about blocks of words left out, above
+    // the depth sentence when both are said, because that one ends "so only
+    // its words follow" and has to stand right before them. Every heading
+    // the converter placed moves down by what this adds, in characters like
+    // every offset here; the signature's landmark and the links are placed
+    // after this, from the final text, and need nothing.
+    let left_out = crate::application::hidden_text::what_was_left_out(blocks_left_out);
+    if !left_out.is_empty() {
+        let said_first = format!("{left_out}\n\n");
+        let shift = said_first.chars().count();
+        for landmark in &mut landmarks {
+            landmark.offset += shift;
+        }
+        text.insert_str(0, &said_first);
     }
     landmarks.extend(signature_landmark(&text));
 

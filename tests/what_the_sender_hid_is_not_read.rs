@@ -22,7 +22,12 @@
 //! nothing, a `font-size:0` cell with words is counted and an empty spacer
 //! is not, the pictures' sentence and the blocks' share one paragraph. The
 //! plain part of a message is never parsed and a message on its way out
-//! keeps what its writer hid. The drop's cost on the fixture, measured.
+//! keeps what its writer hid. The text reader, the window `Enter` opens,
+//! through `reader_text::single_message` and `reader_text::conversation`:
+//! the newsletter with its subtitle once and no filler, a hidden block of
+//! words left out and said above the words, read as the same message with
+//! the block deleted by hand, at any depth, and in a conversation under the
+//! message that hid it. The drop's cost on the fixture, measured.
 //!
 //! # Why this lives here rather than beside the code
 //!

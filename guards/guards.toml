@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 948 records have arrived since and have not been through it.
+# 952 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -29755,7 +29755,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/html_renderer.rs", tests = 96 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
 
 # The one role the cleaner keeps is presentation, on a table's four tags,
@@ -29782,7 +29782,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 32 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
 
 # A sender's label is a name only where a reader would use it as one, and
@@ -29807,7 +29807,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 32 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
 
 # The reader reads a layout table as its blocks in order and never as a
@@ -29832,7 +29832,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/long_text.rs", tests = 65 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
 
 # ── 11-11.1: where a link opens (#80), 2026-09-20 ──────────────────────────
@@ -44831,10 +44831,11 @@ after = '''    let mut document = Html::parse_fragment(html);
 red = [
     "test_markup_nested_past_the_limit_has_its_hidden_blocks_left_out_of_the_page",
     "test_markup_nested_past_the_limit_is_read_without_what_the_sender_hid",
+    "test_the_text_reader_drops_what_the_sender_hid_from_markup_nested_past_the_limit",
 ]
 tests_last_seen = [
     { file = "src/application/hidden_text.rs", tests = 32 },
-    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 21 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
 
 [[guard]]
@@ -45315,4 +45316,83 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/tasks_api.rs", tests = 63 },
+]
+
+# The text reader, the window Enter opens on a message, hands its converter
+# the markup with what the sender hid taken out, as the formatted view hands
+# its cleaner (13.4-03, ledger 938). Broken by handing it the sender's markup
+# again.
+[[guard]]
+name = "the text reader's converter is handed the markup with what the sender hid taken out"
+file = "src/presentation/reader_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = '''    if !converter.convert(&shown, HtmlSourceMode::NativeHtml) {'''
+after = '''    if !converter.convert(trimmed, HtmlSourceMode::NativeHtml) {'''
+red = [
+    "test_a_conversation_in_the_text_reader_says_at_its_message_what_its_sender_hid",
+    "test_the_text_reader_drops_what_the_sender_hid_from_markup_nested_past_the_limit",
+    "test_the_text_reader_leaves_out_a_hidden_block_of_words_and_says_so_above_the_words",
+    "test_the_text_reader_reads_a_message_with_a_hidden_block_as_it_reads_the_message_without_it",
+    "test_the_text_reader_reads_the_newsletter_without_its_hidden_preheader_or_its_padding",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
+]
+
+# The text reader says the formatted view's sentence about blocks of words
+# left out, above the words (13.4-03). Broken by asking for the sentence for
+# no blocks, which is empty.
+[[guard]]
+name = "the text reader says how many blocks the sender did not show were left out"
+file = "src/presentation/reader_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = '''    let left_out = crate::application::hidden_text::what_was_left_out(blocks_left_out);'''
+after = '''    let left_out = crate::application::hidden_text::what_was_left_out(blocks_left_out.min(0));'''
+red = [
+    "test_a_conversation_in_the_text_reader_says_at_its_message_what_its_sender_hid",
+    "test_the_text_reader_drops_what_the_sender_hid_from_markup_nested_past_the_limit",
+    "test_the_text_reader_leaves_out_a_hidden_block_of_words_and_says_so_above_the_words",
+    "test_the_text_reader_reads_a_message_with_a_hidden_block_as_it_reads_the_message_without_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
+]
+
+# The text reader's heading landmarks move down by the sentence it puts above
+# the words, so a heading is still landed on at its first character
+# (13.4-03). Broken by leaving them where the converter put them.
+[[guard]]
+name = "the text reader's headings move down by the sentence about blocks left out"
+file = "src/presentation/reader_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = '''        for landmark in &mut landmarks {
+            landmark.offset += shift;'''
+after = '''        for landmark in &mut landmarks {
+            landmark.offset += shift * 0;'''
+red = [
+    "test_the_text_reader_reads_a_message_with_a_hidden_block_as_it_reads_the_message_without_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
+]
+
+# The record above it in this file, "the text reader says a message nested
+# too deep is read as its words alone", runs the library; since 13.4-03 the
+# same break reddens the text reader's case for hidden blocks at depth, which
+# asks that the depth sentence stand right before the words.
+[[guard]]
+name = "the text reader says a message nested too deep is read as its words alone, seen from the hidden blocks' cases"
+file = "src/presentation/reader_text.rs"
+suite = "what_the_sender_hid_is_not_read"
+before = '''        text = format!("{NESTED_TOO_DEEPLY}\n\n{text}");'''
+after = '''        let _ = NESTED_TOO_DEEPLY;'''
+red = [
+    "test_the_text_reader_drops_what_the_sender_hid_from_markup_nested_past_the_limit",
+]
+tests_last_seen = [
+    { file = "src/presentation/reader_text.rs", tests = 155 },
+    { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
 ]
