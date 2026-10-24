@@ -35,6 +35,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -245,6 +246,16 @@ class GaveUp(Wrong):
     buys is that the loop can count these apart from the records it really
     judged, so the closing line can say a run gave up on something and a run
     that hit the limit cannot read as clean.
+    """
+
+
+class TheTreeWasLeftBroken(Wrong):
+    """A file a record broke that did not come back as it was.
+
+    A `Wrong`, for the reason `GaveUp` is one, and the one `Wrong` the loop
+    must not carry on past: every record after it would be measured against
+    two breaks. `measured_and_said` lets it through, and `main` prints it and
+    stops before any count is written.
     """
 
 
@@ -1451,6 +1462,121 @@ def a_kept_pre_read_for(suite: tuple[str, ...], key: str) -> tuple[set[str], int
     return failing, int(now - float(json.loads(text)["taken_at"]))
 
 
+# ── A file that does not come back as it was ────────────────────────────────
+#
+# Added by 13.3-24.6 for ledger 927. On 2026-10-21 one record ended "this record
+# could not be measured: OSError(22, 'Invalid argument')", its break stayed in
+# `src/application/contacts_sync.rs`, and the run went on measuring every later
+# record against two breaks. Nothing read the file back after writing it.
+
+# Where the copy from before a break is kept when the file does not come back,
+# beside the kept pre-reads, because the run's own scratch folder is deleted
+# when the run ends, whichever way it ends.
+THE_COPIES_LEFT_BROKEN = ROOT / "target" / "guards-left-broken"
+
+# The opener of the sentence a run stops with when a file does not come back.
+# `main` prints it at the start of a line, so `verdicts_in` never reads it as a
+# verdict and a resume measures that record again; `the_verdict_on` reads it as
+# one more thing that could not be measured, as it reads `GIVEN_UP_ON`, so
+# nothing that reads a log line on its own refuses a log holding one.
+THE_RUN_STOPPED = "The guard run stopped: "
+
+
+def shown(path: Path) -> str:
+    """A path as a person types it: from the repository root when it is inside
+    it, with forward slashes either way."""
+    try:
+        return path.relative_to(ROOT).as_posix()
+    except ValueError:
+        return path.as_posix()
+
+
+def what_a_failed_put_back_says(guarded: str, went_wrong: str, kept_at: str | None) -> str:
+    """The sentence a run stops with when a file it broke did not come back.
+
+    >>> print(what_a_failed_put_back_says(
+    ...     "src/a.rs",
+    ...     "OSError(22, 'Invalid argument')",
+    ...     "target/guards-left-broken/src__a.rs",
+    ... ))
+    The guard run stopped: src/a.rs did not come back as it was after this record's break.
+    What went wrong: OSError(22, 'Invalid argument').
+    The file still holds this record's break. The copy taken before the break is kept at
+        target/guards-left-broken/src__a.rs
+    and this, run from the repository's root, puts it back:
+        cp target/guards-left-broken/src__a.rs src/a.rs
+    Nothing was written to guards/guards.toml, and no later record was measured.
+
+    When even the copy could not be kept, it says so and names the way to see
+    the break:
+
+    >>> print(what_a_failed_put_back_says(
+    ...     "src/a.rs", "it read back different from the copy taken before the break", None
+    ... ))
+    The guard run stopped: src/a.rs did not come back as it was after this record's break.
+    What went wrong: it read back different from the copy taken before the break.
+    The file still holds this record's break, and the copy taken before the break could not be kept either. See the break with
+        git diff -- src/a.rs
+    Nothing was written to guards/guards.toml, and no later record was measured.
+    """
+    return ""
+
+
+def put_the_file_back(
+    guarded: Path,
+    kept: Path,
+    left_broken_in: Path,
+    write=Path.write_bytes,
+) -> None:
+    """Write the copy back over a broken file, read it back, and stop the run
+    when it did not come back as it was.
+
+    The file comes back, and the copy goes:
+
+    >>> made = Path(tempfile.mkdtemp(prefix="wixen-put-back-"))
+    >>> guarded, kept, left = made / "a.rs", made / "kept", made / "left"
+    >>> _ = guarded.write_bytes(b"broken")
+    >>> _ = kept.write_bytes(b"as it was")
+    >>> put_the_file_back(guarded, kept, left)
+    >>> guarded.read_bytes(), kept.exists(), left.exists()
+    (b'as it was', False, False)
+
+    A path that cannot be written as a file, a folder here: the run stops, the
+    copy is kept in the folder given for it, and the sentence names the file,
+    the error, the copy and the command that puts it back:
+
+    >>> folder = made / "folder"
+    >>> folder.mkdir()
+    >>> _ = kept.write_bytes(b"as it was")
+    >>> try:
+    ...     put_the_file_back(folder, kept, left)
+    ... except TheTreeWasLeftBroken as stopped:
+    ...     said = str(stopped)
+    >>> said.startswith(f"{THE_RUN_STOPPED}{folder.as_posix()} did not come back")
+    True
+    >>> any(kind in said for kind in ("PermissionError(", "IsADirectoryError("))
+    True
+    >>> (left / kept.name).read_bytes()
+    b'as it was'
+    >>> back = f"cp {shlex.quote((left / kept.name).as_posix())} {shlex.quote(folder.as_posix())}"
+    >>> back in said
+    True
+
+    A write that leaves the file different from its copy, one byte short:
+
+    >>> def one_byte_short(path, data):
+    ...     return path.write_bytes(data[:-1])
+    >>> try:
+    ...     put_the_file_back(guarded, kept, left, write=one_byte_short)
+    ... except TheTreeWasLeftBroken as stopped:
+    ...     print(str(stopped).splitlines()[1])
+    What went wrong: it read back different from the copy taken before the break.
+    >>> shutil.rmtree(made)
+    """
+    write(guarded, kept.read_bytes())
+    kept.unlink()
+
+
 def measure(
     guard: Guard,
     scratch: Path,
@@ -1728,6 +1854,20 @@ def verdicts_in(log_text: str) -> dict[str, str]:
     ... ))
     {}
     >>> the_verdict_on("hung", given_up)
+    'could not be measured'
+
+    A record whose file did not come back stops the run, and `main` prints the
+    stop as it prints any `Wrong`, after a blank line and at the start of a
+    line. It is unmeasured, so a resume takes it again once the file is put
+    back, and `the_verdict_on` reads its first line so a log holding it is never
+    refused:
+
+    >>> stopped = what_a_failed_put_back_says(
+    ...     "src/a.rs", "OSError(22, 'Invalid argument')", "target/guards-left-broken/src__a.rs"
+    ... )
+    >>> verdicts_in(block("left broken", "   timed: rebuild 44 s, run 47 s, 91 s in all", "", stopped, ""))
+    {}
+    >>> the_verdict_on("left broken", stopped.splitlines()[0])
     'could not be measured'
 
     A record another cargo ran beside is unmeasured whatever it printed, so a
@@ -2256,6 +2396,7 @@ def measured_and_said(
     already_failing: set[str] | None,
     named_only: bool,
     budget: Budget | None = None,
+    measuring=measure,
 ) -> str:
     """Measure one record and print what was found: "agreed", "slipped", or
     "given up on".
@@ -2264,9 +2405,24 @@ def measured_and_said(
     agreeing, in one of the shapes `verdicts_in` reads. One given up on at its
     time limit is told apart from both, because the run learned nothing about
     it either way and the closing line has to be able to say so.
+
+    A file that did not come back is neither. It is let through to stop the
+    run, and nothing is printed for it here:
+
+    >>> def a_put_back_that_failed(*_, **__):
+    ...     raise TheTreeWasLeftBroken(what_a_failed_put_back_says(
+    ...         "src/a.rs", "OSError(22, 'Invalid argument')", None))
+    >>> try:
+    ...     measured_and_said(
+    ...         Guard("a guard", Path("src/a.rs"), "a", "b", ("t",)),
+    ...         Path("."), None, False, measuring=a_put_back_that_failed,
+    ...     )
+    ... except TheTreeWasLeftBroken:
+    ...     print("let through")
+    let through
     """
     try:
-        measured = measure(
+        measured = measuring(
             guard, scratch, already_failing, named_only=named_only, budget=budget
         )
     except GaveUp as ran_out:
