@@ -15,6 +15,7 @@ use crate::application::calendar::{self, CalendarSyncResult, GOOGLE, GOOGLE_CALE
 use crate::common::Result;
 use crate::data::message_cache::calendars::{ListedCalendar, a_calendar_google_listed};
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::service::asked_and_answered::is_a_permission_not_given;
 use crate::service::google_api::{GoogleAccessRole, GoogleApiClient, GoogleCalendarListEntry};
 
 /// Read the account's calendar list, file each calendar on it, then read
@@ -28,6 +29,9 @@ pub async fn sync(
     let mut result = CalendarSyncResult::default();
     match google.list_calendars(token).await {
         Ok(list) => file_the_list(cache, account_id, &list, &mut result)?,
+        // Each calendar already here would be refused the same way, once
+        // each, so the sync stops and the reason is said (ledger 932).
+        Err(e) if is_a_permission_not_given(&e) => return Err(e),
         Err(e) => result.errors.push(format!(
             "The list of your Google calendars could not be read, so only the \
              calendars already here were read: {e}"
@@ -991,7 +995,6 @@ mod tests {
         // Ledger 932: until 13.3-24.5 the refusal was counted, and then every
         // calendar already here was asked for and refused once more each.
         use crate::common::answering::answering;
-        use crate::service::asked_and_answered::is_a_permission_not_given;
         let cache = a_cache("every_google_calendar_permission_not_given");
         let (address, listening) = answering(
             "403 Forbidden",

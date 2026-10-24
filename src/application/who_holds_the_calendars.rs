@@ -30,6 +30,7 @@ use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::types::PimModule;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
+use crate::service::asked_and_answered::is_a_permission_not_given;
 use crate::service::oauth;
 
 /// The name Google's sign-in key and an account's Google tokens are filed
@@ -70,9 +71,9 @@ impl Module {
     }
 }
 
-/// Why nothing was asked of Google, in the order the reasons are said when
-/// more than one holds: each later one cannot be acted on until the earlier
-/// is settled.
+/// Why nothing was asked of Google, or why Google refused what it was asked,
+/// in the order the reasons are said when more than one holds: each later
+/// one cannot be acted on until the earlier is settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WhyNothingWasAsked {
     NoAccountIsOpen,
@@ -147,10 +148,13 @@ impl WhyNothingWasAsked {
                  sign-in it keeps for them has run out or no longer works. \
                  {THE_WAY_TO_THE_SEPARATE_SIGN_IN}"
             ),
-            WhyNothingWasAsked::TheBrowserSignInLacksThem
-            | WhyNothingWasAsked::TheSeparateSignInLacksThem => {
-                format!("Google would not give this account's {holds}.")
+            WhyNothingWasAsked::TheBrowserSignInLacksThem => {
+                a_permission_not_given_about(holds, "Sign In Again, Alt+S")
             }
+            WhyNothingWasAsked::TheSeparateSignInLacksThem => a_permission_not_given_about(
+                holds,
+                "Sign In for Calendars, Contacts and Tasks, Alt+T",
+            ),
             WhyNothingWasAsked::NoMicrosoftSignInKey => format!(
                 "Nothing was asked of Microsoft for this account's {holds}, because this copy of \
                  Wixen Mail has no Microsoft sign-in key. See Setting up a provider in Help."
@@ -174,13 +178,36 @@ impl WhyNothingWasAsked {
     }
 }
 
-/// Why Google gave this account nothing when it was asked and refused.
+/// What the reason for a permission not given says about what Google holds,
+/// naming the one button that makes this account's sign-in again.
+///
+/// It says a box left unticked is what usually causes it rather than that
+/// one was, because an administrator's policy can hold a permission back too.
+fn a_permission_not_given_about(holds: &str, the_button: &str) -> String {
+    format!(
+        "Google would not give this account's {holds}, because its sign-in was not given \
+         permission for them, which usually means a box was left unticked on Google's screen. \
+         Open the Account Manager with Ctrl+Shift+A, choose the account and press {the_button}, \
+         then tick the box for them on Google's screen."
+    )
+}
+
+/// Why Google gave this account nothing when it was asked and refused: a
+/// permission its sign-in was not given, which the control that makes that
+/// sign-in again gives, by the split `the_sign_in_that_ran_out` makes
+/// (ledger 932).
+///
+/// Nothing for any other refusal, which stays the sync's error to count, and
+/// nothing with no account, which has no sign-in to make again.
 pub fn why_google_gave_nothing(
     account: Option<&Account>,
     error: &Error,
 ) -> Option<WhyNothingWasAsked> {
-    let _ = (account, error);
-    None
+    let account = account.filter(|_| is_a_permission_not_given(error))?;
+    Some(match account.use_oauth {
+        true => WhyNothingWasAsked::TheBrowserSignInLacksThem,
+        false => WhyNothingWasAsked::TheSeparateSignInLacksThem,
+    })
 }
 
 /// What a provider holds for all three modules, as a person says it.
@@ -616,7 +643,8 @@ pub struct WhatWasAsked {
     /// A pass asked somebody: Google, Microsoft, a server or a feed.
     pub somebody: bool,
     /// Why the account's provider, Google or Microsoft, was not asked, or why
-    /// an account at neither has nothing to bring. Named `why_not_google`
+    /// Google refused what it was asked, or why an account at neither has
+    /// nothing to bring. Named `why_not_google`
     /// until 14-02, when Microsoft and accounts at neither gained reasons.
     pub why_not_asked: Option<WhyNothingWasAsked>,
 }

@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 927 records have arrived since and have not been through it.
+# 930 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -600,7 +600,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 [[guard]]
@@ -639,8 +639,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # ── A clause never decides how it joins to its neighbours ───────────────────
@@ -783,7 +783,7 @@ tests_last_seen = [
     { file = "src/application/contact_groups.rs", tests = 30 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
     { file = "src/application/emptying_the_trash.rs", tests = 33 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
     { file = "src/application/mail_sync.rs", tests = 160 },
     { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/printing.rs", tests = 28 },
@@ -792,7 +792,7 @@ tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/application/undoing.rs", tests = 35 },
     { file = "src/application/what_rules_tell_the_server.rs", tests = 28 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/note_folder_tree.rs", tests = 5 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "src/service/caldav.rs", tests = 176 },
@@ -2151,7 +2151,7 @@ tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 304 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
     { file = "src/application/notes_sync.rs", tests = 31 },
     { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
@@ -2405,7 +2405,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 [[guard]]
@@ -7073,7 +7073,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -8171,7 +8171,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/answered_meetings.rs", tests = 37 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 [[guard]]
@@ -39178,7 +39178,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_app_password_gmail_account_with_no_separate_sign_in_names_the_button",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # When a calendar server or a feed was asked, its counts are said and the
@@ -39200,7 +39200,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # The calendar sync asks the one answer and spells no Google sign-in of its
@@ -39240,7 +39240,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_calendar_sync_that_did_not_ask_google_is_signalled_as_needing_attention",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39259,7 +39259,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # The contacts and tasks syncs say the same reason (14-01 task 2): after the
@@ -39283,7 +39283,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 304 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 [[guard]]
@@ -39303,7 +39303,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 [[guard]]
@@ -39319,7 +39319,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 304 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 [[guard]]
@@ -39335,7 +39335,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # ── Each request a sync sends, written down (#22, 14-02) ───────────────────
@@ -39364,7 +39364,7 @@ red = [
     "service::asked_and_answered::tests::test_a_google_tasks_read_writes_its_line",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
 ]
 
 # Only a word of letters and underscores is taken from a refusal's body, so a
@@ -39379,7 +39379,7 @@ red = [
     "service::asked_and_answered::tests::test_the_reason_word_refuses_anything_but_a_short_word",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
 ]
 
 # A Google request that was answered writes its line at info, the level a
@@ -39410,7 +39410,7 @@ red = [
     "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -39428,7 +39428,7 @@ red = [
     "service::asked_and_answered::tests::test_a_new_google_event_writes_its_line",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -39454,7 +39454,7 @@ red = [
     "service::asked_and_answered::tests::test_a_google_read_nobody_answers_writes_a_line_per_try_and_never_its_marker",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -39478,7 +39478,7 @@ red = [
     "service::asked_and_answered::tests::test_a_task_delete_answered_not_found_writes_the_status_it_was",
 ]
 tests_last_seen = [
-    { file = "src/service/asked_and_answered.rs", tests = 15 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
     { file = "src/service/tasks_api.rs", tests = 62 },
 ]
 
@@ -39494,7 +39494,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_a_microsoft_account_asks_microsoft_only_with_a_key_and_nobody_else_ever_does",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # An account at neither provider with nothing of its own hears why there is
@@ -39509,7 +39509,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_an_account_at_neither_with_nothing_of_its_own_says_why_there_is_nothing_to_bring",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # A finished calendar sync writes its line at info, the level a stored
@@ -39551,7 +39551,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_visit_that_starts_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39567,7 +39567,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_adding_an_account_starts_the_three_syncs_or_says_one_reason_or_nothing",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # F5 with a module other than Mail showing syncs that module (D-11). The
@@ -39581,7 +39581,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_reads_the_folder_in_mail_and_syncs_every_other_module",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # The window's first F5 arm syncs only when the answer says the module
@@ -39596,7 +39596,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_f5_asks_the_module_showing_before_it_reads_a_folder",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -39644,7 +39644,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/forget.rs", tests = 27 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/service/oauth.rs", tests = 65 },
 ]
 
@@ -39661,7 +39661,7 @@ red = [
     "service::oauth::tests::test_calendars_take_the_mail_sign_in_through_a_browser_and_the_separate_one_otherwise",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/service/oauth.rs", tests = 65 },
 ]
 
@@ -39682,7 +39682,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_both_google_sign_ins_name_the_username_mail_signs_in_with",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # Removing an account, and uninstalling, erase the separate sign-in's token,
@@ -39738,7 +39738,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_account_manager_sees_a_sign_in_left_behind",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
@@ -39770,7 +39770,7 @@ red = [
     "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # A calendar Google's list named is filed under `google:`, the account and
@@ -39800,7 +39800,7 @@ red = [
     "application::every_google_calendar::tests::test_a_meeting_deleted_here_from_one_google_calendar_is_brought_up_to_date_in_the_other",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # The main calendar's row is the provider's row with a plain id, so an event
@@ -39830,7 +39830,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_the_account_may_only_read_is_filed_read_only",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # A calendar that shows only when its owner is free or busy is passed over and
@@ -39844,7 +39844,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_that_shows_only_free_and_busy_is_passed_over_and_said_once",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # Whether a listed calendar is shown follows Google only the first time; no
@@ -39866,7 +39866,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_hidden_at_google_starts_hidden_and_stays_as_the_person_leaves_it",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
     { file = "src/data/message_cache/calendars.rs", tests = 10 },
 ]
 
@@ -39886,7 +39886,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # A meeting Google cancels in one calendar goes from that calendar only. The
@@ -39901,7 +39901,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # A calendar Google stopped listing is put away, and a change made in it and
@@ -39916,7 +39916,7 @@ red = [
     "application::every_google_calendar::tests::test_a_calendar_google_stopped_listing_is_put_away_keeping_a_change_waiting_in_it",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # Google's calendar list is the whole list or an error, because a calendar
@@ -39932,9 +39932,10 @@ after = '''            let Ok(resp) = with_retry(3, || self.api_get::<GoogleCale
             };'''
 red = [
     "application::every_google_calendar::tests::test_a_list_cut_short_puts_nothing_away",
+    "application::every_google_calendar::tests::test_a_calendar_list_refused_for_a_permission_stops_the_sync_there",
 ]
 tests_last_seen = [
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
     { file = "src/service/google_api.rs", tests = 41 },
 ]
 
@@ -39960,7 +39961,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # Each listed Google calendar is read from its own marker, kept on its row. The
@@ -39979,7 +39980,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # More than one calendar read is counted in what the calendar sync says, and
@@ -39994,7 +39995,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # The calendars read are folded into the running total with every other count.
@@ -40010,8 +40011,8 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
 ]
 
 # A change replayed within one account writes one line naming the message by
@@ -41983,7 +41984,7 @@ red = [
     "application::who_holds_the_calendars::tests::test_the_reading_of_the_sign_ins_sees_one_asking_for_the_address_box",
 ]
 tests_last_seen = [
-    { file = "src/application/who_holds_the_calendars.rs", tests = 45 },
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_account_manager.rs", tests = 24 },
 ]
 
@@ -42304,7 +42305,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # A whole Google read takes off the rows of its calendar inside the window it
@@ -44276,7 +44277,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/deletions.rs", tests = 9 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # An event a provider holds, moved into a calendar made on this computer and
@@ -44326,7 +44327,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/application/every_google_calendar.rs", tests = 15 },
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
 ]
 
 # The Outlook read asks the notes of the one calendar it fills, once that
@@ -44835,4 +44836,59 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/accounts.rs", tests = 43 },
+]
+
+# Google's refusal for a permission the sign-in was not given is read where
+# the whole answer is held, in its older shape and its newer (13.3-24.5,
+# ledger 932). Broken by never reading the older shape, Calendar's and Tasks'.
+[[guard]]
+name = "a google refusal for a permission not given is told from every other refusal"
+file = "src/service/asked_and_answered.rs"
+before = '''    gives_the_reason("errors", A_PERMISSION_NOT_GIVEN)
+        || gives_the_reason("details", A_SCOPE_NOT_GIVEN)'''
+after = '''    false && gives_the_reason("errors", A_PERMISSION_NOT_GIVEN)
+        || gives_the_reason("details", A_SCOPE_NOT_GIVEN)'''
+red = [
+    "service::asked_and_answered::tests::test_a_refusal_for_a_permission_not_given_is_told_from_every_other_refusal",
+    "application::every_google_calendar::tests::test_a_calendar_list_refused_for_a_permission_stops_the_sync_there",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
+    { file = "src/service/asked_and_answered.rs", tests = 17 },
+]
+
+# A calendar list Google refused for a permission not given stops the sync
+# there, rather than asking for every calendar already here and being refused
+# once for each (13.3-24.5, ledger 932). Broken by an arm that never matches.
+[[guard]]
+name = "a google calendar list refused for a permission not given stops the sync there"
+file = "src/application/every_google_calendar.rs"
+before = '''        Err(e) if is_a_permission_not_given(&e) => return Err(e),'''
+after = '''        Err(e) if false && is_a_permission_not_given(&e) => return Err(e),'''
+red = [
+    "application::every_google_calendar::tests::test_a_calendar_list_refused_for_a_permission_stops_the_sync_there",
+]
+tests_last_seen = [
+    { file = "src/application/every_google_calendar.rs", tests = 16 },
+]
+
+# The calendar sync's Google pass asks why Google gave nothing for the account
+# it found before counting the refusal (13.3-24.5, ledger 932). Broken by
+# asking for no account, which compiles and answers nothing, so a permission
+# left unticked is counted as an error again.
+[[guard]]
+name = "the calendar sync turns a permission not given into its reason"
+file = "src/presentation/wx_app.rs"
+before = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(account, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google calendar: {}", e)),'''
+after = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(None, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google calendar: {}", e)),'''
+red = [
+    "application::who_holds_the_calendars::tests::test_the_calendar_sync_turns_a_permission_not_given_into_its_reason",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
 ]

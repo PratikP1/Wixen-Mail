@@ -19,6 +19,7 @@
 //! records between them, each re-measured by a whole-library run whenever a
 //! test is added there; the line is this module's subject either way.
 
+use crate::common::Error;
 use crate::common::logging::mask_email;
 
 /// The longest reason word kept. Google's reasons and statuses run to about
@@ -152,22 +153,66 @@ fn is_a_reason_word(candidate: &str) -> bool {
             .all(|letter| letter.is_ascii_alphabetic() || letter == '_')
 }
 
+/// Google's word for a refusal over a permission the sign-in was not given,
+/// in the older shape Calendar and Tasks answer with, and the whole message
+/// of the one error for it.
+const A_PERMISSION_NOT_GIVEN: &str = "insufficientPermissions";
+
+/// The same refusal in Google's newer shape, which People answers with: the
+/// reason of an `ErrorInfo` under `details`, as Google's own list of error
+/// reasons, `google/api/error_reason.proto`, spells it.
+const A_SCOPE_NOT_GIVEN: &str = "ACCESS_TOKEN_SCOPE_INSUFFICIENT";
+
 /// Whether Google's refusal says the sign-in was not given the permission
-/// the request needs.
+/// the request needs, which is what a box left unticked on Google's screen
+/// brings (ledger 932).
+///
+/// Read once, where the client holds Google's whole answer, rather than as
+/// words looked for later in a message cut short. Google's structured fields
+/// only, compared whole, so a page or a message that merely mentions the word
+/// is not taken for it.
 pub fn names_a_permission_not_given(body: &str) -> bool {
-    let _ = body;
-    false
+    let Ok(answer) = serde_json::from_str::<serde_json::Value>(body) else {
+        return false;
+    };
+    let Some(error) = answer.get("error") else {
+        return false;
+    };
+    let gives_the_reason = |list: &str, reason: &str| {
+        error
+            .get(list)
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|each| {
+                each.iter().any(|one| {
+                    one.get("reason").and_then(serde_json::Value::as_str) == Some(reason)
+                })
+            })
+    };
+    gives_the_reason("errors", A_PERMISSION_NOT_GIVEN)
+        || gives_the_reason("details", A_SCOPE_NOT_GIVEN)
 }
 
 /// The one error for a refusal over a permission the sign-in was not given.
-pub fn a_permission_not_given() -> crate::common::Error {
-    crate::common::Error::Other(String::new())
+///
+/// Google's status and Google's word, and nothing of the body, so the error,
+/// the log and the request's line all say the same thing. One error of an
+/// existing kind rather than a new kind of error, because every match over
+/// the kinds would have to move for a refusal only the three syncs answer.
+pub fn a_permission_not_given() -> Error {
+    Error::Api {
+        status: 403,
+        provider: "google".to_string(),
+        message: A_PERMISSION_NOT_GIVEN.to_string(),
+    }
 }
 
 /// Whether an error is the one [`a_permission_not_given`] builds.
-pub fn is_a_permission_not_given(error: &crate::common::Error) -> bool {
-    let _ = error;
-    false
+pub fn is_a_permission_not_given(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Api { status: 403, provider, message }
+            if provider == "google" && message == A_PERMISSION_NOT_GIVEN
+    )
 }
 
 #[cfg(test)]
@@ -342,7 +387,6 @@ mod tests {
 
     #[test]
     fn test_the_one_error_for_a_permission_not_given_is_known_and_no_other_is() {
-        use crate::common::Error;
         let refused = a_permission_not_given();
         assert!(is_a_permission_not_given(&refused), "{refused}");
         // Google's word and no body, so the log line and the error say the
