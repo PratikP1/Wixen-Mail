@@ -40,12 +40,20 @@
 
 use std::time::Instant;
 
+use wixen_mail::application::hidden_text::is_filler;
 use wixen_mail::application::long_text::{Piece, pieces_of_markup};
 use wixen_mail::application::pictures::Fetching;
+use wixen_mail::application::reading_a_message::WhatIsSaidAboutIt;
 use wixen_mail::common::how_deep_markup_nests::DEEPEST_MARKUP_WALKED;
 use wixen_mail::common::types::MessageBody;
 use wixen_mail::presentation::HtmlRenderer;
+use wixen_mail::presentation::date_display::{
+    Clock, DateOrder, DateSettings, DateStyle, DateWording,
+};
 use wixen_mail::presentation::html_renderer::ThreadPart;
+use wixen_mail::presentation::read_aloud::Reading;
+use wixen_mail::presentation::reader_text::{self, ConversationPart, ReaderDocument};
+use wixen_mail::presentation::ui_types::MessageItem;
 
 /// The tester's Substack message, with every address that named him
 /// replaced by hand. The comment at its head records Pratik's leave.
@@ -601,6 +609,254 @@ fn test_markup_nested_past_the_limit_is_read_without_what_the_sender_hid() {
     assert!(!words.contains('\u{ad}'), "{words}");
     assert!(!words.contains('\u{2726}'), "{words}");
     assert!(words.contains("The parcel left the depot"), "{words}");
+}
+
+// ── The text reader (ledger 938) ──────────────────────────────────────────
+//
+// The window `Enter` opens on a message, and Space's reading aloud, read a
+// document `reader_text` composes from the converter's text. Until 13.4-03
+// the converter was handed the sender's raw markup, so everything above was
+// true of the page and the reader's pieces and not of the window most
+// screen reader users of this program read mail in.
+
+/// What the text reader says before the words of a message too deep to
+/// read as a page, spelled here as the reader spells it.
+const NESTED_TOO_DEEPLY: &str =
+    "This message's layout is nested too deeply to show as a page, so only its words follow.";
+
+/// Dates written out, told outright so this machine's settings are not read.
+fn a_reading() -> Reading {
+    Reading {
+        dates: DateSettings {
+            style: DateStyle::Absolute,
+            order: DateOrder::DayFirst,
+            wording: DateWording::Numeric,
+            clock: Clock::TwentyFourHour,
+        },
+        now: chrono::Local::now(),
+    }
+}
+
+/// A message row, as the list hands one to the reader.
+fn a_message_from(sender: &str, subject: &str) -> MessageItem {
+    MessageItem {
+        subject: subject.to_string(),
+        from: sender.to_string(),
+        ..Default::default()
+    }
+}
+
+/// The document the text reader opens on a markup body.
+fn the_text_reader_on(markup: &str) -> ReaderDocument {
+    reader_text::single_message(
+        &a_message_from("Marcus on AI", "Top three ways"),
+        &MessageBody::Html(markup.to_string()),
+        a_reading(),
+    )
+}
+
+/// The document's text below its header block, which ends at the first
+/// blank line.
+fn the_body_of(document: &ReaderDocument) -> &str {
+    let (_, body) = document
+        .text
+        .split_once("\n\n")
+        .expect("a header block and a body");
+    body
+}
+
+#[test]
+fn test_the_text_reader_reads_the_newsletter_without_its_hidden_preheader_or_its_padding() {
+    let document = the_text_reader_on(THE_NEWSLETTER);
+    let text = &document.text;
+
+    assert_eq!(
+        text.matches("Actions speak louder than words").count(),
+        1,
+        "the hidden preview line was read as well as the subtitle: {text}"
+    );
+    assert!(
+        !text.chars().any(is_filler),
+        "the preview line's padding was read as characters: {text}"
+    );
+    assert!(
+        !text.contains("left out"),
+        "a preheader alone was said as a block left out: {text}"
+    );
+    assert!(text.contains("Top three ways Dario Amodei has blown his credibility"));
+}
+
+#[test]
+fn test_the_text_reader_leaves_out_a_hidden_block_of_words_and_says_so_above_the_words() {
+    let document = the_text_reader_on(
+        "<p>Dear reader,</p>\
+         <div style=\"display:none\">The paragraph the sender hid from the sighted.</div>\
+         <p>Yours.</p>",
+    );
+    let text = &document.text;
+
+    assert!(
+        !text.contains("hid from the sighted"),
+        "the hidden block's words were read: {text}"
+    );
+    assert_eq!(
+        text.matches(ONE_BLOCK_LEFT_OUT).count(),
+        1,
+        "the block left out was not said once: {text}"
+    );
+    assert!(
+        the_body_of(&document).starts_with(&format!("{ONE_BLOCK_LEFT_OUT}\n\nDear reader,")),
+        "the sentence does not stand above the words, after the header block: {text}"
+    );
+    // Space reads the message aloud from the same document.
+    let spoken = reader_text::read_whole(&document);
+    assert_eq!(spoken.matches(ONE_BLOCK_LEFT_OUT).count(), 1, "{spoken}");
+    assert!(!spoken.contains("hid from the sighted"), "{spoken}");
+}
+
+/// A whole document with a hidden block of words below its visible text,
+/// and the same document with that block deleted by hand.
+const A_DOCUMENT_WITH_A_HIDDEN_BLOCK: &str = "<html><head><title>Spring notes</title>\
+     <style>p { color: #333; }</style></head><body>\
+     <h2>What is new</h2>\
+     <p>Read <a href=\"https://example.com/news\">the news</a> today.</p>\
+     <div style=\"display:none\">An offer at <a href=\"https://example.com/hidden-offer\">the secret page</a> for nobody.</div>\
+     </body></html>";
+const THE_SAME_DOCUMENT_WITHOUT_IT: &str = "<html><head><title>Spring notes</title>\
+     <style>p { color: #333; }</style></head><body>\
+     <h2>What is new</h2>\
+     <p>Read <a href=\"https://example.com/news\">the news</a> today.</p>\
+     </body></html>";
+
+#[test]
+fn test_the_text_reader_reads_a_message_with_a_hidden_block_as_it_reads_the_message_without_it() {
+    let read = the_text_reader_on(A_DOCUMENT_WITH_A_HIDDEN_BLOCK);
+    let without = the_text_reader_on(THE_SAME_DOCUMENT_WITHOUT_IT);
+
+    // The same text, with the sentence and one blank line where the body
+    // starts, and nothing else different.
+    let (header_block, body) = without.text.split_once("\n\n").expect("a body");
+    let expected = format!("{header_block}\n\n{ONE_BLOCK_LEFT_OUT}\n\n{body}");
+    assert_eq!(
+        read.text, expected,
+        "the message with a hidden block does not read as the message without it"
+    );
+
+    // The heading landmark lands on the heading's first character.
+    let heading = read
+        .landmarks
+        .iter()
+        .find(|landmark| landmark.label == "What is new")
+        .expect("the heading's landmark");
+    let at: String = read
+        .text
+        .chars()
+        .skip(heading.offset)
+        .take("What is new".chars().count())
+        .collect();
+    assert_eq!(
+        at, "What is new",
+        "the heading landmark points somewhere else: {read:?}"
+    );
+
+    // The hidden block's link is not offered.
+    assert!(
+        read.text.contains("https://example.com/news"),
+        "{}",
+        read.text
+    );
+    assert!(
+        !read.text.contains("hidden-offer"),
+        "a link inside a hidden block is in the list of links: {}",
+        read.text
+    );
+}
+
+#[test]
+fn test_the_text_reader_drops_what_the_sender_hid_from_markup_nested_past_the_limit() {
+    // A padded preheader and decoration hidden from screen readers, before
+    // a layout nested too deep: none of it read, nothing said about it.
+    let document = the_text_reader_on(&a_padded_preheader_before_deep_content());
+    let text = &document.text;
+    assert!(
+        !text.contains("Your order has shipped"),
+        "the hidden preview line was read: {text}"
+    );
+    assert!(
+        !text.chars().any(is_filler),
+        "the preview line's padding was read: {text}"
+    );
+    assert!(
+        !text.contains('\u{2726}'),
+        "the decoration hidden from screen readers was read: {text}"
+    );
+    assert!(!text.contains("left out"), "{text}");
+    assert!(
+        the_body_of(&document).starts_with(NESTED_TOO_DEEPLY),
+        "the depth sentence does not come first: {text}"
+    );
+    assert!(text.contains("The parcel left the depot"), "{text}");
+
+    // A block of words below the visible text: left out, the sentence
+    // first, then the depth sentence, then the words.
+    let document = the_text_reader_on(&nested_past_the_limit(
+        "<p>Dear reader,</p>\
+         <div style=\"display:none\">The paragraph the sender hid from the sighted.</div>\
+         <p>Yours.</p>",
+    ));
+    let text = &document.text;
+    assert!(
+        !text.contains("hid from the sighted"),
+        "the hidden block's words were read: {text}"
+    );
+    assert!(
+        the_body_of(&document).starts_with(&format!(
+            "{ONE_BLOCK_LEFT_OUT}\n\n{NESTED_TOO_DEEPLY}\n\nDear reader,"
+        )),
+        "the two sentences are not above the words in that order: {text}"
+    );
+}
+
+#[test]
+fn test_a_conversation_in_the_text_reader_says_at_its_message_what_its_sender_hid() {
+    let part = |sender: &str, markup: &str, depth: usize| ConversationPart {
+        message: a_message_from(sender, "Quarterly report"),
+        body: MessageBody::Html(markup.to_string()),
+        said: WhatIsSaidAboutIt::nothing(),
+        depth,
+    };
+    let document = reader_text::conversation(
+        "Quarterly report",
+        &[
+            part("Ada Lovelace", "<p>The numbers are in.</p>", 0),
+            part(
+                "Grace Hopper",
+                "<p>Thanks for these.</p>\
+                 <div style=\"display:none\">A paragraph Grace's program hid.</div>",
+                1,
+            ),
+        ],
+    );
+    let text = &document.text;
+
+    assert!(
+        !text.contains("Grace's program hid"),
+        "the hidden block's words were read: {text}"
+    );
+    assert_eq!(
+        text.matches(ONE_BLOCK_LEFT_OUT).count(),
+        1,
+        "the block left out was not said once: {text}"
+    );
+    let heading = text
+        .find("2. Reply, level 2 from Grace Hopper")
+        .expect("its heading");
+    let sentence = text.find(ONE_BLOCK_LEFT_OUT).expect("the sentence");
+    let words = text.find("Thanks for these.").expect("its words");
+    assert!(
+        heading < sentence && sentence < words,
+        "the sentence is not under the second message's heading, above its words: {text}"
+    );
 }
 
 // ── The cost ──────────────────────────────────────────────────────────────
