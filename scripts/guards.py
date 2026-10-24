@@ -45,6 +45,7 @@ import sys
 import tempfile
 import time
 import tomllib
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -297,6 +298,9 @@ def the_guards_in(text: str) -> list[Guard]:
             after=entry["after"],
             red=tuple(entry["red"]),
             suite=("--test", entry["suite"]) if "suite" in entry else ("--lib",),
+            counted=tuple(
+                sorted((seen["file"], seen["tests"]) for seen in entry.get("tests_last_seen", []))
+            ),
         )
         for entry in tomllib.loads(text).get("guard", [])
     ]
@@ -708,7 +712,29 @@ def the_test_names_in(text: str) -> list[str] | None:
     >>> the_test_names_in("#[test]\\nfn test_a() {}\\n#[test]\\nfn $name() {}\\n") is None
     True
     """
-    return []
+    # Split on the newline alone, as `tests_in`'s reading does, so the two
+    # agree on which lines are attributes.
+    lines = text.split("\n")
+    names = []
+    for at, line in enumerate(lines):
+        if TEST_ATTRIBUTE.match(line):
+            name = the_function_after(lines[at + 1 :])
+            if name is None:
+                return None
+            names.append(name)
+    return names
+
+
+def the_function_after(lines: list[str]) -> str | None:
+    """The name of the first function in `lines`, past attributes, comments and
+    blank lines; None when anything else comes first."""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#[", "//")):
+            continue
+        named = FN_LINE.match(line)
+        return named.group(1) if named else None
+    return None
 
 
 def the_tests_added(then: list[str], now: list[str]) -> tuple[list[str], list[str]]:
@@ -728,7 +754,8 @@ def the_tests_added(then: list[str], now: list[str]) -> tuple[list[str], list[st
     >>> the_tests_added(["test_a", "test_old"], ["test_a", "test_new"])
     (['test_new'], ['test_old'])
     """
-    return [], []
+    before, after = Counter(then), Counter(now)
+    return sorted((after - before).elements()), sorted((before - after).elements())
 
 
 def why_it_is_not_only_a_gain(
@@ -751,6 +778,20 @@ def why_it_is_not_only_a_gain(
     renamed, answers None here, because a count is a size and not a set.
     `the_tests_added_since` is what refuses it.
     """
+    was, holds = dict(counted), dict(now)
+    if set(was) != set(holds):
+        return (
+            f"its counts name {', '.join(sorted(was))} and its red list and the "
+            f"file it breaks name {', '.join(sorted(holds))} now"
+        )
+    for file in sorted(was):
+        if holds[file] < was[file]:
+            return (
+                f"{file} held {how_many(was[file], 'test')} when its counts were "
+                f"written and holds {holds[file]} now"
+            )
+    if all(holds[file] == was[file] for file in was):
+        return "nothing it counts gained a test since its counts were written"
     return None
 
 
@@ -773,7 +814,33 @@ def the_commits_that_last_wrote(
     >>> found["one"] == newer, found["two"]
     (True, None)
     """
-    return {}
+    by_line: dict[int, str] = {}
+    when: dict[str, int] = {}
+    commit = ""
+    for line in blame.splitlines():
+        header = BLAME_HEADER.match(line)
+        if header:
+            commit = header.group(1)
+            by_line[int(header.group(2))] = commit
+        elif line.startswith("committer-time "):
+            when[commit] = int(line.split()[1])
+
+    newest: dict[str, str | None] = {}
+    for name, (first, last) in spans.items():
+        commits = {by_line.get(at, NOT_COMMITTED) for at in range(first, last + 1)}
+        if NOT_COMMITTED in commits:
+            newest[name] = None
+        else:
+            newest[name] = max(commits, key=lambda one: when.get(one, 0))
+    return newest
+
+
+# A line of `git blame --porcelain` that opens a line's entry: the commit, the
+# line's number in that commit, and its number now, the one read here.
+BLAME_HEADER = re.compile(r"^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$")
+
+# The id blame gives a line nobody has committed yet.
+NOT_COMMITTED = "0" * 40
 
 
 def why_it_was_not_measured_there(
@@ -801,6 +868,21 @@ def why_it_was_not_measured_there(
     >>> print(why_it_was_not_measured_there(now, commit, now, [None], [("src/a.rs", 4)]))
     src/a.rs held 4 tests at 1a2b3c4d against the 5 its counts say
     """
+    short = commit[:8]
+    if there != guard:
+        return f"it reads differently at {short}, so that is not where it was last measured"
+    if any(parent is not None and parent.counted == guard.counted for parent in at_its_parents):
+        return (
+            f"a parent of {short} held the same counts, so that commit moved it, "
+            "edited a comment in it or corrected it by hand without measuring it"
+        )
+    says = dict(guard.counted)
+    for file, held in held_there:
+        if held != says.get(file):
+            return (
+                f"{file} held {how_many(held, 'test')} at {short} against the "
+                f"{says.get(file)} its counts say"
+            )
     return None
 
 
@@ -847,9 +929,16 @@ def the_tests_added_since(
     """
     added = []
     for file in sorted(set(then_by_file) | set(now_by_file)):
-        if file in counted:
-            gained, _ = the_tests_added(then_by_file.get(file) or [], now_by_file.get(file) or [])
-            added += [(file, name) for name in gained]
+        then, now = then_by_file.get(file, []), now_by_file.get(file, [])
+        if then is None or now is None:
+            return f"the test names in {file} cannot all be read, so what it gained is not known"
+        gained, gone = the_tests_added(then, now)
+        if gone and file in counted:
+            return (
+                f"{', '.join(gone)} is gone from {file}, which it counts, so a test "
+                "it names may have been renamed, moved or removed"
+            )
+        added += [(file, name) for name in gained]
     return added
 
 
@@ -889,7 +978,26 @@ def the_full_names_of(
     ... )
     FullNames(found=['test_x'], left_out=[('src/application/calendar.rs', 'test_a')], missing=[])
     """
-    return FullNames([], [], [])
+    by_last_segment: dict[str, list[str]] = {}
+    for name in listed:
+        by_last_segment.setdefault(name.rsplit("::", 1)[-1], []).append(name)
+
+    compiled = "src/" if suite == ("--lib",) else f"tests/{suite[1]}.rs"
+    answer = FullNames([], [], [])
+    for file, name in added:
+        if not file.startswith(compiled):
+            answer.left_out.append((file, name))
+            continue
+        full = [
+            one
+            for one in by_last_segment.get(name, [])
+            if the_file_a_test_lives_in(one, suite) == file
+        ]
+        if full:
+            answer.found.extend(full)
+        else:
+            answer.missing.append((file, name))
+    return answer
 
 
 def the_tests_a_list_names(output: str) -> list[str]:
@@ -901,7 +1009,7 @@ def the_tests_a_list_names(output: str) -> list[str]:
     ... )
     ['a::tests::test_one', 'a::tests::test_two']
     """
-    return []
+    return [line[: -len(": test")] for line in output.splitlines() if line.endswith(": test")]
 
 
 def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
