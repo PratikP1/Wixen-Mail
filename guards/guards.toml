@@ -44876,15 +44876,16 @@ tests_last_seen = [
 
 # The rule saying every older copy left beside a saved draft, which on a
 # server without UIDPLUS is a sentence at every automatic save, once a minute
-# (13.3-21, ledger 912).
+# (13.3-21, ledger 912). Its anchor moved on 2026-10-24 with 13.4-04's red,
+# which put the older-copy set inside the value for what each draft was told.
 [[guard]]
 name = "an older copy of a draft is said once for each draft"
 file = "src/application/draft_copy.rs"
 before = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
-                told_of_an_older_copy.insert(draft_id.to_string())
+                told.of_an_older_copy.insert(draft_id.to_string())
             }'''
 after = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
-                told_of_an_older_copy.insert(draft_id.to_string()) || true
+                told.of_an_older_copy.insert(draft_id.to_string()) || true
             }'''
 red = [
     "application::draft_copy::tests::test_an_older_copy_that_may_still_be_there_is_said_once_for_each_draft",
