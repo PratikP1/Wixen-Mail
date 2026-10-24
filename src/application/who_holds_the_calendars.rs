@@ -1234,7 +1234,7 @@ mod tests {
     }
 
     #[test]
-    fn test_the_calendar_summary_says_the_permission_not_given_alone() {
+    fn test_each_summary_says_the_permission_not_given_alone() {
         for (signs_in_through_a_browser, the_way_out, not_this_way) in [
             (true, "Sign In Again, Alt+S", THE_BUTTON),
             (
@@ -1249,16 +1249,46 @@ mod tests {
                 &a_permission_not_given(),
             )
             .expect("a permission not given is a reason");
-            let said = what_the_calendar_sync_did(&CalendarSyncResult {
-                what_was_asked: not_asked(why),
-                ..CalendarSyncResult::default()
-            });
-            assert_eq!(said, why.sentence(Module::Calendar));
-            for needed in ["calendars", "Google", "Ctrl+Shift+A", the_way_out] {
-                assert!(said.contains(needed), "{needed} is not said: {said}");
+            // Each module's own summary, nobody else asked and nothing else
+            // gone wrong, so the reason is said alone and no count is.
+            let each_summary = [
+                (
+                    Module::Calendar,
+                    what_the_calendar_sync_did(&CalendarSyncResult {
+                        what_was_asked: not_asked(why),
+                        ..CalendarSyncResult::default()
+                    }),
+                ),
+                (
+                    Module::Contacts,
+                    what_the_contacts_sync_did(&SyncResult {
+                        what_was_asked: not_asked(why),
+                        ..SyncResult::default()
+                    }),
+                ),
+                (
+                    Module::Tasks,
+                    TaskSyncResult {
+                        what_was_asked: not_asked(why),
+                        ..TaskSyncResult::default()
+                    }
+                    .summary(),
+                ),
+            ];
+            for (module, said) in each_summary {
+                assert_eq!(said, why.sentence(module));
+                for needed in [
+                    module.what_google_holds(),
+                    "Google",
+                    "Ctrl+Shift+A",
+                    the_way_out,
+                ] {
+                    assert!(said.contains(needed), "{needed} is not said: {said}");
+                }
+                assert!(!said.contains(not_this_way), "{said}");
+                assert!(!said.contains("error"), "a count is said: {said}");
+                assert!(!said.contains("problem"), "a count is said: {said}");
             }
-            assert!(!said.contains(not_this_way), "{said}");
-            assert!(!said.contains("error"), "a count is said: {said}");
         }
     }
 
@@ -1671,7 +1701,11 @@ mod tests {
     }
 
     /// The syncs whose Google pass turns a refusal into the reason it says.
-    const THE_GOOGLE_PASSES: [&str; 1] = ["fn spawn_calendar_sync("];
+    const THE_GOOGLE_PASSES: [&str; 3] = [
+        "fn spawn_calendar_sync(",
+        "fn spawn_contacts_sync(",
+        "fn spawn_tasks_sync(",
+    ];
 
     /// The call that does it, with every space and line break taken out, so a
     /// call the formatter wraps is still found.
