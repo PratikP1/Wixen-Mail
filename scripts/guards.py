@@ -1031,8 +1031,11 @@ def the_full_names_of(
             for one in by_last_segment.get(name, [])
             if the_file_a_test_lives_in(one, suite) == file
         ]
-        if full:
-            answer.found.extend(full)
+        runs = [one for one in full if one not in ignored]
+        if runs:
+            answer.found.extend(runs)
+        elif full:
+            answer.left_out.append((file, name))
         else:
             answer.missing.append((file, name))
     return answer
@@ -1190,7 +1193,7 @@ def the_question_for(
     )
     if isinstance(added, str):
         return added
-    full = the_full_names_of(added, listed, guard.suite)
+    full = the_full_names_of(added, listed, guard.suite, ignored)
     if full.missing:
         file, name = full.missing[0]
         return (
@@ -1354,7 +1357,8 @@ def the_fast_path_line(question: FastQuestion) -> str:
        path: fast, last measured at 1a2b3c4d, 1 test added since, and 1 test left out that its suite does not compile or ignores
     """
     left_out = (
-        f", and {how_many(len(question.left_out), 'test')} left out that its suite does not compile"
+        f", and {how_many(len(question.left_out), 'test')} left out that its suite "
+        "does not compile or ignores"
         if question.left_out
         else ""
     )
@@ -2287,9 +2291,12 @@ def the_blame_of(spans: list[tuple[int, int]]) -> str:
     return "".join(said)
 
 
-def the_list_of(suite: tuple[str, ...], time_limit: int) -> list[str]:
-    """Every test a suite holds, by full name, from its own list."""
-    listing = cargo("test", *suite, "--", "--list", budget=Budget.starting_now(time_limit))
+def the_list_of(suite: tuple[str, ...], time_limit: int, *only: str) -> list[str]:
+    """Every test a suite holds, by full name, from its own list; with
+    `--ignored`, only the ones its harness ignores."""
+    listing = cargo(
+        "test", *suite, "--", "--list", *only, budget=Budget.starting_now(time_limit)
+    )
     if listing.returncode != 0:
         raise Wrong(
             f"cargo could not list the tests of {' '.join(suite)}: it exited "
@@ -2305,12 +2312,13 @@ def the_fast_questions_for(
     run. Read once for the run, after the pre-read and before any break; any
     failure to read is said once, and every record then takes the whole run."""
     try:
-        listed = {}
+        listed, ignored = {}, {}
         for suite in sorted({guard.suite for guard in guards}):
             listed[suite] = the_list_of(suite, time_limit)
+            ignored[suite] = set(the_list_of(suite, time_limit, "--ignored"))
             print(
                 f"Listed {how_many(len(listed[suite]), 'test')} in "
-                f"{' '.join(suite)} for the fast path.",
+                f"{' '.join(suite)} for the fast path, {len(ignored[suite])} of them ignored.",
                 flush=True,
             )
         tree = the_working_tree_id()
@@ -2328,7 +2336,11 @@ def the_fast_questions_for(
                         held[commit] = what_a_commit_held(commit, tree, objects)
                     where = where_it_was_measured(guard, commit, held[commit], objects)
                 questions[guard.name] = the_question_for(
-                    guard, what_the_tree_holds_now(guard), where, listed[guard.suite]
+                    guard,
+                    what_the_tree_holds_now(guard),
+                    where,
+                    listed[guard.suite],
+                    ignored[guard.suite],
                 )
         return questions
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tomllib.TOMLDecodeError, Wrong) as failed:
