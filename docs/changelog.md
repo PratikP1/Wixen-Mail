@@ -1468,6 +1468,15 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **When a contact or an event cannot be saved, the log no longer names it (2026-10-24,
+  REAL-01).** If the Contact Manager could not save a contact, Wixen Mail wrote the contact's
+  name to its log. The calendar window did the same with an event's title when it could not add,
+  change or delete the event, and importing a vCard file wrote the email address of each card it
+  had to skip. The log is what you attach when you report a bug, so those names and addresses
+  went to whoever read the report. Now the log names a contact or an event by the identifier this
+  program gives it, and a skipped card by its place in the file, such as card 3. The message on
+  screen still names the contact or the event, so you know which one did not save.
+
 - **A contact you add while Allow Changes is off now waits for the setting instead of counting as
   an error (2026-10-24, REAL-01).** With Allow Changes off for a Google or Outlook account, a
   contact you added here stayed on this computer, as it should, but every contacts sync counted
@@ -1620,6 +1629,11 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   And when Google or Outlook will not add a contact, the log names it by the identifier this
   program gives it, never by its name, on every contacts sync you start, as every other line
   about contacts already did.
+
+  Corrected 2026-10-24: not every line did. Until that day the Contact Manager wrote a contact it
+  could not save to the log by her name, and the vCard import wrote a card it skipped by its
+  address. Both now write the identifier or the card's place in the file instead, in the entry
+  for 2026-10-24 above.
 
   Known limits. Nobody has yet tried this with a real Google or Outlook account or a real
   CardDAV server.

@@ -585,7 +585,7 @@ impl MessageCache {
         // one person whose address book had split her across two cards.
         let mut written_down: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut waiting: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        for entry in Self::cards_in(vcard_data) {
+        for (place, entry) in Self::cards_in(vcard_data).into_iter().enumerate() {
             let Some(from_card) = Self::contact_from_vcard_block(account_id, &entry) else {
                 // The one rule that turns a card away, so this counts one
                 // thing and not several: a card naming no address this
@@ -633,7 +633,10 @@ impl MessageCache {
                 }
                 Err(e) => {
                     read.not_written_down += 1;
-                    tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
+                    // By its place in the file and never by its address:
+                    // the address is somebody else's, and the log is what
+                    // testers attach to bug reports.
+                    tracing::warn!("vCard import skipped card {} in the file: {}", place + 1, e)
                 }
             }
         }
@@ -2861,6 +2864,51 @@ mod tests {
             .map(|c| c.name)
             .collect();
         assert_eq!(names, ["Grace Hopper"], "{names:?}");
+    }
+
+    #[test]
+    fn test_a_card_the_database_refuses_is_logged_by_its_place_in_the_file_and_not_its_address() {
+        // A card's address is somebody else's, and the log is what testers
+        // attach to bug reports. Which card it was is said by its place in
+        // the file, which somebody holding the file can find and nobody
+        // reading the log can use. Folded into 13.4-02 on Pratik's answer of
+        // 2026-10-24.
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+
+        let cache = a_cache("vcard_refused_logged_by_its_place");
+        cache
+            .refuse_to_save_a_contact_at("refused@example.com")
+            .expect("the refusal to be staged");
+        let file = format!(
+            "{}{}",
+            a_card_naming("Grace Hopper", "grace@example.com"),
+            a_card_naming("Turned Away", "refused@example.com"),
+        );
+
+        let captured = CapturedLogs::default();
+        let read = {
+            let _held = captured.as_the_default();
+            cache
+                .import_contacts_from_vcard("test@example.com", &file)
+                .expect("the import to run")
+        };
+
+        assert_eq!(read.not_written_down, 1, "{read:?}");
+        let events = captured.events();
+        assert!(
+            events
+                .iter()
+                .all(|(_, message)| !message.contains("refused@example.com")),
+            "the log names the card's address, and the log is attached to bug reports: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|(level, message)| *level == tracing::Level::WARN
+                    && message.contains("card 2 in the file")
+                    && message.contains("refused for a test")),
+            "the log does not say which card was skipped and why: {events:?}"
+        );
     }
 
     #[test]

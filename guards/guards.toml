@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 944 records have arrived since and have not been through it.
+# 948 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -1382,7 +1382,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "src/data/message_cache/taking_back.rs", tests = 10 },
 ]
 
@@ -1485,7 +1485,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -1776,7 +1776,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # A note's push clearing the waiting flag whatever the row now says, so an edit
@@ -1892,7 +1892,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/notes_sync.rs", tests = 31 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # The notes editor's Save writing the whole row back again, with the waiting
@@ -2351,7 +2351,7 @@ red = [
     "presentation::managers::deletion_wiring::test_the_question_is_asked_about_the_container_being_deleted",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2365,7 +2365,7 @@ red = [
     "presentation::managers::where_a_container_came_from::test_a_calendar_google_sent_is_read_as_the_providers",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2377,7 +2377,7 @@ red = [
     "presentation::managers::where_a_container_came_from::test_a_task_list_is_read_from_its_identifier",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── A change that nothing anywhere can send ─────────────────────────────────
@@ -2474,7 +2474,7 @@ red = [
     "presentation::managers::tests::test_an_event_with_nowhere_but_a_read_only_calendar_to_go_is_told_so",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2486,7 +2486,7 @@ red = [
     "presentation::managers::tests::test_moving_an_event_into_a_calendar_this_program_can_only_read_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2529,7 +2529,7 @@ red = [
     "presentation::managers::tests::test_saving_an_event_nobody_changed_leaves_it_settled",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── Which day of a series was open ──────────────────────────────────────────
@@ -2552,7 +2552,7 @@ red = [
     "presentation::managers::tests::test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2611,7 +2611,7 @@ tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/application/meeting_changes.rs", tests = 39 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2710,7 +2710,7 @@ red = [
     "presentation::managers::tests::test_putting_a_time_on_a_whole_day_event_does_not_borrow_midnights_zone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2728,7 +2728,7 @@ red = [
     "presentation::managers::tests::test_correcting_a_spelling_on_an_event_made_here_leaves_its_time_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2753,7 +2753,7 @@ red = [
     "presentation::managers::tests::test_moving_the_time_of_a_whole_series_leaves_the_day_it_starts_on_alone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2768,7 +2768,7 @@ red = [
     "presentation::managers::tests::test_moving_an_event_that_names_a_zone_across_summer_time_keeps_the_clock_face",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -2786,7 +2786,7 @@ red = [
     "presentation::managers::tests::test_a_zone_name_that_names_nothing_does_not_get_to_decide",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # The same question asked of the two writers rather than of the editor. A clock
@@ -3012,7 +3012,7 @@ tests_last_seen = [
     { file = "src/common/moment.rs", tests = 20 },
     { file = "src/presentation/date_display.rs", tests = 47 },
     { file = "src/presentation/event_times.rs", tests = 23 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
@@ -3082,7 +3082,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
     { file = "src/common/moment.rs", tests = 20 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
@@ -3122,7 +3122,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -3149,7 +3149,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "src/data/message_cache/mod.rs", tests = 26 },
 ]
 
@@ -3218,7 +3218,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -3236,7 +3236,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # Measured again when a card's addresses started joining onto the ones already
@@ -3266,7 +3266,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # -- What a card may do to the addresses somebody already holds --------------
@@ -3297,7 +3297,7 @@ red = [
     "data::message_cache::contacts::tests::test_importing_a_card_that_changed_nothing_queues_nothing",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # The other direction. Joining has its own way of going wrong: an address she
@@ -3343,7 +3343,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # The narrow half of the same rule, and the one found by trying to break the
@@ -3366,7 +3366,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_card_naming_one_address_twice_adds_it_once",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # The card is the only thing that knows anything about an address nobody here
@@ -3385,7 +3385,7 @@ red = [
     "data::message_cache::contacts::tests::test_an_address_the_card_adds_keeps_the_label_the_card_gave_it",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # A row written before the lists existed has its address on its main line and
@@ -3404,7 +3404,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # -- What the first-run screen reads out is what it will do ------------------
@@ -3465,7 +3465,7 @@ red = [
     "data::message_cache::contacts::tests::test_two_cards_for_somebody_nobody_here_holds_are_one_person",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # -- Two cards in one file for a person nobody here holds -------------------
@@ -3490,7 +3490,7 @@ red = [
     "data::message_cache::contacts::tests::test_a_second_card_joins_the_person_the_first_card_matched",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # The same rule where somebody looks for a person rather than where two records
@@ -3971,7 +3971,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
@@ -4045,7 +4045,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
@@ -4076,7 +4076,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/service/vtimezone.rs", tests = 10 },
 ]
 
@@ -5985,7 +5985,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -6013,7 +6013,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_every_answer_a_delete_gives_reaches_the_one_place_that_speaks_and_reloads",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── The two doors every answer leaves through ──────────────────────────────
@@ -6072,7 +6072,7 @@ red = [
     "presentation::wx_app::what_the_status_line_says::test_the_two_answers_every_command_leaves_through_are_said_out_loud",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
 ]
 
@@ -6085,7 +6085,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── One action, one answer, whichever door it came through ──────────────────
@@ -6105,7 +6105,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_day_taken_off_by_the_calendar_window_says_the_same_thing_as_the_panel_does",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -6147,7 +6147,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_a_calendar_window_that_did_nothing_says_nothing_was_done",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── A sentence about something that did not happen ──────────────────────────
@@ -6177,7 +6177,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_sync_button_in_the_calendar_window_really_starts_a_sync",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── The order the calendar window does two things in ────────────────────────
@@ -6612,7 +6612,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_day_kept_on_its_own_names_the_series_it_was_cut_from",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -6681,7 +6681,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -6697,7 +6697,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_what_a_rows_calendar_allows_is_answered_once_for_both_doors",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── One question, one answer, on both doors ─────────────────────────────────
@@ -6823,7 +6823,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_day_a_refusal_is_asked_about_names_only_the_events_own_time_zone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # -- One owner for what a delete did ----------------------------------------
@@ -6930,7 +6930,7 @@ red = [
     "test_only_one_place_words_a_row_that_has_gone",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/house_style.rs", tests = 80 },
 ]
 
@@ -6986,7 +6986,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # The narrower edit, which the record above could not see. Asking is not the
@@ -7011,7 +7011,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_the_one_day_answer_asks_whether_the_day_can_be_kept_before_it_writes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── How a task identifier becomes part of an address ────────────────────────
@@ -7755,7 +7755,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/item_fields.rs", tests = 33 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── Nothing this program sends says a Google task is not deleted ────────────
@@ -8321,7 +8321,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -8333,7 +8333,7 @@ red = [
     "presentation::managers::changing_one_day_of_a_series::test_changing_one_day_stores_the_changed_day_and_the_series_with_that_day_called_off",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -9558,7 +9558,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── An occurrence exception's own change lands in its own VEVENT ───────────
@@ -9786,7 +9786,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/calendar_source.rs", tests = 52 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── A recipient copied from a message is split the quote-aware way ─────────
@@ -10494,7 +10494,7 @@ before = """            name: match from_card.name.is_empty() {
 after = """            given_name: from_card.given_name.or_else(|| held.given_name.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10505,7 +10505,7 @@ before = """            given_name: from_card.given_name.or_else(|| held.given_n
 after = """            family_name: from_card.family_name.or_else(|| held.family_name.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10516,7 +10516,7 @@ before = """            family_name: from_card.family_name.or_else(|| held.famil
 after = """            name_prefix: from_card.name_prefix.or_else(|| held.name_prefix.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # The three parts of a name 12-07 added, each on the chain's pattern, so a
@@ -10530,7 +10530,7 @@ before = """            name_prefix: from_card.name_prefix.or_else(|| held.name_
 after = """            middle_name: from_card.middle_name.or_else(|| held.middle_name.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10541,7 +10541,7 @@ before = """            middle_name: from_card.middle_name.or_else(|| held.middl
 after = """            name_suffix: from_card.name_suffix.or_else(|| held.name_suffix.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # ── A card carries all five parts of N (#40, 12-07) ─────────────────────────
@@ -10560,7 +10560,7 @@ after = """                "",
                 "","""
 red = ["data::message_cache::contacts::tests::test_a_contact_written_out_to_a_card_and_read_back_is_the_contact_it_was"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # ── A guess never writes over a name part somebody typed (T-12-24) ──────────
@@ -10627,7 +10627,7 @@ before = """            name_suffix: from_card.name_suffix.or_else(|| held.name_
 after = """            phone: from_card.phone.or_else(|| held.phone.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10638,7 +10638,7 @@ before = """            phone: from_card.phone.or_else(|| held.phone.clone()),
 after = """            company: from_card.company.or_else(|| held.company.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10649,7 +10649,7 @@ before = """            website: from_card.website.or_else(|| held.website.clone
 after = """            address: from_card.address.or_else(|| held.address.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10660,7 +10660,7 @@ before = """            address: from_card.address.or_else(|| held.address.clone
 after = """            birthday: from_card.birthday.or_else(|| held.birthday.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10671,7 +10671,7 @@ before = """            birthday: from_card.birthday.or_else(|| held.birthday.cl
 after = """            avatar_url: from_card.avatar_url.or_else(|| held.avatar_url.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10682,7 +10682,7 @@ before = """            avatar_url: from_card.avatar_url.or_else(|| held.avatar_
 after = """            avatar_data_base64: from_card"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10695,7 +10695,7 @@ before = """            avatar_data_base64: from_card
 after = """            vcard_raw: from_card.vcard_raw.or_else(|| held.vcard_raw.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_cards_inline_photo_also_replaces_a_stored_one"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10708,7 +10708,7 @@ after = """            notes: from_card.notes.or_else(|| held.notes.clone()),
             nickname: from_card.nickname.or_else(|| held.nickname.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10719,7 +10719,7 @@ before = """            nickname: from_card.nickname.or_else(|| held.nickname.cl
 after = """            department: from_card.department.or_else(|| held.department.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10730,7 +10730,7 @@ before = """            department: from_card.department.or_else(|| held.departm
 after = """            relationship: from_card.relationship.or_else(|| held.relationship.clone()),"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10741,7 +10741,7 @@ before = """            relationship: from_card.relationship.or_else(|| held.rel
 after = """            emails_json: every_address,"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10752,7 +10752,7 @@ before = """            phones_json: from_card.phones_json.or_else(|| held.phone
 after = """            addresses_json: from_card"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10765,7 +10765,7 @@ before = """            addresses_json: from_card
 after = """            custom_fields_json: from_card"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10778,7 +10778,7 @@ before = """            custom_fields_json: from_card
 after = """            ..held.clone()"""
 red = ["data::message_cache::contacts::tests::test_a_card_that_speaks_on_every_field_it_can_carry_is_what_gets_stored"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10788,7 +10788,7 @@ before = """        if contact.company.is_some() || contact.department.is_some()
 after = """        if contact.company.is_some() && contact.department.is_some() {"""
 red = ["data::message_cache::contacts::tests::test_a_department_survives_export_even_with_no_company_recorded"]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # "a leading indented line with nothing above it stands on its own rather than
@@ -10803,9 +10803,14 @@ name = "a card the database refuses is counted upward, not downward"
 file = "src/data/message_cache/contacts.rs"
 before = """                    read.not_written_down += 1;"""
 after = """                    read.not_written_down -= 1;"""
-red = ["data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file"]
+red = [
+    "data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file",
+    # Added 2026-10-24 by 13.4-02's re-measure: the case for the log line
+    # counts the refused card before it reads the log.
+    "data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_logged_by_its_place_in_the_file_and_not_its_address",
+]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 [[guard]]
@@ -10813,9 +10818,34 @@ name = "a card the database refuses is counted by one, not left at zero"
 file = "src/data/message_cache/contacts.rs"
 before = """                    read.not_written_down += 1;"""
 after = """                    read.not_written_down *= 1;"""
-red = ["data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file"]
+red = [
+    "data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_counted_and_does_not_stop_the_rest_of_the_file",
+    # Added 2026-10-24 by 13.4-02's re-measure: the case for the log line
+    # counts the refused card before it reads the log.
+    "data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_logged_by_its_place_in_the_file_and_not_its_address",
+]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
+]
+
+# A card the database refuses is written to the log by its place in the file
+# and never by its address (13.4-02, folded in on Pratik's answer of
+# 2026-10-24). The break writes the address again.
+#
+# Measured by hand on 2026-10-24: the whole library at 9,512 passed and 1
+# failed, this one.
+[[guard]]
+name = "a card the database refuses is logged by its place in the file, not its address"
+file = "src/data/message_cache/contacts.rs"
+before = '''                    // testers attach to bug reports.
+                    tracing::warn!("vCard import skipped card {} in the file: {}", place + 1, e)'''
+after = '''                    // testers attach to bug reports.
+                    tracing::warn!("vCard import skipped card {} in the file: {}", contact.email, e)'''
+red = [
+    "data::message_cache::contacts::tests::test_a_card_the_database_refuses_is_logged_by_its_place_in_the_file_and_not_its_address",
+]
+tests_last_seen = [
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # ── vtimezone.rs's yearly-rule detection and repeating.rs's Outlook range ──
@@ -13423,7 +13453,7 @@ red = [
     "presentation::managers::tests::test_a_refused_move_is_said_where_a_refusal_is_said",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 [[guard]]
@@ -15058,7 +15088,7 @@ red = [
 tests_last_seen = [
     { file = "src/data/message_cache/bodies.rs", tests = 55 },
     { file = "src/data/message_cache/searching.rs", tests = 26 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── Get Older Messages answers the key before it hands to the download ──────
@@ -15404,7 +15434,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/data/message_cache/searching.rs", tests = 26 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── One place wording each of the two coverage sentences ────────────────────
@@ -15428,7 +15458,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/saved_searches.rs", tests = 84 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── The download saying it has started before it opens a connection ─────────
@@ -19980,7 +20010,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/caldav_sync.rs", tests = 88 },
     { file = "src/application/calendar.rs", tests = 215 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # The step Previous period and Next period make, broken to a constant rather
@@ -20132,7 +20162,7 @@ red = [
     "test_the_copy_of_a_task_a_provider_holds_is_this_computers_own",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
@@ -20230,7 +20260,7 @@ red = [
     "test_a_contact_that_is_not_in_the_group_it_would_leave_is_not_put_in_the_other_one",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "tests/a_contact_moved_between_groups.rs", tests = 8 },
 ]
 
@@ -20298,7 +20328,7 @@ red = [
     "test_each_group_question_is_asked_of_the_groups_that_question_has_an_answer_in",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_contact_moved_between_groups.rs", tests = 8 },
 ]
 
@@ -20403,7 +20433,7 @@ red = [
     "presentation::managers::tests::test_moving_an_event_the_provider_holds_is_refused_and_writes_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # Measured by hand on 2026-09-09 with `cargo test --lib --no-fail-fast` on a
@@ -20499,7 +20529,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # Measured by hand on 2026-09-09 with `cargo test --all-targets --no-fail-fast`.
@@ -20936,7 +20966,7 @@ red = [
     "test_the_copy_of_a_note_a_backend_holds_makes_no_claim_on_the_backends_own",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
@@ -21386,7 +21416,7 @@ red = [
     "service::carddav::tests::test_the_whole_file_export_and_the_one_card_writer_give_the_same_card",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "src/service/carddav.rs", tests = 40 },
 ]
 
@@ -21613,7 +21643,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/address_book_source.rs", tests = 16 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── A page sent with elements OneNote has never named ───────────────────────
@@ -21756,7 +21786,7 @@ red = [
     "test_a_note_moved_into_a_folder_on_this_computer_reaches_no_backend",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_note_moves_between_folders.rs", tests = 5 },
 ]
 
@@ -21776,7 +21806,7 @@ red = [
     "test_a_note_moved_to_another_folder_is_left_waiting_to_be_sent",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_copy_leaves_the_original_where_it_was.rs", tests = 9 },
 ]
 
@@ -22661,7 +22691,7 @@ tests_last_seen = [
     { file = "src/application/sending_later.rs", tests = 52 },
     { file = "src/common/how_the_machine_writes_dates.rs", tests = 17 },
     { file = "src/presentation/date_display.rs", tests = 47 },
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "src/presentation/pim_rows.rs", tests = 25 },
     { file = "src/presentation/read_aloud.rs", tests = 51 },
     { file = "src/presentation/reader_text.rs", tests = 155 },
@@ -23494,7 +23524,7 @@ red = [
     "presentation::managers::tests::test_clearing_the_only_alert_stores_off_rather_than_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # ── Every number carries its command and its date, 08-01 task 1 ─────────────
@@ -24872,7 +24902,7 @@ red = [
     "service::caldav::tests::test_a_document_whose_first_line_is_indented_keeps_that_line",
 ]
 tests_last_seen = [
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
     { file = "src/service/caldav.rs", tests = 176 },
 ]
 
@@ -31559,7 +31589,7 @@ red = [
     "test_the_manager_says_who_uses_each_signature",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
@@ -31580,7 +31610,7 @@ red = [
     "test_a_signature_chosen_on_the_account_dialog_is_what_the_manager_shows",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
@@ -32667,7 +32697,7 @@ red = [
     "test_an_action_on_an_item_is_remembered_after_it_is_carried_out",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/undoing_a_mark_names_the_message.rs", tests = 21 },
 ]
 
@@ -34452,7 +34482,7 @@ red = [
     "test_the_event_editor_puts_what_is_typed_back_on_the_events_clock",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/an_event_is_shown_on_this_computers_clock.rs", tests = 9 },
 ]
 
@@ -35321,7 +35351,7 @@ red = [
     "test_find_when_everyone_is_free_asks_google_with_a_token_fetched_in_the_worker",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/item_form_free_busy.rs", tests = 7 },
 ]
 
@@ -35354,7 +35384,7 @@ red = [
     "test_find_when_everyone_is_free_asks_every_place_the_account_has",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/item_form_free_busy.rs", tests = 7 },
 ]
 
@@ -36624,7 +36654,7 @@ red = [
     "test_the_order_the_manager_hands_back_is_the_order_stored_when_it_closes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/the_quick_step_manager_says_what_each_step_does.rs", tests = 27 },
 ]
 
@@ -36918,7 +36948,7 @@ red = [
     "test_the_manager_saves_the_rules_before_it_answers_one_to_run",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
     { file = "tests/a_rule_runs_over_a_folder_when_asked.rs", tests = 22 },
 ]
 
@@ -44586,7 +44616,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/carddav_sync.rs", tests = 24 },
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # A contact deleted while an address book made it leaves that address book a
@@ -44607,7 +44637,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/contacts_sync.rs", tests = 306 },
-    { file = "src/data/message_cache/contacts.rs", tests = 107 },
+    { file = "src/data/message_cache/contacts.rs", tests = 108 },
 ]
 
 # Google's change push writes its answer down through the re-read, so a second
@@ -44649,7 +44679,72 @@ red = [
     "presentation::managers::saving_the_contact_manager::test_a_contact_manager_save_keeps_the_name_a_sync_gave_while_it_was_open",
 ]
 tests_last_seen = [
-    { file = "src/presentation/managers.rs", tests = 138 },
+    { file = "src/presentation/managers.rs", tests = 142 },
+]
+
+# A row somebody else named, a contact or an event, is named on screen and
+# numbered in the log by its id (13.4-02, ledger 937; the events folded in on
+# Pratik's answer of 2026-10-24). The break builds the log sentence from the
+# name again, in the one constructor every such failure goes through.
+#
+# Measured by hand on 2026-10-24: the whole library at 9,509 passed and 4
+# failed, these.
+[[guard]]
+name = "a row somebody else named is numbered in the log, not named"
+file = "src/presentation/managers.rs"
+before = '''            said: format!("{name}: {why}"),
+            logged: format!("{id}: {why}"),'''
+after = '''            said: format!("{name}: {why}"),
+            logged: format!("{name}: {why}"),'''
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_an_event_that_will_not_be_added_is_its_id_in_the_log_and_its_title_on_screen",
+    "presentation::managers::changing_one_day_of_a_series::test_an_event_that_will_not_be_deleted_is_its_id_in_the_log_and_its_title_on_screen",
+    "presentation::managers::changing_one_day_of_a_series::test_an_event_that_will_not_change_is_its_id_in_the_log_and_its_title_on_screen",
+    "presentation::managers::saving_the_contact_manager::test_a_contact_the_store_will_not_save_is_her_id_in_the_log_and_her_name_on_screen",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 142 },
+]
+
+# The report writes each failure's log sentence to the log and its screen
+# sentence to the screen (13.4-02, ledger 937). The break writes the screen
+# sentences to the log.
+#
+# Measured by hand on 2026-10-24: the whole library at 9,512 passed and 1
+# failed, this one.
+[[guard]]
+name = "the report writes the log sentence to the log and not the screen's"
+file = "src/presentation/managers.rs"
+before = '''    let logged: Vec<&str> = failures.iter().map(|f| f.logged.as_str()).collect();
+    tracing::error!("{} could not be saved: {:?}", what, logged);'''
+after = '''    let logged: Vec<&str> = failures.iter().map(|f| f.said.as_str()).collect();
+    tracing::error!("{} could not be saved: {:?}", what, logged);'''
+red = [
+    "presentation::managers::saving_the_contact_manager::test_a_contact_the_store_will_not_save_is_her_id_in_the_log_and_her_name_on_screen",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 142 },
+]
+
+# An event an edit could not save is numbered in the log by its id, not named
+# by its title (13.4-02, folded in on Pratik's answer of 2026-10-24). The
+# break hands the title in as the id, at the one site the calendar window and
+# the due window share.
+#
+# Measured by hand on 2026-10-24: the whole library at 9,512 passed and 1
+# failed, this one.
+[[guard]]
+name = "an event an edit could not save is numbered in the log by its id"
+file = "src/presentation/managers.rs"
+before = '''        Err(e) => Err(NotChanged::Failed(
+            NotSaved::named_on_screen_and_numbered_in_the_log(&opened.id, &data.summary, &e),'''
+after = '''        Err(e) => Err(NotChanged::Failed(
+            NotSaved::named_on_screen_and_numbered_in_the_log(&data.summary, &data.summary, &e),'''
+red = [
+    "presentation::managers::changing_one_day_of_a_series::test_an_event_that_will_not_change_is_its_id_in_the_log_and_its_title_on_screen",
+]
+tests_last_seen = [
+    { file = "src/presentation/managers.rs", tests = 142 },
 ]
 
 # A contact Outlook will not make is named in the sync's errors, and so in the
