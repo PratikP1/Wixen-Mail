@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 789
+open_count: 790
 waived_count: 0
 fixed_count: 164
-total_count: 953
-last_updated: 2026-10-24T03:29:00.000Z
+total_count: 954
+last_updated: 2026-10-24T12:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -968,6 +968,7 @@ last_updated: 2026-10-24T03:29:00.000Z
 | 951 | 13.3 | unrun-verify | src/application/carddav_sync.rs |  | 13.3-24.4, ledger 928, for whoever first meets a real CardDAV server that stops at its own limit or sends a card without its text, phase 14 or later: two syncs asked for, the problem counted in the summary on each, and the contacts the server left out arriving on the first sync whose answer holds them. Held today by three cases in src/application/carddav_sync.rs against a scripted server, red first. Nothing has met a real server. Closed when somebody has | open |  | 2026-10-23T20:30:00.000Z |  |
 | 952 | 13.3 | unrun-verify | src/application/who_holds_the_calendars.rs |  | 13.3-24.5, ledger 932, for the tester at phase 14's sittings on a build holding 13.3-24.5's merge, under NVDA: Sign In Again on the Gmail account with Calendar unticked on Google's screen, F5 in Calendar, and hear the sentence naming calendars and Sign In Again with the attention cue and no count; then Sign In Again with the box ticked and F5 brings the calendars; the same for contacts and tasks, and through Alt+T, Sign In for Calendars, Contacts and Tasks, for an account on an app password. Unseen from a live account: whether Google's real answer carries insufficientPermissions or ACCESS_TOKEN_SCOPE_INSUFFICIENT, neither found on Google's Calendar errors page, its API design errors page or the People and Tasks troubleshooting pages read on 2026-10-22 and 2026-10-23; and that a 401 for a missing permission, which Gmail's page allows, or a domainPolicy refusal is still a counted error. Held by cases in service::asked_and_answered, service::tasks_api, application::every_google_calendar and application::who_holds_the_calendars against stand-ins; nothing has been heard. Closed when the tester has heard all three | open |  | 2026-10-24T01:41:00.000Z |  |
 | 953 | 13.3 | todo | src/service/asked_and_answered.rs |  | 13.3-24.6, found 2026-10-23 timing the fast path of --remeasure at b24a0f8d: under the break of the record "a deletion asks Outlook as well as Google what is owed" in src/application/contacts_sync.rs, service::asked_and_answered::tests::test_a_changed_google_event_writes_its_line went red on the fast question, a library run filtered to the record's seven named tests and the modules of nine tests added since dea7effa, and passed in the whole library run under the same break straight after. The break is in a module that test does not call, so it failed in that company or by chance, and which is not diagnosed. The fast path handed the record to the whole run as it should, so the record's verdict and counts are right, at the cost of both runs, 149 s. Closed when the test is shown to depend on what runs beside it and that is fixed, or it passes the same filtered run every time over several tries | open |  | 2026-10-24T03:29:00.000Z |  |
+| 954 | 13.3 | unmet-truth | .cargo/audit.toml |  | 13.3-24.7, found 2026-10-24 when its green's hook ran the full gate: RUSTSEC-2026-0387, dated 2026-10-23, against crypto-bigint 0.5.5, several operations meant to be constant-time branching on secret values (subtraction, division, Montgomery multiplication among them), patched in 0.7.6 with no fix on the 0.5 line. Reached only through pgp 0.20.0 by way of elliptic-curve 0.13 and k256, p256, p384, p521 and cx448 (cargo tree -i crypto-bigint@0.5.5); pgp 0.21.0 of 2026-10-03, the newest that day, still asks for elliptic-curve 0.13 in its manifest, so no lock move clears it. RSA keys use rsa 0.9.10 on num-bigint-dig, not this crate, and S/MIME uses Windows' CNG. Exploiting it needs precise timing of OpenPGP operations on the machine doing them. Accepted in .cargo/audit.toml as a known risk on Pratik's answer of 2026-10-24, "1 is fine", with a changelog line under Known limitations. Open until pgp moves to elliptic-curve 0.14 or later on crypto-bigint 0.7.6 or later and the entry leaves .cargo/audit.toml; check at every pgp release | open |  | 2026-10-24T12:00:00.000Z |  |
 
 ````json
 [
@@ -12405,6 +12406,18 @@ last_updated: 2026-10-24T03:29:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-24T03:29:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 954,
+    "kind": "unmet-truth",
+    "phase": "13.3",
+    "file": ".cargo/audit.toml",
+    "line": null,
+    "description": "13.3-24.7, found 2026-10-24 when its green's hook ran the full gate: RUSTSEC-2026-0387, dated 2026-10-23, against crypto-bigint 0.5.5, several operations meant to be constant-time branching on secret values (subtraction, division, Montgomery multiplication among them), patched in 0.7.6 with no fix on the 0.5 line. Reached only through pgp 0.20.0 by way of elliptic-curve 0.13 and k256, p256, p384, p521 and cx448 (cargo tree -i crypto-bigint@0.5.5); pgp 0.21.0 of 2026-10-03, the newest that day, still asks for elliptic-curve 0.13 in its manifest, so no lock move clears it. RSA keys use rsa 0.9.10 on num-bigint-dig, not this crate, and S/MIME uses Windows' CNG. Exploiting it needs precise timing of OpenPGP operations on the machine doing them. Accepted in .cargo/audit.toml as a known risk on Pratik's answer of 2026-10-24, \"1 is fine\", with a changelog line under Known limitations. Open until pgp moves to elliptic-curve 0.14 or later on crypto-bigint 0.7.6 or later and the entry leaves .cargo/audit.toml; check at every pgp release",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-24T12:00:00.000Z",
     "resolved_at": null
   }
 ]
