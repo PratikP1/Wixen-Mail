@@ -101,6 +101,13 @@
 # records and the command, so the remedy is a build and a run each rather than
 # the whole file's worth of them.
 #
+# Since 2026-10-23, a record flagged only because the files it counts gained
+# tests is asked a fast question under its break: its named tests and every
+# test added since the commit that last wrote it, anywhere its suite compiles.
+# Any answer but every named test red and nothing else that ran takes the whole
+# suite under the same break, and so does a record flagged for any other
+# reason; each record's block says "path: fast" or "path: whole" and why.
+#
 # The counts are written only for records whose measurement agreed with what
 # they say. A record that came out short is corrected by hand first, and it is
 # the run after that which writes its count down.

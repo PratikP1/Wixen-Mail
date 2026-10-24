@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 934 records have arrived since and have not been through it.
+# 938 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -30727,6 +30727,103 @@ after = """    except (ValueError, KeyError, TypeError):
         return None
     if kept_for != key and False:
         return None"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# A file put back after a record's break that is never read back, so one that
+# did not come back as it was goes unnoticed and every later record is measured
+# against two breaks, which is what happened on 2026-10-21 (ledger 927). The
+# guard runner's rules are worked examples run by
+# test_the_guard_runner_still_obeys_its_own_examples, and the example whose
+# writer leaves the file one byte short is what reddens.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "a file put back after a break is read back before the run goes on"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """        write(guarded, before)
+        came_back = guarded.read_bytes() == before"""
+after = """        write(guarded, before)
+        came_back = True or guarded.read_bytes() == before"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# The fast path of --remeasure asks a record only what it has never been run
+# against, so a test renamed in a file it counts must send it to the whole run:
+# at an equal count the count check cannot see the rename, and the old name may
+# be one its red list holds. This was the second of two holes a check of
+# 13.3-24.6's plan found on 2026-10-22, in `src/service/google_api.rs`, where
+# 13.3-15 replaced two tests at an equal count under 27 records. The example of
+# the_tests_added_since with `test_old` renamed in `src/b.rs` is what reddens.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "a test name gone from a file a record counts sends it to the whole run"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """        gained, gone = the_tests_added(then, now)
+        if gone and file in counted:"""
+after = """        gained, gone = the_tests_added(then, now)
+        if gone and file in counted and False:"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# The fast question asks every test added since a record was last measured,
+# anywhere its suite compiles, and not only in the files it counts: on
+# 2026-10-22 a record last written at `f1fd7704` gained a test 13.3-17 added
+# to `src/application/every_google_calendar.rs`, a file it did not count, and
+# only luck sent it to the whole run. The first of the two holes a check of
+# 13.3-24.6's plan found. Two examples of the_tests_added_since redden.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "the fast question holds tests added to files a record does not count"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """        added += [(file, name) for name in gained]
+    return added"""
+after = """        added += [(file, name) for name in gained if file in counted]
+    return added"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# A fast answer in which a test the record does not name went red must hand the
+# record to the whole run, which reports it as naming too few and writes no
+# count; read as clean, the record would be stamped measured one test short.
+# The examples of why_the_fast_answer_does_not_stand, judged_under_the_break
+# and measured_and_said's end-to-end cases on an added test going red are what
+# redden, five of them, all in the one test.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "a fast answer with a red the record does not name goes to the whole run"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """    not_named = sorted(went_red - named - already_failing)
+    if not_named:"""
+after = """    not_named = sorted(went_red - named - already_failing)
+    if not_named and False:"""
 red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
