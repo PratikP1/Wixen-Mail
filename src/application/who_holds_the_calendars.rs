@@ -30,6 +30,7 @@ use crate::application::who_runs_the_mail::WhoRunsTheMail;
 use crate::common::types::PimModule;
 use crate::common::{Error, Result};
 use crate::data::account::Account;
+use crate::service::asked_and_answered::is_a_permission_not_given;
 use crate::service::oauth;
 
 /// The name Google's sign-in key and an account's Google tokens are filed
@@ -70,9 +71,9 @@ impl Module {
     }
 }
 
-/// Why nothing was asked of Google, in the order the reasons are said when
-/// more than one holds: each later one cannot be acted on until the earlier
-/// is settled.
+/// Why nothing was asked of Google, or why Google refused what it was asked,
+/// in the order the reasons are said when more than one holds: each later
+/// one cannot be acted on until the earlier is settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WhyNothingWasAsked {
     NoAccountIsOpen,
@@ -80,6 +81,8 @@ pub enum WhyNothingWasAsked {
     SignsInWithAnAppPassword,
     TheBrowserSignInRanOut,
     TheSeparateSignInRanOut,
+    TheBrowserSignInLacksThem,
+    TheSeparateSignInLacksThem,
     NoMicrosoftSignInKey,
     AtNeitherProvider,
 }
@@ -94,6 +97,8 @@ impl WhyNothingWasAsked {
             WhyNothingWasAsked::SignsInWithAnAppPassword => "app_password",
             WhyNothingWasAsked::TheBrowserSignInRanOut => "browser_sign_in_ran_out",
             WhyNothingWasAsked::TheSeparateSignInRanOut => "separate_sign_in_ran_out",
+            WhyNothingWasAsked::TheBrowserSignInLacksThem => "browser_sign_in_lacks_permission",
+            WhyNothingWasAsked::TheSeparateSignInLacksThem => "separate_sign_in_lacks_permission",
             WhyNothingWasAsked::NoMicrosoftSignInKey => "no_microsoft_sign_in_key",
             WhyNothingWasAsked::AtNeitherProvider => "at_neither_provider",
         }
@@ -143,6 +148,13 @@ impl WhyNothingWasAsked {
                  sign-in it keeps for them has run out or no longer works. \
                  {THE_WAY_TO_THE_SEPARATE_SIGN_IN}"
             ),
+            WhyNothingWasAsked::TheBrowserSignInLacksThem => {
+                a_permission_not_given_about(holds, "Sign In Again, Alt+S")
+            }
+            WhyNothingWasAsked::TheSeparateSignInLacksThem => a_permission_not_given_about(
+                holds,
+                "Sign In for Calendars, Contacts and Tasks, Alt+T",
+            ),
             WhyNothingWasAsked::NoMicrosoftSignInKey => format!(
                 "Nothing was asked of Microsoft for this account's {holds}, because this copy of \
                  Wixen Mail has no Microsoft sign-in key. See Setting up a provider in Help."
@@ -164,6 +176,38 @@ impl WhyNothingWasAsked {
             false => WhyNothingWasAsked::TheSeparateSignInRanOut,
         }
     }
+}
+
+/// What the reason for a permission not given says about what Google holds,
+/// naming the one button that makes this account's sign-in again.
+///
+/// It says a box left unticked is what usually causes it rather than that
+/// one was, because an administrator's policy can hold a permission back too.
+fn a_permission_not_given_about(holds: &str, the_button: &str) -> String {
+    format!(
+        "Google would not give this account's {holds}, because its sign-in was not given \
+         permission for them, which usually means a box was left unticked on Google's screen. \
+         Open the Account Manager with Ctrl+Shift+A, choose the account and press {the_button}, \
+         then tick the box for them on Google's screen."
+    )
+}
+
+/// Why Google gave this account nothing when it was asked and refused: a
+/// permission its sign-in was not given, which the control that makes that
+/// sign-in again gives, by the split `the_sign_in_that_ran_out` makes
+/// (ledger 932).
+///
+/// Nothing for any other refusal, which stays the sync's error to count, and
+/// nothing with no account, which has no sign-in to make again.
+pub fn why_google_gave_nothing(
+    account: Option<&Account>,
+    error: &Error,
+) -> Option<WhyNothingWasAsked> {
+    let account = account.filter(|_| is_a_permission_not_given(error))?;
+    Some(match account.use_oauth {
+        true => WhyNothingWasAsked::TheBrowserSignInLacksThem,
+        false => WhyNothingWasAsked::TheSeparateSignInLacksThem,
+    })
 }
 
 /// What a provider holds for all three modules, as a person says it.
@@ -599,7 +643,8 @@ pub struct WhatWasAsked {
     /// A pass asked somebody: Google, Microsoft, a server or a feed.
     pub somebody: bool,
     /// Why the account's provider, Google or Microsoft, was not asked, or why
-    /// an account at neither has nothing to bring. Named `why_not_google`
+    /// Google refused what it was asked, or why an account at neither has
+    /// nothing to bring. Named `why_not_google`
     /// until 14-02, when Microsoft and accounts at neither gained reasons.
     pub why_not_asked: Option<WhyNothingWasAsked>,
 }
@@ -654,12 +699,14 @@ mod tests {
     use crate::application::tasks_sync::TaskSyncResult;
 
     const EVERY_MODULE: [Module; 3] = [Module::Calendar, Module::Contacts, Module::Tasks];
-    const EVERY_REASON: [WhyNothingWasAsked; 7] = [
+    const EVERY_REASON: [WhyNothingWasAsked; 9] = [
         WhyNothingWasAsked::NoAccountIsOpen,
         WhyNothingWasAsked::NoGoogleSignInKey,
         WhyNothingWasAsked::SignsInWithAnAppPassword,
         WhyNothingWasAsked::TheBrowserSignInRanOut,
         WhyNothingWasAsked::TheSeparateSignInRanOut,
+        WhyNothingWasAsked::TheBrowserSignInLacksThem,
+        WhyNothingWasAsked::TheSeparateSignInLacksThem,
         WhyNothingWasAsked::NoMicrosoftSignInKey,
         WhyNothingWasAsked::AtNeitherProvider,
     ];
@@ -906,7 +953,36 @@ mod tests {
         assert!(ran_out.contains("Sign In Again"), "{ran_out}");
         let no_account = WhyNothingWasAsked::NoAccountIsOpen.sentence(module);
         assert!(no_account.contains("no account is open"), "{no_account}");
-        for said in [no_key, password, ran_out, no_account] {
+        // A permission not given is given by signing in again with the box
+        // ticked, through the one button that makes this account's sign-in.
+        let browser_lacks = WhyNothingWasAsked::TheBrowserSignInLacksThem.sentence(module);
+        let separate_lacks = WhyNothingWasAsked::TheSeparateSignInLacksThem.sentence(module);
+        for lacks in [&browser_lacks, &separate_lacks] {
+            assert!(lacks.contains("Ctrl+Shift+A"), "{lacks}");
+            assert!(lacks.contains("tick the box"), "{lacks}");
+            assert!(lacks.contains("permission"), "{lacks}");
+        }
+        assert!(
+            browser_lacks.contains("Sign In Again, Alt+S"),
+            "{browser_lacks}"
+        );
+        assert!(!browser_lacks.contains(THE_BUTTON), "{browser_lacks}");
+        assert!(
+            separate_lacks.contains(&format!("{THE_BUTTON}, Alt+T")),
+            "{separate_lacks}"
+        );
+        assert!(
+            !separate_lacks.contains("Sign In Again"),
+            "{separate_lacks}"
+        );
+        for said in [
+            no_key,
+            password,
+            ran_out,
+            no_account,
+            browser_lacks,
+            separate_lacks,
+        ] {
             assert!(
                 !said.to_lowercase().contains("oauth"),
                 "jargon survives: {said}"
@@ -1119,6 +1195,101 @@ mod tests {
             arm.contains("a11y.signal(FeedbackEvent::SyncComplete, detail)"),
             "a calendar sync that ran no longer finishes as one: {arm}"
         );
+    }
+
+    // ── A permission not given at Google's screen (13.3-24.5) ─────────────
+
+    #[test]
+    fn test_a_permission_not_given_is_a_reason_naming_the_sign_in_that_makes_it_again() {
+        use crate::service::asked_and_answered::a_permission_not_given;
+        let refused = a_permission_not_given();
+        assert_eq!(
+            why_google_gave_nothing(Some(&a_gmail_account(true)), &refused),
+            Some(WhyNothingWasAsked::TheBrowserSignInLacksThem)
+        );
+        assert_eq!(
+            why_google_gave_nothing(Some(&a_gmail_account(false)), &refused),
+            Some(WhyNothingWasAsked::TheSeparateSignInLacksThem)
+        );
+        assert_eq!(why_google_gave_nothing(None, &refused), None);
+        // Every other refusal stays the sync's error to count, the interface
+        // not turned on in the key's project first among them.
+        for another in [
+            Error::Api {
+                status: 403,
+                provider: "google".into(),
+                message: "Google Calendar API has not been used in project 123 before or it \
+                          is disabled."
+                    .into(),
+            },
+            Error::Authentication("the sign-in was refused".into()),
+            Error::Network("no answer came".into()),
+        ] {
+            assert_eq!(
+                why_google_gave_nothing(Some(&a_gmail_account(true)), &another),
+                None,
+                "{another}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_each_summary_says_the_permission_not_given_alone() {
+        for (signs_in_through_a_browser, the_way_out, not_this_way) in [
+            (true, "Sign In Again, Alt+S", THE_BUTTON),
+            (
+                false,
+                "Sign In for Calendars, Contacts and Tasks, Alt+T",
+                "Sign In Again",
+            ),
+        ] {
+            use crate::service::asked_and_answered::a_permission_not_given;
+            let why = why_google_gave_nothing(
+                Some(&a_gmail_account(signs_in_through_a_browser)),
+                &a_permission_not_given(),
+            )
+            .expect("a permission not given is a reason");
+            // Each module's own summary, nobody else asked and nothing else
+            // gone wrong, so the reason is said alone and no count is.
+            let each_summary = [
+                (
+                    Module::Calendar,
+                    what_the_calendar_sync_did(&CalendarSyncResult {
+                        what_was_asked: not_asked(why),
+                        ..CalendarSyncResult::default()
+                    }),
+                ),
+                (
+                    Module::Contacts,
+                    what_the_contacts_sync_did(&SyncResult {
+                        what_was_asked: not_asked(why),
+                        ..SyncResult::default()
+                    }),
+                ),
+                (
+                    Module::Tasks,
+                    TaskSyncResult {
+                        what_was_asked: not_asked(why),
+                        ..TaskSyncResult::default()
+                    }
+                    .summary(),
+                ),
+            ];
+            for (module, said) in each_summary {
+                assert_eq!(said, why.sentence(module));
+                for needed in [
+                    module.what_google_holds(),
+                    "Google",
+                    "Ctrl+Shift+A",
+                    the_way_out,
+                ] {
+                    assert!(said.contains(needed), "{needed} is not said: {said}");
+                }
+                assert!(!said.contains(not_this_way), "{said}");
+                assert!(!said.contains("error"), "a count is said: {said}");
+                assert!(!said.contains("problem"), "a count is said: {said}");
+            }
+        }
     }
 
     // ── Contacts and tasks say the same reason (14-01 task 2) ──────────────
@@ -1527,6 +1698,58 @@ mod tests {
         let why = f5_asks_the_module_showing_before_it_reads_a_folder(&asks_nothing)
             .expect_err("an F5 that never asks the module passed");
         assert!(why.contains("does not ask which module"), "{why}");
+    }
+
+    /// The syncs whose Google pass turns a refusal into the reason it says.
+    const THE_GOOGLE_PASSES: [&str; 3] = [
+        "fn spawn_calendar_sync(",
+        "fn spawn_contacts_sync(",
+        "fn spawn_tasks_sync(",
+    ];
+
+    /// The call that does it, with every space and line break taken out, so a
+    /// call the formatter wraps is still found.
+    const TURNS_A_REFUSAL_INTO_ITS_REASON: &str =
+        "who_holds_the_calendars::why_google_gave_nothing(account,&e)";
+
+    /// Each sync's Google pass asks why Google gave nothing before it counts
+    /// the refusal as an error (ledger 932).
+    fn each_google_pass_turns_a_refusal_into_its_reason(window: &str) -> Reading<()> {
+        for signature in THE_GOOGLE_PASSES {
+            let pass: String = the_function(window, signature)?
+                .chars()
+                .filter(|letter| !letter.is_whitespace())
+                .collect();
+            if !pass.contains(TURNS_A_REFUSAL_INTO_ITS_REASON) {
+                return Err(format!(
+                    "{signature} counts a refusal from Google as an error without asking \
+                     why_google_gave_nothing, so a permission left unticked is said as a count"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_each_google_pass_turns_a_permission_not_given_into_its_reason() {
+        each_google_pass_turns_a_refusal_into_its_reason(&the_window())
+            .unwrap_or_else(|why| panic!("{why}"));
+    }
+
+    #[test]
+    fn test_the_reading_of_the_google_passes_sees_one_that_only_counts_the_refusal() {
+        let window = the_window();
+        for signature in THE_GOOGLE_PASSES {
+            let only_counts = planted_in(
+                &window,
+                signature,
+                "why_google_gave_nothing(",
+                "why_nobody_asks(",
+            );
+            let why = each_google_pass_turns_a_refusal_into_its_reason(&only_counts)
+                .expect_err("a pass that only counts the refusal passed");
+            assert!(why.contains(signature), "{why}");
+        }
     }
 
     // ── The separate sign-in for calendars, contacts and tasks (14-03) ────

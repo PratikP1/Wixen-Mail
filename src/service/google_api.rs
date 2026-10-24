@@ -4,7 +4,10 @@
 //! All methods take an OAuth access token and return deserialized results.
 
 use crate::common::{Error, Result};
-use crate::service::asked_and_answered::{WhatCameBack, WhoWasAsked, the_line, the_reason_word};
+use crate::service::asked_and_answered::{
+    WhatCameBack, WhoWasAsked, a_permission_not_given, names_a_permission_not_given, the_line,
+    the_reason_word,
+};
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
 
@@ -1078,11 +1081,18 @@ impl GoogleApiClient {
     }
 
     /// The answer's body read as `T`, or the provider's refusal as an error.
+    ///
+    /// A refusal over a permission the sign-in was not given is told apart
+    /// here, where the whole body is held, and becomes the one error the
+    /// syncs answer with the way to give it (ledger 932).
     fn read_the_body<T: serde::de::DeserializeOwned>(
         status: u16,
         body: &str,
         provider: &str,
     ) -> Result<T> {
+        if status == 403 && names_a_permission_not_given(body) {
+            return Err(a_permission_not_given());
+        }
         if status >= 400 {
             return Err(Error::Api {
                 status,

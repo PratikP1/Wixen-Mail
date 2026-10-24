@@ -15,6 +15,7 @@ use crate::application::calendar::{self, CalendarSyncResult, GOOGLE, GOOGLE_CALE
 use crate::common::Result;
 use crate::data::message_cache::calendars::{ListedCalendar, a_calendar_google_listed};
 use crate::data::message_cache::{CalendarContainer, CalendarEventEntry, MessageCache};
+use crate::service::asked_and_answered::is_a_permission_not_given;
 use crate::service::google_api::{GoogleAccessRole, GoogleApiClient, GoogleCalendarListEntry};
 
 /// Read the account's calendar list, file each calendar on it, then read
@@ -28,6 +29,9 @@ pub async fn sync(
     let mut result = CalendarSyncResult::default();
     match google.list_calendars(token).await {
         Ok(list) => file_the_list(cache, account_id, &list, &mut result)?,
+        // Each calendar already here would be refused the same way, once
+        // each, so the sync stops and the reason is said (ledger 932).
+        Err(e) if is_a_permission_not_given(&e) => return Err(e),
         Err(e) => result.errors.push(format!(
             "The list of your Google calendars could not be read, so only the \
              calendars already here were read: {e}"
@@ -980,6 +984,52 @@ mod tests {
                 _ => NOTHING.to_string(),
             }
         })
+    }
+
+    /// Google's refusal of the calendar list from a sign-in whose calendar
+    /// permission was not given, in the shape Calendar answers with.
+    const NO_CALENDAR_PERMISSION: &str = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","errors":[{"message":"Insufficient Permission","domain":"global","reason":"insufficientPermissions"}],"status":"PERMISSION_DENIED"}}"#;
+
+    #[tokio::test]
+    async fn test_a_calendar_list_refused_for_a_permission_stops_the_sync_there() {
+        // Ledger 932: until 13.3-24.5 the refusal was counted, and then every
+        // calendar already here was asked for and refused once more each.
+        use crate::common::answering::answering;
+        let cache = a_cache("every_google_calendar_permission_not_given");
+        let (address, listening) = answering(
+            "403 Forbidden",
+            "application/json",
+            NO_CALENDAR_PERMISSION.to_string(),
+        )
+        .await;
+
+        let refused = sync(
+            &cache,
+            &GoogleApiClient::new().pointed_at(&format!("http://{address}")),
+            "a-token",
+            "acct",
+        )
+        .await;
+
+        match &refused {
+            Err(e) => assert!(is_a_permission_not_given(e), "{e}"),
+            Ok(result) => panic!("the sync went on past the refusal: {result:?}"),
+        }
+        let asked = heard(listening, "the calendar list")
+            .await
+            .expect("the list was asked for");
+        assert!(
+            asked_for(&asked).starts_with("GET /users/me/calendarList"),
+            "{}",
+            asked_for(&asked)
+        );
+        let filed = cache
+            .get_calendars_for_account("acct")
+            .expect("the calendar list");
+        assert!(
+            filed.is_empty(),
+            "a calendar was filed after the list was refused: {filed:?}"
+        );
     }
 
     #[tokio::test]

@@ -552,10 +552,22 @@ None of this has been tried against a real Google account yet.
   asks Google's sign-in service, and either the connection dropped or Google
   refused the question. Try again. If it keeps happening, check that `openid`
   and `userinfo.email` are both on the Data Access page in step 4.
+- **A sync says Google would not give this account's calendars, contacts or
+  tasks, because its sign-in was not given permission for them.** That usually
+  means their box was left unticked on Google's screen when you signed in. The
+  sync names the button that fixes it. Press `Ctrl+Shift+A` to open the Account
+  Manager, choose the account, and press the button for that account: **Sign In
+  Again** (`Alt+S`) for an account whose mail signs in through the browser, or
+  **Sign In for Calendars, Contacts and Tasks** (`Alt+T`) for a Gmail account
+  whose mail signs in with an app password. On Google's screen, tick the box this
+  time. The next sync brings them.
 - **Calendars arrive and contacts or tasks do not.** Check that the People API
   and the Google Tasks API are both turned on in step 2, and that you did not
   untick contacts or tasks on Google's screen when you signed in. If you did,
-  press `Alt+T` again and allow them.
+  sign in again and allow them: open the Account Manager with `Ctrl+Shift+A`,
+  choose the account and press **Sign In Again** (`Alt+S`) if its mail signs in
+  through the browser, or **Sign In for Calendars, Contacts and Tasks**
+  (`Alt+T`) if it uses an app password.
 
 ### How Gmail differs, and what Wixen Mail does about it
 

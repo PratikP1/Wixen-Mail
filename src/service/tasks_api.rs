@@ -48,7 +48,10 @@
 
 use crate::common::{Error, Result};
 use crate::data::message_cache::{TaskEntry, TaskListEntry};
-use crate::service::asked_and_answered::{WhatCameBack, WhoWasAsked, the_line, the_reason_word};
+use crate::service::asked_and_answered::{
+    WhatCameBack, WhoWasAsked, a_permission_not_given, names_a_permission_not_given, the_line,
+    the_reason_word,
+};
 use crate::service::microsoft_graph::MsDateTimeTimeZone;
 use crate::service::outward::{in_a_path, in_a_query};
 use serde::{Deserialize, Serialize};
@@ -910,6 +913,16 @@ impl TasksClient {
         let sent = self.http.reading(url).bearer_auth(token).send().await;
         let (status, body) = Self::the_answer_written_down("GET", url, sent).await?;
         if !status.is_success() {
+            // A permission the sign-in was not given is told apart here,
+            // where the whole body is held, and becomes the one error the
+            // sync answers with the way to give it (ledger 932). Google's
+            // alone: a Microsoft answer is never read as Google's.
+            if status == reqwest::StatusCode::FORBIDDEN
+                && who_holds_a_task_address(url) == WhoWasAsked::GoogleTasks
+                && names_a_permission_not_given(&body)
+            {
+                return Err(a_permission_not_given());
+            }
             // The status and nothing else. A body from a failed request can
             // carry the token back, and this goes to a log file.
             return Err(Error::Protocol(format!(
@@ -1853,6 +1866,56 @@ mod tests {
             matches!(refused, Err(Error::Authentication(ref said)) if said == NEEDS_SIGN_IN),
             "a deletion refused on permission read as an ordinary failure: {refused:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_a_google_read_refused_for_a_permission_not_given_is_the_one_error_for_it() {
+        // Ledger 932: a box left unticked on Google's screen is said with the
+        // button that gives the permission, and so it has to be known here,
+        // where the whole answer is held. Every other refusal keeps the status
+        // alone, because a refusal's body can carry the token back.
+        use crate::service::asked_and_answered::is_a_permission_not_given;
+        const NO_TASKS_PERMISSION: &str = r#"{"error":{"code":403,"message":"Request had insufficient authentication scopes.","errors":[{"message":"Insufficient Permission","domain":"global","reason":"insufficientPermissions"}],"status":"PERMISSION_DENIED"}}"#;
+        const NOT_TURNED_ON: &str = r#"{"error":{"code":403,"message":"Google Tasks API has not been used in project 123 before or it is disabled.","errors":[{"message":"Google Tasks API has not been used in project 123 before or it is disabled.","domain":"usageLimits","reason":"accessNotConfigured"}],"status":"PERMISSION_DENIED"}}"#;
+        const GRAPHS_REFUSAL: &str = r#"{"error":{"code":"Forbidden","message":"Access is denied. Check credentials and try again."}}"#;
+        let refused_with = |body: &str| answering("403 Forbidden", "application/json", body.into());
+
+        let (address, listening) = refused_with(NO_TASKS_PERMISSION).await;
+        let refused = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_lists("a-token")
+            .await;
+        heard(listening, "the task lists").await.expect("asked");
+        match refused {
+            Err(e) => assert!(is_a_permission_not_given(&e), "{e}"),
+            Ok(_) => panic!("a refusal read as task lists"),
+        }
+
+        let (address, listening) = refused_with(NOT_TURNED_ON).await;
+        let refused = TasksClient::new()
+            .pointed_at(&format!("http://{address}"))
+            .google_lists("a-token")
+            .await;
+        heard(listening, "the task lists").await.expect("asked");
+        assert_eq!(
+            refused.err().map(|e| e.to_string()).as_deref(),
+            Some("Protocol error: The task service refused the request: 403 Forbidden")
+        );
+
+        // Microsoft is never read as Google, whatever its answer holds.
+        for body in [GRAPHS_REFUSAL, NO_TASKS_PERMISSION] {
+            let (address, listening) = refused_with(body).await;
+            let refused = TasksClient::new()
+                .pointed_at(&format!("http://{address}"))
+                .ms_lists("a-token")
+                .await;
+            heard(listening, "the To Do lists").await.expect("asked");
+            assert_eq!(
+                refused.err().map(|e| e.to_string()).as_deref(),
+                Some("Protocol error: The task service refused the request: 403 Forbidden"),
+                "{body}"
+            );
+        }
     }
 
     #[test]
