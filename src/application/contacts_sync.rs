@@ -2776,6 +2776,10 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     write_down(cache, local, &updated, &AddressBook::Google, &mut result);
                     result.created_remote.note(&local.id);
                 }
+                // Allow Changes holds a new contact back from Google here, as it holds a change.
+                Err(refused) if crate::service::outward::was_refused_by_the_gate(&refused) => {
+                    result.waiting_on_the_setting.note(&local.id);
+                }
                 Err(e) => {
                     // The id and never the name: every error here goes to the
                     // log, for the reason `count_the_attempt` gives.
@@ -3003,6 +3007,10 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     // Never `?`, for the reason written on the Google side.
                     write_down(cache, local, &updated, &AddressBook::Microsoft, &mut result);
                     result.created_remote.note(&local.id);
+                }
+                // Allow Changes holds a new contact back from Outlook here, as it holds a change.
+                Err(refused) if crate::service::outward::was_refused_by_the_gate(&refused) => {
+                    result.waiting_on_the_setting.note(&local.id);
                 }
                 Err(e) => {
                     // The id and never the name, for the reason written on
@@ -6919,8 +6927,9 @@ mod tests {
         /// the path where a push failing this way is kept for the next sync
         /// rather than lost to a concurrent move.
         the_network_drops_the_change: bool,
-        /// Whether a change comes back refused by the write gate rather than
-        /// by Google, which is what an account open for reading only answers.
+        /// Whether a change or a new contact comes back refused by the write
+        /// gate rather than by Google, which is what an account open for
+        /// reading only answers.
         the_account_is_read_only: bool,
         /// The copy this address book holds, for a test where the marker a
         /// change carries is weighed rather than ignored.
@@ -7002,6 +7011,13 @@ mod tests {
             _token: &str,
             person: &GooglePerson,
         ) -> Result<GooglePerson> {
+            // Before `sent`, because the real gate refuses before a request
+            // is built and nothing leaves the machine.
+            if self.the_account_is_read_only {
+                return Err(Error::Security(crate::service::outward::refusal(
+                    "add something to this account",
+                )));
+            }
             self.sent.borrow_mut().push(person.clone());
             if !self.accepts_a_contact {
                 return Err(Error::Protocol(
@@ -7103,6 +7119,8 @@ mod tests {
         /// network, before Outlook itself ever answers it. Same reason as the
         /// Google side.
         the_network_drops_the_change: bool,
+        /// Whether a change or a new contact comes back refused by the write
+        /// gate, as on the Google side.
         the_account_is_read_only: bool,
         /// The version marker Outlook puts on what it hands back, the way the
         /// Google script hands back "etag-after". Nothing here gave one until
@@ -7146,6 +7164,12 @@ mod tests {
             _token: &str,
             contact: &MsGraphContact,
         ) -> Result<MsGraphContact> {
+            // Before `sent`, for the reason written on the Google side.
+            if self.the_account_is_read_only {
+                return Err(Error::Security(crate::service::outward::refusal(
+                    "add something to this account",
+                )));
+            }
             self.sent.borrow_mut().push(contact.clone());
             if !self.accepts_a_contact {
                 return Err(Error::Protocol(
@@ -7859,6 +7883,156 @@ mod tests {
             assert!(errors[0].contains("local-1"), "{errors:?}");
             assert!(!errors[0].contains("Zebediah"), "{errors:?}");
         }
+    }
+
+    /// Everything wrong with a sync that met Allow Changes off for the contact
+    /// `local-1`, typed here, and nothing else: it waits on the setting, said
+    /// with the setting's name, nothing left the machine, and she is still
+    /// here, waiting and known to no address book.
+    fn what_holding_back_a_new_contact_got_wrong(
+        cache: &MessageCache,
+        result: &SyncResult,
+        how_many_were_sent: usize,
+    ) -> Vec<String> {
+        let said = what_the_contacts_sync_did(result);
+        let still = the_contact_under(cache, "local-1");
+        let mut wrong = Vec::new();
+        if result.waiting_on_the_setting.count() != 1 {
+            wrong.push(format!(
+                "{} waiting on the setting, not 1",
+                result.waiting_on_the_setting.count()
+            ));
+        }
+        if !result.errors.is_empty() {
+            wrong.push(format!("counted as errors: {:?}", result.errors));
+        }
+        if !result.created_remote.is_empty() {
+            wrong.push("counted as made at the address book".to_string());
+        }
+        if !said.contains("Allow Changes") || said.to_lowercase().contains("error") {
+            wrong.push(format!("said as: {said}"));
+        }
+        if how_many_were_sent != 0 {
+            wrong.push(format!("{how_many_were_sent} sent past the gate"));
+        }
+        if !still.pending || !still.known_to.is_empty() {
+            wrong.push(format!(
+                "stored as pending {} and known to {:?}",
+                still.pending, still.known_to
+            ));
+        }
+        wrong
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_typed_here_that_allow_changes_holds_back_waits_for_google() {
+        // Ledger 936. The gate's refusal of a new contact was one error at
+        // every sync, while the same refusal of a change, or of a card at a
+        // CardDAV address book, said the Allow Changes sentence.
+        let cache = a_cache("google_create_held_back");
+        a_marker_from_the_last_run(&cache, GOOGLE_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let read_only = ScriptedGoogle {
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        let held_back = sync_google_contacts(
+            &cache,
+            &read_only,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the sync with the setting off");
+
+        let wrong = what_holding_back_a_new_contact_got_wrong(
+            &cache,
+            &held_back,
+            read_only.sent.borrow().len(),
+        );
+        assert!(wrong.is_empty(), "{wrong:?}");
+
+        let allowed = ScriptedGoogle {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+        let sent = sync_google_contacts(
+            &cache,
+            &allowed,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the sync with the setting on");
+
+        assert_eq!(
+            (
+                sent.created_remote.count(),
+                sent.waiting_on_the_setting.count()
+            ),
+            (1, 0),
+            "the sentence said she was waiting for the setting, and turning it on did not \
+             send her: {:?}",
+            sent.errors
+        );
+    }
+
+    #[tokio::test]
+    async fn test_a_contact_typed_here_that_allow_changes_holds_back_waits_for_outlook() {
+        // Ledger 936, Outlook's create, which counted the refusal the way
+        // Google's did.
+        let cache = a_cache("outlook_create_held_back");
+        a_marker_from_the_last_run(&cache, MICROSOFT_ADDRESS_BOOK);
+        a_contact_typed_here(&cache, "local-1", "Grace Hopper", "grace@example.com");
+        let read_only = ScriptedMicrosoft {
+            the_account_is_read_only: true,
+            ..Default::default()
+        };
+
+        let held_back = sync_microsoft_contacts(
+            &cache,
+            &read_only,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the sync with the setting off");
+
+        let wrong = what_holding_back_a_new_contact_got_wrong(
+            &cache,
+            &held_back,
+            read_only.sent.borrow().len(),
+        );
+        assert!(wrong.is_empty(), "{wrong:?}");
+
+        let allowed = ScriptedMicrosoft {
+            accepts_a_contact: true,
+            ..Default::default()
+        };
+        let sent = sync_microsoft_contacts(
+            &cache,
+            &allowed,
+            "a token",
+            AN_ACCOUNT,
+            ANYWHERE_IT_IS_KNOWN,
+        )
+        .await
+        .expect("the sync with the setting on");
+
+        assert_eq!(
+            (
+                sent.created_remote.count(),
+                sent.waiting_on_the_setting.count()
+            ),
+            (1, 0),
+            "the sentence said she was waiting for the setting, and turning it on did not \
+             send her: {:?}",
+            sent.errors
+        );
     }
 
     #[tokio::test]
