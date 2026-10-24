@@ -2776,6 +2776,10 @@ pub(crate) async fn sync_google_contacts<B: GoogleContactBook>(
                     write_down(cache, local, &updated, &AddressBook::Google, &mut result);
                     result.created_remote.note(&local.id);
                 }
+                // Allow Changes holds a new contact back from Google here, as it holds a change.
+                Err(refused) if crate::service::outward::was_refused_by_the_gate(&refused) => {
+                    result.waiting_on_the_setting.note(&local.id);
+                }
                 Err(e) => {
                     // The id and never the name: every error here goes to the
                     // log, for the reason `count_the_attempt` gives.
@@ -3003,6 +3007,10 @@ pub(crate) async fn sync_microsoft_contacts<B: MicrosoftContactBook>(
                     // Never `?`, for the reason written on the Google side.
                     write_down(cache, local, &updated, &AddressBook::Microsoft, &mut result);
                     result.created_remote.note(&local.id);
+                }
+                // Allow Changes holds a new contact back from Outlook here, as it holds a change.
+                Err(refused) if crate::service::outward::was_refused_by_the_gate(&refused) => {
+                    result.waiting_on_the_setting.note(&local.id);
                 }
                 Err(e) => {
                     // The id and never the name, for the reason written on
