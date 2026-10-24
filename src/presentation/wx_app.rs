@@ -6,6 +6,7 @@
 use crate::application::about;
 use crate::application::conversations::RowMessage;
 use crate::application::destinations::Deleting;
+use crate::application::draft_copy::Save;
 use crate::application::identities;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
 use crate::application::reply::{self, ReplyMode};
@@ -20192,7 +20193,13 @@ fn open_compose(
                 tx: &tx,
                 rt: &rt,
             };
-            match save_as_draft(app, &cache, data, draft_id.borrow().clone()) {
+            match save_as_draft(
+                app,
+                &cache,
+                data,
+                draft_id.borrow().clone(),
+                Save::Automatic,
+            ) {
                 Ok((id, _)) => {
                     *draft_id.borrow_mut() = Some(id);
                     // Said, not silent. Somebody who relies on this needs to
@@ -20315,7 +20322,7 @@ fn open_compose(
             }
         }
         ComposeResult::SaveDraft(data) => {
-            match save_as_draft(app, cache, &data, draft_id.borrow().clone()) {
+            match save_as_draft(app, cache, &data, draft_id.borrow().clone(), Save::AskedFor) {
                 Ok((id, subject)) => {
                     *draft_id.borrow_mut() = Some(id);
                     send_status(tx, rt, &format!("Draft saved: {}.", subject))
@@ -20351,6 +20358,7 @@ fn save_as_draft(
     cache: &Option<Arc<MessageCache>>,
     data: &wx_compose::ComposeData,
     existing: Option<String>,
+    save: Save,
 ) -> std::result::Result<(String, String), String> {
     let Some(cache) = cache.as_ref() else {
         return Err(
@@ -20363,7 +20371,7 @@ fn save_as_draft(
     // look rather than only in a table reachable by one menu command. On IMAP
     // that is the server's Drafts folder, so it is on every device; on POP
     // there is no server folder and it goes to the local one.
-    file_draft_copy(app, cache, &draft);
+    file_draft_copy(app, cache, &draft, save);
     Ok((draft.id, subject))
 }
 
@@ -20449,6 +20457,7 @@ fn file_draft_copy(
     app: AppHandles<'_>,
     cache: &MessageCache,
     draft: &crate::data::message_cache::CachedDraft,
+    save: Save,
 ) {
     let AppHandles { state, tx, rt } = app;
     use crate::application::{draft_message, local_folders};
@@ -20496,7 +20505,7 @@ fn file_draft_copy(
         // No Drafts folder yet, which is an account that has never synced.
         return;
     };
-    spawn_draft_append(tx, rt, account, folder, draft.id.clone(), raw);
+    spawn_draft_append(tx, rt, account, folder, draft.id.clone(), raw, save);
 }
 
 /// Take a sent draft's copy out of the folder this account keeps drafts in.
@@ -20654,10 +20663,13 @@ fn replace_local_draft(
 /// Put a draft in the server's Drafts folder, replacing the copy already there.
 ///
 /// The order and every answer are decided elsewhere so they can be tested. What
-/// is here is the runtime and the one sentence that comes back, said only when
-/// it is not the ordinary one, and an older copy left beside the new one only
-/// once for each draft: this runs on every automatic save, once a minute for as
-/// long as somebody writes (ledger 912).
+/// is here is the runtime and the one sentence that comes back. This runs on
+/// every automatic save, once a minute for as long as somebody writes, so at
+/// those an older copy left beside the new one is said once for each draft
+/// (ledger 912), each refusal once until a save of that draft reaches the
+/// server (ledger 941), the first save that does after a refusal once, and an
+/// ordinary save never. A save the person asked for is told anything but an
+/// ordinary save every time.
 fn spawn_draft_append(
     tx: &Sender<UIUpdate>,
     rt: &Arc<Runtime>,
@@ -20665,6 +20677,7 @@ fn spawn_draft_append(
     folder: String,
     draft_id: String,
     raw: Vec<u8>,
+    save: Save,
 ) {
     let tx = tx.clone();
     let handle = rt.handle().clone();
@@ -20695,9 +20708,11 @@ fn spawn_draft_append(
                 draft_copy::Filed::NotFiledAndTheOlderOneIsStillThere(reason.to_string())
             }
         };
-        // An older copy left beside the new one is said once for this draft,
-        // not at every save after it; a refused save is said every time.
-        if filed.needs_saying_once_per_draft(&draft_id) {
+        // At an automatic save, an older copy left beside the new one is said
+        // once for this draft, a refusal once until a save of it reaches the
+        // server, and the first save that does after a refusal once; a save
+        // the person asked for is told anything but an ordinary save.
+        if filed.needs_saying_once_per_draft(&draft_id, save) {
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::StatusUpdated(filed.what_happened()))
@@ -25796,7 +25811,7 @@ fn undo_send(
     match cache.delete_outbox_message(id) {
         // Caught. The draft is now the only place the message is, so it goes
         // in Drafts where somebody would look for it, on every device.
-        Ok(true) => file_draft_copy(app, cache, &draft),
+        Ok(true) => file_draft_copy(app, cache, &draft, Save::AskedFor),
         Ok(false) | Err(_) => {
             // Nothing came out of the queue, so the draft is a copy of a
             // message a pass has claimed or already sent. Left in the list it

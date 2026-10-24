@@ -79,7 +79,10 @@ impl Filed {
     /// indistinguishable from one that never spoke.
     pub fn what_happened(&self) -> String {
         match self {
-            Self::Replaced => "The draft was saved.".to_string(),
+            Self::Replaced => {
+                "The server has taken the draft, so your other devices will have the newest copy."
+                    .to_string()
+            }
             Self::FiledAndAnOlderCopyMayStillBeThere(reason) => format!(
                 "The draft was saved, but an older copy of it may still be on the server, so \
                  your other devices could show two. The server said: {}",
@@ -107,45 +110,81 @@ impl Filed {
         !matches!(self, Self::Replaced)
     }
 
-    /// Whether this is worth saying for this draft, given the drafts already
-    /// told that an older copy may still be at the server, which this adds to.
+    /// Whether this is worth saying at an automatic save of this draft, given
+    /// what each draft has been told, which this adds to.
     ///
-    /// A server that can only flag a message for removal leaves an older copy
-    /// at every automatic save, so that answer is said the first time for a
-    /// draft and not again, whatever words the server gave (ledger 912). The
-    /// two refusals say the newest words are not on the server, which stays
-    /// news at every save it is true, so they are said every time.
+    /// A draft is saved once a minute while somebody writes, so an answer that
+    /// can come back at every one of those saves is said once, not at each:
+    ///
+    /// - An older copy left beside the new one is said the first time for a
+    ///   draft and not again, whatever words the server gave (ledger 912): a
+    ///   server that can only flag a message for removal leaves one every time.
+    /// - Each refusal is said the first time for a draft and not again until a
+    ///   save of it reaches the server (ledger 941): a server that cannot be
+    ///   reached, or a full mailbox, refuses every save. The two refusals say
+    ///   different things about where the copy is, so each is said once.
+    /// - The first save that reaches the server after a refusal was said is
+    ///   said once, since nothing else would tell "still out of reach" from
+    ///   "the server has it now". That is the only time `Replaced`'s sentence
+    ///   is heard, and it names the server because the composer says "Draft
+    ///   saved." at every automatic save, server or no server, on the same
+    ///   status topic, where a newer line replaces an older one.
     pub fn needs_saying_for(&self, draft_id: &str, told: &mut ToldSoFar) -> bool {
         match self {
-            Self::Replaced => false,
+            Self::Replaced => told.forget_the_refusals_of(draft_id),
             Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
-                told.of_an_older_copy.insert(draft_id.to_string())
+                let ends_a_refusal = told.forget_the_refusals_of(draft_id);
+                let first_older_copy = told.of_an_older_copy.insert(draft_id.to_string());
+                ends_a_refusal || first_older_copy
             }
-            Self::NotFiledAndTheOlderOneIsStillThere(_)
-            | Self::NotFiledAndThereIsNoCopyThere(_) => true,
+            Self::NotFiledAndTheOlderOneIsStillThere(_) => told
+                .refused_beside_an_older_copy
+                .insert(draft_id.to_string()),
+            Self::NotFiledAndThereIsNoCopyThere(_) => {
+                told.refused_with_no_copy_there.insert(draft_id.to_string())
+            }
         }
     }
 
-    /// Whether this is worth saying for a save the person asked for, given
-    /// what each draft has been told, which this adds to.
+    /// Whether this is worth saying at a save the person asked for, given what
+    /// each draft has been told, which this adds to as an automatic save does.
+    ///
+    /// Somebody who pressed Save Draft, or took a message back, is waiting for
+    /// the answer, so anything but an ordinary save is said every time; the
+    /// automatic saves after it stay quiet about what this one said.
     pub fn needs_saying_when_asked_for(&self, draft_id: &str, told: &mut ToldSoFar) -> bool {
-        self.needs_saying_for(draft_id, told)
+        let said_for_the_run = self.needs_saying_for(draft_id, told);
+        said_for_the_run || self.needs_saying()
     }
 
-    /// [`Self::needs_saying_for`] over what each draft has been told while
-    /// the program runs.
+    /// Whether to say this, over what each draft has been told while the
+    /// program runs: [`Self::needs_saying_for`] for an automatic save and
+    /// [`Self::needs_saying_when_asked_for`] for one the person asked for.
     ///
     /// Kept for the run and not in the database: a server that cannot remove
     /// one message at a time cannot do it tomorrow either, so the person was
     /// told what is true for the run, and hearing it once more after a restart
     /// costs one sentence where a column on the draft's row would be a schema
     /// change for one.
-    pub fn needs_saying_once_per_draft(&self, draft_id: &str) -> bool {
+    pub fn needs_saying_once_per_draft(&self, draft_id: &str, save: Save) -> bool {
         let mut told = TOLD_SO_FAR
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        self.needs_saying_for(draft_id, &mut told)
+        match save {
+            Save::Automatic => self.needs_saying_for(draft_id, &mut told),
+            Save::AskedFor => self.needs_saying_when_asked_for(draft_id, &mut told),
+        }
     }
+}
+
+/// Whose save of a draft this was, which decides how often its answer is said.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Save {
+    /// The composer's own, once a minute while somebody writes.
+    Automatic,
+    /// One the person asked for: Save Draft, or Undo Send putting a message
+    /// back as a draft.
+    AskedFor,
 }
 
 /// What each draft has been told about its copy at the server so far.
@@ -153,6 +192,12 @@ impl Filed {
 pub struct ToldSoFar {
     /// The drafts told that an older copy may still be at the server.
     of_an_older_copy: std::collections::BTreeSet<String>,
+    /// The drafts told, since a save of them last reached the server, that the
+    /// server would not take them and still has an older copy.
+    refused_beside_an_older_copy: std::collections::BTreeSet<String>,
+    /// The drafts told, since a save of them last reached the server, that the
+    /// server would not take them and has no copy at all.
+    refused_with_no_copy_there: std::collections::BTreeSet<String>,
 }
 
 impl ToldSoFar {
@@ -160,7 +205,17 @@ impl ToldSoFar {
     pub const fn new() -> Self {
         Self {
             of_an_older_copy: std::collections::BTreeSet::new(),
+            refused_beside_an_older_copy: std::collections::BTreeSet::new(),
+            refused_with_no_copy_there: std::collections::BTreeSet::new(),
         }
+    }
+
+    /// A save of this draft reached the server, so its refusals are over.
+    /// Answers whether one had been said, since the end of it is news.
+    fn forget_the_refusals_of(&mut self, draft_id: &str) -> bool {
+        let beside_an_older_copy = self.refused_beside_an_older_copy.remove(draft_id);
+        let with_no_copy_there = self.refused_with_no_copy_there.remove(draft_id);
+        beside_an_older_copy || with_no_copy_there
     }
 }
 
