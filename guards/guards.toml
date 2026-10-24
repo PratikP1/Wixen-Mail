@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 934 records have arrived since and have not been through it.
+# 935 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -30727,6 +30727,30 @@ after = """    except (ValueError, KeyError, TypeError):
         return None
     if kept_for != key and False:
         return None"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# A file put back after a record's break that is never read back, so one that
+# did not come back as it was goes unnoticed and every later record is measured
+# against two breaks, which is what happened on 2026-10-21 (ledger 927). The
+# guard runner's rules are worked examples run by
+# test_the_guard_runner_still_obeys_its_own_examples, and the example whose
+# writer leaves the file one byte short is what reddens.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "a file put back after a break is read back before the run goes on"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """        write(guarded, before)
+        came_back = guarded.read_bytes() == before"""
+after = """        write(guarded, before)
+        came_back = True or guarded.read_bytes() == before"""
 red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]

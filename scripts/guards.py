@@ -4,7 +4,10 @@ Read `scripts/guards.sh` for why this exists. This file is the mechanism.
 
 Never changes anything through git. Every file it is about to edit is copied
 byte for byte into a scratch directory keyed by its whole path, and put back
-from there whether the run finishes, fails or is interrupted. Two files in this
+from there whether the run finishes, fails or is interrupted. Each file put
+back is read back and compared with its copy, and one that does not come back
+stops the run with a sentence naming it and the copy kept under `target/`
+(`put_the_file_back`, since 2026-10-23, ledger 927). Two files in this
 project are both called `calendar.rs`, so the key is the whole path and never
 the basename. It reads git in exactly two places: `files_changed_since`, to work
 out which records a branch could have disturbed, and
@@ -1519,7 +1522,27 @@ def what_a_failed_put_back_says(guarded: str, went_wrong: str, kept_at: str | No
         git diff -- src/a.rs
     Nothing was written to guards/guards.toml, and no later record was measured.
     """
-    return ""
+    if kept_at is None:
+        where_the_copy_is = (
+            "The file still holds this record's break, and the copy taken before "
+            "the break could not be kept either. See the break with\n"
+            f"    git diff -- {guarded}\n"
+        )
+    else:
+        where_the_copy_is = (
+            "The file still holds this record's break. The copy taken before the "
+            "break is kept at\n"
+            f"    {kept_at}\n"
+            "and this, run from the repository's root, puts it back:\n"
+            f"    cp {shlex.quote(kept_at)} {shlex.quote(guarded)}\n"
+        )
+    return (
+        f"{THE_RUN_STOPPED}{guarded} did not come back as it was after this "
+        "record's break.\n"
+        f"What went wrong: {went_wrong}.\n"
+        f"{where_the_copy_is}"
+        "Nothing was written to guards/guards.toml, and no later record was measured."
+    )
 
 
 def put_the_file_back(
@@ -1573,8 +1596,34 @@ def put_the_file_back(
     What went wrong: it read back different from the copy taken before the break.
     >>> shutil.rmtree(made)
     """
-    write(guarded, kept.read_bytes())
-    kept.unlink()
+    before = kept.read_bytes()
+    try:
+        write(guarded, before)
+        came_back = guarded.read_bytes() == before
+    except OSError as failed:
+        went_wrong = repr(failed)
+    else:
+        if came_back:
+            kept.unlink()
+            return
+        went_wrong = "it read back different from the copy taken before the break"
+    raise TheTreeWasLeftBroken(
+        what_a_failed_put_back_says(
+            shown(guarded), went_wrong, keep_aside(kept, left_broken_in)
+        )
+    )
+
+
+def keep_aside(kept: Path, left_broken_in: Path) -> str | None:
+    """Copy `kept` into `left_broken_in` under its own name, and say where, or
+    None when even that could not be done."""
+    try:
+        left_broken_in.mkdir(parents=True, exist_ok=True)
+        aside = left_broken_in / kept.name
+        shutil.copyfile(kept, aside)
+    except OSError:
+        return None
+    return shown(aside)
 
 
 def measure(
@@ -1589,7 +1638,9 @@ def measure(
     The budget is this record's, and a record that spends it is given up on
     with a `GaveUp`, which is a `Wrong`. That is why it is one: the `finally`
     below puts the guarded file back whatever leaves the `try`, so a record
-    stopped at its time limit leaves no break behind in the tree.
+    stopped at its time limit leaves no break behind in the tree. When the file
+    does not come back, `TheTreeWasLeftBroken` leaves instead of whatever was
+    in flight, and the run stops.
     """
     found = guard.file.read_text(encoding="utf-8").count(guard.before)
     if found != 1:
@@ -1620,9 +1671,9 @@ def measure(
     finally:
         # The bytes, not the timestamps: a restored file with its old
         # modification time reads to cargo as one that never changed, and the
-        # next run answers out of the broken binary.
-        guard.file.write_bytes(kept.read_bytes())
-        kept.unlink()
+        # next run answers out of the broken binary. Read back and compared, and
+        # a file that does not come back stops the run (ledger 927).
+        put_the_file_back(guard.file, kept, THE_COPIES_LEFT_BROKEN)
 
     never_ran = [name for name in guard.red if name not in verdicts]
     if never_ran:
@@ -1952,7 +2003,7 @@ def verdicts_in(log_text: str) -> dict[str, str]:
         if judged or not line.startswith("   ") or line[3:4] in ("", " "):
             continue
         judged = True
-        if GIVEN_UP_ON in line:
+        if GIVEN_UP_ON in line or THE_RUN_STOPPED in line:
             # Unmeasured rather than judged, exactly as a contended record is:
             # the run stopped it at its time limit and learned nothing about
             # it, so a resume measures it again. `the_verdict_on` can still
@@ -1990,6 +2041,9 @@ COULD_NOT_BE_MEASURED = (
     # drops the name rather than keeping this as its verdict, for the reason
     # written above `GIVEN_UP_ON`.
     GIVEN_UP_ON,
+    # And the first line of the sentence a run stops with when a file does
+    # not come back, for the reason written above `THE_RUN_STOPPED`.
+    THE_RUN_STOPPED,
 )
 
 
@@ -2425,6 +2479,11 @@ def measured_and_said(
         measured = measuring(
             guard, scratch, already_failing, named_only=named_only, budget=budget
         )
+    except TheTreeWasLeftBroken:
+        # Ahead of both handlers below, which would print it and go on to the
+        # next record, measured against this one's break as well as its own.
+        # That is what happened on 2026-10-21 (ledger 927).
+        raise
     except GaveUp as ran_out:
         # Named here rather than in the message, so the line under `-- name`
         # carries the record it is about. `measure`'s `finally` has already put
@@ -2443,7 +2502,11 @@ def measured_and_said(
         #
         # Counted as slipped rather than passed, because a record that could
         # not be measured is not a record that holds. The file is already
-        # restored: `measure` puts it back in a `finally`.
+        # restored and read back: `measure` puts it back in a `finally`, and
+        # one that did not come back raised `TheTreeWasLeftBroken`, which the
+        # arm above lets through. Until 2026-10-23 this said the file was
+        # restored without anything reading it back, and on 2026-10-21 it was
+        # not.
         #
         # KeyboardInterrupt and SystemExit are not `Exception`, so an
         # interrupt still stops the run and still restores the tree.
