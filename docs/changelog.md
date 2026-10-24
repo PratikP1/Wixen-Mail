@@ -1468,6 +1468,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **The text reader no longer reads what a sender hid (2026-10-24, LIST-25).** The text reader,
+  the window `Enter` opens on a message, read every block of an HTML message, including the
+  blocks its sender had hidden from view or from screen readers. So a newsletter's hidden
+  preview line was read twice, once at the top and once where the sender showed it, and the
+  invisible padding after it was read as a run of symbols. The formatted view has left those
+  blocks out since September; now the text reader leaves them out too, however deeply the
+  message is laid out, and so does `Space` when it reads a message aloud from the list. When a
+  block it left out held words, the text reader says the same sentence the formatted view says,
+  above the message, such as "1 block the sender did not show was left out." A hidden preview
+  line on its own is left out and nothing is said, because a preview line is what the hiding is
+  for. Known limitation: nobody has listened to this yet (ledger 960).
+
 - **When a contact or an event cannot be saved, the log no longer names it (2026-10-24,
   REAL-01).** If the Contact Manager could not save a contact, Wixen Mail wrote the contact's
   name to its log. The calendar window did the same with an event's title when it could not add,
@@ -1613,6 +1625,8 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   many blocks the sender did not show were left out, as it does for any message. The list's
   preview line and search leave them out too. Known limitation: the text reader, the window
   `Enter` opens on a message, still reads blocks a sender hid, at any depth (ledger 938).
+  Corrected 2026-10-24: the text reader leaves those blocks out too since then, as the entry
+  about the text reader above says.
 - **A contact you change while a contacts sync sends it is kept as you left it (2026-10-22,
   REAL-01, PIM-05).** A contacts sync sends each contact you typed here to Google, Outlook or a
   CardDAV address book one at a time, and after a vCard import that can take minutes. If you

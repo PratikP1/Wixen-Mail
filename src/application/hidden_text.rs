@@ -31,8 +31,10 @@
 //!
 //! The drop runs on the reading path only, before the sanitiser, in
 //! `presentation::html_renderer` and in [`crate::application::long_text`]'s
-//! reader; a message on its way out never sees it, and a plain-text part is
-//! never parsed at all.
+//! reader, and before the converter in `presentation::reader_text`, the text
+//! reader `Enter` opens on a message, which says the same sentence above the
+//! words (ledger 938, 13.4-03); a message on its way out never sees it, and
+//! a plain-text part is never parsed at all.
 
 use std::borrow::Cow;
 
