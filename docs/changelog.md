@@ -1468,6 +1468,23 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A Google sync refused for a permission you did not give now says which, and how to give it
+  (2026-10-23, REAL-01).** If the box for calendars, contacts or tasks was left unticked on
+  Google's screen when you signed in, Google refuses that sync. Wixen Mail used to say only that
+  there was one error. Now the calendar, contacts or tasks sync says that Google would not give
+  this account's calendars, contacts or tasks because the sign-in was not given permission for
+  them, with the sound for an account that needs attention. It names the one button that fixes
+  it for that account, Sign In Again (`Alt+S`) for an account whose mail signs in through the
+  browser, or Sign In for Calendars, Contacts and Tasks (`Alt+T`) for a Gmail account on an app
+  password, both in the Account Manager (`Ctrl+Shift+A`), and says to tick the box this time.
+  A calendar sync refused this way also stops asking for each calendar already here, which
+  used to add one more error for each. Any other refusal from Google is counted as before.
+
+  Known limits. This has not been tried against a real Google account; the tests use the
+  program's own stand-in for Google, answering the way Google is widely reported to. Google
+  may instead answer a missing permission with a sign-in error, which is still counted as an
+  error.
+
 - **Contacts a CardDAV address book left out of one sync now arrive at a later one (2026-10-23,
   PIM-05).** When a CardDAV server sent only part of an address book, because it stopped at its
   own limit or sent cards Wixen Mail cannot read, Wixen Mail still took the address book as up
