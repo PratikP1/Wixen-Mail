@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 937 records have arrived since and have not been through it.
+# 938 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -30800,6 +30800,30 @@ before = """        added += [(file, name) for name in gained]
     return added"""
 after = """        added += [(file, name) for name in gained if file in counted]
     return added"""
+red = [
+    "test_the_guard_runner_still_obeys_its_own_examples",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 78 },
+]
+
+# A fast answer in which a test the record does not name went red must hand the
+# record to the whole run, which reports it as naming too few and writes no
+# count; read as clean, the record would be stamped measured one test short.
+# The examples of why_the_fast_answer_does_not_stand, judged_under_the_break
+# and measured_and_said's end-to-end cases on an added test going red are what
+# redden, five of them, all in the one test.
+#
+# Measured by hand on 2026-10-23 by 13.3-24.6, `cargo test --test house_style`
+# run whole under the break: 77 passed and that one test failed.
+[[guard]]
+name = "a fast answer with a red the record does not name goes to the whole run"
+file = "scripts/guards.py"
+suite = "house_style"
+before = """    not_named = sorted(went_red - named - already_failing)
+    if not_named:"""
+after = """    not_named = sorted(went_red - named - already_failing)
+    if not_named and False:"""
 red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]

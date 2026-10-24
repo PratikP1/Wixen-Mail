@@ -9,11 +9,27 @@ back is read back and compared with its copy, and one that does not come back
 stops the run with a sentence naming it and the copy kept under `target/`
 (`put_the_file_back`, since 2026-10-23, ledger 927). Two files in this
 project are both called `calendar.rs`, so the key is the whole path and never
-the basename. It reads git in exactly two places: `files_changed_since`, to work
-out which records a branch could have disturbed, and
-`the_guarded_files_git_sees_as_modified`, so that a resume refuses a tree a
-killed run left broken rather than measuring over it. Until 2026-09-14 it read
-git in one.
+the basename. It reads git in four places: `files_changed_since`, to work out
+which records a branch could have disturbed; `the_working_tree_id`, for the
+key a kept pre-read is kept under; `the_guarded_files_git_sees_as_modified`,
+so that a resume refuses a tree a killed run left broken rather than measuring
+over it; and `the_fast_questions_for`, which reads which commit last wrote each
+record and what the tree gained since, through `git blame`, `git cat-file` and
+`git diff-tree`. The real index and the working tree are never written through
+git. Until 2026-09-14 it read git in one place; from 2026-09-23 it read git in
+three while this sentence said two, until 2026-10-23.
+
+`--remeasure` asks a record flagged only because the files it counts gained
+tests a fast question, since 2026-10-23 on Pratik's "yes" of 2026-10-22: under
+its break, its named tests and every test added since the commit that last
+wrote it, in any file its suite compiles. Its counts are written only when
+every named test goes red and nothing else that ran does; any other answer
+asks the whole suite under the same break, which alone reports a record wrong.
+What it does not ask is whether a test that was already there when the record
+was last measured now goes red as well; the sweep asks that. A count that fell,
+a test name gone from a file it counts, a record that commit did not measure, a
+name the source reading cannot read, and a question too long for one command
+line all take the whole run, and each record's block says which path it took.
 
 A sweep is hours and can be stopped and picked up: `--log` appends every line
 to a file, `--resume` reads that file for the verdict after each `-- name` line
@@ -774,6 +790,8 @@ def why_it_is_not_only_a_gain(
     src/a.rs held 5 tests when its counts were written and holds 4 now
     >>> print(why_it_is_not_only_a_gain((("src/a.rs", 4),), [("src/a.rs", 5), ("src/c.rs", 1)]))
     its counts name src/a.rs and its red list and the file it breaks name src/a.rs, src/c.rs now
+    >>> print(why_it_is_not_only_a_gain((), [("src/a.rs", 5)]))
+    it has no counts yet
 
     What this cannot see. A record counting `src/a.rs` at 4 and `src/b.rs` at 3,
     with `src/a.rs` now 5 and `src/b.rs` still 3 because one of its tests was
@@ -781,6 +799,8 @@ def why_it_is_not_only_a_gain(
     `the_tests_added_since` is what refuses it.
     """
     was, holds = dict(counted), dict(now)
+    if not was:
+        return "it has no counts yet"
     if set(was) != set(holds):
         return (
             f"its counts name {', '.join(sorted(was))} and its red list and the "
@@ -1127,22 +1147,42 @@ def the_question_for(
     ... ), listed))
     its question would be 35,921 characters of filters, past the 24,000 one command line is given here
     """
-    counts = dict(guard.counted)
-    gained = tuple(file for file, held in held_now if held > counts.get(file, held))
-    added = []
-    if where is not None:
-        for file in gained:
-            fresh, _ = the_tests_added(
-                where.then_by_file.get(file) or [], where.now_by_file.get(file) or []
-            )
-            added += [(file, name) for name in fresh]
+    not_a_gain = why_it_is_not_only_a_gain(guard.counted, held_now)
+    if not_a_gain:
+        return not_a_gain
+    if where is None:
+        return "git blame names no commit that wrote all of it, or a line of it is not yet committed"
+    not_measured = why_it_was_not_measured_there(
+        guard, where.commit, where.there, where.at_its_parents, where.held_there
+    )
+    if not_measured:
+        return not_measured
+    added = the_tests_added_since(
+        where.then_by_file, where.now_by_file, {file for file, _ in guard.counted}
+    )
+    if isinstance(added, str):
+        return added
     full = the_full_names_of(added, listed, guard.suite)
+    if full.missing:
+        file, name = full.missing[0]
+        return (
+            f"{name} was added to {file}, and the list of {' '.join(guard.suite)} "
+            "does not hold it"
+        )
+    filters = (*guard.red, *the_filters_for(tuple(full.found)))
+    length = sum(len(one) + 1 for one in filters)
+    if length > THE_LONGEST_A_QUESTION_MAY_BE:
+        return (
+            f"its question would be {length:,} characters of filters, past the "
+            f"{THE_LONGEST_A_QUESTION_MAY_BE:,} one command line is given here"
+        )
+    counts = dict(guard.counted)
     return FastQuestion(
-        since=where.commit[:8] if where else "",
+        since=where.commit[:8],
         added=tuple(sorted(full.found)),
-        filters=(*guard.red, *the_filters_for(tuple(full.found))),
+        filters=filters,
         left_out=tuple(full.left_out),
-        gained=gained,
+        gained=tuple(file for file, held in held_now if held > counts[file]),
     )
 
 
@@ -1178,6 +1218,26 @@ def why_the_fast_answer_does_not_stand(
     ... ))
     1 test the fast question was to ask did not run: b::tests::test_new
     """
+    named = set(guard.red)
+    went_red = {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+    not_named = sorted(went_red - named - already_failing)
+    if not_named:
+        return (
+            f"{how_many(len(not_named), 'test')} the record does not name went "
+            f"red: {', '.join(not_named)}"
+        )
+    stayed_green = [name for name in guard.red if verdicts.get(name) == "ok"]
+    if stayed_green:
+        return (
+            f"{how_many(len(stayed_green), 'named test')} stayed green on the fast "
+            f"question, and a test can fail only in company: {', '.join(stayed_green)}"
+        )
+    never_ran = [name for name in (*guard.red, *question.added) if name not in verdicts]
+    if never_ran:
+        return (
+            f"{how_many(len(never_ran), 'test')} the fast question was to ask did "
+            f"not run: {', '.join(never_ran)}"
+        )
     return None
 
 
@@ -1245,8 +1305,35 @@ def judged_under_the_break(
     guards.Wrong: the test harness never ran a::tests::test_two.
     Either the name is wrong or the test has gone.
     """
+    if question is not None:
+        print(the_fast_path_line(question), flush=True)
+        verdicts = ask(list(question.filters))
+        handed_over = why_the_fast_answer_does_not_stand(
+            guard, question, verdicts, already_failing or set()
+        )
+        if handed_over is None:
+            return judged(guard, verdicts, already_failing, question)
+        print(f"{THE_PATH}whole, {handed_over}", flush=True)
     verdicts = ask(the_filters_for(guard.red) if named_only else None)
     return judged(guard, verdicts, already_failing)
+
+
+def the_fast_path_line(question: FastQuestion) -> str:
+    """The line under a record that says it took the fast path, since when, and
+    what of the added tests its suite does not compile.
+
+    >>> print(the_fast_path_line(FastQuestion("1a2b3c4d", ("a::t",), (), (("src/b.rs", "t"),), ())))
+       path: fast, last measured at 1a2b3c4d, 1 test added since, and 1 test left out that its suite does not compile
+    """
+    left_out = (
+        f", and {how_many(len(question.left_out), 'test')} left out that its suite does not compile"
+        if question.left_out
+        else ""
+    )
+    return (
+        f"{THE_PATH}fast, last measured at {question.since}, "
+        f"{how_many(len(question.added), 'test')} added since{left_out}"
+    )
 
 
 def judged(
@@ -1511,6 +1598,11 @@ def run_the_whole_suite(
     A false alarm is the safer direction, which is why this stays: it is cheap,
     and anything it flags can be confirmed unfiltered. But it must never be read
     as a sweep, and a green answer from it covers one direction of one question.
+
+    The fast question of `--remeasure` is a filtered run of this kind, and that
+    is why a named test that stays green on it hands the record to the whole
+    run under the same break rather than reporting it: on this tree the two
+    have already disagreed about exactly that.
     """
     # After the separator, not before it. `cargo test` takes one positional
     # filter and refuses a second; the harness behind it takes as many as you
@@ -2052,6 +2144,191 @@ def the_working_tree_id() -> str:
         ).stdout.strip()
 
 
+class GitObjects:
+    """One `git cat-file --batch` kept open for a run, which only reads."""
+
+    def __enter__(self) -> "GitObjects":
+        self.process = subprocess.Popen(
+            ["git", "cat-file", "--batch"],
+            cwd=ROOT,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+        )
+        return self
+
+    def __exit__(self, *_) -> None:
+        self.process.stdin.close()
+        self.process.wait()
+
+    def read(self, spec: str) -> bytes | None:
+        """The object `spec` names, `<commit>` or `<tree-ish>:<path>`, or None
+        when there is none."""
+        self.process.stdin.write(spec.encode("utf-8") + b"\n")
+        self.process.stdin.flush()
+        header = self.process.stdout.readline()
+        if not header or header.rstrip().endswith(b" missing"):
+            return None
+        body = self.process.stdout.read(int(header.split()[2]))
+        self.process.stdout.read(1)
+        return body
+
+    def text(self, spec: str) -> str | None:
+        found = self.read(spec)
+        return None if found is None else found.decode("utf-8", errors="replace")
+
+
+@dataclass(frozen=True)
+class WhatACommitHeld:
+    """What one commit blame named holds, read once however many records it
+    last wrote."""
+
+    records: dict[str, Guard]
+    at_its_parents: list[dict[str, Guard]]
+    then_by_file: dict[str, list[str] | None]
+    now_by_file: dict[str, list[str] | None]
+
+
+def the_records_at(spec: str, objects: GitObjects) -> dict[str, Guard]:
+    """The records `guards/guards.toml` holds at a commit, by name."""
+    text = objects.text(f"{spec}:guards/guards.toml")
+    return {} if text is None else {guard.name: guard for guard in the_guards_in(text)}
+
+
+def what_a_commit_held(commit: str, tree: str, objects: GitObjects) -> WhatACommitHeld:
+    """The records at a commit and at each of its parents, and the test names
+    then and now of every Rust file under `src` and `tests` that differs
+    between it and the working tree's id."""
+    header = objects.text(commit) or ""
+    parents = [line.split()[1] for line in header.splitlines() if line.startswith("parent ")]
+    differing = subprocess.run(
+        ["git", "diff-tree", "-r", "--name-only", commit, tree, "--", "src", "tests"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split()
+    then_by_file: dict[str, list[str] | None] = {}
+    now_by_file: dict[str, list[str] | None] = {}
+    for file in (one for one in differing if one.endswith(".rs")):
+        for spec, names in ((commit, then_by_file), (tree, now_by_file)):
+            text = objects.text(f"{spec}:{file}")
+            if text is not None:
+                names[file] = the_test_names_in(text)
+    return WhatACommitHeld(
+        the_records_at(commit, objects),
+        [the_records_at(parent, objects) for parent in parents],
+        then_by_file,
+        now_by_file,
+    )
+
+
+def the_spans_of(raw: str) -> dict[str, tuple[int, int]]:
+    """Each record's lines in the record file, its `[[guard]]` header to its
+    last line that is neither blank nor a comment, counted from 1.
+
+    >>> the_spans_of('# a\\n[[guard]]\\nname = "one"\\nred = ["t"]\\n\\n# about two\\n[[guard]]\\nname = "two"\\nred = ["u"]\\n')
+    {'one': (2, 4), 'two': (7, 9)}
+    """
+    lines = raw.split("\n")
+    starts = [at for at, line in enumerate(lines) if line.rstrip() == "[[guard]]"]
+    spans: dict[str, tuple[int, int]] = {}
+    for n, start in enumerate(starts):
+        end = starts[n + 1] if n + 1 < len(starts) else len(lines)
+        named = re.search(r'^name = "(.*)"\s*$', "\n".join(lines[start:end]), re.M)
+        if named is None:
+            raise Wrong(f"the record at line {start + 1} of {RECORD.name} has no name line")
+        last = max(
+            at
+            for at in range(start, end)
+            if lines[at].strip() and not lines[at].lstrip().startswith("#")
+        )
+        spans[named.group(1)] = (start + 1, last + 1)
+    return spans
+
+
+def the_blame_of(spans: list[tuple[int, int]]) -> str:
+    """`git blame --porcelain` over the working tree's record file, for these
+    lines, in calls of a few hundred ranges so no command line runs long."""
+    said = []
+    for at in range(0, len(spans), 300):
+        ranges = [part for first, last in spans[at : at + 300] for part in ("-L", f"{first},{last}")]
+        said.append(
+            subprocess.run(
+                ["git", "blame", "--porcelain", *ranges, "--", "guards/guards.toml"],
+                cwd=ROOT, capture_output=True, text=True, encoding="utf-8",
+                errors="replace", check=True,
+            ).stdout
+        )
+    return "".join(said)
+
+
+def the_list_of(suite: tuple[str, ...], time_limit: int) -> list[str]:
+    """Every test a suite holds, by full name, from its own list."""
+    listing = cargo("test", *suite, "--", "--list", budget=Budget.starting_now(time_limit))
+    if listing.returncode != 0:
+        raise Wrong(
+            f"cargo could not list the tests of {' '.join(suite)}: it exited "
+            f"{listing.returncode}"
+        )
+    return the_tests_a_list_names(listing.stdout)
+
+
+def the_fast_questions_for(
+    guards: list[Guard], time_limit: int
+) -> dict[str, FastQuestion | str]:
+    """For each record, its fast question or the reason it takes the whole
+    run. Read once for the run, after the pre-read and before any break; any
+    failure to read is said once, and every record then takes the whole run."""
+    try:
+        listed = {}
+        for suite in sorted({guard.suite for guard in guards}):
+            listed[suite] = the_list_of(suite, time_limit)
+            print(
+                f"Listed {how_many(len(listed[suite]), 'test')} in "
+                f"{' '.join(suite)} for the fast path.",
+                flush=True,
+            )
+        tree = the_working_tree_id()
+        every_span = the_spans_of(RECORD.read_text(encoding="utf-8"))
+        spans = {guard.name: every_span[guard.name] for guard in guards}
+        newest = the_commits_that_last_wrote(the_blame_of(list(spans.values())), spans)
+        questions: dict[str, FastQuestion | str] = {}
+        with GitObjects() as objects:
+            held: dict[str, WhatACommitHeld] = {}
+            for guard in guards:
+                commit = newest[guard.name]
+                where = None
+                if commit is not None:
+                    if commit not in held:
+                        held[commit] = what_a_commit_held(commit, tree, objects)
+                    where = where_it_was_measured(guard, commit, held[commit], objects)
+                questions[guard.name] = the_question_for(
+                    guard, what_the_tree_holds_now(guard), where, listed[guard.suite]
+                )
+        return questions
+    except (OSError, ValueError, KeyError, subprocess.CalledProcessError, tomllib.TOMLDecodeError, Wrong) as failed:
+        print(
+            f"The fast path could not be read, so every record takes the whole run: {failed!r}",
+            flush=True,
+        )
+        return {guard.name: "the fast path could not be read" for guard in guards}
+
+
+def where_it_was_measured(
+    guard: Guard, commit: str, held: WhatACommitHeld, objects: GitObjects
+) -> WhereItWasMeasured:
+    """What the run read for the commit blame names for this record."""
+    held_there = []
+    for file, _ in guard.counted:
+        text = objects.text(f"{commit}:{file}")
+        held_there.append((file, 0 if text is None else tests_in(text)))
+    return WhereItWasMeasured(
+        commit=commit,
+        there=held.records.get(guard.name),
+        at_its_parents=[records.get(guard.name) for records in held.at_its_parents],
+        held_there=held_there,
+        then_by_file=held.then_by_file,
+        now_by_file=held.now_by_file,
+    )
+
+
 def the_key_for_this_tree(suite: tuple[str, ...]) -> str | None:
     """The key a kept pre-read of `suite` must carry, or None when it cannot be
     taken, in which case the suite is read as it always was and nothing is kept."""
@@ -2297,36 +2574,19 @@ def measure(
             guard.before, guard.after
         )
         guard.file.write_bytes(broken.encode("utf-8"))
-        verdicts = run_the_whole_suite(
-            guard.suite,
-            the_filters_for(guard.red) if named_only else None,
-            budget,
-        )
+
+        # Judged inside the `try`, under the break, because a fast answer that
+        # does not stand is asked again whole under the same break.
+        def ask(filters: list[str] | None) -> dict[str, str]:
+            return run_the_whole_suite(guard.suite, filters, budget)
+
+        return judged_under_the_break(guard, ask, already_failing, question, named_only)
     finally:
         # The bytes, not the timestamps: a restored file with its old
         # modification time reads to cargo as one that never changed, and the
         # next run answers out of the broken binary. Read back and compared, and
         # a file that does not come back stops the run (ledger 927).
         put_the_file_back(guard.file, kept, THE_COPIES_LEFT_BROKEN)
-
-    never_ran = [name for name in guard.red if name not in verdicts]
-    if never_ran:
-        raise Wrong(
-            "the test harness never ran "
-            + ", ".join(never_ran)
-            + ".\nEither the name is wrong or the test has gone."
-        )
-    named = set(guard.red)
-    went_red = {name for name, verdict in verdicts.items() if verdict == "FAILED"}
-    # A test that was failing before the break was applied was not felled by it.
-    # Only subtracted from what the break is blamed for; a named test that is
-    # already red is left alone, because it stays a test this break is recorded
-    # as reddening and the run has not shown otherwise.
-    went_red -= (already_failing or set()) - named
-    return Measured(
-        stayed_green=[name for name in guard.red if name not in went_red],
-        also_went_red=sorted(went_red - named),
-    )
 
 
 def the_timing_line(rebuild_seconds: float, run_seconds: float) -> str:
@@ -2434,13 +2694,19 @@ def say_what_it_found(guard: Guard, measured: Measured) -> None:
             print(f"       {name}")
     if measured.stayed_green or measured.also_went_red:
         print()
-    elif len(guard.red) == 1:
-        print("   the one test named went red, and nothing else did")
+        return
+    # A fast agreement ran only what it asked, so it never says "and nothing
+    # else did", which is the whole run's claim.
+    nothing_else = (
+        "nothing else did"
+        if measured.question is None
+        else f"nothing else that ran did: {len(measured.question.added)} added "
+        f"since {measured.question.since}"
+    )
+    if len(guard.red) == 1:
+        print(f"   the one test named went red, and {nothing_else}")
     else:
-        print(
-            f"   all {how_many(len(guard.red), 'test')} named went red, and "
-            "nothing else did"
-        )
+        print(f"   all {how_many(len(guard.red), 'test')} named went red, and {nothing_else}")
 
 
 def verdicts_in(log_text: str) -> dict[str, str]:
@@ -2660,7 +2926,7 @@ def verdicts_in(log_text: str) -> dict[str, str]:
             # this block earns one.
             verdicts.pop(name, None)
             continue
-        if name is None or line.startswith("   timed: "):
+        if name is None or line.startswith(("   timed: ", THE_PATH)):
             continue
         if line == CONTENDED:
             verdicts.pop(name, None)
@@ -2690,7 +2956,8 @@ CONTENDED = "   contended: another cargo ran during this record"
 THE_PATH = "   path: "
 
 AGREED = re.compile(
-    r"^   (the one test named|all \d+ tests named) went red, and nothing else did$"
+    r"^   (the one test named|all \d+ tests named) went red, and nothing else "
+    r"(did|that ran did: \d+ added since [0-9a-f]+)$"
 )
 SHORT = re.compile(
     r"^   (\d+ of \d+ named tests? stayed green with the guard broken:"
@@ -3112,9 +3379,27 @@ def the_closing_verdict(selected: int, took_the_fast_path: int) -> str:
     The guard reddens the tests its record names, on the fast path, and nothing went red that the record does not name among the tests that ran.
     Whether a test that was already there when the record was last measured now goes red as well was not asked on the fast path. The sweep asks it.
     """
+    if not took_the_fast_path:
+        if selected == 1:
+            return "The guard still goes red when what it defends breaks, and nothing else does."
+        return f"All {selected} guards redden exactly the tests their records name."
     if selected == 1:
-        return "The guard still goes red when what it defends breaks, and nothing else does."
-    return f"All {selected} guards redden exactly the tests their records name."
+        return (
+            "The guard reddens the tests its record names, on the fast path, and "
+            "nothing went red that the record does not name among the tests that ran.\n"
+            "Whether a test that was already there when the record was last measured "
+            "now goes red as well was not asked on the fast path. The sweep asks it."
+        )
+    fast = how_many(took_the_fast_path, "record")
+    whole = how_many(selected - took_the_fast_path, "record")
+    return (
+        f"All {selected} guards redden the tests their records name, {fast} on the "
+        f"fast path and {whole} on the whole run, and nothing went red that a record "
+        "does not name among the tests that ran.\n"
+        "Whether a test that was already there when a record was last measured now "
+        f"goes red as well was not asked of the {fast} on the fast path. The sweep "
+        "asks it."
+    )
 
 
 class Logged:
@@ -3151,8 +3436,8 @@ def measured_and_said(
     measuring=measure,
     question: FastQuestion | None = None,
 ) -> str:
-    """Measure one record and print what was found: "agreed", "slipped", or
-    "given up on".
+    """Measure one record and print what was found: "agreed", "agreed on the
+    fast path", "slipped", or "given up on".
 
     A record that could not be measured is said so and counted as not
     agreeing, in one of the shapes `verdicts_in` reads. One given up on at its
@@ -3290,7 +3575,9 @@ def measured_and_said(
         print(f"   this record could not be measured: {broke!r}\n")
         return "slipped"
     say_what_it_found(guard, measured)
-    return "agreed" if measured.agrees_with_the_record() else "slipped"
+    if not measured.agrees_with_the_record():
+        return "slipped"
+    return "agreed" if measured.question is None else "agreed on the fast path"
 
 
 def main() -> int:
@@ -3664,7 +3951,15 @@ def main() -> int:
     # already-failing set from.
     guards = [guard for guard in guards if guard.suite not in given_up_suites]
 
+    # The fast path, only under --remeasure and never with --named-only: read
+    # once, on the unbroken tree, before the first break. Every other run asks
+    # every record the whole question, as it always did.
+    questions: dict[str, FastQuestion | str] = {}
+    if asked.remeasure and not asked.named_only and guards:
+        questions = the_fast_questions_for(guards, asked.time_limit)
+
     judged_this_run = 0
+    took_the_fast_path = 0
     with tempfile.TemporaryDirectory(prefix="wixen-guards-") as made:
         scratch = Path(made)
         for guard in guards:
@@ -3681,12 +3976,17 @@ def main() -> int:
                 # artefact and no evidence for it. A check that cannot be
                 # watched is one somebody kills.
                 print(f"-- {guard.name}", flush=True)
+                question = questions.get(guard.name)
+                if isinstance(question, str):
+                    print(f"{THE_PATH}whole, {question}", flush=True)
+                    question = None
                 held = measured_and_said(
                     guard,
                     scratch,
                     already_failing.get(guard.suite),
                     asked.named_only,
                     Budget.starting_now(asked.time_limit),
+                    question=question,
                 )
                 # Polled once the run has returned. A cargo alive now either
                 # ran beside the suite or started as it ended, and this cannot
@@ -3708,9 +4008,11 @@ def main() -> int:
                 contended.append(guard.name)
             elif held == "given up on":
                 gave_up.append(guard.name)
-            elif held == "agreed":
+            elif held in ("agreed", "agreed on the fast path"):
                 agreed.append(guard)
                 judged_this_run += 1
+                if held == "agreed on the fast path":
+                    took_the_fast_path += 1
             else:
                 slipped.append(guard.name)
                 judged_this_run += 1
@@ -3741,6 +4043,8 @@ def main() -> int:
                 "with, so a test added\nto any file they name fails the commit that "
                 "adds it."
             )
+            if questions:
+                print(f"{took_the_fast_path} of {len(agreed)} agreed on the fast path.")
 
     # Both ways written out rather than one built from parts. Three words have
     # to agree in number and this project has already read out "1 changes are
@@ -3832,11 +4136,7 @@ def main() -> int:
             f"\n{closing}"
         )
         return 0
-    print(
-        "The guard still goes red when what it defends breaks, and nothing else does."
-        if selected == 1
-        else f"All {selected} guards redden exactly the tests their records name."
-    )
+    print(the_closing_verdict(selected, took_the_fast_path))
     print(f"\n{closing}")
     return 0
 
