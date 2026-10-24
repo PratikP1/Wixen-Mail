@@ -46,20 +46,27 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.98.1
       
+    # Restore only, never save. Clippy restores and saves these three caches
+    # under the same keys and finishes first, so this job's save was refused
+    # on every run that missed the cache, 81 of 81 from 2026-09-14 to
+    # 2026-10-22, after packing the target folder for about ten minutes. A
+    # hit still restores what Clippy saved.
+    # tests/house_style.rs::test_the_test_suite_job_saves_no_cache_and_restores_what_another_job_saves
+    # holds this job to restoring what another job saves.
     - name: Cache cargo registry
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Cache cargo index
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: ~/.cargo/git
         key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
         
     - name: Cache cargo build
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}

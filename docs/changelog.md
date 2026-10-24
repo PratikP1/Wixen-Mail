@@ -3789,6 +3789,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Inboxes open, choose Oldest first, arrow to a folder and back, and the first row should be the
   oldest. If you never chose a sort, All Inboxes reads as before.
 
+### Known limitations
+
+- **A weakness in the arithmetic behind elliptic curve PGP keys is known and not yet fixed
+  (2026-10-24, FOUND-23).** On 23 October 2026 an advisory, RUSTSEC-2026-0387, was published
+  against crypto-bigint 0.5.5, a library the PGP support uses for keys on elliptic curves. Some
+  of its calculations can take slightly different amounts of time depending on the secret
+  numbers in them, and somebody able to time those calculations closely on your computer could
+  in principle learn something about a key. The fix is in a newer version that the PGP library
+  does not use yet, including in its newest release, so there is nothing Wixen Mail can update
+  to today, and it was accepted as a known risk on 24 October 2026. It does not touch RSA keys,
+  S/MIME, or mail that is not PGP, and opening a message gives the person who sent it no way to
+  time anything. It will be removed when the PGP library moves to the fixed version.
+
 ### Added
 
 - **Event and reminder times move in blocks.** The tester on 2026-09-15 (#41): "each event

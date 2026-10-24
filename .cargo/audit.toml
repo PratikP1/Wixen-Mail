@@ -84,6 +84,41 @@ ignore = [
     # their Unix permissions and links, which nothing here calls, and all
     # three are patched at or below 9.0.4.
 
+    # RUSTSEC-2026-0387. crypto-bigint 0.5.5, dated 2026-10-23: several
+    # operations meant to take the same time whatever the numbers, among them
+    # subtraction, division and Montgomery multiplication, can branch on secret
+    # values depending on the compiler and the processor, so their timing can
+    # leak what they work on. Patched in 0.7.6 and nothing on the 0.5 line.
+    # Accepted on 2026-10-24, as Pratik answered that day ("1 is fine"), as a
+    # known risk for now; `.planning/WINDOWS.md` row 954 stays open beside it.
+    #
+    # Why no lock move clears it. `cargo tree -i crypto-bigint@0.5.5` on
+    # 2026-10-24 reaches it only through pgp 0.20.0, by way of the elliptic
+    # curve 0.13 family: k256, p256, p384, p521, their ecdsa 0.16 and
+    # primeorder, and cx448. pgp 0.21.0 of 2026-10-03, the newest on crates.io
+    # that day by `cargo search pgp`, still asks for elliptic-curve, k256 and
+    # p256 at 0.13 and cx448 at 0.1.1 in its own manifest, read that day, so
+    # moving pgp would not move this either.
+    #
+    # What it reaches. Only OpenPGP keys on elliptic curves: reading or making
+    # a signature, or opening a message, with such a key. RSA keys go through
+    # rsa 0.9.10, which uses num-bigint-dig and not this crate (its own risk is
+    # the RUSTSEC-2023-0071 entry below). S/MIME goes through Windows' CNG and
+    # never reaches either. Exploiting a timing leak like this one needs an
+    # attacker able to time OpenPGP operations precisely on the machine doing
+    # them, many times over, and a mail client opening a message on its
+    # reader's own computer gives a sender no such measurement; the
+    # RUSTSEC-2023-0071 entry below argues the same about what goes back to a
+    # sender, and that argument's expiry condition applies here as well. The
+    # PGP key manager is still labelled experimental on the File menu.
+    #
+    # Exit condition: remove this entry when pgp moves to elliptic-curve 0.14
+    # or later on crypto-bigint 0.7.6 or later, and Cargo.lock no longer
+    # holds crypto-bigint 0.5. Check at every pgp release. `scripts/audit.sh`
+    # refuses an accepted id that is no longer reported, so it cannot outstay
+    # that move.
+    "RUSTSEC-2026-0387",
+
     # RUSTSEC-2023-0071. rsa 0.9.10, reached through pgp 0.20.0, which is how
     # this program reads OpenPGP mail. Decided on 2026-09-13 after being held
     # open, undecided, since the local audit gate was written three days before.

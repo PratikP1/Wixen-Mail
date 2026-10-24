@@ -4771,6 +4771,196 @@ fn test_the_history_reading_can_see_a_job_with_one_commit() {
     );
 }
 
+/// The job of a workflow whose `name:` is `name`, as `(key, text)`, from
+/// `the_jobs_of`, or `None` when no job carries that name. A step's own
+/// `- name:` line never matches, because it opens with the dash.
+fn the_job_named(workflow: &str, name: &str) -> Option<(String, String)> {
+    let wanted = format!("name: {name}");
+    the_jobs_of(workflow)
+        .into_iter()
+        .find(|(_, text)| text.lines().any(|line| line.trim() == wanted))
+}
+
+/// A step that uses `actions/cache` in one of its three forms.
+#[derive(Debug)]
+struct CacheStep {
+    /// The step's `name:`, or its action when it has none.
+    name: String,
+    /// `actions/cache@` and `actions/cache/save@` save when the job ends;
+    /// `actions/cache/restore@` only restores.
+    saves: bool,
+    /// The `path:` and `key:` text as written, one line each.
+    path: String,
+    key: String,
+}
+
+/// Whether a `uses:` value is the cache action that saves, the one that only
+/// restores, or not a cache action at all.
+fn whether_a_cache_action_saves(action: &str) -> Option<bool> {
+    if action.starts_with("actions/cache@") || action.starts_with("actions/cache/save@") {
+        Some(true)
+    } else if action.starts_with("actions/cache/restore@") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// The first value a step gives `key`, its lines read with the step's
+/// opening dash already taken off.
+fn the_value_in<'a>(step: &[&'a str], key: &str) -> Option<&'a str> {
+    let opening = format!("{key}: ");
+    step.iter()
+        .find_map(|line| line.trim().strip_prefix(opening.as_str()))
+        .map(str::trim)
+}
+
+/// The cache steps of a job's text, told apart at the lines that open with
+/// `- `. A `path:` written as a block over several lines is read as its
+/// first line, which no workflow here does.
+fn the_cache_steps_of(job: &str) -> Vec<CacheStep> {
+    let mut steps: Vec<Vec<&str>> = Vec::new();
+    for line in job.lines() {
+        match line.trim_start().strip_prefix("- ") {
+            Some(first) => steps.push(vec![first]),
+            None => {
+                if let Some(step) = steps.last_mut() {
+                    step.push(line);
+                }
+            }
+        }
+    }
+    steps
+        .iter()
+        .filter_map(|step| {
+            let action = the_value_in(step, "uses")?;
+            let saves = whether_a_cache_action_saves(action)?;
+            Some(CacheStep {
+                name: the_value_in(step, "name").unwrap_or(action).to_string(),
+                saves,
+                path: the_value_in(step, "path").unwrap_or_default().to_string(),
+                key: the_value_in(step, "key").unwrap_or_default().to_string(),
+            })
+        })
+        .collect()
+}
+
+/// What is wrong with the cache steps of the job keyed `job_key`, one line
+/// each, empty when nothing is.
+///
+/// A step that saves is named: Clippy restores and saves the same three
+/// caches under the same keys and finishes first, so the Test Suite's save
+/// was packed for minutes and then refused, 81 of 81 runs that missed from
+/// 2026-09-14 to 2026-10-22. And a step that restores a path and key no other
+/// job of the workflow saves is named, because it would miss on every run.
+fn what_the_job_caches_wrongly(workflow: &str, job_key: &str) -> Vec<String> {
+    let jobs = the_jobs_of(workflow);
+    let saved_elsewhere: Vec<CacheStep> = jobs
+        .iter()
+        .filter(|(key, _)| key != job_key)
+        .flat_map(|(_, text)| the_cache_steps_of(text))
+        .filter(|step| step.saves)
+        .collect();
+    let Some((_, job)) = jobs.iter().find(|(key, _)| key == job_key) else {
+        return vec![format!("no job is keyed {job_key}")];
+    };
+    the_cache_steps_of(job)
+        .into_iter()
+        .filter_map(|step| {
+            if step.saves {
+                Some(format!(
+                    "the \"{}\" step saves its cache; Clippy saves the same keys and \
+                     finishes first, so a save here is packed for minutes and then \
+                     refused; use actions/cache/restore",
+                    step.name
+                ))
+            } else if saved_elsewhere
+                .iter()
+                .any(|other| other.path == step.path && other.key == step.key)
+            {
+                None
+            } else {
+                Some(format!(
+                    "the \"{}\" step restores {} under {}, which no other job saves, so it \
+                     would miss on every run",
+                    step.name, step.path, step.key
+                ))
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn test_the_test_suite_job_saves_no_cache_and_restores_what_another_job_saves() {
+    // What this cannot see is a runner: whether the cache service really
+    // finds what Clippy saved. A ledger row opened by 13.3-24.7 waits for that.
+    let ci = fs::read_to_string(".github/workflows/ci.yml").expect("the ci workflow");
+    let (key, job) = the_job_named(&ci, "Test Suite")
+        .expect("ci.yml has no job named Test Suite, so this reading would read nothing");
+    assert!(
+        !the_cache_steps_of(&job).is_empty(),
+        "the Test Suite job holds no cache step, so the reading read nothing and its \
+         passing would mean nothing"
+    );
+    let wrong = what_the_job_caches_wrongly(&ci, &key);
+    assert!(
+        wrong.is_empty(),
+        "The Test Suite job's caches in ci.yml:\n  {}",
+        wrong.join("\n  ")
+    );
+}
+
+#[test]
+fn test_the_cache_reading_can_see_a_step_that_saves() {
+    // The companion: the reading iterates over steps, so it is shown each
+    // shape it must name and each it must pass.
+    let sound = "jobs:\n  test:\n    name: Test Suite\n    steps:\n    - name: Cache cargo build\n      uses: actions/cache/restore@v4\n      with:\n        path: target\n        key: build-1\n    - run: cargo test\n  clippy:\n    name: Clippy\n    steps:\n    - name: Cache cargo build\n      uses: actions/cache@v4\n      with:\n        path: target\n        key: build-1\n    - run: cargo clippy\n";
+    let (key, _) = the_job_named(sound, "Test Suite").expect("the Test Suite job");
+    assert_eq!(key, "test");
+    assert!(
+        what_the_job_caches_wrongly(sound, "test").is_empty(),
+        "a Test Suite that restores what Clippy saves was named"
+    );
+
+    for saving in ["actions/cache@v4", "actions/cache/save@v4"] {
+        let saves = sound.replacen("actions/cache/restore@v4", saving, 1);
+        let wrong = what_the_job_caches_wrongly(&saves, "test");
+        assert!(
+            wrong.len() == 1 && wrong[0].contains("\"Cache cargo build\" step saves"),
+            "a step using {saving} was not named as saving: {wrong:?}"
+        );
+    }
+
+    let unpaired = sound.replacen("key: build-1", "key: build-2", 1);
+    let wrong = what_the_job_caches_wrongly(&unpaired, "test");
+    assert!(
+        wrong.len() == 1
+            && wrong[0].contains("restores target under build-2")
+            && wrong[0].contains("no other job saves"),
+        "a key nobody else saves was not named: {wrong:?}"
+    );
+
+    let unnamed = "    steps:\n    - uses: actions/cache/save@v4\n      with:\n        path: target\n        key: k\n";
+    let steps = the_cache_steps_of(unnamed);
+    assert!(
+        steps.len() == 1 && steps[0].saves && steps[0].name == "actions/cache/save@v4",
+        "a step with no name was not read, or not named by its action: {steps:?}"
+    );
+
+    let commented = "jobs:\n  test:\n    name: Test Suite\n    steps:\n    - name: Build\n      # uses: actions/cache@v4\n      run: cargo build\n";
+    let (_, job) = the_job_named(commented, "Test Suite").expect("the Test Suite job");
+    assert!(
+        the_cache_steps_of(&job).is_empty(),
+        "a commented-out uses line was read as a cache step"
+    );
+
+    let no_test_suite = sound.replace("name: Test Suite", "name: Tests");
+    assert!(
+        the_job_named(&no_test_suite, "Test Suite").is_none(),
+        "a workflow with no Test Suite job was read as having one"
+    );
+}
+
 /// What a `permissions:` key at `indent` spaces grants `contents`, or `None`
 /// when there is no such key. A block that names other scopes and leaves
 /// `contents` out grants it `none`, as GitHub reads it; `read-all` and
