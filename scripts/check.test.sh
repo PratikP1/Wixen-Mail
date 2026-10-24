@@ -2308,4 +2308,60 @@ else
     esac
 fi
 
+# A red naming one of those tests cannot be judged on a locked session: the
+# test cannot run, and a test that cannot run neither passes nor fails. So such
+# a commit is refused before anything runs, and judged as before when the
+# session is unlocked or the commit names other tests.
+a_red_naming="$work/a-red-naming-a-clipboard-test"
+printf 'a red\n\nFails-until-green: %s\n' "${the_clipboard_tests[0]-nothing on the list}" > "$a_red_naming"
+a_red_naming_others="$work/a-red-naming-other-tests"
+printf 'a red\n\nFails-until-green: application::allowed::tests::test_a\n' > "$a_red_naming_others"
+
+expect_cannot_judge() {
+    local desc="$1" want="$2" said status
+    shift 2
+    said="$(ask_from_the_tree --what-a-locked-session-cannot-judge "$@" 2>&1)"
+    status=$?
+    if ! the_list_is_there; then
+        suite_case_failed "$desc" "check.sh names no target or no test that needs the clipboard"
+    elif [ "$status" -ne 0 ] || [ "$said" != "$want" ]; then
+        suite_case_failed "$desc" "exited $status and answered:" "$said" "wanted:" "$want"
+    else
+        suite_case_passed "$desc"
+    fi
+}
+
+expect_cannot_judge "a red naming a clipboard test cannot be judged on a locked session" \
+    "${the_clipboard_tests[0]-}" locked "$a_red_naming"
+expect_cannot_judge "a red naming a clipboard test is judged as before on an unlocked session" \
+    "" unlocked "$a_red_naming"
+expect_cannot_judge "a red naming other tests is not refused for the lock" \
+    "" locked "$a_red_naming_others"
+
+a_locked_red="$work/a-locked-red"
+a_commit_being_made "$a_locked_red"
+: > "$a_locked_red.cargo-calls"
+locked_red_said="$( cd "$a_locked_red" && CARGO_CALLS="$a_locked_red.cargo-calls" \
+    PATH="$locked_python:$stand_in_bin:$PATH" \
+    timeout 60 bash "$subject" --message-file="$a_red_naming" 2>&1 )"
+locked_red_status=$?
+locked_red_calls="$(cat "$a_locked_red.cargo-calls")"
+if ! the_list_is_there; then
+    suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+        "check.sh names no target or no test that needs the clipboard"
+elif [ "$locked_red_status" -eq 0 ] || [ -n "$locked_red_calls" ]; then
+    suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+        "exited $locked_red_status and the stand-in saw:" "$locked_red_calls" "the run said:" "$locked_red_said"
+else
+    case "$locked_red_said" in
+        *"this red cannot be judged here"*"Nothing was run."*)
+            suite_case_passed "a red naming a clipboard test on a locked session is refused before any cargo call"
+            ;;
+        *)
+            suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+                "the refusal does not say why in:" "$locked_red_said"
+            ;;
+    esac
+fi
+
 suite_verdict
