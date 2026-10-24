@@ -502,3 +502,15 @@ again from `main` after the new build. The setup file for build 1403 stays in `d
 two older ones and is never installed or run. Then Pratik installs the new build, over the one
 he has and never uninstalling first, and 14-10's sitting follows from branch
 `14-10-sitting-2`, its sheet corrected against the new build by its own executor.
+
+Added 2026-10-24 by 13.3-25. The phase closes at 13.3-25's merge, after its full gate on the
+branch. The paragraph above was overtaken the day it was written: Pratik decided on 2026-10-20,
+as 13.3-23's summary records, that wxDragon moves to its latest release in a phase 13.4, after
+13.3 and before the sittings. So phase 13.4 comes next, planned outside the tree and landed
+after this merge, and on his yes of 2026-10-23 it starts with ledgers 936, 937, 938 and 941.
+14-08.2 then builds after 13.4 closes, holding phases 13.2, 13.3 and 13.4, and everything
+else above stands: the branch holding build 1403's page renamed and kept, the install page
+redone for the new build, Pratik installing it over the one he has, and 14-10's sitting.
+`git rev-list origin/main..main --count` answered 535 on 2026-10-24 before this merge, 22 of
+those on no branch of `origin`; `main` is pushed once the phase closes, on his standing OK of
+2026-10-22. Ledger 955 waits for the first pull request run after 13.3-24.7's merge.
