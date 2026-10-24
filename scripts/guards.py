@@ -974,7 +974,10 @@ class FullNames(NamedTuple):
 
 
 def the_full_names_of(
-    added: list[tuple[str, str]], listed: list[str], suite: tuple[str, ...]
+    added: list[tuple[str, str]],
+    listed: list[str],
+    suite: tuple[str, ...],
+    ignored: set[str] = frozenset(),
 ) -> FullNames:
     """The full names of the added tests, from the suite's own list.
 
@@ -999,6 +1002,19 @@ def the_full_names_of(
     ...     ("--test", "house_style"),
     ... )
     FullNames(found=['test_x'], left_out=[('src/application/calendar.rs', 'test_a')], missing=[])
+
+    A test the suite's list holds and its harness ignores is never run, so it
+    is left out rather than waited for. `--list` names an ignored test like any
+    other, and on 2026-10-23 the first records timed on the fast path all fell
+    back to the whole run waiting for one:
+
+    >>> the_full_names_of(
+    ...     [("src/application/calendar.rs", "test_a"), ("src/application/calendar.rs", "test_slow")],
+    ...     ["application::calendar::tests::test_a", "application::calendar::tests::test_slow"],
+    ...     ("--lib",),
+    ...     ignored={"application::calendar::tests::test_slow"},
+    ... )
+    FullNames(found=['application::calendar::tests::test_a'], left_out=[('src/application/calendar.rs', 'test_slow')], missing=[])
     """
     by_last_segment: dict[str, list[str]] = {}
     for name in listed:
@@ -1075,6 +1091,7 @@ def the_question_for(
     held_now: list[tuple[str, int]],
     where: WhereItWasMeasured | None,
     listed: list[str],
+    ignored: set[str] = frozenset(),
 ) -> FastQuestion | str:
     """The fast question for a record, or why it takes the whole run.
 
@@ -1123,6 +1140,17 @@ def the_question_for(
     ... ), ["test_named_h", "test_h_new"])
     >>> asked.added, asked.left_out
     (('test_h_new',), (('src/application/calendar.rs', 'test_c_new'),))
+
+    A test added since that the suite's harness ignores is left out too, and
+    the question does not wait for it:
+
+    >>> asked = the_question_for(only_a, [(a, 5)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, only_a, [None], [(a, 4)],
+    ...     {a: ["test_named", "t2", "t3", "t4"], b: ["t5"]},
+    ...     {a: ["test_named", "t2", "t3", "t4", "test_a_new"], b: ["t5", "test_b_new"]},
+    ... ), listed, ignored={"application::allowed::tests::test_b_new"})
+    >>> asked.added, asked.left_out
+    (('application::calendar::tests::test_a_new',), (('src/application/allowed.rs', 'test_b_new'),))
 
     The readings in order, each one a reason before the next is asked:
 
@@ -1323,7 +1351,7 @@ def the_fast_path_line(question: FastQuestion) -> str:
     what of the added tests its suite does not compile.
 
     >>> print(the_fast_path_line(FastQuestion("1a2b3c4d", ("a::t",), (), (("src/b.rs", "t"),), ())))
-       path: fast, last measured at 1a2b3c4d, 1 test added since, and 1 test left out that its suite does not compile
+       path: fast, last measured at 1a2b3c4d, 1 test added since, and 1 test left out that its suite does not compile or ignores
     """
     left_out = (
         f", and {how_many(len(question.left_out), 'test')} left out that its suite does not compile"
