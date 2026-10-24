@@ -720,6 +720,41 @@ That measures those records and writes the counts down again for each one whose
 red list turns out still to be right. A record that comes out short is corrected
 by hand first; the run after that records it.
 
+**Since 2026-10-23, a record flagged only because the files it names gained
+tests is measured on a fast path**, on Pratik's "yes" of 2026-10-22. 13.3-18's
+re-measurement of that day is why: 122 records flagged by tests added to two
+contacts files, about 4.5 hours at 126 to 149 seconds a record
+(`13.3-18-SUMMARY.md`). Under `--remeasure`, without `--named-only`, such a
+record is asked a fast question under its break: the tests it names, and every
+test added since the commit `git blame` says last wrote it, in any file its
+suite compiles, whichever record counts that file or none. Not only the files
+it counts, because the count check sees only those, and a test added anywhere
+else since the record was last measured has never run under its break. Its
+counts are written only when every named test goes red and nothing else that
+ran does. Anything else hands it to the whole run under the same break, which
+is what reports a record naming too few. A count that fell, a test name gone
+from any file it counts, a record that commit did not measure or that was
+edited since, a name the source reading cannot read, and a question too long
+for one command line always take the whole run. Each record's block says
+`path: fast` or `path: whole` and why, and what each path costs is on
+`docs/development/measurements.md`.
+
+**What the fast path gives up, said plainly.** A test that was already there
+when the record was last measured, which changed code now brings within reach
+of its break. The whole re-measurement used to find that whenever a count
+moved; since 2026-10-23 the sweep finds it alone. Two measured cases set where
+the line is drawn, each a test added after a record was last written to a file
+the record did not count, so each is inside the fast question and outside a
+question of the files it counts. 11-11.1.3's re-measurement of 2026-09-20 found
+three records thirteen tests short in `moves_waiting` and `server_thread_ids`,
+modules no record named
+(`.planning/phases/11-reading-and-the-list/11-11.1.3-SUMMARY.md`). And
+13.3-18's of 2026-10-22 found "only a deletion a provider took is let go of by
+the clock" reddening 13.3-17's test in
+`src/application/every_google_calendar.rs`, a file it had never named, added
+after the record was last written at `f1fd7704` (`13.3-18-SUMMARY.md`, and
+13.3-24.6's premise 9 for the commit).
+
 The check is a net under the common case and not a replacement for the run.
 Three things it cannot see. A test added to a file no record names can still
 redden a record, and nothing about the counts predicts that. A count is a size
@@ -729,7 +764,11 @@ was. And what it costs when it fires is not flat. Measured 2026-09-06 against
 but a test added to `src/application/contacts_sync.rs` flags 77, which at a build
 and a run each is hours. That case is what the paragraph below about the critical
 path is for, and the answer is to run the command it prints in the background
-rather than to lower the check.
+rather than to lower the check. Since 2026-10-23 most of such a set takes the
+fast path, a build and a short run a record rather than a build and the whole
+library: measured that day at `b24a0f8d`, 18 of 20 records one test added to
+`src/application/contacts_sync.rs` flagged cost 74 s a record against 130 to
+139 s through the whole run, both rows on `docs/development/measurements.md`.
 
 **Count records, not mentions, and do not use a ratio to convert between them.**
 This file used to say a grep for a file name overcounts by roughly two, and ten
