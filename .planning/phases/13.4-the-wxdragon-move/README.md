@@ -106,7 +106,8 @@ changes. 13.4-04's documents task writes that answer into FOUND-04's dated line,
 942, which still asks for such a server to be seen.
 
 **Three questions the staging asked are not answered.** None blocks a plan: each plan runs on the
-choice written in it unless Pratik says otherwise before that plan starts.
+choice written in it unless Pratik says otherwise before that plan starts. That was true until
+2026-10-24, when he answered the second and third, and 13.4-09's, in the paragraph after the list.
 
 1. **13.4-01 is pushed.** It changes what a contacts sync says, from "1 error" to the Allow Changes
    sentence, so `CLAUDE.md` requires a pushed branch and a pull request anyway.
@@ -124,6 +125,19 @@ choice written in it unless Pratik says otherwise before that plan starts.
    save, and Save Draft pressed after the refusal was said once says only "Draft saved: <subject>."
    (13.4-04 opens a `todo` row for each). Any of the four can be folded into its plan before that
    plan starts, if Pratik says so.
+
+**Answered 2026-10-24, in chat: "ok to crate updates. Fold the other items in."** He was asked
+three things in one message: whether 13.4-09's table of versions was the one to install, whether
+the four gaps above should be fixed now, and, told it would run as planned unless he said
+otherwise, 13.4-04's recovery sentence. So the four gaps are folded in, each by the
+recommendation written for it and each with a failing case first: 13.4-02 fixes the calendar
+events manager's titles and the vCard import's address in the log, and 13.4-04 the two draft
+gaps, and none of the four `todo` rows is opened. 13.4-04 keeps choice C-1 with the plan's words,
+since he asked for no change. And 13.4-09's table is confirmed as he saw it, wxdragon,
+wxdragon-sys and wxdragon-macros from 0.9.17 to 0.9.23 with the packages the lock moves beside
+them; 13.4-09 takes the preview again, proceeds if every package and version matches, and stops
+at its checkpoint to report the difference if any does not. Recorded here once, by 13.4-02, the
+first plan to run after the answer.
 
 ## What upstream changed since the research
 
