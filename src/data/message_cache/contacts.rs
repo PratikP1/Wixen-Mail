@@ -585,7 +585,7 @@ impl MessageCache {
         // one person whose address book had split her across two cards.
         let mut written_down: std::collections::HashSet<usize> = std::collections::HashSet::new();
         let mut waiting: std::collections::HashSet<usize> = std::collections::HashSet::new();
-        for entry in Self::cards_in(vcard_data) {
+        for (place, entry) in Self::cards_in(vcard_data).into_iter().enumerate() {
             let Some(from_card) = Self::contact_from_vcard_block(account_id, &entry) else {
                 // The one rule that turns a card away, so this counts one
                 // thing and not several: a card naming no address this
@@ -633,7 +633,10 @@ impl MessageCache {
                 }
                 Err(e) => {
                     read.not_written_down += 1;
-                    tracing::warn!("vCard import skipped contact '{}': {}", contact.email, e)
+                    // By its place in the file and never by its address:
+                    // the address is somebody else's, and the log is what
+                    // testers attach to bug reports.
+                    tracing::warn!("vCard import skipped card {} in the file: {}", place + 1, e)
                 }
             }
         }

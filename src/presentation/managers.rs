@@ -85,6 +85,21 @@ impl NotSaved {
             logged: sentence,
         }
     }
+
+    /// A row somebody else named, a contact or an event whose title came in
+    /// an invitation: named on screen, where the person knows it by that
+    /// name, and numbered in the log by the id this program gave it. One
+    /// place builds both, so the two cannot drift apart.
+    fn named_on_screen_and_numbered_in_the_log(
+        id: &str,
+        name: &str,
+        why: &dyn std::fmt::Display,
+    ) -> Self {
+        Self {
+            said: format!("{name}: {why}"),
+            logged: format!("{id}: {why}"),
+        }
+    }
 }
 
 impl From<String> for NotSaved {
@@ -1479,10 +1494,9 @@ pub(crate) fn change_an_opened_event(
             },
             &data.summary,
         )),
-        Err(e) => Err(NotChanged::Failed(NotSaved::the_same(format!(
-            "{}: {}",
-            data.summary, e
-        )))),
+        Err(e) => Err(NotChanged::Failed(
+            NotSaved::named_on_screen_and_numbered_in_the_log(&opened.id, &data.summary, &e),
+        )),
     }
 }
 
@@ -1499,7 +1513,11 @@ fn add_an_event(
             crate::application::calendar::WrittenDown::Created,
             &data.summary,
         )),
-        Err(e) => Err(NotSaved::the_same(format!("{}: {}", data.summary, e))),
+        Err(e) => Err(NotSaved::named_on_screen_and_numbered_in_the_log(
+            &entry.id,
+            &data.summary,
+            &e,
+        )),
     }
 }
 
@@ -1530,10 +1548,9 @@ fn remove_an_opened_event(
     match written {
         Ok(()) => Ok(what_a_delete_answer_did(one_day_off, &opened.summary)),
         // Not called a deletion when it was a save. This is read out.
-        Err(e) => Err(NotChanged::Failed(NotSaved::the_same(format!(
-            "{}: {}",
-            opened.summary, e
-        )))),
+        Err(e) => Err(NotChanged::Failed(
+            NotSaved::named_on_screen_and_numbered_in_the_log(&opened.id, &opened.summary, &e),
+        )),
     }
 }
 
@@ -2933,7 +2950,9 @@ pub fn manage_contacts(
 }
 
 /// Write back what the contact manager returned, and name anything that would
-/// not save.
+/// not save: by her name for the screen and by her id for the log, because
+/// the log is attached to bug reports (ledger 937). A deletion is named by
+/// her id in both, as it always was.
 ///
 /// Apart from the windows, this is the whole of saving a contact edit, so it is
 /// where the rule about which rows get written can be tested against a real
@@ -2986,14 +3005,22 @@ fn save_what_the_contact_manager_returned(
             Some(opened) => match cache.get_contact(&opened.id) {
                 Ok(now) => Some(now.unwrap_or_else(|| opened.clone())),
                 Err(e) => {
-                    failures.push(NotSaved::the_same(format!("{}: {}", edited.name, e)));
+                    failures.push(NotSaved::named_on_screen_and_numbered_in_the_log(
+                        &edited.id,
+                        &edited.name,
+                        &e,
+                    ));
                     continue;
                 }
             },
         };
         let contact = contact_convert::to_stored(&edited, account, replacing.as_ref());
         if let Err(e) = cache.save_contact(&contact) {
-            failures.push(NotSaved::the_same(format!("{}: {}", contact.name, e)));
+            failures.push(NotSaved::named_on_screen_and_numbered_in_the_log(
+                &contact.id,
+                &contact.name,
+                &e,
+            ));
         }
     }
     failures
