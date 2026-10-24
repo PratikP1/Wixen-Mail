@@ -47,6 +47,7 @@ import time
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parent.parent
 RECORD = ROOT / "guards" / "guards.toml"
@@ -179,6 +180,9 @@ class Guard:
     # run could be believed. A record that names its own target leaves every
     # other record measuring exactly what it measured when it was written.
     suite: tuple[str, ...] = ("--lib",)
+    # The record's `tests_last_seen`, as sorted (file, count) pairs, so a
+    # record is compared by what it says and not by how its counts are spelled.
+    counted: tuple[tuple[str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -262,11 +266,30 @@ class TheTreeWasLeftBroken(Wrong):
     """
 
 
-def read_record() -> list[Guard]:
-    if not RECORD.exists():
-        raise Wrong(f"{RECORD} is not there, so there is nothing to measure")
-    written = tomllib.loads(RECORD.read_text(encoding="utf-8"))
-    guards = [
+def the_guards_in(text: str) -> list[Guard]:
+    """Every record a text of `guards/guards.toml` holds, asking nothing of the
+    tree, so a commit's copy of the file reads the same way as today's.
+
+    Counts written on one line and counts spread over lines are one record:
+
+    >>> spread = (
+    ...     '[[guard]]\\nname = "a"\\nfile = "src/a.rs"\\nbefore = "x"\\nafter = "y"\\n'
+    ...     'red = ["t"]\\ntests_last_seen = [\\n    { file = "src/a.rs", tests = 3 },\\n'
+    ...     '    { file = "src/b.rs", tests = 1 },\\n]\\n'
+    ... )
+    >>> one_line = (
+    ...     '[[guard]]\\nname = "a"\\nfile = "src/a.rs"\\nbefore = "x"\\nafter = "y"\\n'
+    ...     'red = ["t"]\\ntests_last_seen = [{ file = "src/b.rs", tests = 1 }, '
+    ...     '{ file = "src/a.rs", tests = 3 }]\\n'
+    ... )
+    >>> the_guards_in(spread) == the_guards_in(one_line)
+    True
+    >>> the_guards_in(spread)[0].counted
+    (('src/a.rs', 3), ('src/b.rs', 1))
+    >>> the_guards_in(spread.replace("tests = 3", "tests = 4")) == the_guards_in(one_line)
+    False
+    """
+    return [
         Guard(
             name=entry["name"],
             file=ROOT / entry["file"],
@@ -275,8 +298,14 @@ def read_record() -> list[Guard]:
             red=tuple(entry["red"]),
             suite=("--test", entry["suite"]) if "suite" in entry else ("--lib",),
         )
-        for entry in written.get("guard", [])
+        for entry in tomllib.loads(text).get("guard", [])
     ]
+
+
+def read_record() -> list[Guard]:
+    if not RECORD.exists():
+        raise Wrong(f"{RECORD} is not there, so there is nothing to measure")
+    guards = the_guards_in(RECORD.read_text(encoding="utf-8"))
     if not guards:
         # An empty record must fail rather than report a clean run. A check
         # that passes when there is nothing to check is the kind that gets
@@ -643,6 +672,236 @@ def write_down_the_counts(
     """
     raw = RECORD.read_bytes().decode("utf-8")
     RECORD.write_bytes(rewritten_with_counts(raw, guards, counts).encode("utf-8"))
+
+
+# ── What a record flagged by a count has never been run against ─────────────
+#
+# Added 2026-10-23 by 13.3-24.6, on Pratik's "yes" of 2026-10-22 to a cheaper
+# re-measurement. These readings decide whether `--remeasure` may ask a record
+# the fast question: its named tests and every test added since the commit
+# that last wrote it, anywhere its suite compiles. Each answers either what the
+# question needs or the reason the record takes the whole run instead.
+
+# The line a test attribute is waiting for: a function, perhaps public, perhaps
+# asynchronous, whose name is an identifier.
+FN_LINE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)\s*[(<]")
+
+
+def the_test_names_in(text: str) -> list[str] | None:
+    """The names of the test functions a file of Rust holds, one for each
+    attribute `tests_in` counts, in order; None when one cannot be read.
+
+    >>> the_test_names_in("#[test]\\nfn test_a() {}\\n    #[tokio::test]\\n    async fn test_b() {}\\n")
+    ['test_a', 'test_b']
+
+    Further attributes, comments and blank lines between the attribute and its
+    function are passed over, and a mention in a doc comment names nothing:
+
+    >>> the_test_names_in(
+    ...     "/// Runs under `#[test]`.\\n#[test]\\n#[should_panic]\\n// why\\n\\npub fn test_c() {}\\n"
+    ... )
+    ['test_c']
+
+    A macro writing a test makes the whole answer None, because a list missing
+    one name would read as a test removed:
+
+    >>> the_test_names_in("#[test]\\nfn test_a() {}\\n#[test]\\nfn $name() {}\\n") is None
+    True
+    """
+    return []
+
+
+def the_tests_added(then: list[str], now: list[str]) -> tuple[list[str], list[str]]:
+    """The names `now` holds beyond `then`, and the names `then` holds that `now`
+    does not, both counted as multisets and sorted.
+
+    >>> the_tests_added(["test_a"], ["test_a", "test_b"])
+    (['test_b'], [])
+
+    Reordered, or moved within the file, is nothing:
+
+    >>> the_tests_added(["test_a", "test_b"], ["test_b", "test_a"])
+    ([], [])
+
+    Renamed is one of each:
+
+    >>> the_tests_added(["test_a", "test_old"], ["test_a", "test_new"])
+    (['test_new'], ['test_old'])
+    """
+    return [], []
+
+
+def why_it_is_not_only_a_gain(
+    counted: tuple[tuple[str, int], ...], now: list[tuple[str, int]]
+) -> str | None:
+    """None when every file the record counts holds at least as many tests now
+    and one holds more; otherwise why the record takes the whole run.
+
+    >>> why_it_is_not_only_a_gain((("src/a.rs", 4), ("src/b.rs", 3)), [("src/a.rs", 5), ("src/b.rs", 3)]) is None
+    True
+    >>> print(why_it_is_not_only_a_gain((("src/a.rs", 4),), [("src/a.rs", 4)]))
+    nothing it counts gained a test since its counts were written
+    >>> print(why_it_is_not_only_a_gain((("src/a.rs", 5), ("src/b.rs", 3)), [("src/a.rs", 4), ("src/b.rs", 9)]))
+    src/a.rs held 5 tests when its counts were written and holds 4 now
+    >>> print(why_it_is_not_only_a_gain((("src/a.rs", 4),), [("src/a.rs", 5), ("src/c.rs", 1)]))
+    its counts name src/a.rs and its red list and the file it breaks name src/a.rs, src/c.rs now
+
+    What this cannot see. A record counting `src/a.rs` at 4 and `src/b.rs` at 3,
+    with `src/a.rs` now 5 and `src/b.rs` still 3 because one of its tests was
+    renamed, answers None here, because a count is a size and not a set.
+    `the_tests_added_since` is what refuses it.
+    """
+    return None
+
+
+def the_commits_that_last_wrote(
+    blame: str, spans: dict[str, tuple[int, int]]
+) -> dict[str, str | None]:
+    """For each record, the newest commit by committer time among the commits
+    `git blame --porcelain` gives its lines, or None when a line of it is not
+    yet committed. `spans` holds each record's first and last line.
+
+    >>> older, newer, nobody = "a" * 40, "b" * 40, "0" * 40
+    >>> blame = (
+    ...     f"{older} 1 1 2\\nauthor x\\ncommitter-time 1000\\n\\t[[guard]]\\n"
+    ...     f"{older} 2 2\\n\\tname = \\"one\\"\\n"
+    ...     f"{newer} 3 3 1\\nauthor y\\ncommitter-time 2000\\n\\tred = [\\"t\\"]\\n"
+    ...     f"{older} 4 5 1\\n\\t[[guard]]\\n"
+    ...     f"{nobody} 6 6 1\\nauthor Not Committed Yet\\ncommitter-time 3000\\n\\tname = \\"two\\"\\n"
+    ... )
+    >>> found = the_commits_that_last_wrote(blame, {"one": (1, 3), "two": (5, 6)})
+    >>> found["one"] == newer, found["two"]
+    (True, None)
+    """
+    return {}
+
+
+def why_it_was_not_measured_there(
+    guard: Guard,
+    commit: str,
+    there: Guard | None,
+    at_its_parents: list[Guard | None],
+    held_there: list[tuple[str, int]],
+) -> str | None:
+    """None when the commit that last wrote the record measured it: the record
+    there is this one, counts included; no parent held the same counts; and
+    the files it counts held those counts there. Otherwise why not.
+
+    >>> now = Guard("a", ROOT / "src/a.rs", "x", "y", ("t",), counted=(("src/a.rs", 5),))
+    >>> commit = "1a2b3c4d" + "0" * 32
+    >>> why_it_was_not_measured_there(now, commit, now, [None], [("src/a.rs", 5)]) is None
+    True
+    >>> older = Guard("a", ROOT / "src/a.rs", "x", "y", ("t",), counted=(("src/a.rs", 4),))
+    >>> why_it_was_not_measured_there(now, commit, now, [older], [("src/a.rs", 5)]) is None
+    True
+    >>> print(why_it_was_not_measured_there(now, commit, older, [None], [("src/a.rs", 5)]))
+    it reads differently at 1a2b3c4d, so that is not where it was last measured
+    >>> print(why_it_was_not_measured_there(now, commit, now, [now], [("src/a.rs", 5)]))
+    a parent of 1a2b3c4d held the same counts, so that commit moved it, edited a comment in it or corrected it by hand without measuring it
+    >>> print(why_it_was_not_measured_there(now, commit, now, [None], [("src/a.rs", 4)]))
+    src/a.rs held 4 tests at 1a2b3c4d against the 5 its counts say
+    """
+    return None
+
+
+def the_tests_added_since(
+    then_by_file: dict[str, list[str] | None],
+    now_by_file: dict[str, list[str] | None],
+    counted: set[str],
+) -> list[tuple[str, str]] | str:
+    """Over every Rust file that differs between the commit a record was last
+    measured at and the working tree, every (file, name) added, from any file;
+    or why the record takes the whole run.
+
+    A test added to a file another record counts is still a test this record
+    has never been run against:
+
+    >>> the_tests_added_since(
+    ...     {"src/a.rs": ["test_a"], "src/b.rs": ["test_b"]},
+    ...     {"src/a.rs": ["test_a", "test_a_new"], "src/b.rs": ["test_b", "test_b_new"]},
+    ...     {"src/a.rs"},
+    ... )
+    [('src/a.rs', 'test_a_new'), ('src/b.rs', 'test_b_new')]
+
+    A test renamed in a file it counts, at an equal count, while another file
+    it counts grew:
+
+    >>> print(the_tests_added_since(
+    ...     {"src/a.rs": ["test_a"], "src/b.rs": ["test_old"]},
+    ...     {"src/a.rs": ["test_a", "test_a_new"], "src/b.rs": ["test_new"]},
+    ...     {"src/a.rs", "src/b.rs"},
+    ... ))
+    test_old is gone from src/b.rs, which it counts, so a test it names may have been renamed, moved or removed
+
+    A name gone from a file it does not count is passed over, a file new since
+    has every test added, and a file whose names cannot be read is named:
+
+    >>> the_tests_added_since(
+    ...     {"src/a.rs": ["test_a"], "src/c.rs": ["test_c"]},
+    ...     {"src/a.rs": ["test_a", "test_a_new"], "src/c.rs": [], "src/d.rs": ["test_d"]},
+    ...     {"src/a.rs"},
+    ... )
+    [('src/a.rs', 'test_a_new'), ('src/d.rs', 'test_d')]
+    >>> print(the_tests_added_since({"src/e.rs": ["test_e"]}, {"src/e.rs": None}, {"src/a.rs"}))
+    the test names in src/e.rs cannot all be read, so what it gained is not known
+    """
+    added = []
+    for file in sorted(set(then_by_file) | set(now_by_file)):
+        if file in counted:
+            gained, _ = the_tests_added(then_by_file.get(file) or [], now_by_file.get(file) or [])
+            added += [(file, name) for name in gained]
+    return added
+
+
+class FullNames(NamedTuple):
+    """The added tests a suite's own list answers by full name, the added tests
+    it does not compile, and those it compiles that no listed name answers."""
+
+    found: list[str]
+    left_out: list[tuple[str, str]]
+    missing: list[tuple[str, str]]
+
+
+def the_full_names_of(
+    added: list[tuple[str, str]], listed: list[str], suite: tuple[str, ...]
+) -> FullNames:
+    """The full names of the added tests, from the suite's own list.
+
+    For the library, a listed name whose last segment is the added name and
+    whose file is the file it was added to; an added test under `tests/` is one
+    the library does not compile:
+
+    >>> the_full_names_of(
+    ...     [("src/application/calendar.rs", "test_a"),
+    ...      ("tests/house_style.rs", "test_x"),
+    ...      ("src/application/allowed.rs", "test_gone")],
+    ...     ["application::calendar::tests::test_a", "application::allowed::tests::test_a"],
+    ...     ("--lib",),
+    ... )
+    FullNames(found=['application::calendar::tests::test_a'], left_out=[('tests/house_style.rs', 'test_x')], missing=[('src/application/allowed.rs', 'test_gone')])
+
+    For an integration target, only the tests added to its own file:
+
+    >>> the_full_names_of(
+    ...     [("tests/house_style.rs", "test_x"), ("src/application/calendar.rs", "test_a")],
+    ...     ["test_x", "test_y"],
+    ...     ("--test", "house_style"),
+    ... )
+    FullNames(found=['test_x'], left_out=[('src/application/calendar.rs', 'test_a')], missing=[])
+    """
+    return FullNames([], [], [])
+
+
+def the_tests_a_list_names(output: str) -> list[str]:
+    """The names `cargo test -- --list` prints.
+
+    >>> the_tests_a_list_names(
+    ...     "a::tests::test_one: test\\na::tests::test_two: test\\nbench_it: benchmark\\n\\n"
+    ...     "2 tests, 1 benchmark\\n"
+    ... )
+    ['a::tests::test_one', 'a::tests::test_two']
+    """
+    return []
 
 
 def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
