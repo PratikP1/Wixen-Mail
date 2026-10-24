@@ -60,20 +60,62 @@ fn manager_account(
     Ok((cache, account))
 }
 
+/// Something a manager could not save, in the words for the screen and the
+/// words for the log.
+///
+/// Two sentences because the two go to different people. The screen is the
+/// person's own, so it names the row the way they know it. The log is what
+/// testers attach to bug reports, so it leaves the machine, and a contact's
+/// name or a meeting's title there is somebody else's business sent to a
+/// stranger.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NotSaved {
+    /// What the person is told.
+    said: String,
+    /// What the log is given.
+    logged: String,
+}
+
+impl NotSaved {
+    /// A failure whose words name nothing private, so the screen and the log
+    /// are given the same sentence.
+    fn the_same(sentence: String) -> Self {
+        Self {
+            said: sentence.clone(),
+            logged: sentence,
+        }
+    }
+}
+
+impl From<String> for NotSaved {
+    fn from(sentence: String) -> Self {
+        Self::the_same(sentence)
+    }
+}
+
 /// Report what a manager did, or name what it could not do.
 ///
 /// Named rather than counted: "3 failed" says something went wrong and nothing
-/// about what to do next.
-fn report(tx: &Sender<UIUpdate>, rt: &Arc<Runtime>, what: &str, failures: Vec<String>) {
+/// about what to do next. Each failure's log sentence goes to the log and its
+/// screen sentence to the screen; see [`NotSaved`] for why they differ.
+fn report<F: Into<NotSaved>>(
+    tx: &Sender<UIUpdate>,
+    rt: &Arc<Runtime>,
+    what: &str,
+    failures: Vec<F>,
+) {
+    let failures: Vec<NotSaved> = failures.into_iter().map(Into::into).collect();
     if failures.is_empty() {
         send_status(tx, rt, &format!("{} saved.", what));
         return;
     }
-    tracing::error!("{} could not be saved: {:?}", what, failures);
+    let logged: Vec<&str> = failures.iter().map(|f| f.logged.as_str()).collect();
+    tracing::error!("{} could not be saved: {:?}", what, logged);
+    let said: Vec<&str> = failures.iter().map(|f| f.said.as_str()).collect();
     let _ = tx.try_send(UIUpdate::ErrorOccurred(format!(
         "Some {} could not be saved: {}.",
         what,
-        failures.join("; ")
+        said.join("; ")
     )));
 }
 
@@ -1365,8 +1407,10 @@ pub(crate) enum NotChanged {
     /// The calendar it is in does not allow what was meant, said in the
     /// sentence the calendar window would give.
     Refused(String),
-    /// The write failed, named rather than numbered, because this is read out.
-    Failed(String),
+    /// The write failed: named on screen, because this is read out, and
+    /// numbered in the log, because a title often arrives in a stranger's
+    /// invitation.
+    Failed(NotSaved),
 }
 
 /// Carry out an edit to an event somebody opened, and say what was done.
@@ -1435,7 +1479,61 @@ pub(crate) fn change_an_opened_event(
             },
             &data.summary,
         )),
-        Err(e) => Err(NotChanged::Failed(format!("{}: {}", data.summary, e))),
+        Err(e) => Err(NotChanged::Failed(NotSaved::the_same(format!(
+            "{}: {}",
+            data.summary, e
+        )))),
+    }
+}
+
+/// Write down an event somebody made in the calendar window, and say what was
+/// done.
+fn add_an_event(
+    cache: &MessageCache,
+    account: &str,
+    data: &wx_calendar::CalendarEventData,
+) -> std::result::Result<String, NotSaved> {
+    let entry = event_entry(new_id("event"), account, data);
+    match cache.save_calendar_event(&entry) {
+        Ok(()) => Ok(crate::application::calendar::what_was_done(
+            crate::application::calendar::WrittenDown::Created,
+            &data.summary,
+        )),
+        Err(e) => Err(NotSaved::the_same(format!("{}: {}", data.summary, e))),
+    }
+}
+
+/// Carry out a deletion somebody asked for in the calendar window, and say
+/// what was done.
+fn remove_an_opened_event(
+    cache: &MessageCache,
+    opened: &CalendarEventItem,
+    means: EditMeans,
+) -> std::result::Result<String, NotChanged> {
+    let stored = cache.get_event_by_id(&opened.id).ok().flatten();
+    crate::application::calendar::can_be_honoured(
+        crate::application::calendar::WhatIsBeingDone::Deleting,
+        means,
+        &what_this_rows_calendar_allows(cache, opened),
+    )
+    .map_err(NotChanged::Refused)?;
+    // Calling one day off is not a deletion. The series stays, with
+    // that day taken out of it, so the other days keep their own
+    // values and the event still exists to be changed again.
+    let one_day_off = matches!((&stored, means), (Some(_), EditMeans::OneDay));
+    let written = match (stored, means) {
+        (Some(series), EditMeans::OneDay) => cache.save_calendar_event(
+            &crate::application::calendar::one_day_called_off(&series, &opened.start),
+        ),
+        _ => cache.delete_calendar_event(&opened.id),
+    };
+    match written {
+        Ok(()) => Ok(what_a_delete_answer_did(one_day_off, &opened.summary)),
+        // Not called a deletion when it was a save. This is read out.
+        Err(e) => Err(NotChanged::Failed(NotSaved::the_same(format!(
+            "{}: {}",
+            opened.summary, e
+        )))),
     }
 }
 
@@ -1543,7 +1641,9 @@ pub(crate) fn change_an_event_from_a_row(
         match change_an_opened_event(cache, account, opened, means, &data) {
             Ok(what_was_done) => what_was_done,
             Err(NotChanged::Refused(refused)) => refused,
-            Err(NotChanged::Failed(failed)) => format!("The event could not be saved: {failed}"),
+            Err(NotChanged::Failed(failed)) => {
+                format!("The event could not be saved: {}", failed.said)
+            }
         },
     )
 }
@@ -1595,16 +1695,12 @@ pub fn manage_calendar(
                 done.push("A calendar sync has started.".to_string());
             }
             wx_calendar::CalendarAction::CreateEvent(data) => {
-                let entry = event_entry(new_id("event"), &account, &data);
-                match cache.save_calendar_event(&entry) {
-                    Ok(()) => {
+                match add_an_event(&cache, &account, &data) {
+                    Ok(what_was_done) => {
                         changed = true;
-                        done.push(crate::application::calendar::what_was_done(
-                            crate::application::calendar::WrittenDown::Created,
-                            &data.summary,
-                        ));
+                        done.push(what_was_done);
                     }
-                    Err(e) => failures.push(format!("{}: {}", data.summary, e)),
+                    Err(failed) => failures.push(failed),
                 }
             }
             wx_calendar::CalendarAction::UpdateEvent(opened, means, data) => {
@@ -1618,33 +1714,13 @@ pub fn manage_calendar(
                 }
             }
             wx_calendar::CalendarAction::DeleteEvent(opened, means) => {
-                let stored = cache.get_event_by_id(&opened.id).ok().flatten();
-                if let Err(refused) = crate::application::calendar::can_be_honoured(
-                    crate::application::calendar::WhatIsBeingDone::Deleting,
-                    means,
-                    &what_this_rows_calendar_allows(&cache, &opened),
-                ) {
-                    send_refusal(tx, rt, &refused);
-                    continue;
-                }
-                // Calling one day off is not a deletion. The series stays, with
-                // that day taken out of it, so the other days keep their own
-                // values and the event still exists to be changed again.
-                let one_day_off = matches!((&stored, means), (Some(_), EditMeans::OneDay));
-                let written = match (stored, means) {
-                    (Some(series), EditMeans::OneDay) => cache.save_calendar_event(
-                        &crate::application::calendar::one_day_called_off(&series, &opened.start),
-                    ),
-                    _ => cache.delete_calendar_event(&opened.id),
-                };
-                match written {
-                    Ok(()) => {
+                match remove_an_opened_event(&cache, &opened, means) {
+                    Ok(what_was_done) => {
                         changed = true;
-                        done.push(what_a_delete_answer_did(one_day_off, &opened.summary));
+                        done.push(what_was_done);
                     }
-                    // Named, not numbered, and not called a deletion when it
-                    // was a save. This is read out.
-                    Err(e) => failures.push(format!("{}: {}", opened.summary, e)),
+                    Err(NotChanged::Refused(refused)) => send_refusal(tx, rt, &refused),
+                    Err(NotChanged::Failed(failed)) => failures.push(failed),
                 }
             }
         }
@@ -1671,7 +1747,7 @@ pub fn manage_calendar(
                     showing: Some(showing),
                 });
             }
-            Err(e) => failures.push(format!("reload: {}", e)),
+            Err(e) => failures.push(NotSaved::the_same(format!("reload: {}", e))),
         }
     }
     // Named failures win: an outcome sentence beside them would be read as
@@ -2867,13 +2943,13 @@ fn save_what_the_contact_manager_returned(
     account: &str,
     stored: &[crate::data::message_cache::ContactEntry],
     updated: Vec<wx_managers::ContactEntry>,
-) -> Vec<String> {
+) -> Vec<NotSaved> {
     let changes =
         collection_sync::changes_between(stored, updated, |c| c.id.clone(), |c| c.id.clone());
     let mut failures = Vec::new();
     for id in &changes.removed {
         if let Err(e) = cache.delete_contact(id) {
-            failures.push(format!("delete {}: {}", id, e));
+            failures.push(NotSaved::the_same(format!("delete {}: {}", id, e)));
         }
     }
     for row in &changes.written {
@@ -2910,14 +2986,14 @@ fn save_what_the_contact_manager_returned(
             Some(opened) => match cache.get_contact(&opened.id) {
                 Ok(now) => Some(now.unwrap_or_else(|| opened.clone())),
                 Err(e) => {
-                    failures.push(format!("{}: {}", edited.name, e));
+                    failures.push(NotSaved::the_same(format!("{}: {}", edited.name, e)));
                     continue;
                 }
             },
         };
         let contact = contact_convert::to_stored(&edited, account, replacing.as_ref());
         if let Err(e) = cache.save_contact(&contact) {
-            failures.push(format!("{}: {}", contact.name, e));
+            failures.push(NotSaved::the_same(format!("{}: {}", contact.name, e)));
         }
     }
     failures
@@ -10250,6 +10326,77 @@ mod saving_the_contact_manager {
         assert_eq!(after.len(), 2);
         assert!(after.iter().all(|c| c.id != "c3"));
     }
+
+    #[test]
+    fn test_a_contact_the_store_will_not_save_is_her_id_in_the_log_and_her_name_on_screen() {
+        // Ledger 937. The log is what testers attach to bug reports, so a
+        // contact's name there is somebody else's business sent to a
+        // stranger. The screen is the person's own, and has to say which
+        // contact did not save. Run from a refused save through the report,
+        // because the report is where each sentence is sent where it goes.
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+
+        let cache = a_cache("contacts_refused_save_is_an_id_in_the_log");
+        let stored = three_settled_contacts(&cache);
+        cache
+            .refuse_to_save_a_contact_at("zebediah@example.com")
+            .expect("the refusal to be staged");
+        let mut returned: Vec<wx_managers::ContactEntry> =
+            stored.iter().map(contact_convert::to_editor).collect();
+        let mut zebediah = as_an_address_book_left_it("contact-z", "Zebediah Quackenbush");
+        zebediah.email = "zebediah@example.com".to_string();
+        returned.push(contact_convert::to_editor(&zebediah));
+
+        let failures = save_what_the_contact_manager_returned(&cache, ACCOUNT, &stored, returned);
+        assert_eq!(failures.len(), 1, "one refused save: {failures:?}");
+
+        let captured = CapturedLogs::default();
+        let (tx, rx) = async_channel::unbounded();
+        let rt = Arc::new(Runtime::new().expect("a runtime to test against"));
+        {
+            let _held = captured.as_the_default();
+            report(&tx, &rt, "contacts", failures);
+        }
+
+        let logged: Vec<String> = captured
+            .events()
+            .into_iter()
+            .filter(|(level, _)| *level == tracing::Level::ERROR)
+            .map(|(_, message)| message)
+            .collect();
+        assert_eq!(
+            logged.len(),
+            1,
+            "one failure, one line in the log: {logged:?}"
+        );
+        assert!(
+            logged[0].contains("contact-z"),
+            "the log does not say which contact did not save: {}",
+            logged[0]
+        );
+        assert!(
+            !logged[0].contains("Zebediah"),
+            "the log names the contact, and the log is attached to bug reports: {}",
+            logged[0]
+        );
+
+        let said = match rx.try_recv() {
+            Ok(UIUpdate::ErrorOccurred(said)) => said,
+            other => panic!("the failure was not put on screen: {other:?}"),
+        };
+        assert!(
+            said.contains("Zebediah Quackenbush"),
+            "the screen does not say which contact did not save: {said}"
+        );
+        assert!(
+            said.contains("refused for a test"),
+            "the screen does not say why: {said}"
+        );
+        assert!(
+            rx.try_recv().is_err(),
+            "one failure was put on screen more than once"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -10628,6 +10775,130 @@ mod changing_one_day_of_a_series {
         let mut back = wx_calendar::CalendarEventData::as_shown(day);
         back.summary = "Stand-up, in the small room".to_string();
         back
+    }
+
+    /// A store that answers every write to an event with a failure.
+    fn events_cannot_be_written(cache: &MessageCache) {
+        cache
+            .take_away_the_table("calendar_events")
+            .expect("the events table to be taken away");
+    }
+
+    /// The id a log line names and the rest of it, split at the first ": ".
+    fn the_id_logged(failed: &NotSaved) -> (&str, &str) {
+        failed
+            .logged
+            .split_once(": ")
+            .unwrap_or((failed.logged.as_str(), ""))
+    }
+
+    // Events, like contacts: a meeting's title often arrives in a stranger's
+    // invitation, and the log is attached to bug reports. The title stays on
+    // screen and the event's id goes to the log. Folded into 13.4-02 on
+    // Pratik's answer of 2026-10-24.
+
+    #[test]
+    fn test_an_event_that_will_not_change_is_its_id_in_the_log_and_its_title_on_screen() {
+        let cache = a_cache("event_change_refused_is_an_id_in_the_log");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+        events_cannot_be_written(&cache);
+
+        let failed = match change_an_opened_event(
+            &cache,
+            "acct-1",
+            &day,
+            EditMeans::WholeSeries,
+            &only_the_summary_retyped(&day),
+        ) {
+            Err(NotChanged::Failed(failed)) => failed,
+            Err(NotChanged::Refused(refused)) => panic!("refused, not failed: {refused}"),
+            Ok(said) => panic!("a store with no events table took the change: {said}"),
+        };
+        assert_eq!(
+            the_id_logged(&failed).0,
+            day.id,
+            "the log does not name the event by its id: {}",
+            failed.logged
+        );
+        assert!(
+            !failed.logged.contains("Stand-up"),
+            "the log names the event by its title: {}",
+            failed.logged
+        );
+        assert!(
+            failed.said.contains("Stand-up, in the small room"),
+            "the screen does not say which event: {}",
+            failed.said
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_will_not_be_added_is_its_id_in_the_log_and_its_title_on_screen() {
+        let cache = a_cache("event_add_refused_is_an_id_in_the_log");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let data = only_the_summary_retyped(&the_day_opened(&series));
+        events_cannot_be_written(&cache);
+
+        let failed = match add_an_event(&cache, "acct-1", &data) {
+            Err(failed) => failed,
+            Ok(said) => panic!("a store with no events table took the event: {said}"),
+        };
+        let (id, why) = the_id_logged(&failed);
+        assert!(
+            id.strip_prefix("event-")
+                .is_some_and(|stamp| stamp.chars().all(|c| c.is_ascii_digit())),
+            "the log does not name the event by the id it was given: {}",
+            failed.logged
+        );
+        assert!(
+            !why.is_empty(),
+            "the log does not say why: {}",
+            failed.logged
+        );
+        assert!(
+            !failed.logged.contains("Stand-up"),
+            "the log names the event by its title: {}",
+            failed.logged
+        );
+        assert!(
+            failed.said.contains("Stand-up, in the small room"),
+            "the screen does not say which event: {}",
+            failed.said
+        );
+    }
+
+    #[test]
+    fn test_an_event_that_will_not_be_deleted_is_its_id_in_the_log_and_its_title_on_screen() {
+        let cache = a_cache("event_delete_refused_is_an_id_in_the_log");
+        a_calendar_on_a_server(&cache);
+        let series = a_weekly_series(&cache);
+        let day = the_day_opened(&series);
+        events_cannot_be_written(&cache);
+
+        let failed = match remove_an_opened_event(&cache, &day, EditMeans::WholeSeries) {
+            Err(NotChanged::Failed(failed)) => failed,
+            Err(NotChanged::Refused(refused)) => panic!("refused, not failed: {refused}"),
+            Ok(said) => panic!("a store with no events table took the deletion: {said}"),
+        };
+        assert_eq!(
+            the_id_logged(&failed).0,
+            day.id,
+            "the log does not name the event by its id: {}",
+            failed.logged
+        );
+        assert!(
+            !failed.logged.contains("Stand-up"),
+            "the log names the event by its title: {}",
+            failed.logged
+        );
+        assert!(
+            failed.said.contains("Stand-up"),
+            "the screen does not say which event: {}",
+            failed.said
+        );
     }
 
     #[test]

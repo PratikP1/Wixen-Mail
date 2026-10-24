@@ -2864,6 +2864,51 @@ mod tests {
     }
 
     #[test]
+    fn test_a_card_the_database_refuses_is_logged_by_its_place_in_the_file_and_not_its_address() {
+        // A card's address is somebody else's, and the log is what testers
+        // attach to bug reports. Which card it was is said by its place in
+        // the file, which somebody holding the file can find and nobody
+        // reading the log can use. Folded into 13.4-02 on Pratik's answer of
+        // 2026-10-24.
+        use crate::presentation::accessibility::screen_reader::tests::CapturedLogs;
+
+        let cache = a_cache("vcard_refused_logged_by_its_place");
+        cache
+            .refuse_to_save_a_contact_at("refused@example.com")
+            .expect("the refusal to be staged");
+        let file = format!(
+            "{}{}",
+            a_card_naming("Grace Hopper", "grace@example.com"),
+            a_card_naming("Turned Away", "refused@example.com"),
+        );
+
+        let captured = CapturedLogs::default();
+        let read = {
+            let _held = captured.as_the_default();
+            cache
+                .import_contacts_from_vcard("test@example.com", &file)
+                .expect("the import to run")
+        };
+
+        assert_eq!(read.not_written_down, 1, "{read:?}");
+        let events = captured.events();
+        assert!(
+            events
+                .iter()
+                .all(|(_, message)| !message.contains("refused@example.com")),
+            "the log names the card's address, and the log is attached to bug reports: {events:?}"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|(level, message)| *level == tracing::Level::WARN
+                    && message.contains("card 2 in the file")
+                    && message.contains("refused for a test")),
+            "the log does not say which card was skipped and why: {events:?}"
+        );
+    }
+
+    #[test]
     fn test_a_folder_of_card_files_carries_every_count_forward_and_drops_none() {
         // A folder is read one file at a time and reported once. Written out
         // at the call site with some of the counts named and the rest left
