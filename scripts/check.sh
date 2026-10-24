@@ -726,6 +726,31 @@ leave_out_what_a_locked_session_cannot_run() {
     esac
 }
 
+# The tests a red commit names that a locked session cannot run, one a line:
+# each name `red-commit.sh names` gives that is on the list, when the lock
+# answer is `locked`, and nothing otherwise. A test that cannot run neither
+# passes nor fails, so a red naming one cannot be judged there. Added
+# 2026-10-23 by 13.3-24.8.
+#
+#     check.sh --what-a-locked-session-cannot-judge <lock answer> <message file>
+the_named_tests_a_locked_session_cannot_judge() {
+    local lock="$1" message_file="$2" named listed
+    [ "$lock" = locked ] || return 0
+    while IFS= read -r named; do
+        for listed in "${the_tests_that_need_the_clipboard[@]}"; do
+            if [ "$named" = "$listed" ]; then
+                echo "$named"
+            fi
+        done
+    done < <("$the_scripts_folder/red-commit.sh" names "$message_file")
+}
+
+if [ "${1:-}" = "--what-a-locked-session-cannot-judge" ]; then
+    shift
+    the_named_tests_a_locked_session_cannot_judge "$@"
+    exit 0
+fi
+
 # The sentence each mode's closing words gain when the session was locked.
 say_what_the_lock_left_out() {
     [ -n "$the_session_was_locked" ] || return 0
@@ -988,7 +1013,9 @@ case "$mode" in
         echo "  [--merge] <registry> [path ...] for what the scoped run hands cargo," >&2
         echo "  --mode-for-this-commit [--message-file=F] for the mode it runs, or" >&2
         echo "  --what-a-locked-session-leaves-out <lock answer> <a cargo line's words>" >&2
-        echo "  for what a run on a locked session hands libtest." >&2
+        echo "  for what a run on a locked session hands libtest, or" >&2
+        echo "  --what-a-locked-session-cannot-judge <lock answer> <message file>" >&2
+        echo "  for the tests a red commit names that a locked session cannot run." >&2
         exit 64
         ;;
 esac
@@ -1056,6 +1083,31 @@ if [ -n "$message_file" ]; then
         exit 1
     fi
 fi
+
+# A red commit naming a test that needs the clipboard is refused on a locked
+# session, here, before the mode line and the trap, so a refusal claims no
+# stage. Added 2026-10-23 by 13.3-24.8: the named test cannot run there, so its
+# failure would be the lock's and not the code's. Windows is asked only when the
+# mode is `red` and a named test is on the list. When the lock cannot be read
+# the red is judged as before, and were the session in fact locked, the test
+# would fail with the paste target's own sentence about the lock.
+case "$mode" in
+    red)
+        if [ -n "$message_file" ]; then
+            cannot_judge="$(the_named_tests_a_locked_session_cannot_judge locked "$message_file")"
+            if [ -n "$cannot_judge" ] && [ "$(this_sessions_lock)" = locked ]; then
+                echo >&2
+                mapfile -t cannot_judge_names <<< "$cannot_judge"
+                echo "This red commit names tests that need the clipboard:" >&2
+                printf '    %s\n' "${cannot_judge_names[@]}" >&2
+                echo "and Windows says this session is locked. A test that cannot run" >&2
+                echo "neither passes nor fails, so this red cannot be judged here." >&2
+                echo "Unlock the session and commit again. Nothing was run." >&2
+                exit 1
+            fi
+        fi
+        ;;
+esac
 
 # Where a run's seconds went, one stage at a time.
 #
