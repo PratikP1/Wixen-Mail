@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 938 records have arrived since and have not been through it.
+# 940 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -4147,7 +4147,7 @@ red = [
     "test_the_new_installation_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A path added to the data folder and left off the pages listing it ────────
@@ -4210,7 +4210,7 @@ red = [
     "test_the_signing_check_can_tell_a_promise_from_a_correction",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4223,7 +4223,7 @@ red = [
     "test_a_sweeping_negative_is_a_word_the_reading_already_knows",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── The two questions Windows answers about a withdrawal ────────────────────
@@ -4316,7 +4316,7 @@ red = [
     "test_the_dispatch_reading_can_see_a_flag_the_script_does_not_accept",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4330,7 +4330,7 @@ red = [
     "test_the_compiler_agreement_check_can_see_a_disagreement",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A record in this file that had stopped naming one place ─────────────────
@@ -4357,7 +4357,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4375,7 +4375,7 @@ red = [
     "test_the_guard_record_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A change the mail server refused, reported as one that happened ─────────
@@ -4625,7 +4625,7 @@ red = [
     "test_no_mutation_result_is_read_from_the_lists_written_for_people",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4638,7 +4638,7 @@ red = [
     "test_what_a_change_touched_is_asked_the_same_way_in_both_places",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4651,7 +4651,7 @@ red = [
     "test_no_mutation_run_has_its_failure_swallowed",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4664,7 +4664,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A run the suite never finished against, read as one that found nothing ───
@@ -4701,7 +4701,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4716,7 +4716,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4729,7 +4729,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -4742,7 +4742,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A guard measurement that does not return, and the shard it used to cost ──
@@ -4781,7 +4781,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A reason a mail server already punctuated, punctuated again ──────────────
@@ -4901,7 +4901,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/draft_copy.rs", tests = 31 },
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── An unrecognised trash used to mean a permanent deletion ─────────────────
@@ -6931,7 +6931,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/managers.rs", tests = 138 },
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -7306,7 +7306,7 @@ red = [
     "test_the_machinery_check_can_tell_the_two_apart",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A meeting that repeats, on its way to Google ────────────────────────────
@@ -7594,7 +7594,7 @@ red = [
     "test_the_sweep_written_at_the_top_of_the_guard_records_covers_every_record_in_it",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 suite = "house_style"
 
@@ -13174,7 +13174,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 [[guard]]
@@ -15531,7 +15531,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_folder_choice.rs", tests = 18 },
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── The two integration guards that named no source file ────────────────────
@@ -24307,7 +24307,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The same rule one input along. `--shard k/n` divides whatever `--file` left
@@ -24328,7 +24328,7 @@ red = [
     "test_the_mutation_report_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A dispatched shard that fails an hour in, on a runner ────────────────────
@@ -24354,7 +24354,7 @@ red = [
     "test_the_mutation_workflow_dispatch_hands_the_script_flags_it_accepts",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A CI job that runs the tests on a checkout of one commit ─────────────────
@@ -24390,7 +24390,7 @@ red = [
     "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── A CI job that runs the build script on a checkout of one commit ──────────
@@ -24421,7 +24421,69 @@ red = [
     "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
+]
+
+# ── The CI Test Suite job restores its caches and saves none ─────────────────
+#
+# Clippy restores and saves the same three caches under the same keys and
+# finishes first, so the Test Suite's save was packed for a median 579 s and
+# then refused on 81 of 81 runs that missed the cache, 2026-09-14 to
+# 2026-10-22. Since 13.3-24.7 its three cache steps use the restore action.
+# The break puts the registry step back on the action that saves when the job
+# ends, anchored on the last line of the comment above it, which is found only
+# in that job.
+#
+# Measured by hand on 2026-10-24, `cargo test --test house_style` run whole
+# with the break applied: this one test went red, beside the count check that
+# was already red because the file had just gained this test and its
+# companion. Then through `--remeasure`.
+
+[[guard]]
+name = "the Test Suite job restores its caches and saves none"
+file = ".github/workflows/ci.yml"
+suite = "house_style"
+before = """    # holds this job to restoring what another job saves.
+    - name: Cache cargo registry
+      uses: actions/cache/restore@v4"""
+after = """    # holds this job to restoring what another job saves.
+    - name: Cache cargo registry
+      uses: actions/cache@v4"""
+red = [
+    "test_the_test_suite_job_saves_no_cache_and_restores_what_another_job_saves",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 80 },
+]
+
+# ── The CI Test Suite job restores the build cache another job saves ─────────
+#
+# The Test Suite saves nothing since 13.3-24.7, so a key of its own would
+# miss on every run with nothing red: the reading also asks that each path and
+# key it restores is saved by another job of `ci.yml`, Clippy's today. The
+# break gives the build step a key nobody saves. Its text sits only in the Test
+# Suite job, because Clippy's step uses the action that saves.
+#
+# Measured by hand on 2026-10-24 the same way as the record above, with the
+# same result. Then through `--remeasure`.
+
+[[guard]]
+name = "the Test Suite job restores the build cache under the key another job saves"
+file = ".github/workflows/ci.yml"
+suite = "house_style"
+before = """      uses: actions/cache/restore@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}"""
+after = """      uses: actions/cache/restore@v4
+      with:
+        path: target
+        key: ${{ runner.os }}-cargo-build-target-tests-${{ hashFiles('**/Cargo.lock') }}"""
+red = [
+    "test_the_test_suite_job_saves_no_cache_and_restores_what_another_job_saves",
+]
+tests_last_seen = [
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── The guard sweep's shard step hands the runner a flag it accepts ──────────
@@ -25045,7 +25107,7 @@ red = [
     "test_the_installer_says_how_far_back_the_version_was_set",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The form no longer offering the level, in the shape that would really
@@ -30731,7 +30793,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # A file put back after a record's break that is never read back, so one that
@@ -30755,7 +30817,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The fast path of --remeasure asks a record only what it has never been run
@@ -30780,7 +30842,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The fast question asks every test added since a record was last measured,
@@ -30804,7 +30866,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # A fast answer in which a test the record does not name went red must hand the
@@ -30828,7 +30890,7 @@ red = [
     "test_the_guard_runner_still_obeys_its_own_examples",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # ── The About dialog's copyright is the one LICENSE carries (#78) ──────────
@@ -43097,7 +43159,7 @@ red = [
     "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The Linux job's checkout back to one commit, the other file the depth
@@ -43121,7 +43183,7 @@ red = [
     "test_every_job_that_runs_the_tests_checks_out_the_whole_history",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The release gate's own read-only block taken out, so it inherits the
@@ -43145,7 +43207,7 @@ red = [
     "test_every_job_that_checks_holds_a_read_only_token",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The release workflow's WIXEN_NO_AUDIO line taken out, so its quality gate
@@ -43169,7 +43231,7 @@ red = [
     "test_every_job_that_tests_on_windows_turns_the_sound_off",
 ]
 tests_last_seen = [
-    { file = "tests/house_style.rs", tests = 78 },
+    { file = "tests/house_style.rs", tests = 80 },
 ]
 
 # The uninstaller's Windows Search clean-up put back on ExecAsOriginalUser,
