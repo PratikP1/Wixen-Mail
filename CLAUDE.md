@@ -501,6 +501,32 @@ refused. The same plan made a red commit's verdict count the test binaries cargo
 started against those that reported, so a binary that crashed part way is
 refused rather than read as clean.
 
+**Since 2026-10-23 (13.3-24.8) a run on a locked session leaves out the tests
+that need the clipboard, and says so.** Pratik said yes to it that day. Windows
+refuses the clipboard to every program while a session is locked (ledger 716),
+and on 2026-10-22 the merge of 13.3-20 was refused after 872 seconds because
+four tests of `a_passphrase_box_takes_a_real_paste` could not open it; the merge
+train stood still overnight. `scripts/check.sh` now names those four in a list
+near its top. When a run's cargo line reaches that target, `--all-targets` or
+`--test` with its name, the gate asks Windows through `scripts/session_lock.py`
+whether the session is locked, the question the target itself asks and never
+the process list. On a locked session it hands libtest `--exact` and one
+`--skip` for each, prints the target and the four names and that CI's Test
+Suite runs them on every push and pull request, and ends its closing line with
+what it left out. It never leaves anything out when the session is unlocked or
+the lock cannot be read, in which case it says it could not ask and why; it
+never counts a test it left out as passed, since libtest counts each one
+filtered out; and it refuses, before anything runs, a red commit naming one of
+the four on a locked session, because a test that cannot run cannot be a red.
+A run by hand leaves them out too, the phase's closing gate among them, and the
+summary of a plan whose run was locked says so. The guard runner does not
+(ledger 957). The list is held to the code by
+`test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard` in
+`tests/a_locked_key_asks_for_its_passphrase.rs`, which follows each test of the
+paste target through the file's own functions to a clipboard call, and by a
+guard record on `scripts/check.sh` that routes every commit changing the list
+to that reading.
+
 **Do not reach for `--no-verify`.** The advice used to be that it was for a work
 in progress on a branch nobody builds. That was right about the case and wrong
 about the tool: it skips formatting and clippy as well, which cost fifteen

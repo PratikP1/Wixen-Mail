@@ -2099,4 +2099,269 @@ else
         "the stand-in saw:" "$left_out_calls"
 fi
 
+# ── A locked session leaves the clipboard tests out ─────────────────────────
+# Added 2026-10-23 by 13.3-24.8, on Pratik's "yes" of that day. Windows refuses
+# the clipboard to every program while the session is locked (ledger 716), and
+# on 2026-10-22 four tests of `a_passphrase_box_takes_a_real_paste` refused the
+# merge of 13.3-20 after 872 s over nothing the code did. So a run that reaches
+# that target asks Windows whether the session is locked and, when it is, hands
+# cargo `--exact` and one `--skip` for each test on `check.sh`'s list, and says
+# so. Unlocked, or with a lock nobody could read, it runs what it always ran.
+#
+# The names are read from `check.sh`'s own list here and never written into a
+# case, and every case that reads them first requires the list to hold one, so
+# an emptied list fails rather than passing against an empty expectation. The
+# stand-in `python` folders answer as `scripts/session_lock.py` would, in bash
+# builtins, beside the one that answers as the Store alias did.
+the_clipboard_target=""
+the_clipboard_tests=()
+inside_the_list=""
+while IFS= read -r line; do
+    case "$inside_the_list:$line" in
+        ":the_target_that_needs_the_clipboard="*) the_clipboard_target="${line#*=}" ;;
+        ":the_tests_that_need_the_clipboard=(") inside_the_list=yes ;;
+        "yes:)") inside_the_list="" ;;
+        yes:*)
+            line="${line#"${line%%[![:space:]]*}"}"
+            case "$line" in
+                "" | "#"*) ;;
+                *) the_clipboard_tests+=("$line") ;;
+            esac
+            ;;
+    esac
+done < "$subject"
+what_a_locked_run_adds=""
+if [ "${#the_clipboard_tests[@]}" -gt 0 ]; then
+    what_a_locked_run_adds="-- --exact"
+    for name in "${the_clipboard_tests[@]}"; do
+        what_a_locked_run_adds+=" --skip $name"
+    done
+fi
+
+# Whether `check.sh` names a target and at least one test.
+the_list_is_there() {
+    [ -n "$the_clipboard_target" ] && [ "${#the_clipboard_tests[@]}" -gt 0 ]
+}
+
+locked_python="$work/python-says-locked"
+unlocked_python="$work/python-says-unlocked"
+mkdir -p "$locked_python" "$unlocked_python"
+printf '#!/usr/bin/env bash\necho locked\n' > "$locked_python/python"
+printf '#!/usr/bin/env bash\necho unlocked\n' > "$unlocked_python/python"
+chmod +x "$locked_python/python" "$unlocked_python/python"
+
+expect_left_out() {
+    local desc="$1" want="$2" said status
+    shift 2
+    said="$(ask_from_the_tree --what-a-locked-session-leaves-out "$@" 2>&1)"
+    status=$?
+    if ! the_list_is_there; then
+        suite_case_failed "$desc" "check.sh names no target or no test that needs the clipboard"
+    elif [ "$status" -ne 0 ] || [ "$said" != "$want" ]; then
+        suite_case_failed "$desc" "exited $status and answered:" "$said" "wanted:" "$want"
+    else
+        suite_case_passed "$desc"
+    fi
+}
+
+expect_left_out "a locked session leaves the clipboard tests out of the whole suite" \
+    "$what_a_locked_run_adds" locked --all-targets --no-fail-fast
+expect_left_out "a locked session leaves the clipboard tests out of a scoped run that reaches their target" \
+    "$what_a_locked_run_adds" locked --test house_style --test "$the_clipboard_target"
+expect_left_out "a locked session leaves nothing out of a run that does not reach their target" \
+    "" locked --test house_style --test wired
+expect_left_out "an unlocked session leaves nothing out" \
+    "" unlocked --all-targets --no-fail-fast
+expect_left_out "a lock nobody could read leaves nothing out" \
+    "" "not said: python did not answer" --all-targets --no-fail-fast
+
+# The reader's rule for Windows' answer is carried as worked examples, and a
+# doctest run over a file with none exits 0, so the examples are counted from
+# the "N tests in M items." line, as `tests/house_style.rs` counts them.
+lock_examples_said="$(python -I -m doctest -v "$root/scripts/session_lock.py" 2>&1)"
+lock_examples_status=$?
+lock_examples_ran=0
+while IFS= read -r line; do
+    case "$line" in
+        [0-9]*" tests in "*) lock_examples_ran="${line%% *}" ;;
+    esac
+done <<< "$lock_examples_said"
+if [ "$lock_examples_status" -eq 0 ] && [ "$lock_examples_ran" -ge 3 ]; then
+    suite_case_passed "the lock reader reads the answers Windows gives"
+else
+    suite_case_failed "the lock reader reads the answers Windows gives" \
+        "exited $lock_examples_status with $lock_examples_ran examples run:" "$lock_examples_said"
+fi
+
+lock_answer="$(python -I "$root/scripts/session_lock.py" 2>&1)"
+case "$lock_answer" in
+    locked | unlocked) suite_case_passed "the lock reader answers on this machine" ;;
+    *) suite_case_failed "the lock reader answers on this machine" "answered: $lock_answer" ;;
+esac
+
+# A whole run, `all`, asked of a copy of `check.sh` in a folder holding only it
+# and a stand-in `audit.sh`: the real one in `all` would run every suite, this
+# one included. Leaves the run's output in `whole_said` and the stand-in
+# `cargo`'s calls in `whole_calls`.
+a_check_on_its_own="$work/a-check-on-its-own"
+mkdir -p "$a_check_on_its_own"
+cp "$subject" "$a_check_on_its_own/check.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$a_check_on_its_own/audit.sh"
+chmod +x "$a_check_on_its_own/audit.sh"
+
+a_whole_run() {
+    local python_bin="$1" repo="$2" calls="$2.cargo-calls"
+    cp -R "$a_commit_template" "$repo"
+    : > "$calls"
+    whole_said="$( cd "$repo" && CARGO_CALLS="$calls" PATH="$python_bin:$stand_in_bin:$PATH" \
+        timeout 60 bash "$a_check_on_its_own/check.sh" all 2>&1 )"
+    whole_calls="$(cat "$calls")"
+}
+
+# Whether every word given is somewhere in `whole_said`.
+the_whole_run_says() {
+    local word
+    for word in "$@"; do
+        case "$whole_said" in
+            *"$word"*) ;;
+            *) return 1 ;;
+        esac
+    done
+}
+
+# The run's closing line, the last that starts `check.sh: all `.
+the_whole_runs_closing_line() {
+    local line closing=""
+    while IFS= read -r line; do
+        case "$line" in
+            "check.sh: all "*) closing="$line" ;;
+        esac
+    done <<< "$whole_said"
+    printf '%s' "$closing"
+}
+
+a_whole_run "$locked_python" "$work/a-whole-run-locked"
+closing="$(the_whole_runs_closing_line)"
+if ! the_list_is_there; then
+    suite_case_failed "a whole run on a locked session leaves out the clipboard tests and says so" \
+        "check.sh names no target or no test that needs the clipboard"
+elif ! printf '%s\n' "$whole_calls" | grep -qxF "test --all-targets --no-fail-fast $what_a_locked_run_adds"; then
+    suite_case_failed "a whole run on a locked session leaves out the clipboard tests and says so" \
+        "the stand-in saw:" "$whole_calls"
+elif ! the_whole_run_says "the session is locked" "$the_clipboard_target" \
+    "${the_clipboard_tests[@]}" "CI's Test Suite runs them"; then
+    suite_case_failed "a whole run on a locked session leaves out the clipboard tests and says so" \
+        "the notice is not all there in:" "$whole_said"
+else
+    case "$closing" in
+        *"left out because the session is locked: ${#the_clipboard_tests[@]} tests of $the_clipboard_target, which CI's Test Suite runs")
+            suite_case_passed "a whole run on a locked session leaves out the clipboard tests and says so"
+            ;;
+        *)
+            suite_case_failed "a whole run on a locked session leaves out the clipboard tests and says so" \
+                "the closing line does not end with what was left out: $closing"
+            ;;
+    esac
+fi
+
+a_whole_run "$unlocked_python" "$work/a-whole-run-unlocked"
+if ! printf '%s\n' "$whole_calls" | grep -qxF "test --all-targets --no-fail-fast"; then
+    suite_case_failed "a whole run on an unlocked session hands cargo what it always did" \
+        "the stand-in saw:" "$whole_calls"
+elif the_whole_run_says "the session is locked" || the_whole_run_says "left out because"; then
+    suite_case_failed "a whole run on an unlocked session hands cargo what it always did" \
+        "it said something was left out:" "$whole_said"
+else
+    suite_case_passed "a whole run on an unlocked session hands cargo what it always did"
+fi
+
+a_whole_run "$no_python_bin" "$work/a-whole-run-unread"
+if ! printf '%s\n' "$whole_calls" | grep -qxF "test --all-targets --no-fail-fast"; then
+    suite_case_failed "a whole run whose lock nobody could read runs the clipboard tests and says so" \
+        "the stand-in saw:" "$whole_calls"
+elif ! the_whole_run_says "could not ask whether this session is locked" "Python was not found"; then
+    suite_case_failed "a whole run whose lock nobody could read runs the clipboard tests and says so" \
+        "it did not say it could not ask, and why, in:" "$whole_said"
+else
+    suite_case_passed "a whole run whose lock nobody could read runs the clipboard tests and says so"
+fi
+
+# A scoped run, through the commit fixture with its mode left to
+# `which-checks.sh`: a commit staging the paste target earns it on the one
+# integration call, which ends with the words.
+paste_commit="$work/paste-commit"
+a_commit_being_made "$paste_commit" "tests/$the_clipboard_target.rs"
+paste_calls="$(PATH="$locked_python:$PATH" commit_with_the_stand_in "$paste_commit" "")"
+paste_target_call="$(printf '%s\n' "$paste_calls" | grep '^test --no-fail-fast --test ' || true)"
+if ! the_list_is_there; then
+    suite_case_failed "a scoped run on a locked session leaves out the clipboard tests" \
+        "check.sh names no target or no test that needs the clipboard"
+else
+    case "$paste_target_call" in
+        *"--test $the_clipboard_target "*"$what_a_locked_run_adds")
+            suite_case_passed "a scoped run on a locked session leaves out the clipboard tests"
+            ;;
+        *)
+            suite_case_failed "a scoped run on a locked session leaves out the clipboard tests" \
+                "the stand-in saw:" "$paste_calls"
+            ;;
+    esac
+fi
+
+# A red naming one of those tests cannot be judged on a locked session: the
+# test cannot run, and a test that cannot run neither passes nor fails. So such
+# a commit is refused before anything runs, and judged as before when the
+# session is unlocked or the commit names other tests.
+a_red_naming="$work/a-red-naming-a-clipboard-test"
+printf 'a red\n\nFails-until-green: %s\n' "${the_clipboard_tests[0]-nothing on the list}" > "$a_red_naming"
+a_red_naming_others="$work/a-red-naming-other-tests"
+printf 'a red\n\nFails-until-green: application::allowed::tests::test_a\n' > "$a_red_naming_others"
+
+expect_cannot_judge() {
+    local desc="$1" want="$2" said status
+    shift 2
+    said="$(ask_from_the_tree --what-a-locked-session-cannot-judge "$@" 2>&1)"
+    status=$?
+    if ! the_list_is_there; then
+        suite_case_failed "$desc" "check.sh names no target or no test that needs the clipboard"
+    elif [ "$status" -ne 0 ] || [ "$said" != "$want" ]; then
+        suite_case_failed "$desc" "exited $status and answered:" "$said" "wanted:" "$want"
+    else
+        suite_case_passed "$desc"
+    fi
+}
+
+expect_cannot_judge "a red naming a clipboard test cannot be judged on a locked session" \
+    "${the_clipboard_tests[0]-}" locked "$a_red_naming"
+expect_cannot_judge "a red naming a clipboard test is judged as before on an unlocked session" \
+    "" unlocked "$a_red_naming"
+expect_cannot_judge "a red naming other tests is not refused for the lock" \
+    "" locked "$a_red_naming_others"
+
+a_locked_red="$work/a-locked-red"
+a_commit_being_made "$a_locked_red"
+: > "$a_locked_red.cargo-calls"
+locked_red_said="$( cd "$a_locked_red" && CARGO_CALLS="$a_locked_red.cargo-calls" \
+    PATH="$locked_python:$stand_in_bin:$PATH" \
+    timeout 60 bash "$subject" --message-file="$a_red_naming" 2>&1 )"
+locked_red_status=$?
+locked_red_calls="$(cat "$a_locked_red.cargo-calls")"
+if ! the_list_is_there; then
+    suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+        "check.sh names no target or no test that needs the clipboard"
+elif [ "$locked_red_status" -eq 0 ] || [ -n "$locked_red_calls" ]; then
+    suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+        "exited $locked_red_status and the stand-in saw:" "$locked_red_calls" "the run said:" "$locked_red_said"
+else
+    case "$locked_red_said" in
+        *"this red cannot be judged here"*"Nothing was run."*)
+            suite_case_passed "a red naming a clipboard test on a locked session is refused before any cargo call"
+            ;;
+        *)
+            suite_case_failed "a red naming a clipboard test on a locked session is refused before any cargo call" \
+                "the refusal does not say why in:" "$locked_red_said"
+            ;;
+    esac
+fi
+
 suite_verdict

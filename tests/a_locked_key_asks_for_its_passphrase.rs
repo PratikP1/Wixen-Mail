@@ -32,6 +32,7 @@
 #![cfg(windows)]
 
 use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::presentation::wx_passphrase::{self, THAT_DID_NOT_OPEN_IT, build};
@@ -804,6 +805,314 @@ fn test_the_clipboard_census_sees_a_call_planted_in_another_target() {
     );
     assert_eq!(clipboard_calls_in(path, in_a_comment), Vec::<String>::new());
     assert_eq!(clipboard_calls_in(path, in_a_literal), Vec::<String>::new());
+}
+
+// ── A locked session leaves out exactly the tests that need the clipboard ──
+//
+// The census above keeps the clipboard in one target, and Windows still refuses
+// it there while the session is locked. On 2026-10-22 the merge of 13.3-20 was
+// refused after 872 s because four tests of that target could not open it, and
+// the merge train stood still overnight (ledger 716). Pratik said yes on
+// 2026-10-23 to the gate leaving those tests out by name on a locked session and
+// saying so, since CI's Test Suite runs them on every push and pull request.
+//
+// So `scripts/check.sh` holds the names as a list, and this reading holds the
+// list to the code. A test of the real paste target needs the clipboard when its
+// body reaches a call on the census's list, directly or through the file's own
+// functions, followed until nothing more is reached. The list must name exactly
+// those tests: one more is a test a locked run skips for nothing, one fewer is
+// a test that fails every locked run over nothing the code did.
+//
+// What it cannot see: a test reaching the clipboard through another file or the
+// library, which the census keeps away from it; and a method that shares a name
+// with one of the file's functions, which is read as reaching what that function
+// reaches, so the list would be asked to leave out a test that could run.
+
+const THE_GATE: &str = "scripts/check.sh";
+
+/// What `scripts/check.sh` leaves out of a run on a locked session.
+#[derive(Debug, PartialEq)]
+struct LeftOutWhileLocked {
+    target: String,
+    tests: Vec<String>,
+}
+
+/// The value of the gate's `the_target_that_needs_the_clipboard=` line and
+/// the names between its `the_tests_that_need_the_clipboard=(` line and the
+/// next line holding only `)`, one name to a line with blank and comment
+/// lines skipped; `None` when either is missing.
+fn the_tests_left_out_while_locked(check_sh: &str) -> Option<LeftOutWhileLocked> {
+    let target = check_sh
+        .lines()
+        .find_map(|line| line.strip_prefix("the_target_that_needs_the_clipboard="))?;
+    let mut after_the_opening = check_sh
+        .lines()
+        .skip_while(|line| *line != "the_tests_that_need_the_clipboard=(")
+        .skip(1);
+    let mut tests = Vec::new();
+    loop {
+        let name = after_the_opening.next()?.trim();
+        match name {
+            ")" => break,
+            "" => {}
+            comment if comment.starts_with('#') => {}
+            name => tests.push(name.to_string()),
+        }
+    }
+    Some(LeftOutWhileLocked {
+        target: target.trim().to_string(),
+        tests,
+    })
+}
+
+/// One function of a file's code: its name, its body, and whether it is
+/// marked `#[test]`.
+struct Function<'a> {
+    name: &'a str,
+    body: &'a str,
+    is_a_test: bool,
+}
+
+/// Whether the attributes just above a function, read from the code before
+/// its `fn`, mark it `#[test]`.
+fn is_marked_a_test(before: &str) -> bool {
+    before
+        .lines()
+        .rev()
+        .map(str::trim)
+        .skip_while(|line| line.is_empty())
+        .take_while(|line| line.starts_with("#["))
+        .any(|line| line == "#[test]")
+}
+
+/// Where the body opened at `opens` closes, counting braces in code.
+fn where_the_body_closes(code: &str, opens: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in code[opens..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(opens + at + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Where the body of the function whose signature starts at `from` opens:
+/// the first `{` outside brackets, or `None` when a `;` comes first, as it
+/// does for a function declared with no body.
+fn where_the_body_opens(code: &str, from: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (at, c) in code[from..].char_indices() {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth = depth.saturating_sub(1),
+            '{' if depth == 0 => return Some(from + at),
+            ';' if depth == 0 => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Every function with a body in code that `code_only` has blanked.
+fn the_functions_in(code: &str) -> Vec<Function<'_>> {
+    code.match_indices("fn ")
+        .filter(|(at, token)| stands_alone(code, *at, token))
+        .filter_map(|(at, _)| {
+            let named_from = at + "fn ".len();
+            let name_length = code[named_from..]
+                .find(|c: char| !is_identifier(c))
+                .unwrap_or(code.len() - named_from);
+            let name = &code[named_from..named_from + name_length];
+            let opens = where_the_body_opens(code, named_from + name_length)?;
+            let closes = where_the_body_closes(code, opens)?;
+            (!name.is_empty()).then(|| Function {
+                name,
+                body: &code[opens..closes],
+                is_a_test: is_marked_a_test(&code[..at]),
+            })
+        })
+        .collect()
+}
+
+/// Whether `token` stands on its own somewhere in `code`.
+fn names_alone(code: &str, token: &str) -> bool {
+    code.match_indices(token)
+        .any(|(at, _)| stands_alone(code, at, token))
+}
+
+/// The tests in a file whose bodies reach the clipboard, directly or through
+/// the file's own functions, by name.
+fn the_tests_that_reach_the_clipboard(text: &str) -> BTreeSet<String> {
+    let code = code_only(text);
+    let functions = the_functions_in(&code);
+    let mut reaching: BTreeSet<&str> = functions
+        .iter()
+        .filter(|function| {
+            CLIPBOARD_CALLS
+                .iter()
+                .any(|call| names_alone(function.body, call))
+        })
+        .map(|function| function.name)
+        .collect();
+    loop {
+        let newly: Vec<&str> = functions
+            .iter()
+            .filter(|function| !reaching.contains(function.name))
+            .filter(|function| reaching.iter().any(|name| names_alone(function.body, name)))
+            .map(|function| function.name)
+            .collect();
+        if newly.is_empty() {
+            break;
+        }
+        reaching.extend(newly);
+    }
+    functions
+        .iter()
+        .filter(|function| function.is_a_test && reaching.contains(function.name))
+        .map(|function| function.name.to_string())
+        .collect()
+}
+
+/// Every way the gate's list differs from the tests that reach the
+/// clipboard, one sentence each; empty when they agree.
+fn what_the_left_out_list_gets_wrong(
+    listed: &[String],
+    reaching: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut wrong = Vec::new();
+    let mut seen = BTreeSet::new();
+    for name in listed {
+        if !seen.insert(name) {
+            wrong.push(format!("{name} is on the list twice"));
+        }
+    }
+    for name in seen.iter().filter(|name| !reaching.contains(name.as_str())) {
+        wrong.push(format!(
+            "{name} is on the list and reaches no clipboard: left out for nothing"
+        ));
+    }
+    for name in reaching.iter().filter(|name| !seen.contains(name)) {
+        wrong.push(format!(
+            "{name} reaches the clipboard and is not on the list: fails on every locked run"
+        ));
+    }
+    wrong
+}
+
+fn read_or_say(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|why| panic!("{path} could not be read: {why}"))
+}
+
+#[test]
+fn test_a_locked_session_leaves_out_exactly_the_tests_that_need_the_clipboard() {
+    let Some(left_out) = the_tests_left_out_while_locked(&read_or_say(THE_GATE)) else {
+        panic!(
+            "{THE_GATE} names nothing to leave out on a locked session, so a locked session \
+             refuses every run reaching {THE_REAL_PASTE}: its tests that need the clipboard fail \
+             there whatever the code does (ledger 716)"
+        );
+    };
+    let stem = std::path::Path::new(THE_REAL_PASTE)
+        .file_stem()
+        .map(|it| it.to_string_lossy().into_owned());
+    assert_eq!(
+        Some(left_out.target.clone()),
+        stem,
+        "{THE_GATE} leaves tests out of a target that is not {THE_REAL_PASTE}"
+    );
+
+    let reaching = the_tests_that_reach_the_clipboard(&read_or_say(THE_REAL_PASTE));
+    assert!(
+        !reaching.is_empty(),
+        "no test of {THE_REAL_PASTE} reaches the clipboard by this reading, so it read nothing; \
+         four did on 2026-10-23"
+    );
+
+    let wrong = what_the_left_out_list_gets_wrong(&left_out.tests, &reaching);
+    assert!(
+        wrong.is_empty(),
+        "{THE_GATE}'s list of tests a locked session leaves out is not the tests of \
+         {THE_REAL_PASTE} that need the clipboard: {wrong:#?}"
+    );
+}
+
+#[test]
+fn test_the_left_out_reading_sees_a_list_that_drifted() {
+    // The companion, over strings. A reading that found no test reaching the
+    // clipboard would agree with an empty list, and one that read comments
+    // would ask the gate to skip a test that runs.
+    let planted = "\
+        fn open_it() { let _ = unsafe { OpenClipboard(0) }; }\n\
+        fn halfway() { open_it(); }\n\
+        fn put() { halfway(); }\n\
+        extern \"system\" { fn EmptyClipboard() -> i32; }\n\
+        #[test]\n\
+        fn test_through_two_helpers() { put(); }\n\
+        #[test]\n\
+        fn test_directly() { open_it(); }\n\
+        #[test]\n\
+        fn test_says_it_in_a_comment() {\n    // OpenClipboard(0) is never called here\n}\n\
+        #[test]\n\
+        fn test_says_it_in_a_string() { let _ = \"open_it() and OpenClipboard(0)\"; }\n";
+    let reaching = the_tests_that_reach_the_clipboard(planted);
+    let expected: BTreeSet<String> = ["test_directly", "test_through_two_helpers"]
+        .map(String::from)
+        .into();
+    assert_eq!(reaching, expected);
+
+    let named = |names: &[&str]| names.iter().map(|it| it.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        what_the_left_out_list_gets_wrong(
+            &named(&["test_directly", "test_through_two_helpers"]),
+            &reaching
+        ),
+        Vec::<String>::new()
+    );
+    let too_many = what_the_left_out_list_gets_wrong(
+        &named(&[
+            "test_directly",
+            "test_through_two_helpers",
+            "test_says_it_in_a_comment",
+        ]),
+        &reaching,
+    );
+    assert_eq!(
+        too_many,
+        vec![
+            "test_says_it_in_a_comment is on the list and reaches no clipboard: left out for nothing"
+        ]
+    );
+    let missing = what_the_left_out_list_gets_wrong(&named(&["test_directly"]), &reaching);
+    assert_eq!(
+        missing,
+        vec![
+            "test_through_two_helpers reaches the clipboard and is not on the list: fails on every locked run"
+        ]
+    );
+    let twice = what_the_left_out_list_gets_wrong(
+        &named(&["test_directly", "test_directly", "test_through_two_helpers"]),
+        &reaching,
+    );
+    assert_eq!(twice, vec!["test_directly is on the list twice"]);
+
+    let a_gate = "set -euo pipefail\n\
+        the_target_that_needs_the_clipboard=a_paste\n\
+        the_tests_that_need_the_clipboard=(\n    test_one\n\n    # a comment\n    test_two\n)\n";
+    assert_eq!(
+        the_tests_left_out_while_locked(a_gate),
+        Some(LeftOutWhileLocked {
+            target: "a_paste".to_string(),
+            tests: named(&["test_one", "test_two"]),
+        })
+    );
+    assert_eq!(the_tests_left_out_while_locked("set -euo pipefail\n"), None);
 }
 
 // ── A key is sent only on a desktop made for its run ───────────────────────
