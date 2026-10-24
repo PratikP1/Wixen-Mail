@@ -192,6 +192,8 @@ class Measured:
 
     stayed_green: list[str]
     also_went_red: list[str]
+    # The fast question this was answered on, None for the whole run.
+    question: FastQuestion | None = None
 
     def agrees_with_the_record(self) -> bool:
         return not self.stayed_green and not self.also_went_red
@@ -1010,6 +1012,270 @@ def the_tests_a_list_names(output: str) -> list[str]:
     ['a::tests::test_one', 'a::tests::test_two']
     """
     return [line[: -len(": test")] for line in output.splitlines() if line.endswith(": test")]
+
+
+# Windows caps a command line at 32,767 characters, and a question is the
+# record's suite, its flags and its filters on one. The longest red list on
+# 2026-10-22 was 101 names in 10,156 characters, so this leaves room for the
+# modules of what was added since and for everything else on the line.
+THE_LONGEST_A_QUESTION_MAY_BE = 24_000
+
+
+@dataclass(frozen=True)
+class FastQuestion:
+    """What the fast path asks one record under its break."""
+
+    # The short id of the commit that last wrote the record.
+    since: str
+    # Every test added since that commit that the record's suite compiles, by
+    # full name.
+    added: tuple[str, ...]
+    # The named tests by full name, then the modules of the added ones.
+    filters: tuple[str, ...]
+    # Added tests the record's suite does not compile, as (file, name).
+    left_out: tuple[tuple[str, str], ...]
+    # The files the record counts that hold more tests now.
+    gained: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WhereItWasMeasured:
+    """What the run read for the commit blame names for one record."""
+
+    commit: str
+    there: Guard | None
+    at_its_parents: list[Guard | None]
+    held_there: list[tuple[str, int]]
+    then_by_file: dict[str, list[str] | None]
+    now_by_file: dict[str, list[str] | None]
+
+
+def the_question_for(
+    guard: Guard,
+    held_now: list[tuple[str, int]],
+    where: WhereItWasMeasured | None,
+    listed: list[str],
+) -> FastQuestion | str:
+    """The fast question for a record, or why it takes the whole run.
+
+    >>> a, b = "src/application/calendar.rs", "src/application/allowed.rs"
+    >>> named = "application::calendar::tests::test_named"
+    >>> record = Guard("r", ROOT / a, "x", "y", (named,), counted=((a, 4), (b, 3)))
+    >>> listed = [named, "application::calendar::tests::test_a_new",
+    ...           "application::allowed::tests::test_new", "application::allowed::tests::test_b_new"]
+    >>> def measured_at(then, now, there=record):
+    ...     return WhereItWasMeasured("1a2b3c4d" + "0" * 32, there, [None], [(a, 4), (b, 3)], then, now)
+
+    The check's second hole: `src/application/allowed.rs` holds a test renamed
+    at an equal count, so the record takes the whole run, naming it:
+
+    >>> print(the_question_for(record, [(a, 5), (b, 3)], measured_at(
+    ...     {a: ["test_named", "t2", "t3", "t4"], b: ["t5", "t6", "test_old"]},
+    ...     {a: ["test_named", "t2", "t3", "t4", "test_a_new"], b: ["t5", "t6", "test_new"]},
+    ... ), listed))
+    test_old is gone from src/application/allowed.rs, which it counts, so a test it names may have been renamed, moved or removed
+
+    The check's first hole: a record counting only the first file, with a test
+    added to the second, asks it:
+
+    >>> only_a = Guard("r", ROOT / a, "x", "y", (named,), counted=((a, 4),))
+    >>> asked = the_question_for(only_a, [(a, 5)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, only_a, [None], [(a, 4)],
+    ...     {a: ["test_named", "t2", "t3", "t4"], b: ["t5"]},
+    ...     {a: ["test_named", "t2", "t3", "t4", "test_a_new"], b: ["t5", "test_b_new"]},
+    ... ), listed)
+    >>> asked.since, asked.added
+    ('1a2b3c4d', ('application::allowed::tests::test_b_new', 'application::calendar::tests::test_a_new'))
+    >>> asked.filters
+    ('application::calendar::tests::test_named', 'application::allowed::tests::', 'application::calendar::tests::')
+    >>> asked.gained
+    ('src/application/calendar.rs',)
+
+    A record of an integration target, a test added to the library beside one
+    added to its own file: the library's is left out, and said:
+
+    >>> style = Guard("s", ROOT / "tests/house_style.rs", "x", "y", ("test_named_h",),
+    ...               ("--test", "house_style"), (("tests/house_style.rs", 78),))
+    >>> asked = the_question_for(style, [("tests/house_style.rs", 79)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, style, [None], [("tests/house_style.rs", 78)],
+    ...     {"tests/house_style.rs": ["test_named_h"], a: []},
+    ...     {"tests/house_style.rs": ["test_named_h", "test_h_new"], a: ["test_c_new"]},
+    ... ), ["test_named_h", "test_h_new"])
+    >>> asked.added, asked.left_out
+    (('test_h_new',), (('src/application/calendar.rs', 'test_c_new'),))
+
+    The readings in order, each one a reason before the next is asked:
+
+    >>> print(the_question_for(record, [(a, 4), (b, 3)], None, listed))
+    nothing it counts gained a test since its counts were written
+    >>> print(the_question_for(record, [(a, 5), (b, 3)], None, listed))
+    git blame names no commit that wrote all of it, or a line of it is not yet committed
+    >>> print(the_question_for(record, [(a, 5), (b, 3)], measured_at({}, {}, there=only_a), listed))
+    it reads differently at 1a2b3c4d, so that is not where it was last measured
+    >>> print(the_question_for(only_a, [(a, 5)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, only_a, [None], [(a, 4)], {a: ["test_named"]},
+    ...     {a: ["test_named", "test_nowhere"]},
+    ... ), listed))
+    test_nowhere was added to src/application/calendar.rs, and the list of --lib does not hold it
+
+    A question too long for one command line:
+
+    >>> long = tuple(f"application::calendar::tests::test_{'x' * 80}_{n}" for n in range(300))
+    >>> wordy = Guard("w", ROOT / a, "x", "y", long, counted=((a, 4),))
+    >>> print(the_question_for(wordy, [(a, 5)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, wordy, [None], [(a, 4)], {a: ["t"]}, {a: ["t", "test_a_new"]},
+    ... ), listed))
+    its question would be 35,921 characters of filters, past the 24,000 one command line is given here
+    """
+    counts = dict(guard.counted)
+    gained = tuple(file for file, held in held_now if held > counts.get(file, held))
+    added = []
+    if where is not None:
+        for file in gained:
+            fresh, _ = the_tests_added(
+                where.then_by_file.get(file) or [], where.now_by_file.get(file) or []
+            )
+            added += [(file, name) for name in fresh]
+    full = the_full_names_of(added, listed, guard.suite)
+    return FastQuestion(
+        since=where.commit[:8] if where else "",
+        added=tuple(sorted(full.found)),
+        filters=(*guard.red, *the_filters_for(tuple(full.found))),
+        left_out=tuple(full.left_out),
+        gained=gained,
+    )
+
+
+def why_the_fast_answer_does_not_stand(
+    guard: Guard,
+    question: FastQuestion,
+    verdicts: dict[str, str],
+    already_failing: set[str],
+) -> str | None:
+    """None when every named test went red, every added test ran, and nothing
+    the record does not name went red that was not failing before the break;
+    otherwise the sentence for the path line that hands it to the whole run.
+
+    >>> named = ("a::tests::test_one", "a::tests::test_two")
+    >>> record = Guard("r", Path("a.rs"), "x", "y", named)
+    >>> asked = FastQuestion("1a2b3c4d", ("b::tests::test_new",), named + ("b::tests::",), (), ("src/a.rs",))
+    >>> clean = {"a::tests::test_one": "FAILED", "a::tests::test_two": "FAILED", "b::tests::test_new": "ok"}
+    >>> why_the_fast_answer_does_not_stand(record, asked, clean, set()) is None
+    True
+    >>> print(why_the_fast_answer_does_not_stand(record, asked, {**clean, "b::tests::test_new": "FAILED"}, set()))
+    1 test the record does not name went red: b::tests::test_new
+
+    One that was already failing before the break is not this break's:
+
+    >>> why_the_fast_answer_does_not_stand(
+    ...     record, asked, {**clean, "b::tests::test_old": "FAILED"}, {"b::tests::test_old"}
+    ... ) is None
+    True
+    >>> print(why_the_fast_answer_does_not_stand(record, asked, {**clean, "a::tests::test_two": "ok"}, set()))
+    1 named test stayed green on the fast question, and a test can fail only in company: a::tests::test_two
+    >>> print(why_the_fast_answer_does_not_stand(
+    ...     record, asked, {"a::tests::test_one": "FAILED", "a::tests::test_two": "FAILED"}, set()
+    ... ))
+    1 test the fast question was to ask did not run: b::tests::test_new
+    """
+    return None
+
+
+def judged_under_the_break(
+    guard: Guard,
+    ask,
+    already_failing: set[str] | None,
+    question: FastQuestion | None,
+    named_only: bool = False,
+) -> Measured:
+    """Ask the record's suite under the break already written, and judge it.
+
+    `ask(filters)` runs the suite, filtered or whole when handed None, and
+    answers its verdicts.
+
+    >>> named = ("a::tests::test_one", "a::tests::test_two")
+    >>> record = Guard("r", Path("a.rs"), "x", "y", named)
+    >>> asked = FastQuestion("1a2b3c4d", ("b::tests::test_new",), named + ("b::tests::",), (), ("src/a.rs",))
+    >>> clean = {"a::tests::test_one": "FAILED", "a::tests::test_two": "FAILED", "b::tests::test_new": "ok"}
+    >>> def asking(fast, whole):
+    ...     calls = []
+    ...     def ask(filters):
+    ...         calls.append(filters)
+    ...         return fast if filters else whole
+    ...     return ask, calls
+
+    A question and a clean answer: one run, filtered, and its verdict carries
+    the question:
+
+    >>> ask, calls = asking(clean, None)
+    >>> measured = judged_under_the_break(record, ask, set(), asked)
+       path: fast, last measured at 1a2b3c4d, 1 test added since
+    >>> calls, measured.agrees_with_the_record(), measured.question is asked
+    ([['a::tests::test_one', 'a::tests::test_two', 'b::tests::']], True, True)
+
+    An added test that goes red hands it to the whole run under the same
+    break, which reports it:
+
+    >>> went_red = {**clean, "b::tests::test_new": "FAILED"}
+    >>> ask, calls = asking(went_red, went_red)
+    >>> measured = judged_under_the_break(record, ask, set(), asked)
+       path: fast, last measured at 1a2b3c4d, 1 test added since
+       path: whole, 1 test the record does not name went red: b::tests::test_new
+    >>> len(calls), calls[1], measured.also_went_red, measured.question
+    (2, None, ['b::tests::test_new'], None)
+
+    A named test green on the fast question and red on the whole run:
+
+    >>> ask, calls = asking({**clean, "a::tests::test_two": "ok"}, clean)
+    >>> measured = judged_under_the_break(record, ask, set(), asked)
+       path: fast, last measured at 1a2b3c4d, 1 test added since
+       path: whole, 1 named test stayed green on the fast question, and a test can fail only in company: a::tests::test_two
+    >>> len(calls), measured.agrees_with_the_record(), measured.question
+    (2, True, None)
+
+    No question is the whole run, judged as it always was:
+
+    >>> ask, calls = asking(None, clean)
+    >>> judged_under_the_break(record, ask, set(), None).agrees_with_the_record(), calls
+    (True, [None])
+    >>> ask, calls = asking(None, {"a::tests::test_one": "FAILED"})
+    >>> judged_under_the_break(record, ask, set(), None)
+    Traceback (most recent call last):
+        ...
+    guards.Wrong: the test harness never ran a::tests::test_two.
+    Either the name is wrong or the test has gone.
+    """
+    verdicts = ask(the_filters_for(guard.red) if named_only else None)
+    return judged(guard, verdicts, already_failing)
+
+
+def judged(
+    guard: Guard,
+    verdicts: dict[str, str],
+    already_failing: set[str] | None,
+    question: FastQuestion | None = None,
+) -> Measured:
+    """What a run's verdicts say about a record, the failures already there
+    before the break taken out."""
+    never_ran = [name for name in guard.red if name not in verdicts]
+    if never_ran:
+        raise Wrong(
+            "the test harness never ran "
+            + ", ".join(never_ran)
+            + ".\nEither the name is wrong or the test has gone."
+        )
+    named = set(guard.red)
+    went_red = {name for name, verdict in verdicts.items() if verdict == "FAILED"}
+    # A test that was failing before the break was applied was not felled by it.
+    # Only subtracted from what the break is blamed for; a named test that is
+    # already red is left alone, because it stays a test this break is recorded
+    # as reddening and the run has not shown otherwise.
+    went_red -= (already_failing or set()) - named
+    return Measured(
+        stayed_green=[name for name in guard.red if name not in went_red],
+        also_went_red=sorted(went_red - named),
+        question=question,
+    )
 
 
 def why_the_counts_may_not_be_written(named_only: bool) -> str | None:
@@ -1999,6 +2265,7 @@ def measure(
     already_failing: set[str] | None = None,
     named_only: bool = False,
     budget: Budget | None = None,
+    question: FastQuestion | None = None,
 ) -> Measured:
     """Apply the break, run the guard's own suite, put the file back.
 
@@ -2139,6 +2406,16 @@ def say_what_it_found(guard: Guard, measured: Measured) -> None:
        all 3 tests named went red, and nothing else did
     >>> say_what_it_found(one, Measured(stayed_green=[], also_went_red=[]))
        the one test named went red, and nothing else did
+
+    An agreement on the fast question cannot say "and nothing else did", since
+    it ran only what it asked, so it says what it ran:
+
+    >>> fast = FastQuestion("1a2b3c4d", ("x::a", "x::b"), (), (), ())
+    >>> five = Guard("a guard", Path("nowhere.rs"), "a", "b", ("a", "b", "c", "d", "e"))
+    >>> say_what_it_found(five, Measured(stayed_green=[], also_went_red=[], question=fast))
+       all 5 tests named went red, and nothing else that ran did: 2 added since 1a2b3c4d
+    >>> say_what_it_found(one, Measured([], [], FastQuestion("1a2b3c4d", ("x::a",), (), (), ())))
+       the one test named went red, and nothing else that ran did: 1 added since 1a2b3c4d
     """
     if measured.stayed_green:
         print(
@@ -2255,6 +2532,28 @@ def verdicts_in(log_text: str) -> dict[str, str]:
     {}
     >>> verdicts_in(block("timed and judged", "   timed: rebuild 44 s, run 47 s, 91 s in all", "   the one test named went red, and nothing else did"))
     {'timed and judged': 'agreed'}
+
+    The lines saying which path a `--remeasure` record took are not verdicts
+    either, and the fast agreement's own shape reads as agreed:
+
+    >>> fast = "   path: fast, last measured at 1a2b3c4d, 2 tests added since"
+    >>> verdicts_in(block(
+    ...     "fast", fast, "   timed: rebuild 1 s, run 3 s, 4 s in all",
+    ...     "   all 5 tests named went red, and nothing else that ran did: 2 added since 1a2b3c4d",
+    ... ))
+    {'fast': 'agreed'}
+    >>> verdicts_in(block(
+    ...     "handed over", fast, "   timed: rebuild 1 s, run 3 s, 4 s in all",
+    ...     "   path: whole, 1 test the record does not name went red: b::tests::test_new",
+    ...     "   timed: rebuild 0 s, run 50 s, 50 s in all",
+    ...     "   1 test went red that this record does not name:", "       b::tests::test_new", "",
+    ... ))
+    {'handed over': 'short'}
+    >>> verdicts_in(block(
+    ...     "whole", "   path: whole, nothing it counts gained a test since its counts were written",
+    ...     "   the one test named went red, and nothing else did",
+    ... ))
+    {'whole': 'agreed'}
 
     A record, or a whole suite's pre-read, that the time limit stopped. It is
     unmeasured rather than judged, so a resume takes it again, and the two
@@ -2385,6 +2684,10 @@ def verdicts_in(log_text: str) -> dict[str, str]:
 # Beneath a record's verdict when another cargo was alive as its run returned.
 # `verdicts_in` reads this exact line, so it is written once.
 CONTENDED = "   contended: another cargo ran during this record"
+
+# The opener of the line that says which path a `--remeasure` record took and
+# why. `verdicts_in` skips it as it skips the timing line, so it is written once.
+THE_PATH = "   path: "
 
 AGREED = re.compile(
     r"^   (the one test named|all \d+ tests named) went red, and nothing else did$"
@@ -2786,6 +3089,34 @@ def the_closing_line(
     return f"{given_up_on}{rest}"
 
 
+def the_closing_verdict(selected: int, took_the_fast_path: int) -> str:
+    """What a clean run that asked the whole question says before its closing
+    line, saying how many records took the fast path and what it did not ask.
+
+    With none on the fast path, the two sentences a run has always ended with:
+
+    >>> print(the_closing_verdict(1, 0))
+    The guard still goes red when what it defends breaks, and nothing else does.
+    >>> print(the_closing_verdict(5, 0))
+    All 5 guards redden exactly the tests their records name.
+
+    With some:
+
+    >>> print(the_closing_verdict(5, 3))
+    All 5 guards redden the tests their records name, 3 records on the fast path and 2 records on the whole run, and nothing went red that a record does not name among the tests that ran.
+    Whether a test that was already there when a record was last measured now goes red as well was not asked of the 3 records on the fast path. The sweep asks it.
+    >>> print(the_closing_verdict(5, 1))
+    All 5 guards redden the tests their records name, 1 record on the fast path and 4 records on the whole run, and nothing went red that a record does not name among the tests that ran.
+    Whether a test that was already there when a record was last measured now goes red as well was not asked of the 1 record on the fast path. The sweep asks it.
+    >>> print(the_closing_verdict(1, 1))
+    The guard reddens the tests its record names, on the fast path, and nothing went red that the record does not name among the tests that ran.
+    Whether a test that was already there when the record was last measured now goes red as well was not asked on the fast path. The sweep asks it.
+    """
+    if selected == 1:
+        return "The guard still goes red when what it defends breaks, and nothing else does."
+    return f"All {selected} guards redden exactly the tests their records name."
+
+
 class Logged:
     """Everything printed, to the screen and to the log at once, each write
     flushed to the file before it returns.
@@ -2818,6 +3149,7 @@ def measured_and_said(
     named_only: bool,
     budget: Budget | None = None,
     measuring=measure,
+    question: FastQuestion | None = None,
 ) -> str:
     """Measure one record and print what was found: "agreed", "slipped", or
     "given up on".
@@ -2841,10 +3173,88 @@ def measured_and_said(
     ... except TheTreeWasLeftBroken:
     ...     print("let through")
     let through
+
+    Three records end to end on the fast path, through a measuring function
+    built from `judged_under_the_break` and a stand-in for the suite. One
+    record counting only `src/application/calendar.rs`, last measured when it
+    held four tests; a test added since to that file, and one to
+    `src/application/allowed.rs`, which it does not count:
+
+    >>> import contextlib, io
+    >>> a, b = "src/application/calendar.rs", "src/application/allowed.rs"
+    >>> named = "application::calendar::tests::test_named"
+    >>> in_a, in_b = "application::calendar::tests::test_a_new", "application::allowed::tests::test_b_new"
+    >>> record = Guard("only a", ROOT / a, "x", "y", (named,), counted=((a, 4),))
+    >>> asked = the_question_for(record, [(a, 5)], WhereItWasMeasured(
+    ...     "1a2b3c4d" + "0" * 32, record, [None], [(a, 4)],
+    ...     {a: ["test_named", "t2", "t3", "t4"], b: ["t5"]},
+    ...     {a: ["test_named", "t2", "t3", "t4", "test_a_new"], b: ["t5", "test_b_new"]},
+    ... ), [named, in_a, in_b])
+    >>> def under_the_break(verdicts):
+    ...     def measuring(guard, scratch, already_failing, named_only=False, budget=None, question=None):
+    ...         return judged_under_the_break(guard, lambda filters: verdicts, already_failing, question)
+    ...     return measuring
+    >>> def said_for(verdicts):
+    ...     printed = io.StringIO()
+    ...     with contextlib.redirect_stdout(printed):
+    ...         held = measured_and_said(record, Path("."), set(), False,
+    ...                                  measuring=under_the_break(verdicts), question=asked)
+    ...     return held, printed.getvalue()
+
+    The test added to the file it counts goes red: both path lines, and the
+    whole run reports it as naming too few, so no count is written for it:
+
+    >>> held, block = said_for({named: "FAILED", in_a: "FAILED", in_b: "ok"})
+    >>> print(block, end="")
+       path: fast, last measured at 1a2b3c4d, 2 tests added since
+       path: whole, 1 test the record does not name went red: application::calendar::tests::test_a_new
+       1 test went red that this record does not name:
+           application::calendar::tests::test_a_new
+    <BLANKLINE>
+    >>> held, verdicts_in("-- only a\\n" + block)
+    ('slipped', {'only a': 'short'})
+
+    The test added to the file another record counts goes red, which is the
+    check's first hole held end to end; the same:
+
+    >>> held, block = said_for({named: "FAILED", in_a: "ok", in_b: "FAILED"})
+    >>> print(block, end="")
+       path: fast, last measured at 1a2b3c4d, 2 tests added since
+       path: whole, 1 test the record does not name went red: application::allowed::tests::test_b_new
+       1 test went red that this record does not name:
+           application::allowed::tests::test_b_new
+    <BLANKLINE>
+    >>> held, verdicts_in("-- only a\\n" + block)
+    ('slipped', {'only a': 'short'})
+
+    Neither goes red: the fast agreement, and only the record's counts are
+    written:
+
+    >>> held, block = said_for({named: "FAILED", in_a: "ok", in_b: "ok"})
+    >>> print(block, end="")
+       path: fast, last measured at 1a2b3c4d, 2 tests added since
+       the one test named went red, and nothing else that ran did: 2 added since 1a2b3c4d
+    >>> held, verdicts_in("-- only a\\n" + block)
+    ('agreed on the fast path', {'only a': 'agreed'})
+    >>> raw = (
+    ...     '[[guard]]\\nname = "only a"\\nfile = "src/application/calendar.rs"\\n'
+    ...     'before = "x"\\nafter = "y"\\nred = ["application::calendar::tests::test_named"]\\n'
+    ...     'tests_last_seen = [\\n    { file = "src/application/calendar.rs", tests = 4 },\\n]\\n'
+    ... )
+    >>> again = rewritten_with_counts(raw, the_guards_in(raw), {"only a": [(a, 5)]})
+    >>> the_records_without_their_counts(again) == the_records_without_their_counts(raw)
+    True
+    >>> the_guards_in(again)[0].counted
+    (('src/application/calendar.rs', 5),)
     """
     try:
         measured = measuring(
-            guard, scratch, already_failing, named_only=named_only, budget=budget
+            guard,
+            scratch,
+            already_failing,
+            named_only=named_only,
+            budget=budget,
+            question=question,
         )
     except TheTreeWasLeftBroken:
         # Ahead of both handlers below, which would print it and go on to the
