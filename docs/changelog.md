@@ -1644,7 +1644,10 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   permissions, openid and the email address one, which Google asks as one yes or no with no box
   to untick. Unticking Calendar, Contacts or Tasks keeps the sign-in and leaves that one module
   unable to sync. If you made your own Google sign-in key, add the two permissions on its Data
-  Access page, as Setting up a provider in Help now says.
+  Access page, as Setting up a provider in Help now says. Corrected 2026-10-24: until
+  2026-10-23 that module's sync said only that there was one error; since then it says which
+  permission Google would not give and which button gives it, as the entry of that day above
+  says.
 
   This corrects the entry of 16 October below in two places: a Google sign-in no longer needs
   the Google Calendar API, and a Google Workspace account no longer has to change its address
@@ -1719,7 +1722,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   written in a form this program does not read. Each one took contacts off this computer that
   were still in the address book. Now none of them takes anybody off. The sync counts a problem
   instead, and a server that stopped at its limit is named in the log as having sent only part
-  of the address book.
+  of the address book. Corrected 2026-10-24: until 2026-10-23 the contacts such an answer left
+  out still did not arrive until something else in the address book changed, and only the
+  first sync counted the problem; see the entry of that day above.
 
   A contact deleted in the address book while you had a change to it waiting here is now taken
   off with the change, and the summary says "A contact you had changed was deleted in your
@@ -1785,7 +1790,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   Known limits. This has not been tried on a real account yet; the tests use the program's own
   store. If Windows will not let go of a removed account's password, that account stays and
   you hear why, and an account added on its address is not saved either. Until a restart the
-  Account Manager can still list the account that was not saved.
+  Account Manager can still list the account that was not saved. Corrected 2026-10-24: since
+  2026-10-23 the main window and the Account Manager list the accounts as they were saved, and
+  a refused removal is said in one plain sentence; see the entry of that day above.
 
 - **A message you delete or mark as read during the first download stays that way (2026-10-21,
   MAIL-01, LIST-21).** While Wixen Mail brings down a folder you have open, it brings the list

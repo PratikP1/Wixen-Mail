@@ -98,7 +98,7 @@ and this page exists because structure present is not experience good.
 
 ## A. Blind: screen readers
 
-Two hundred and twenty-five items. Walk them in order; the first ones are the
+Two hundred and forty-eight items. Walk them in order; the first ones are the
 ground the rest stand on. Items 42 and 43 were added on 2026-09-18 and 44 to 57
 the same day, for what phase 10 built; this line said forty-one until then.
 Items 58 to 83 were added on 2026-09-20 for what phase 11 built; this line said
@@ -108,7 +108,8 @@ fifty-seven until then. Items 84 to 95 were added on 2026-09-24 for what phase
 Items 182 and 183 were added on 2026-10-04 for what phase 13.1 changed; this
 line said one hundred and eighty-one until then. Items 184 to 225 were added on
 2026-10-19 for what phase 13.2 changed; this line said one hundred and
-eighty-three until then.
+eighty-three until then. Items 226 to 248 were added on 2026-10-24 for what
+phase 13.3 changed; this line said two hundred and twenty-five until then.
 
 ### The main window
 
@@ -1379,6 +1380,126 @@ marked **A sitting** wait for one of phase 14's sittings on your own account.
     message's subject, or "No subject", and the preview named "Message", never
     a long run of letters and numbers. **NVDA.** [ledger 910]
 
+### Phase 13.3: the review's fixes
+
+Added 2026-10-24 by 13.3-25 for what phase 13.3 changed, one item for each
+ledger entry its plans opened for an ear, an eye, a real account or a run
+somebody has to read. Each item belongs with a group above and is here so the
+numbers run in order. Every one was proved by tests and none has been heard or
+met on a real account. Items marked **A sitting** wait for one of phase 14's
+sittings on your own account.
+
+226. **On your POP account under conversation view, open a conversation and
+    press Delete on one message; then press Delete on a message in the POP
+    Inbox, and move a message into another account's folder.** The window
+    coming back without the deleted message and the cursor on its neighbour,
+    and the conversation's row changing at once each time. **NVDA.**
+    [ledger 913]
+227. **In All Inboxes under conversation view, with your first account the one
+    last opened, press M on a conversation of your second account that holds
+    your reply in Sent; then mark a message while a check is sending older
+    changes for it.** The reply marked on that account's web mail and nothing
+    changed in the first account's Sent; the newest mark the one the server
+    keeps. **A sitting.** [ledger 915]
+228. **With Pause Downloading ticked, open a conversation and move to an older
+    message never opened, then press Ctrl+L, Ctrl+L again a moment later, and
+    Ctrl+R; then the same with Work Offline on.** That the text is not on this
+    computer yet and is being downloaded, with no window opening; then Forward
+    opening with the text quoted; offline, that it cannot be downloaded until
+    you go back online. **NVDA.** [ledger 916]
+229. **During the first download of a large folder, with that folder open,
+    press Delete on several messages and M on several more, in the message view
+    and then in conversation view.** Each heard once, and the rows staying gone
+    or read across the updates about every ten seconds, with nothing sent to
+    Trash deleted for good. **NVDA.** [ledger 920]
+230. **In one visit to the Account Manager, remove an account and add it back on
+    the same address, for example switching it from POP to IMAP, then press
+    OK and restart.** Nothing refused, the new account listed and the old one
+    gone with its mail. **NVDA, and your accounts.** [ledger 921]
+231. **During a first download of a large Inbox, have a message sent to you
+    from a sender you block and one a filing rule moves.** The blocked one
+    gone from the Inbox, the filed one in its folder once, and the new-mail
+    sentence heard. **A sitting.** [ledger 925]
+232. **Refresh a subscribed calendar with the network off, then follow a
+    calendar link with the network off.** The log a feedback report would send
+    naming only the feed's host, never its whole address, and the link's
+    sentence heard the same way. **NVDA.** [ledger 926]
+233. **Import a zip holding one damaged file beside good ones, then a folder
+    holding a mailbox file another program has open.** Each closing sentence
+    saying what came in and then, once, the file left out and why, and nothing
+    about the zip stopping partway through. **NVDA.** [ledger 929]
+234. **Sign In Again on a Gmail account with Calendar unticked on Google's
+    screen, then sign in for calendars, contacts and tasks the same way, and
+    sign in an account whose address box differs from its Username.** Mail
+    still checked, contacts and tasks still arriving, the Username named in the
+    sentence, and whether your key needed openid and the email permission added
+    first. **A sitting.** [ledger 931]
+235. **On a real IMAP account, let rules file a large arrival into two folders,
+    and let the Trash empty at a check.** In the log or the server's own record,
+    the source folder opened once per destination and each destination once,
+    and the Trash opened once rather than once per message. **A sitting.**
+    [ledger 933]
+236. **Put one meeting in two Google calendars, delete it here from one, then
+    change it at Google; and delete one day of a meeting two subscribed feeds
+    carry.** The other calendar's copy updated at the next sync and the deleted
+    one staying gone; the other feed still showing its day. **A sitting.**
+    [ledger 934]
+237. **Import a vCard file of a few hundred contacts to a Google account, and
+    during the first contacts sync after it edit one contact not yet sent and
+    delete another.** At the next sync the edit at Google, the deleted one gone
+    there, and neither here twice. **A sitting.** [ledger 935]
+238. **Open a message nested more than 512 levels deep, with a hidden preview
+    line and a hidden block below its visible text, in the formatted view.**
+    Neither hidden part read, and the sentence about one block left out said
+    once, at the top. **NVDA.** [ledger 939]
+239. **On a throwaway per-user install, never your own, delete
+    `wixen-mail.exe` from the program folder by hand, then uninstall.** The
+    message saying your mail and settings may still be on this computer, then
+    `%LOCALAPPDATA%\wixen-mail` gone afterwards. **NVDA, on a throwaway
+    install.** [ledger 940]
+240. **On a mail server without UIDPLUS, write a draft for three minutes or more,
+    then send it.** That an older copy may still be on the server said once, not
+    every minute, and the server's Drafts holding one unmarked copy with the
+    latest words. This waits for a server without UIDPLUS, which neither of your
+    accounts is. **A sitting, on such a server.** [ledger 942]
+241. **Choose Help, then Check for Updates, twice within a second.** Once that a
+    check is already under way, then the check's own answer once. What a
+    published release reaches, and the status line a check at start writes,
+    wait until a release exists. **NVDA.** [ledger 944]
+242. **Open Settings, then General, and move to New versions.** Its description
+    naming the installer as about 15 MB. **NVDA.** [ledger 946]
+243. **With Pause Downloading ticked, land on a message never opened in the
+    message list and press Ctrl+L at once, then again a moment later; land
+    twice on a message that is only an attachment and press Ctrl+R; then press
+    Ctrl+L and Ctrl+R in an empty folder.** That the text is not here yet with
+    no window, then Forward with the text quoted; that the message has no
+    readable body, no second download, and a reply with nothing quoted;
+    "Choose a message first." twice. **NVDA.** [ledger 947]
+244. **In the Account Manager, add an account with a password longer than 1,280
+    characters and press OK, then open the Account Manager again and restart.**
+    The refusal heard, and the new account in neither the Account Manager nor
+    the folder tree, before and after the restart. **NVDA.** [ledger 949]
+245. **Sync a real CardDAV address book that stops at its own limit or sends a
+    card without its text, twice.** The problem counted in the summary each
+    time, and the contacts it left out arriving on the first sync whose answer
+    holds them. This waits for such a server. **A sitting, or later.**
+    [ledger 951]
+246. **Sign In Again on the Gmail account with Calendar unticked on Google's
+    screen and press F5 in Calendar; then sign in again with the box ticked;
+    then the same for contacts and tasks, and through Sign In for Calendars,
+    Contacts and Tasks (`Alt+T`) on an app password.** The sentence naming the
+    calendars and Sign In Again, with the attention sound and no count; then
+    the calendars arriving. **A sitting.** [ledger 952]
+247. **Read the Test Suite job of the first pull request run after 13.3-24.7's
+    merge.** Its steps holding no Post Cache step, its minutes beside the
+    median of 44, and Clippy's log saying the cache was saved or already
+    there. **Whoever merges, on GitHub.** [ledger 955]
+248. **Read the first hook run on a locked session that reaches
+    `a_passphrase_box_takes_a_real_paste`.** The four clipboard tests named
+    under the notice that the session is locked, the target reading 7 passed
+    and 4 filtered out, and the closing line saying they were left out.
+    **Whoever's run it is.** [ledger 956]
+
 ## B. Low vision and colour
 
 Nine items. Both themes for every one, and Windows high contrast for the last.
@@ -1518,9 +1639,11 @@ Three items.
 
 ## When you have finished
 
-Seventy-six items: forty-one for screen readers, nine for low vision, eight
-for motor access, ten for cognitive access, five for hearing, three for
-vestibular and photosensitivity. When every item has a date and a technology
+Two hundred and eighty-three items: two hundred and forty-eight for screen
+readers, nine for low vision, eight for motor access, ten for cognitive access,
+five for hearing, three for vestibular and photosensitivity. Until 2026-10-24
+this line said seventy-six items with forty-one for screen readers, the count
+before phase 10 added to section A. When every item has a date and a technology
 against it, the pass has happened once, on one machine, with one version of
 each screen reader. Write that version down. The next release owes the walk
 again for whatever it changed, and the coverage page's "what has not
