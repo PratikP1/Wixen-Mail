@@ -1468,6 +1468,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **A contact you add while Allow Changes is off now waits for the setting instead of counting as
+  an error (2026-10-24, REAL-01).** With Allow Changes off for a Google or Outlook account, a
+  contact you added here stayed on this computer, as it should, but every contacts sync counted
+  it as one error and wrote that error to the log, as though something had broken. Now the sync
+  says one change is waiting here and to turn on Allow Changes in Settings to send it, the same
+  sentence it already says for a change to a contact and for a CardDAV address book. Nothing is
+  sent while the setting is off, and the first contacts sync after you turn it on adds the
+  contact to Google or Outlook. A contact Google or Outlook itself will not add is still counted
+  as an error, named in the log by the identifier this program gives it.
+
+  Known limits. Nobody has tried this with a real Google or Outlook account yet; the tests use
+  the program's own stand-ins for both (ledger 959).
+
 - **A Google sync refused for a permission you did not give now says which, and how to give it
   (2026-10-23, REAL-01).** If the box for calendars, contacts or tasks was left unticked on
   Google's screen when you signed in, Google refuses that sync. Wixen Mail used to say only that
