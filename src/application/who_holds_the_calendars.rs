@@ -1731,7 +1731,7 @@ mod tests {
     }
 
     #[test]
-    fn test_the_calendar_sync_turns_a_permission_not_given_into_its_reason() {
+    fn test_each_google_pass_turns_a_permission_not_given_into_its_reason() {
         each_google_pass_turns_a_refusal_into_its_reason(&the_window())
             .unwrap_or_else(|why| panic!("{why}"));
     }

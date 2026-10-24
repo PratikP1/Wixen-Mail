@@ -32974,7 +32974,12 @@ fn spawn_contacts_sync(app: AppHandles<'_>, account: Option<Account>) {
                     how_far,
                 )) {
                     Ok(result) => total.absorb(result),
-                    Err(e) => total.errors.push(format!("Google contacts: {}", e)),
+                    // A permission left unticked on Google's screen is said
+                    // with the button that gives it, not counted (ledger 932).
+                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(account, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google contacts: {}", e)),
+                    },
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}
@@ -33129,7 +33134,12 @@ fn spawn_tasks_sync(app: AppHandles<'_>, account: Option<Account>) {
             Ok(GooglesAnswer::Token(token)) => {
                 match handle.block_on(sync_google_tasks(&cache, &client, &token, aid)) {
                     Ok(result) => total.absorb(result),
-                    Err(e) => total.errors.push(format!("Google Tasks: {e}")),
+                    // A permission left unticked on Google's screen is said
+                    // with the button that gives it, not counted (ledger 932).
+                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(account, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google Tasks: {e}")),
+                    },
                 }
             }
             Ok(GooglesAnswer::NotGooglesToAsk) => {}

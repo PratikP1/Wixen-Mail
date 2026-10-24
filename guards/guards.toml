@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 930 records have arrived since and have not been through it.
+# 934 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -3017,7 +3017,7 @@ tests_last_seen = [
     { file = "src/presentation/time_elsewhere.rs", tests = 9 },
     { file = "src/presentation/wx_reminder_alert.rs", tests = 15 },
     { file = "src/service/caldav.rs", tests = 176 },
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # -- A whole day sent to a calendar server is a day ------------------------
@@ -7041,7 +7041,7 @@ red = [
     "service::tasks_api::tests::test_a_microsoft_task_read_names_its_list_as_carefully_as_a_write_does",
 ]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -7074,7 +7074,7 @@ red = [
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
     { file = "src/service/asked_and_answered.rs", tests = 17 },
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── The one-line bodies that join a sync to a real client ───────────────────
@@ -7726,7 +7726,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/tasks_sync.rs", tests = 124 },
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── A choice the form never asked for is not an answer of nothing ───────────
@@ -7790,7 +7790,7 @@ red = [
     "service::tasks_api::tests::test_a_new_google_task_says_nothing_about_whether_it_was_deleted",
 ]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -7804,7 +7804,7 @@ red = [
     "service::tasks_api::tests::test_a_deleted_google_task_is_marked_as_one",
 ]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── The name Google works out for itself is read and never sent back ────────
@@ -8828,7 +8828,7 @@ tests_last_seen = [
     { file = "src/data/message_cache/searching.rs", tests = 26 },
     { file = "src/service/onenote_notes.rs", tests = 13 },
     { file = "src/service/onenote_page.rs", tests = 48 },
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 [[guard]]
@@ -8854,7 +8854,7 @@ red = [
     "service::tasks_api::tests::test_the_progress_microsoft_holds_is_kept_when_a_change_goes_back",
 ]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── A Microsoft task's completion time trusts only the zone this was asked for ─
@@ -8888,7 +8888,7 @@ red = [
     "service::tasks_api::tests::test_a_microsoft_completion_time_read_in_a_different_zone_is_dropped_not_misread",
 ]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── Mail joins the write census, and a read that cannot carry a changing verb ─
@@ -11817,7 +11817,7 @@ before = """            "notStarted" => Some(Self::NotStarted),
 after = """            "inProgress" => Some(Self::InProgress),"""
 red = ["service::tasks_api::tests::test_every_progress_word_graph_sends_reads_back_to_the_state_it_named"]
 tests_last_seen = [
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # ── Accessibility subsystem, from the 2026-08-22 mutation-sweep round ───────
@@ -39479,7 +39479,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/service/asked_and_answered.rs", tests = 17 },
-    { file = "src/service/tasks_api.rs", tests = 62 },
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
 
 # Only an account whose mail is at Microsoft asks Microsoft. The break lets
@@ -44886,9 +44886,85 @@ after = '''                    Err(e) => match who_holds_the_calendars::why_goog
                         Some(why) => total.what_was_asked.why_not_asked = Some(why),
                         None => total.errors.push(format!("Google calendar: {}", e)),'''
 red = [
-    "application::who_holds_the_calendars::tests::test_the_calendar_sync_turns_a_permission_not_given_into_its_reason",
+    "application::who_holds_the_calendars::tests::test_each_google_pass_turns_a_permission_not_given_into_its_reason",
+    # Since task 2 the reading walks three passes in order, so with an earlier
+    # one broken the companion's planted later pass is reported under the
+    # earlier one's name and its assertion fails.
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_google_passes_sees_one_that_only_counts_the_refusal",
 ]
 tests_last_seen = [
     { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
     { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# The contacts sync's Google pass asks the same as the calendar's (13.3-24.5,
+# ledger 932). Broken by asking for no account.
+[[guard]]
+name = "the contacts sync turns a permission not given into its reason"
+file = "src/presentation/wx_app.rs"
+before = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(account, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google contacts: {}", e)),'''
+after = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(None, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google contacts: {}", e)),'''
+red = [
+    "application::who_holds_the_calendars::tests::test_each_google_pass_turns_a_permission_not_given_into_its_reason",
+    # The companion's planted tasks pass is reported under this one's name.
+    "application::who_holds_the_calendars::tests::test_the_reading_of_the_google_passes_sees_one_that_only_counts_the_refusal",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# The tasks sync's Google pass asks the same as the calendar's (13.3-24.5,
+# ledger 932). Broken by asking for no account.
+[[guard]]
+name = "the tasks sync turns a permission not given into its reason"
+file = "src/presentation/wx_app.rs"
+before = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(account, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google Tasks: {e}")),'''
+after = '''                    Err(e) => match who_holds_the_calendars::why_google_gave_nothing(None, &e) {
+                        Some(why) => total.what_was_asked.why_not_asked = Some(why),
+                        None => total.errors.push(format!("Google Tasks: {e}")),'''
+red = [
+    "application::who_holds_the_calendars::tests::test_each_google_pass_turns_a_permission_not_given_into_its_reason",
+]
+tests_last_seen = [
+    { file = "src/application/who_holds_the_calendars.rs", tests = 49 },
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+]
+
+# A Google Tasks read refused for a permission not given is the one error for
+# it (13.3-24.5, ledger 932). Broken by keeping the status alone for every
+# refusal, as the read did before.
+[[guard]]
+name = "a google tasks read refused for a permission not given is the one error for it"
+file = "src/service/tasks_api.rs"
+before = '''            if status == reqwest::StatusCode::FORBIDDEN
+                && who_holds_a_task_address(url) == WhoWasAsked::GoogleTasks'''
+after = '''            if false
+                && who_holds_a_task_address(url) == WhoWasAsked::GoogleTasks'''
+red = [
+    "service::tasks_api::tests::test_a_google_read_refused_for_a_permission_not_given_is_the_one_error_for_it",
+]
+tests_last_seen = [
+    { file = "src/service/tasks_api.rs", tests = 63 },
+]
+
+# A Microsoft To Do read is never read as Google's, whatever its refusal
+# holds, so it keeps the status alone (13.3-24.5, ledger 932). Broken by
+# reading every task service's refusal as Google's.
+[[guard]]
+name = "a microsoft to do refusal is never read as a google permission not given"
+file = "src/service/tasks_api.rs"
+before = '''                && who_holds_a_task_address(url) == WhoWasAsked::GoogleTasks'''
+after = '''                && (who_holds_a_task_address(url) == WhoWasAsked::GoogleTasks || true)'''
+red = [
+    "service::tasks_api::tests::test_a_google_read_refused_for_a_permission_not_given_is_the_one_error_for_it",
+]
+tests_last_seen = [
+    { file = "src/service/tasks_api.rs", tests = 63 },
 ]
