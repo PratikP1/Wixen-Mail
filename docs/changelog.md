@@ -801,6 +801,18 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Windows that open on their own now wait for the main window's regular check to finish
+  (2026-10-24, MAIL-04).** Wixen Mail checks for news twenty times a second, and seven windows
+  could open from inside that check: the Due now window, the question about folders a server no
+  longer lists, the two questions about an update, the question before a rule you chose runs,
+  the question about a key in an attachment, and the question about mail a block caught. They
+  now open a moment after the check rather than inside it, so arriving mail, sync and send
+  results and further reminders keep being handled while one of them is open. The next version
+  of the window toolkit Wixen Mail is built on would otherwise have stopped the check until the
+  window closed. They open one at a time: one that comes while another is open waits for it to
+  close. What is said before each window is said where it was. None of this has been heard
+  with a screen reader yet.
+
 - **The New versions setting names the installer's real size, about 15 MB (2026-10-23,
   SHIP-02).** Its description, under Settings, then General, said an update download was about
   12 MB. The newest installer built is 15,725,012 bytes, which File Explorer shows as 14.9 MB,
