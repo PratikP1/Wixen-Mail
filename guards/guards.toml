@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 963 records have arrived since and have not been through it.
+# 964 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -45709,4 +45709,25 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
     { file = "tests/the_main_window_opens_its_windows_after_its_tick.rs", tests = 11 },
+]
+
+# The message window's automatic save ticks on a timer of its own, whose
+# handler is bound by the function that makes it (13.4-07). Broken by leaving
+# the binding out, which is the timer the composer had before: at 0.9.17 its
+# ticks reach no handler on the message body, and at 0.9.23 none anywhere.
+# Measured by hand on 2026-10-25: the live test saw 0 saves.
+[[guard]]
+name = "the automatic save's timer has a handler of its own"
+file = "src/presentation/wx_compose.rs"
+suite = "the_automatic_save_has_a_timer_of_its_own"
+before = '''    let timer = Timer::new(owner);
+    timer.on_tick(move |_| save());'''
+after = '''    let timer = Timer::new(owner);
+    let _ = &save;'''
+red = [
+    "test_the_automatic_save_ticks_on_its_own_and_reaches_nothing_else",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/the_automatic_save_has_a_timer_of_its_own.rs", tests = 1 },
 ]

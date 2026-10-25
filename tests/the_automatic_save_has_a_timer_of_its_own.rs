@@ -117,6 +117,11 @@ fn test_the_automatic_save_ticks_on_its_own_and_reaches_nothing_else() {
             end.on_tick({
                 let outcome = outcome.clone();
                 move |_| {
+                    println!(
+                        "saves: {}, the other timer's ticks: {}",
+                        seen.saves.get(),
+                        seen.stand_in_ticks.get()
+                    );
                     if let Ok(mut slot) = outcome.lock()
                         && slot.is_none()
                     {

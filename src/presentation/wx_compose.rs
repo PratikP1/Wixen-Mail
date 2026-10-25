@@ -1340,12 +1340,27 @@ fn the_passphrase_was_typed(
 /// #193), so a save timer with no handler of its own would save nothing at
 /// all. A timer on a child that holds no other timer, with its own handler,
 /// is right at both versions. Read in both versions' sources on 2026-10-20.
+///
+/// An interval too long for the timer's milliseconds is held at the longest
+/// it takes, and the log says so; the setting stops at ten minutes, so only a
+/// caller other than the composer could ask for one.
 pub fn save_on_a_timer_of_its_own<W: WxEvtHandler>(
     owner: &W,
-    _every: std::time::Duration,
-    _save: impl Fn() + 'static,
+    every: std::time::Duration,
+    save: impl Fn() + 'static,
 ) -> Timer<W> {
-    Timer::new(owner)
+    let timer = Timer::new(owner);
+    timer.on_tick(move |_| save());
+    let milliseconds = i32::try_from(every.as_millis()).unwrap_or_else(|_| {
+        tracing::warn!(
+            "The automatic save's interval does not fit the timer; saving at the longest it takes"
+        );
+        i32::MAX
+    });
+    if !timer.start(milliseconds, false) {
+        tracing::warn!("The automatic save's timer would not start; drafts are kept only by hand");
+    }
+    timer
 }
 
 /// The compose dialog, with automatic draft saving.
