@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 976 records have arrived since and have not been through it.
+# 981 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -46060,4 +46060,95 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_managers.rs", tests = 44 },
     { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
+]
+
+# The composer's Format menu gives every item a letter no other item holds
+# (ledger 972, 13.4-12.2). Until 2026-10-25 Numbered List shared U with
+# Underline, Undo shared N with Normal Text and Insert Link shared L with
+# Bulleted List, and a shared letter moves between two items instead of
+# running one. The first three records put each shared letter back, the
+# fourth takes Quote's letter away, and the fifth points Insert Picture's
+# entry at Insert Table's id, which shows tests/wired.rs reads the insertions
+# from the list the menu is built from. Each measured by hand on 2026-10-25 on
+# the green tree at 0b10e4f0: the whole library, and wired for the fifth.
+[[guard]]
+name = "the Format menu gives Numbered List a letter of its own"
+file = "src/presentation/editor_document.rs"
+before = '''            // M, Thunderbird's letter for it, because U is Underline's and N
+            // is Normal Text's on the Format menu (ledger 972).
+            Self::NumberedList => "Nu&mbered List",'''
+after = '''            // M, Thunderbird's letter for it, because U is Underline's and N
+            // is Normal Text's on the Format menu (ledger 972).
+            Self::NumberedList => "N&umbered List",'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives Undo a letter of its own"
+file = "src/presentation/editor_document.rs"
+before = '''            // O, because U is Underline's and N is Normal Text's on the Format
+            // menu, and D is Delete's in the text menus people know (ledger 972).
+            Self::Undo => "Und&o",'''
+after = '''            // O, because U is Underline's and N is Normal Text's on the Format
+            // menu, and D is Delete's in the text menus people know (ledger 972).
+            Self::Undo => "U&ndo",'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives Insert Link a letter of its own"
+file = "src/presentation/wx_compose.rs"
+before = '''            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert Lin&k...".to_string(),'''
+after = '''            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert &Link...".to_string(),'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives every item a letter"
+file = "src/presentation/editor_document.rs"
+before = '''            Self::Quote => "&Quote",
+            Self::RemoveFormatting => "Remove &Formatting",'''
+after = '''            Self::Quote => "Quote",
+            Self::RemoveFormatting => "Remove &Formatting",'''
+red = [
+    "presentation::editor_document::tests::test_every_command_carries_its_key_into_the_menu",
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu offers its insertions from the list the menu is built from"
+file = "src/presentation/wx_compose.rs"
+suite = "wired"
+before = '''            id: ID_INSERT_PICTURE,
+            label: "Insert &Picture...".to_string(),'''
+after = '''            id: ID_INSERT_TABLE,
+            label: "Insert &Picture...".to_string(),'''
+red = [
+    "test_every_handled_command_has_something_that_raises_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+    { file = "tests/wired.rs", tests = 80 },
 ]
