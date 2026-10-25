@@ -362,7 +362,7 @@ fi
 #     the_suites_that_guard_what_changed [changed-file ...]
 the_suites_that_guard_what_changed() {
     local -a couplings=() answers=()
-    local index coupling path candidate already seen
+    local index coupling path candidate already seen own_target
 
     for index in "${!record_files[@]}"; do
         if [ -n "${record_suites[$index]}" ]; then
@@ -371,8 +371,26 @@ the_suites_that_guard_what_changed() {
     done
 
     for path in "$@"; do
-        # Everything except a changed test file, which already runs its own
-        # target a few lines up and would be asked for twice.
+        # Every record coupling a changed file to a target, except a record
+        # coupling a changed test file to that file's own target, which the
+        # scoped run already adds a few lines up when the file is there.
+        #
+        # Until 2026-10-25 this passed over every changed test file, and read:
+        # "Everything except a changed test file, which already runs its own
+        # target a few lines up and would be asked for twice." That holds only
+        # for a record whose suite is the file's own target. Two records name
+        # another: the one whose break lands on `tests/tree_selection_raises.rs`
+        # and reddens `every_window_test_ends_on_the_thread_that_owns_it`, and
+        # the one whose break lands on
+        # `tests/a_passphrase_box_takes_a_real_paste.rs` and reddens
+        # `a_locked_key_asks_for_its_passphrase`. Neither ran on a commit
+        # changing its file, which is ledger 962, closed by 13.4-12.1.
+        #
+        # The self-coupling is still passed over, and not only because it would
+        # be asked for twice. A deleted test file stays in the staged list, and
+        # the scoped run leaves its target out because cargo refuses a whole
+        # call naming a target that is not there; answering the file's own
+        # record here would put that target back.
         #
         # This used to be the other way round, taking only a changed `src/*.rs`
         # and saying that a record whose break lands anywhere else was a true
@@ -388,13 +406,18 @@ the_suites_that_guard_what_changed() {
         # and the suite that reads it sat in the registry looking like coverage.
         # That is guardrail 4 exactly, and it is the same shape as the `.iss`
         # hole `which-checks.sh` closed one layer up in 07-02.
+        own_target=""
         case "$path" in
-            tests/*.rs) continue ;;
+            tests/*.rs)
+                own_target="${path##*/}"
+                own_target="${own_target%.rs}"
+                ;;
         esac
 
         for coupling in "${couplings[@]+"${couplings[@]}"}"; do
             [ "${coupling%%|*}" = "$path" ] || continue
             candidate="${coupling#*|}"
+            [ "$candidate" = "$own_target" ] && continue
 
             # Dropped if the scoped run already ends with it, and dropped if
             # another record has already answered it. Several records couple one

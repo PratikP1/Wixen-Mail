@@ -45519,10 +45519,10 @@ tests_last_seen = [
 # wxDragon 0.9.19 and later refuse because the application is not Send
 # (13.4-05). Broken by putting one test's ending back the old way, the
 # parameter named and the queued closure capturing it. The break spans the
-# whole closure because the reading needs both halves of the old shape. The
-# commit gate does not yet run a record's suite when the record's file is a
-# test file (ledger 962), so a commit changing this file does not run the
-# reading; a guard run and the phase's full gate do.
+# whole closure because the reading needs both halves of the old shape. Since
+# 2026-10-25 a commit changing this file runs the reading, because the commit
+# gate answers a record whose file is a test file and whose suite is another
+# target (ledger 962, closed by 13.4-12.1).
 [[guard]]
 name = "a window test's queued ending asks for the application rather than capturing it"
 file = "tests/tree_selection_raises.rs"
