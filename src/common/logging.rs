@@ -275,11 +275,17 @@ mod tests {
 
     #[test]
     fn test_the_filter_names_this_crate_at_the_level_and_nothing_else() {
-        // A second target added here would switch on a library's own lines,
-        // and an IMAP crate at debug logs the literals on the wire, which is
-        // message text. One target, and the level is the one asked for.
-        assert_eq!(filter_for(LogLevel::Debug), "wixen_mail=debug");
-        assert_eq!(filter_for(LogLevel::Info), "wixen_mail=info");
+        // A library switched on at debug logs what the library chooses, and an
+        // IMAP crate at debug logs the literals on the wire, which is message
+        // text. So the one target beside this crate is the window toolkit, and
+        // only at warn, whatever the level: its warnings and errors name a
+        // call it skipped or a pointer it refused, never anything a person
+        // typed or received.
+        assert_eq!(
+            filter_for(LogLevel::Debug),
+            "wixen_mail=debug,wxdragon=warn"
+        );
+        assert_eq!(filter_for(LogLevel::Info), "wixen_mail=info,wxdragon=warn");
         for level in [
             LogLevel::Error,
             LogLevel::Warn,
@@ -288,13 +294,13 @@ mod tests {
             LogLevel::Trace,
         ] {
             let filter = filter_for(level);
-            assert!(
-                filter.starts_with("wixen_mail="),
-                "{filter:?} does not name this crate first"
-            );
-            assert!(
-                !filter.contains(','),
-                "{filter:?} names a second target, which would switch a library on"
+            let directives: Vec<&str> = filter.split(',').collect();
+            let this_crate = format!("wixen_mail={}", level.as_stored());
+            assert_eq!(
+                directives,
+                [this_crate.as_str(), "wxdragon=warn"],
+                "{filter:?} is not this crate at the level and the toolkit at warn, \
+                 and a third target would switch a library on"
             );
         }
     }
