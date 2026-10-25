@@ -818,6 +818,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   the save shared the window's other timer, so a save could set off whatever was waiting on it,
   and the next version of the window toolkit Wixen Mail is built on would have stopped the save
   from happening on its own at all. What a save says is unchanged.
+- **The log holds the window toolkit's own warnings and errors (2026-10-25, LIST-02).** The
+  toolkit Wixen Mail is built on reports what it refused, skipped or caught, such as a tree row
+  it would not accept, and until now every one of those lines was dropped before it reached the
+  log. They are written at every log level, so a quieter setting never hides one, and none
+  holds message text. No other library's own lines are written. The entry of 2026-09-18 below,
+  saying the filter names this program alone, was true until this change. Under the next version
+  of the toolkit, these lines will also say when it skipped a call because one was already
+  running, or caught a crash in code it called.
 
 - **The New versions setting names the installer's real size, about 15 MB (2026-10-23,
   SHIP-02).** Its description, under Settings, then General, said an update download was about

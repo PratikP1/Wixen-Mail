@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 966 records have arrived since and have not been through it.
+# 967 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -27310,34 +27310,66 @@ tests_last_seen = [
     { file = "src/common/logging.rs", tests = 12 },
 ]
 
-# ── The log filter names this crate and no library ──────────────────────────
+# ── The log filter names this crate and the toolkit at warn, no other ───────
 #
 # A library switched on at debug logs what the library chooses, and for an
 # IMAP crate that is the literals on the wire, which is message text (T-11-16).
-# The break adds a second target the way somebody debugging a connection
-# would, and the filter test goes red on the comma. The first draft named
-# that one test; the runner answered two, because the census in
+# The break adds a third target the way somebody debugging a connection
+# would, and the filter test goes red on the directive list. The first draft
+# named that one test; the runner answered two, because the census in
 # `service::outward` reads every module for the name of a crate that reaches
 # the network, and a module that spells `async_imap` is a module naming a way
 # out, which `logging.rs` is not on any list as. So a library named in the
 # filter is caught twice, by the filter test and by the census, and the record
 # says so rather than being shorter than the truth.
 #
-# Measured 2026-09-18 on the branch the record was written on, through
-# `scripts/guards.sh --remeasure`, on the library, twice: once as the draft
-# and once as this.
+# Written 2026-09-18 as "the log filter names this crate alone, not a library
+# beside it", when the filter held one target. 13.4-08 added `wxdragon=warn`
+# as the second on 2026-10-25, so the toolkit's own warnings reach the log,
+# and renamed the filter test to say so; the record was rewritten on the new
+# body, renamed, and measured again that day through
+# `scripts/guards.sh --remeasure`, on the library.
 [[guard]]
-name = "the log filter names this crate alone, not a library beside it"
+name = "the log filter names this crate and the toolkit at warn, not another library"
 file = "src/common/logging.rs"
-before = """    format!("wixen_mail={}", level.as_stored())"""
-after = """    format!("wixen_mail={},async_imap=debug", level.as_stored())"""
+before = """    format!("wixen_mail={},wxdragon=warn", level.as_stored())"""
+after = """    format!("wixen_mail={},wxdragon=warn,async_imap=debug", level.as_stored())"""
 red = [
-    "common::logging::tests::test_the_filter_names_this_crate_at_the_level_and_nothing_else",
+    "common::logging::tests::test_the_filter_names_this_crate_at_the_level_and_the_toolkit_at_warn_and_nothing_else",
     "service::outward::completeness::test_every_module_that_names_a_way_out_is_on_one_of_these_lists",
 ]
 tests_last_seen = [
     { file = "src/common/logging.rs", tests = 12 },
     { file = "src/service/outward.rs", tests = 39 },
+]
+
+# ── The log carries what the toolkit writes through `log` ───────────────────
+#
+# wxDragon reports through the `log` crate, and the logger is a `tracing`
+# subscriber, so nothing it writes arrives unless a bridge is installed.
+# `try_init` installs tracing-log's LogTracer after setting the subscriber;
+# `set_global_default`, which `init_logging` called until 13.4-08, installs
+# no `log` logger at all. The break puts the call back on the branch without
+# a console, the one the live target takes, and the target finds no wxDragon
+# warning in the file. No library test starts the logger, so the library
+# stays green under it.
+#
+# Measured 2026-10-25 on 13.4-08's branch through `scripts/guards.sh
+# --remeasure`, the target named.
+[[guard]]
+name = "the toolkit's warnings reach the log through the bridge, not dropped at the log crate"
+file = "src/common/logging.rs"
+suite = "a_warning_from_the_toolkit_reaches_the_log"
+before = """    } else {
+        subscriber.try_init()?;"""
+after = """    } else {
+        tracing::subscriber::set_global_default(subscriber)?;"""
+red = [
+    "test_a_warning_wxdragon_writes_reaches_the_log_file",
+]
+tests_last_seen = [
+    { file = "src/common/logging.rs", tests = 12 },
+    { file = "tests/a_warning_from_the_toolkit_reaches_the_log.rs", tests = 1 },
 ]
 
 # ── Each folder of a check is written to the log ────────────────────────────

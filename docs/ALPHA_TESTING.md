@@ -1064,6 +1064,14 @@ everything the levels above it write, and this much more:
 | Debug | Each chunk of the download, headers and text, with the counts; a repeat that was not spoken. |
 | Trace | Nothing more today. |
 
+At every level, the log also holds the warnings and errors that the window
+toolkit Wixen Mail is built on writes about itself: a tree row it
+refused because the layer under it handed back something not valid, a call it
+skipped, a failure it caught and carried on past. None of them holds the text
+of a message or anything you typed. Before 2026-10-25 every one of them was
+lost, so a report could not show that the toolkit had stepped around a
+problem. No other library's own lines are written at any level.
+
 Since 2026-09-18 the level a fresh profile starts at follows the build: Debug
 while the version says alpha or beta, Info from the release candidate on.
 Under a testing round every report comes with a log, and the lines a report
