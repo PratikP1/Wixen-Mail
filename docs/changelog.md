@@ -812,6 +812,12 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   window closed. They open one at a time: one that comes while another is open waits for it to
   close. What is said before each window is said where it was. None of this has been heard
   with a screen reader yet.
+- **The message window's automatic draft save runs on a timer of its own (2026-10-25).** A
+  message you are writing is now kept at the interval set in Settings whatever else the window
+  is doing, and the save no longer starts a spelling check or a look-up of a name early. Before,
+  the save shared the window's other timer, so a save could set off whatever was waiting on it,
+  and the next version of the window toolkit Wixen Mail is built on would have stopped the save
+  from happening on its own at all. What a save says is unchanged.
 
 - **The New versions setting names the installer's real size, about 15 MB (2026-10-23,
   SHIP-02).** Its description, under Settings, then General, said an update download was about
