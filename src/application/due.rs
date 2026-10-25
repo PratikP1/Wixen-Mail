@@ -315,38 +315,40 @@ impl Snooze {
 
 /// One alert on screen at a time.
 ///
-/// The alert window is modal, and a modal window in this toolkit runs the event
-/// loop inside itself. The poll that opened it therefore keeps ticking, finds
-/// the next reminder that is due, and opens a second window on top of the first
-/// before anyone has answered it. Measured: two windows, a minute apart, the
-/// second covering the one being read.
+/// The poll that raises an alert keeps running while the alert is open, beside
+/// it rather than inside it, so it finds the next reminder that is due a minute
+/// later. Without this it opens a second window on top of the first before
+/// anyone has answered it. Measured: two windows, a minute apart, the second
+/// covering the one being read.
 ///
 /// Held rather than counted, because the answer needed is only "is one open".
 #[derive(Debug, Default)]
-pub struct OneAtATime(std::cell::Cell<bool>);
+pub struct OneAtATime(std::rc::Rc<std::cell::Cell<bool>>);
 
 impl OneAtATime {
     /// Take the turn, or `None` if an alert is already open.
     ///
     /// The turn is given back when the returned value is dropped, so it comes
     /// back however the answering ends. Left held, reminders would stop for the
-    /// rest of the session without saying why.
-    pub fn take(&self) -> Option<Turn<'_>> {
+    /// rest of the session without saying why. It shares the gate rather than
+    /// borrowing it, so it can go with the window into work that runs after the
+    /// poll has returned.
+    pub fn take(&self) -> Option<Turn> {
         if self.0.get() {
             return None;
         }
         self.0.set(true);
-        Some(Turn(self))
+        Some(Turn(std::rc::Rc::clone(&self.0)))
     }
 }
 
 /// Proof that this is the alert on screen. Gives the turn back when dropped.
 #[derive(Debug)]
-pub struct Turn<'a>(&'a OneAtATime);
+pub struct Turn(std::rc::Rc<std::cell::Cell<bool>>);
 
-impl Drop for Turn<'_> {
+impl Drop for Turn {
     fn drop(&mut self) {
-        self.0.0.set(false);
+        self.0.set(false);
     }
 }
 
@@ -1253,9 +1255,9 @@ mod tests {
     #[test]
     fn test_a_second_alert_does_not_open_on_top_of_the_first() {
         // Measured in the running application: two reminders due at once put
-        // one modal window on top of another a minute apart, because the event
-        // loop keeps running inside a modal window and the poll that opened the
-        // first ran again while somebody was still answering it.
+        // one modal window on top of another a minute apart, because the poll
+        // that opened the first keeps running while it is open and ran again
+        // while somebody was still answering it.
         let gate = OneAtATime::default();
 
         let first = gate.take().expect("the first alert may open");

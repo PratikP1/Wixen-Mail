@@ -2,11 +2,12 @@
 //!
 //! The main window polls every 50 ms, and that one handler drains every update
 //! the workers send, raises what is due and puts the question about folders a
-//! server stopped listing. Six of the things it does open a modal window: the
+//! server stopped listing. Seven of the things it does open a modal window: the
 //! Due now window, the folders question, the two questions about an update, the
-//! question before a counted rule runs and the question about a key in an
-//! attachment. Opened from inside the handler, each window's loop ran the next
-//! tick inside the one that opened it.
+//! question before a counted rule runs, the question about a key in an
+//! attachment and the question about mail a block caught. Opened from inside
+//! the handler, each window's loop ran the next tick inside the one that opened
+//! it.
 //!
 //! At wxDragon 0.9.17 that works by accident: the event trampoline calls a
 //! handler again while an outer call of it is still running. From 0.9.23 every
