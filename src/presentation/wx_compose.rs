@@ -710,36 +710,83 @@ fn files_on_the_clipboard() -> OnTheClipboard {
 /// is why it is a function: the button, and Alt+O pressed inside the message
 /// body, which is a web view and keeps every key it is given until the page
 /// hands one back.
+///
+/// What the menu holds is decided by [`format_menu`], which needs no window;
+/// this only turns that description into a menu and pops it up.
 fn show_format_menu(dialog: &Dialog) {
     let mut menu = Menu::builder();
-    for (index, format) in editor_document::Format::ALL.iter().enumerate() {
-        menu = menu.append_item(
-            ID_FORMAT_FIRST + index as Id,
-            &format.label(),
-            // A menu's help text describes what the item does, so it says
-            // what would be asked for rather than a state nothing has read.
-            &format.spoken(None),
-        );
+    for line in format_menu() {
+        menu = match line {
+            FormatMenuLine::Command(entry) => menu.append_item(entry.id, &entry.label, &entry.help),
+            FormatMenuLine::Separator => menu.append_separator(),
+        };
     }
-    let mut menu = menu
-        .append_separator()
-        .append_item(
-            ID_INSERT_LINK,
-            "Insert &Link...",
-            "Turn the selected text into a link",
-        )
-        .append_item(
-            ID_INSERT_TABLE,
-            "Insert &Table...",
-            "Add a table with proper column headers",
-        )
-        .append_item(
-            ID_INSERT_PICTURE,
-            "Insert &Picture...",
-            "Put a picture in the message, and describe it",
-        )
-        .build();
+    let mut menu = menu.build();
     dialog.popup_menu(&mut menu, None);
+}
+
+/// One command on the Format menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormatMenuEntry {
+    /// The command the dialog's menu handler already answers.
+    id: Id,
+    /// The words shown, with `&` in front of the letter that runs it while
+    /// the menu is open, and the command's key after a tab where it has one.
+    label: String,
+    /// A sentence saying what choosing it does.
+    help: String,
+}
+
+/// One line of the Format menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FormatMenuLine {
+    /// A command a person can choose.
+    Command(FormatMenuEntry),
+    /// The rule between changing how text looks and putting something in.
+    Separator,
+}
+
+/// The Format menu, in the order it is read.
+///
+/// The menu is built from this list and the test of its letters reads this
+/// list, so what the test holds apart is what Windows is handed. Each id is
+/// written as an `id: ` field with its constant's name right after it, which
+/// is how `tests/wired.rs` finds what this menu raises.
+fn format_menu() -> Vec<FormatMenuLine> {
+    let formatting = editor_document::Format::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, format)| {
+            FormatMenuLine::Command(FormatMenuEntry {
+                id: ID_FORMAT_FIRST + index as Id,
+                label: format.label(),
+                // A menu's help text describes what the item does, so it says
+                // what would be asked for rather than a state nothing has read.
+                help: format.spoken(None),
+            })
+        });
+    let insertions = [
+        FormatMenuEntry {
+            id: ID_INSERT_LINK,
+            label: "Insert &Link...".to_string(),
+            help: "Turn the selected text into a link".to_string(),
+        },
+        FormatMenuEntry {
+            id: ID_INSERT_TABLE,
+            label: "Insert &Table...".to_string(),
+            help: "Add a table with proper column headers".to_string(),
+        },
+        FormatMenuEntry {
+            id: ID_INSERT_PICTURE,
+            label: "Insert &Picture...".to_string(),
+            help: "Put a picture in the message, and describe it".to_string(),
+        },
+    ]
+    .map(FormatMenuLine::Command);
+    formatting
+        .chain([FormatMenuLine::Separator])
+        .chain(insertions)
+        .collect()
 }
 
 /// The compose dialog's widgets: the fields `show_compose_dialog_full`
@@ -4178,6 +4225,113 @@ mod tests {
                 "{name} sits inside the range kept for the formatting run"
             );
         }
+    }
+
+    /// The letter a label claims, when it claims one.
+    ///
+    /// The reading `wx_tray.rs`'s tests and `tests/wired.rs` make, and the rule
+    /// Windows itself follows: `&&` is a literal ampersand, not a mnemonic.
+    fn alt_key_of(label: &str) -> Option<char> {
+        let letters: Vec<char> = label.chars().collect();
+        let mut at = 0;
+        while at < letters.len() {
+            if letters[at] != '&' {
+                at += 1;
+                continue;
+            }
+            match letters.get(at + 1) {
+                Some('&') => at += 2,
+                Some(letter) if letter.is_alphanumeric() => {
+                    return Some(letter.to_ascii_lowercase());
+                }
+                _ => at += 1,
+            }
+        }
+        None
+    }
+
+    /// Every fault in the letters of one menu, each as a sentence: a letter
+    /// two items claim, naming both, and an item that claims none.
+    ///
+    /// Items are named by their words, without the key after the tab.
+    fn letter_faults(labels: &[String]) -> Vec<String> {
+        let mut faults = Vec::new();
+        let mut claimed: Vec<(char, &str)> = Vec::new();
+        for label in labels {
+            let words = label
+                .split_once('\t')
+                .map_or(label.as_str(), |(words, _)| words);
+            let Some(letter) = alt_key_of(label) else {
+                faults.push(format!("\"{words}\" claims no letter"));
+                continue;
+            };
+            if let Some((_, earlier)) = claimed.iter().find(|(seen, _)| *seen == letter) {
+                faults.push(format!(
+                    "{} is claimed by \"{earlier}\" and \"{words}\"",
+                    letter.to_ascii_uppercase()
+                ));
+            }
+            claimed.push((letter, words));
+        }
+        faults
+    }
+
+    /// Every item on the Format menu claims a letter, and no letter is
+    /// claimed twice.
+    ///
+    /// With a menu open a letter is meant to be one keystroke: press it and
+    /// the item runs. Two items sharing a letter downgrades both to press,
+    /// press again, then Enter, and nothing tells the person that the letter
+    /// NVDA taught them no longer finishes the job; the second item cannot be
+    /// reached by its letter at all. That is worse than an item with no
+    /// letter, which at least does not promise one. Until 2026-10-25 three
+    /// letters here were each held by two items (ledger 972), and nothing
+    /// read this menu's letters: `tests/wired.rs` reads the menu bar's.
+    #[test]
+    fn test_every_item_on_the_format_menu_claims_a_letter_of_its_own() {
+        let labels: Vec<String> = format_menu()
+            .into_iter()
+            .filter_map(|line| match line {
+                FormatMenuLine::Command(entry) => Some(entry.label),
+                FormatMenuLine::Separator => None,
+            })
+            .collect();
+        assert!(!labels.is_empty(), "the Format menu was read as empty");
+
+        let faults = letter_faults(&labels);
+
+        assert!(
+            faults.is_empty(),
+            "the Format menu's letters do not each run one item:\n  {}",
+            faults.join("\n  ")
+        );
+    }
+
+    /// The reading above can see a shared letter and a missing one, and does
+    /// not take a literal ampersand for a letter.
+    ///
+    /// "Fish &&Chips" would claim C if `&&` were read as a mnemonic, and
+    /// "&Cheese" holds C, so a reading that got `&&` wrong reports a clash
+    /// this list does not have.
+    #[test]
+    fn test_companion_the_letter_reading_sees_a_shared_letter_and_a_missing_one() {
+        let planted: Vec<String> = [
+            "&Bold\tCtrl+B",
+            "&Bulleted List",
+            "No Letter",
+            "Fish &&Chips &Vinegar",
+            "&Cheese",
+        ]
+        .map(String::from)
+        .to_vec();
+
+        assert_eq!(
+            letter_faults(&planted),
+            vec![
+                "B is claimed by \"&Bold\" and \"&Bulleted List\"".to_string(),
+                "\"No Letter\" claims no letter".to_string(),
+            ]
+        );
     }
 
     #[test]
