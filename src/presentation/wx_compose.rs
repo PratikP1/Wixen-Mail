@@ -1327,6 +1327,27 @@ fn the_passphrase_was_typed(
     false
 }
 
+/// The automatic save's own timer: `save` runs every `every`, from a timer
+/// `owner` holds, until the timer is stopped or dropped.
+///
+/// **Its owner is the message body, not the window.** At wxDragon 0.9.17
+/// `Timer::on_tick` binds the timer event on the owner for any id
+/// (`wxdragon-0.9.17/src/timer.rs:65-75`), so every handler bound there hears
+/// every timer the owner holds. The window already has a timer of its own,
+/// `later`, whose handler runs whatever work is waiting, and an automatic
+/// save's tick reaching it would start that work early. At 0.9.23 a timer
+/// reaches only the handler bound to its own id (`timer.rs:56-65`, upstream
+/// #193), so a save timer with no handler of its own would save nothing at
+/// all. A timer on a child that holds no other timer, with its own handler,
+/// is right at both versions. Read in both versions' sources on 2026-10-20.
+pub fn save_on_a_timer_of_its_own<W: WxEvtHandler>(
+    owner: &W,
+    _every: std::time::Duration,
+    _save: impl Fn() + 'static,
+) -> Timer<W> {
+    Timer::new(owner)
+}
+
 /// The compose dialog, with automatic draft saving.
 ///
 /// `autosave` decides how often, and `on_autosave` is handed the fields as
