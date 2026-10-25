@@ -369,6 +369,20 @@ reader. The scan that reads it is compared with Python's TOML reader over the
 real registry on every commit that stages it, so a record spelled in a way the
 scan misreads is refused at the commit that adds it (review item 30).
 
+**Since 2026-10-25 a record whose file is a test file couples as well**
+(13.4-12.1, ledger 962). The paragraph that begins "A guard living in `tests/`"
+says `check.sh` reads the coupling each record carries, and until that day it
+read none whose file was a test file. It passed over every changed `tests/*.rs`
+on the reasoning that a changed test file already runs its own target, which
+holds only for a record whose suite is that target. So the record whose break
+lands on `tests/tree_selection_raises.rs` and reddens
+`every_window_test_ends_on_the_thread_that_owns_it` ran on no commit changing
+that file, and 13.4-05's red naming that reading's test beside such a change was
+refused as a test that never ran. Now only a record whose suite is the changed
+file's own target is passed over, which also keeps a deleted test file's target
+off cargo's line, since cargo refuses a whole call naming a target that is not
+there.
+
 **Read those two numbers as warm, and as a floor.** The same documents-only
 path took 2m56s on 2026-09-02, because it followed two commits that had changed
 test files and so paid for a clippy rebuild, and because the document-reading
