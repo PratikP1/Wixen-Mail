@@ -89,6 +89,20 @@ const THE_READER_PROCESS: &str = "the_reader_process_reads_each_field_it_is_hand
 const A_FIELD_HEARD: &str = "HEARD\t";
 const A_FIELD_REPORTED: &str = "FIELD\t";
 const A_FAILURE: &str = "FAILED\t";
+const A_STEP_REACHED: &str = "REACHED\t";
+
+/// Say on stdout that the window process got as far as `step`, with the
+/// time, so a parent that has to stop it can say where it stopped. A window
+/// process at wxDragon 0.9.23 ran past its parent's 180 seconds on GitHub's
+/// runner under the not-readied condition, twice on 2026-10-25, and never
+/// here; the parent then had nothing to say but that.
+fn reached(step: &str) {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or_default();
+    println!("{A_STEP_REACHED}{step}\t{at}");
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -516,16 +530,28 @@ fn run_a_child(
     // The child's reads are messages to this thread's windows, so they are
     // answered here while it runs; a parent that only waited would never let
     // it finish. The output is drained on a thread of its own so a full pipe
-    // cannot stall the child.
+    // cannot stall the child, a line at a time into a buffer this thread can
+    // also read, so a child that never finishes still says how far it got.
     let mut out = child.stdout.take();
-    let drained = std::thread::spawn(move || {
-        let mut printed = String::new();
-        if let Some(out) = out.as_mut() {
-            use std::io::Read;
-            let _ = out.read_to_string(&mut printed);
-        }
-        printed
-    });
+    let so_far = Arc::new(Mutex::new(String::new()));
+    let drained = {
+        let so_far = so_far.clone();
+        std::thread::spawn(move || {
+            if let Some(out) = out.as_mut() {
+                use std::io::BufRead;
+                for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                    if let Ok(mut printed) = so_far.lock() {
+                        printed.push_str(&line);
+                        printed.push('\n');
+                    }
+                }
+            }
+            so_far
+                .lock()
+                .map(|printed| printed.clone())
+                .unwrap_or_default()
+        })
+    };
     let deadline = std::time::Instant::now() + at_most;
     let finished = loop {
         answer_waiting_messages();
@@ -533,7 +559,13 @@ fn run_a_child(
             Ok(Some(status)) => break Ok(status),
             Ok(None) if std::time::Instant::now() > deadline => {
                 let _ = child.kill();
-                break Err(format!("{test} was still running after {at_most:?}"));
+                let printed = so_far
+                    .lock()
+                    .map(|printed| printed.clone())
+                    .unwrap_or_default();
+                break Err(format!(
+                    "{test} was still running after {at_most:?}, having printed:\n{printed}"
+                ));
             }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
             Err(why) => break Err(format!("waiting for {test}: {why}")),
@@ -554,6 +586,7 @@ fn run_a_child(
 fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     if readied {
         ready_the_annotation_store();
+        reached("the store readied");
     }
     let frame = Frame::builder().build();
     if !WebView::is_backend_available(WebViewBackend::Edge) {
@@ -567,6 +600,7 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     let preview = WebView::builder(&frame)
         .with_backend(WebViewBackend::Edge)
         .build();
+    reached("the preview built");
     let a11y =
         Arc::new(Accessibility::new().map_err(|why| format!("Accessibility::new failed: {why}"))?);
 
@@ -596,6 +630,7 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     let bare_dialog = Dialog::builder(&frame, "Bare").build();
     let bare = SpinCtrl::builder(&bare_dialog).with_range(0, 9).build();
     set_accessible_name(&bare, BARE_WORDS);
+    reached("the dialogs built and named");
 
     let windows = [
         (SEND_LATER.0, send_later.get_handle() as isize),
@@ -613,16 +648,23 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
             ));
         }
     }
+    reached("the reader starting");
     let printed = run_a_child(
         THE_READER_PROCESS,
         (THE_FIELDS_TO_READ, list),
         std::time::Duration::from_secs(60),
     );
+    reached(if printed.is_ok() {
+        "the reader finished"
+    } else {
+        "the reader failed"
+    });
 
     send_later.destroy();
     form.dialog.destroy();
     bare_dialog.destroy();
     preview.destroy();
+    reached("the windows destroyed");
 
     Ok(printed?
         .lines()
@@ -656,11 +698,13 @@ fn the_window_process_builds_names_and_has_its_fields_read() {
             }
             wxdragon::call_after(Box::new(|| {
                 if let Some(app) = wxdragon::get_app_instance() {
+                    reached("the loop asked to end");
                     app.exit_main_loop();
                 }
             }));
         })
     };
+    reached("wxdragon::main returned");
     let taken = match result {
         Err(why) => Err(format!("wxdragon::main returned {why:?}")),
         Ok(()) => outcome
