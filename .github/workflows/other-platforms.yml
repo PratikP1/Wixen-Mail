@@ -128,13 +128,19 @@ jobs:
     # one Cargo.toml turns on beyond the crate's defaults since the move to
     # wxDragon 0.9.23 (13.4-09). These come from Ubuntu's own repositories.
     # Nothing here fetches a script and runs it.
+    #
+    # libasound2-dev is not wxDragon's: it is ALSA's headers, which alsa-sys,
+    # under rodio's sound output, asks pkg-config for. The first dispatch of
+    # this workflow, run 40169878263 on 2026-10-25, stopped there: "The system
+    # library `alsa` required by crate `alsa-sys` was not found."
     - name: Install what wxDragon asks for on Linux
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           libclang-dev pkg-config libgtk-3-dev libpng-dev libjpeg-dev \
           libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libexpat1-dev \
-          libtiff-dev cmake libssl-dev libwebkit2gtk-4.1-dev
+          libtiff-dev cmake libssl-dev libwebkit2gtk-4.1-dev \
+          libasound2-dev
 
     # Build before test, so a compile failure is reported as one rather than
     # arriving inside a test run. --all-targets to match ci.yml's test job and
