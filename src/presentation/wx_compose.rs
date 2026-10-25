@@ -12,7 +12,6 @@ use crate::presentation::accessibility::names::{
     name_from_label, name_the_spin_control, set_accessible_name,
     set_accessible_name_and_description,
 };
-use crate::presentation::browser_ready::BrowserReady;
 use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
@@ -776,9 +775,6 @@ pub struct ComposeDialogWidgets {
     pub spell_btn: Button,
     pub attach_btn: Button,
     pub body_editor: WebView,
-    /// Whether WebView2 has finished making `body_editor`. The dialog is not
-    /// destroyed before it has; see `browser_ready`.
-    pub browser: BrowserReady,
     pub attachment_label: StaticText,
     pub attachment_list: ListBox,
     pub draft_btn: Button,
@@ -1091,7 +1087,6 @@ pub fn build_compose_dialog(
     let body_editor = WebView::builder(&dialog)
         .with_backend(WebViewBackend::Default)
         .build();
-    let browser = BrowserReady::watch(&body_editor);
     set_accessible_name(&body_editor, "Message body");
     body_editor.enable_context_menu(true);
     body_editor.enable_access_to_dev_tools(false);
@@ -1206,7 +1201,6 @@ pub fn build_compose_dialog(
         spell_btn,
         attach_btn,
         body_editor,
-        browser,
         attachment_label,
         attachment_list,
         draft_btn,
@@ -1425,7 +1419,6 @@ pub fn show_compose_dialog_full(
         spell_btn,
         attach_btn,
         body_editor,
-        browser,
         attachment_label,
         attachment_list,
         draft_btn,
@@ -2958,12 +2951,11 @@ pub fn show_compose_dialog_full(
     // and since the body became a web view that is a browser process tree
     // each time.
     //
-    // Through the watch on the browser rather than `dialog.destroy()`. A
-    // window closed before WebView2 has made the browser inside it, which is
-    // Escape within a quarter of a second warm and within seconds after the
-    // runtime updates itself, took the whole application down with it. See
-    // `browser_ready`.
-    browser.destroy_when_ready(dialog);
+    // At once, even when WebView2 has not finished making the browser inside,
+    // which is Escape within a quarter of a second warm. Until wxWidgets 3.3.4,
+    // which wxdragon 0.9.23 builds, the browser's creation reply then reached a
+    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.destroy();
     outcome
 }
 
@@ -3898,14 +3890,12 @@ enum PreviewDecision {
 const ID_CONFIRM_SEND: Id = ID_HIGHEST + 180;
 const ID_GO_BACK: Id = ID_HIGHEST + 181;
 
-/// The Preview Before Send dialog, the two buttons `show_send_preview` still
-/// needs to read after a real `.show_modal()`, and the watch on the browser
-/// the preview renders into, which decides when the dialog may go.
+/// The Preview Before Send dialog and the two buttons `show_send_preview`
+/// still needs to read after a real `.show_modal()`.
 pub struct SendPreviewWidgets {
     pub dialog: Dialog,
     pub send_btn: Button,
     pub back_btn: Button,
-    pub browser: BrowserReady,
 }
 
 /// Build the Preview Before Send dialog without showing it.
@@ -3968,7 +3958,6 @@ pub fn build_send_preview_dialog(
     let body_preview = WebView::builder(&dlg)
         .with_backend(WebViewBackend::Edge)
         .build();
-    let browser = BrowserReady::watch(&body_preview);
     set_accessible_name(&body_preview, "Message preview");
     body_preview.set_name("Message preview");
     body_preview.enable_context_menu(false);
@@ -4051,7 +4040,6 @@ pub fn build_send_preview_dialog(
         dialog: dlg,
         send_btn,
         back_btn,
-        browser,
     }
 }
 
@@ -4071,17 +4059,14 @@ fn show_send_preview(
     data: &ComposeData,
     palette: Option<theme::Palette>,
 ) -> PreviewDecision {
-    let SendPreviewWidgets {
-        dialog: dlg,
-        browser,
-        ..
-    } = build_send_preview_dialog(parent, data, palette);
+    let SendPreviewWidgets { dialog: dlg, .. } = build_send_preview_dialog(parent, data, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
-    // and the compose window holds another. Through the watch on the browser,
-    // for the reason `show_compose_dialog_full` gives at its own close.
-    browser.destroy_when_ready(dlg);
+    // and the compose window holds another. At once, whether or not the
+    // browser has finished being made, for the reason `show_compose_dialog_full`
+    // gives at its own close.
+    dlg.destroy();
     if answer == ID_CONFIRM_SEND {
         PreviewDecision::ConfirmSend
     } else {

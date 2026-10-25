@@ -1,23 +1,25 @@
 //! Closing a window that holds a browser before WebView2 has made the browser.
 //!
-//! wxWidgets 3.3.2, which wxdragon 0.9.17 builds, hands WebView2 a bare
-//! pointer to the control and never takes it back (wxWidgets #26491, fixed
-//! upstream for 3.3.4, which is not released). Destroy the control while its
-//! creation is still pending and the completion lands on freed memory.
-//! Windows reports an exception escaping a COM callback as exit code
-//! 0xc000041d and nothing else: no panic, no message, no test name. That is
-//! what killed `tests/theme_reach.rs` on GitHub's runners on 2026-09-15 (runs
-//! 34956059032 and 34961574447), where making a browser took over three
-//! seconds and the test tore its windows down after two. On the machine this
-//! was written on it takes a quarter of a second, and a scratch test that
-//! tore down at once died the same way four times in four.
+//! wxWidgets 3.3.2, which wxdragon 0.9.17 built, handed WebView2 a bare
+//! pointer to the control and never took it back (wxWidgets #26491). Destroy
+//! the control while its creation was still pending and the completion landed
+//! on freed memory. Windows reports an exception escaping a COM callback as
+//! exit code 0xc000041d and nothing else: no panic, no message, no test name.
+//! That is what killed `tests/theme_reach.rs` on GitHub's runners on
+//! 2026-09-15 (runs 34956059032 and 34961574447), where making a browser took
+//! over three seconds and the test tore its windows down after two. From then
+//! until 2026-10-25 the program hid such a window at once and destroyed it
+//! only when its browser reported.
 //!
-//! `presentation::browser_ready` is the answer: a window holding a browser is
-//! hidden at once and destroyed when the browser reports. The live half below
-//! does exactly what somebody who opened Compose by mistake does, closes the
-//! window before the browser exists, and keeps the event loop alive until the
-//! browser has reported so the completion is delivered while the process is
-//! there to receive it.
+//! wxWidgets 3.3.4, which wxdragon 0.9.23 builds, fixed the crash, so Compose
+//! and Preview Before Send are now destroyed the moment they close. The live
+//! half below does exactly what somebody who opened Compose by mistake does:
+//! it builds the real composer, closes it before its browser exists, and keeps
+//! the event loop alive past the moment the browser would have arrived, so a
+//! completion that still reached the gone control would end the process here.
+//! The moment is read from a second browser made just after the composer's:
+//! once it has reported, the composer's would have too, and one more second
+//! is kept on top.
 //!
 //! The live half runs in a child process, because the failure this guards
 //! against is not a failing assertion but a process that dies. A test target
@@ -31,7 +33,11 @@
 //! no wxWidgets API at all, as `tests/theme_reach.rs` explains at length.
 
 use std::process::{Command, ExitStatus};
-use wixen_mail::presentation::browser_ready::BrowserReady;
+use std::rc::Rc;
+use std::time::Instant;
+use wixen_mail::application::identities::FromEntry;
+use wixen_mail::presentation::wx_compose;
+use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
 use wxdragon::widgets::{WebView, WebViewBackend};
 
@@ -41,9 +47,12 @@ const THE_LIVE_HALF: &str = "the_live_half_closes_a_window_at_once";
 /// COM completion: STATUS_FATAL_USER_CALLBACK_EXCEPTION.
 const AN_EXCEPTION_ESCAPED_A_CALLBACK: u32 = 0xc000041d;
 
-/// How long the live half gives the browser to report before saying so and
-/// leaving. Generous: the runner took over three seconds on 2026-09-15, and a
-/// run that hangs without a word is the one nobody reads.
+/// How long the loop stays alive after the second browser has reported.
+const KEPT_ALIVE_AFTER_THE_MOMENT_MS: i32 = 1_000;
+
+/// How long the live half gives the second browser to report before saying
+/// so and leaving. Generous: the runner took over three seconds on
+/// 2026-09-15, and a run that hangs without a word is the one nobody reads.
 const AT_MOST_BEFORE_GIVING_UP_MS: i32 = 60_000;
 
 #[test]
@@ -88,42 +97,77 @@ fn what_the_exit_means(status: ExitStatus) -> String {
 fn the_live_half_closes_a_window_at_once() {
     let result = wxdragon::main(move |_| {
         let frame = Frame::builder().build();
-        let dialog = Dialog::builder(&frame, "closed before its browser exists").build();
-        let view = WebView::builder(&dialog)
-            .with_backend(WebViewBackend::Edge)
-            .build();
-        let browser = BrowserReady::watch(&view);
-        view.set_page("<p>closed at once</p>", "about:blank");
+        let composer = wx_compose::build_compose_dialog(
+            &frame,
+            "closed before its browser exists",
+            &[FromEntry {
+                account_id: "an-account".to_string(),
+                address: "person@example.com".to_string(),
+                sender_name: String::new(),
+                said: "person@example.com".to_string(),
+            }],
+            0,
+            None,
+        );
+        composer
+            .body_editor
+            .set_page("<p>closed at once</p>", "about:blank");
 
         // Closed at once, as somebody who opened it by mistake would.
-        browser.destroy_when_ready(dialog);
+        composer.dialog.destroy();
+        let destroyed = Instant::now();
 
-        // The loop stays alive until the browser has reported, so the
-        // completion arrives while there is a process to arrive in. Queued
-        // rather than called from the report, the way theme_reach exits.
-        browser.when_ready(move || {
-            wxdragon::call_after(Box::new(|| {
-                if let Some(app) = wxdragon::get_app_instance() {
-                    app.exit_main_loop();
-                }
-            }));
+        // Made after the composer's browser, so it reports after it would
+        // have. Then one more second, and the loop ends.
+        let pacer = WebView::builder(&frame)
+            .with_backend(WebViewBackend::Edge)
+            .build();
+        let kept_alive = Rc::new(Timer::new(&frame));
+        kept_alive.on_tick(move |_| {
+            println!(
+                "the loop stayed alive {} ms after the composer was destroyed",
+                destroyed.elapsed().as_millis()
+            );
+            end_the_loop();
         });
+        // A creation that failed reports through on_error, and counts too.
+        pacer.on_created({
+            let kept_alive = kept_alive.clone();
+            move |_| {
+                kept_alive.start(KEPT_ALIVE_AFTER_THE_MOMENT_MS, true);
+            }
+        });
+        pacer.on_error({
+            let kept_alive = kept_alive.clone();
+            move |_| {
+                kept_alive.start(KEPT_ALIVE_AFTER_THE_MOMENT_MS, true);
+            }
+        });
+        pacer.set_page("<p>the moment has passed</p>", "about:blank");
+        // Dropping the last handle destroys the timer, and it must outlive
+        // on_init. The browser's handlers hold the other handles.
+        std::mem::forget(kept_alive);
 
-        // A browser that never reports would hang this forever. Say so and
-        // leave without tearing down, because tearing down is the crash.
+        // A browser that never reports would hang this forever. Say so.
         let giving_up = Timer::new(&frame);
         giving_up.on_tick(move |_| {
-            eprintln!(
-                "the browser had not reported after {AT_MOST_BEFORE_GIVING_UP_MS} ms; leaving \
-                 without tearing the window down, since that is the crash this test is about"
-            );
+            eprintln!("the second browser had not reported after {AT_MOST_BEFORE_GIVING_UP_MS} ms");
             std::process::exit(2);
         });
         giving_up.start(AT_MOST_BEFORE_GIVING_UP_MS, true);
-        // Dropping a Timer destroys it, and this one must outlive on_init.
         std::mem::forget(giving_up);
     });
     assert!(result.is_ok(), "wxdragon::main returned {result:?}");
+}
+
+/// Queue the end of the event loop, asking for the application on the main
+/// thread rather than carrying it across.
+fn end_the_loop() {
+    wxdragon::call_after(Box::new(|| {
+        if let Some(app) = wxdragon::get_app_instance() {
+            app.exit_main_loop();
+        }
+    }));
 }
 
 // ── What cannot be built standalone ─────────────────────────────────────
@@ -131,8 +175,11 @@ fn the_live_half_closes_a_window_at_once() {
 // `show_compose_dialog_full` and `show_send_preview` are modal: they do not
 // return until a person closes them, so no test can drive them. What a test
 // can do is what `tests/theme_reach.rs` does for the panels it cannot build:
-// read the source and confirm the close path is written the way it must be.
-// Weaker than the live half above, and says so.
+// read the source and confirm each close destroys its dialog there and then,
+// handing it to nothing that waits for the browser. The live half above is
+// where closing a window that early is shown to be safe; this reading only
+// holds the two closes to doing it. Weaker than a live run of the product's
+// own close, and says so.
 
 fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
     let start = source
@@ -157,18 +204,26 @@ fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
 }
 
 #[test]
-fn test_the_two_dialogs_holding_a_browser_are_closed_through_the_browser_watch() {
+fn test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close() {
     let source = std::fs::read_to_string("src/presentation/wx_compose.rs")
         .expect("src/presentation/wx_compose.rs should be readable");
-    for signature in ["fn show_compose_dialog_full(", "fn show_send_preview("] {
+    let closes = [
+        ("fn show_compose_dialog_full(", "dialog"),
+        ("fn show_send_preview(", "dlg"),
+    ];
+    let mut wrong = Vec::new();
+    for (signature, dialog) in closes {
         let body = function_body(&source, signature);
-        assert!(
-            body.contains(".destroy_when_ready("),
-            "{signature} does not hand its dialog to BrowserReady::destroy_when_ready"
-        );
-        assert!(
-            !body.contains(".destroy();"),
-            "{signature} still destroys its dialog directly, which is the crash"
-        );
+        if !body.contains(&format!("{dialog}.destroy();")) {
+            wrong.push(format!(
+                "{signature} never destroys `{dialog}` when it closes"
+            ));
+        }
+        if body.contains("when_ready(") {
+            wrong.push(format!(
+                "{signature} still hands `{dialog}` to a watch that waits for its browser"
+            ));
+        }
     }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

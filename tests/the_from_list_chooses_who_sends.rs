@@ -33,12 +33,10 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::fs;
-use std::rc::Rc;
 use std::sync::{Arc, Mutex, OnceLock};
 use wixen_mail::application::identities::{self, FromEntry, Identity};
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::Account;
-use wixen_mail::presentation::browser_ready::BrowserReady;
 use wixen_mail::presentation::wx_compose::{self, ComposeData};
 use wxdragon::prelude::*;
 
@@ -52,10 +50,6 @@ const VT_I4: u16 = 3;
 const CHILDID_SELF: i64 = 0;
 /// MSAA's role for a combo box (oleacc.h), which a wxChoice is on Windows.
 const ROLE_SYSTEM_COMBOBOX: i64 = 0x2e;
-
-const TICK_MS: i32 = 30;
-/// Ticks before the run says it waited too long: a minute.
-const GIVE_UP_AFTER_TICKS: u32 = 2000;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -315,11 +309,6 @@ fn the_previews_from_line(texts: &[String]) -> Result<String, String> {
         .ok_or_else(|| format!("no From line among {texts:?}"))
 }
 
-struct Built {
-    dialog: Dialog,
-    browser: BrowserReady,
-}
-
 fn take_the_harvest() -> Result<Harvest, String> {
     let data = tempfile::tempdir().map_err(|e| format!("a data directory: {e}"))?;
     // SAFETY: set before the window session starts any thread, and nothing
@@ -368,10 +357,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 or_why(where_focus_lands(&widgets.account_choice)),
             );
 
-            let mut built = vec![Built {
-                dialog: widgets.dialog,
-                browser: widgets.browser.clone(),
-            }];
+            let mut previews = Vec::new();
             for (name, entry) in [
                 ("the preview's From line, an other address", &from_list[2]),
                 ("the preview's From line, an account's own", &from_list[0]),
@@ -387,42 +373,17 @@ fn take_the_harvest() -> Result<Harvest, String> {
                         preview.dialog.get_handle() as isize,
                     ))),
                 );
-                built.push(Built {
-                    dialog: preview.dialog,
-                    browser: preview.browser,
-                });
+                previews.push(preview.dialog);
             }
 
-            // Nothing is torn down before its browser exists: a dialog
-            // destroyed first takes the process with it.
-            let ticks = Rc::new(RefCell::new(0u32));
-            let ticker = Rc::new(Timer::new(&frame));
-            ticker.on_tick({
-                let ticker = ticker.clone();
-                let harvest = RefCell::new(Some(harvest));
-                move |_| {
-                    *ticks.borrow_mut() += 1;
-                    let gave_up = *ticks.borrow() > GIVE_UP_AFTER_TICKS;
-                    if !gave_up && !built.iter().all(|each| each.browser.is_ready()) {
-                        return;
-                    }
-                    ticker.stop();
-                    for each in &built {
-                        each.browser.destroy_when_ready(each.dialog);
-                    }
-                    let Some(harvest) = harvest.borrow_mut().take() else {
-                        return;
-                    };
-                    finish(match gave_up {
-                        true => Err("the browsers were never made".to_string()),
-                        false => Ok(harvest),
-                    });
-                }
-            });
-            ticker.start(TICK_MS, false);
-            // The tick closure holds the other handle; the timer must outlive
-            // on_init.
-            std::mem::forget(ticker);
+            // Torn down once the reading is taken, whether or not the
+            // browsers inside exist yet; the previews first, since the
+            // composer is their parent.
+            for preview in previews {
+                preview.destroy();
+            }
+            widgets.dialog.destroy();
+            finish(Ok(harvest));
         })
     };
     if let Err(why) = result {

@@ -1507,6 +1507,14 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **Compose and Preview Before Send close the moment you close them (2026-10-25).** Until now,
+  either window closed before its message body had finished loading was hidden and kept until
+  the browser inside it was ready, because closing it sooner crashed the program. The newer
+  toolkit (see Changed) has fixed that crash, so both windows now go at once, even before the
+  body has loaded. One thing changes that you might have met: a window whose browser never
+  finished loading used to stay hidden for the rest of the session, with the browser's own
+  processes running behind it. That no longer happens.
+
 - **Quitting just after a message preview or a conversation window appears no longer ends the
   program with an error (2026-10-25, SHIP-05).** The message preview and the conversation window
   are web pages that Windows' Edge component builds for the program, which takes about a quarter
@@ -4949,7 +4957,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   main window and the conversation-as-headings window hold browsers too and
   are only ever destroyed when the application exits; if that happens inside
   the same moment the exit code is wrong and nothing else is, and that is
-  left as it is until the wxWidgets fix arrives.
+  left as it is until the wxWidgets fix arrives. Since 2026-10-25 both
+  windows close at once, because wxWidgets 3.3.4 fixed the crash; see that
+  day's entry under Unreleased.
 
 - **CI's Test Suite job checks out the whole history.** The push of `main`
   at `0fa393ba` on 2026-09-15 failed that job on one test,

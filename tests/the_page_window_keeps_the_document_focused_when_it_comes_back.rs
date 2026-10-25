@@ -600,13 +600,12 @@ fn one_step(at: usize, run: &TheRun) -> Next {
                 Reading::take(run.native_window_handle());
             Next::Settle(0)
         }
-        // Hidden rather than destroyed: a frame holding a browser torn down
-        // while WebView2 is still working takes the process with it, which is
-        // what `presentation::browser_ready` exists for and what this run has
-        // no handle to ask.
+        // Destroyed, whether or not WebView2 is still working on the browser
+        // inside it. Until wxWidgets 3.3.4 that took the process down, and
+        // this run hid the frame instead.
         _ => {
-            if let Some(native) = run.native_window.borrow().as_ref() {
-                native.show(false);
+            if let Some(native) = run.native_window.borrow_mut().take() {
+                native.destroy();
             }
             Next::Settle(0)
         }
