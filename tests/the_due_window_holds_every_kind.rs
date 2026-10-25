@@ -15,7 +15,7 @@
 //! "initializing twice?" and hung until it was killed.
 //!
 //! **What this cannot reach, and it is the load-bearing limit.** wxdragon
-//! 0.9.17 exposes no way to raise a widget event from outside, so nothing
+//! 0.9.23 exposes no way to raise a widget event from outside, so nothing
 //! here can press a button or move the selection with the keyboard. What it
 //! does instead is drive the real list through the same function the
 //! selection handler calls, and read back the real buttons' labels and

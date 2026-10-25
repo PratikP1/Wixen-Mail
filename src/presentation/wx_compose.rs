@@ -2464,9 +2464,6 @@ pub fn show_compose_dialog_full(
                 Some(Deferred::Schedule) => {
                     ask_when_and_close(&dialog, &chosen_moment_for_the_body, &a11y)
                 }
-                // Where the toolbar was left, so leaving and coming back lands
-                // where somebody was. The group is named on arrival, always,
-                // because arriving is the moment nobody knows where they are.
                 // Which way each direction goes, and why the window is asked,
                 // is on `leave_the_message_body`.
                 Some(Deferred::Leaving { back }) => {

@@ -6,9 +6,9 @@
 //! page while it was still empty and left native focus on the page panel,
 //! so a screen reader said "pane" and nothing else until Tab was pressed.
 //! `wxNotebook::SetSelection` calls `UpdateSelection` before it sends the
-//! page-changed event (`src/msw/notebook.cpp:342-361`), and `UpdateSelection`
+//! page-changed event (`src/msw/notebook.cpp:300-319`), and `UpdateSelection`
 //! gives the reached page focus when the notebook is shown and does not hold
-//! focus itself (`:364-391`). Since 09-09 the page is built on that event,
+//! focus itself (`:322-354`). Since 09-09 the page is built on that event,
 //! after the focus has landed, and the empty panel is where it landed.
 //!
 //! Ctrl+Tab cannot be sent to a window. wxWidgets turns it into a page change

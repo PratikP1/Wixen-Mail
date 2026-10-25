@@ -11,7 +11,7 @@
 //! reader's own fold, from the same calendar documents the library's cases use.
 //!
 //! **Where Alt+C arrives, read from wx's source before anything was bound.**
-//! `wxWindowMSW::MSWProcessMessage` (`target/debug/wxWidgets/src/msw/window.cpp:2548-2749`)
+//! `wxWindowMSW::MSWProcessMessage` (`target/debug/wxWidgets/src/msw/window.cpp:2649-2850`)
 //! hands every key message for a window with `wxTAB_TRAVERSAL` and
 //! `WS_EX_CONTROLPARENT` to `::IsDialogMessage`, and a `wxPanel` has both. For
 //! `WM_SYSCHAR` the dialog manager looks for the letter among the panel's own

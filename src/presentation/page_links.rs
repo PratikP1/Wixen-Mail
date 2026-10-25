@@ -6,7 +6,7 @@
 //! default browser. The tester reported on 2026-09-18 (#80) that Enter on a
 //! link opened it in the same window instead. The probe for 11-11.1 found
 //! why by reading rather than by watching: wxWidgets carries a navigating
-//! event's address in `wxWebViewEvent::GetURL`, and wxdragon 0.9.17 hands a
+//! event's address in `wxWebViewEvent::GetURL`, and wxdragon 0.9.23 hands a
 //! `WebViewEventData` only the command event's string, which a navigating
 //! event never sets. The handler read an empty string, took it for the
 //! control loading its own document, and vetoed nothing, on every surface,
@@ -55,7 +55,7 @@ pub const SCRIPT: &str = r#"document.addEventListener('click', function(e) {
     // the default action a screen reader's Enter performs in browse mode,
     // which the browser delivers as a click. Taken before the browser
     // navigates, because the window cannot read where a navigation is going
-    // (wxdragon 0.9.17 hands it the event's string, which a navigating event
+    // (wxdragon 0.9.23 hands it the event's string, which a navigating event
     // leaves empty), so the veto it used to rely on never saw a link.
     var link = e.target && e.target.closest ? e.target.closest('a[href], area[href]') : null;
     if (!link) { return; }

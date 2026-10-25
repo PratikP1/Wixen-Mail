@@ -14023,14 +14023,13 @@ tests_last_seen = [
 [[guard]]
 # No row of the folder tree hangs its identity off the control.
 #
-# `wxdragon` keeps tree item data in a process-global map. `store_item_data`
-# inserts into a static registry, `delete_all_items` calls the raw FFI and
-# removes nothing from it, and `cleanup_all_custom_data`, the escape hatch,
-# removes nothing either: it walks the tree through `clean_item_and_children`,
-# and that function calls `remove_item_data` nowhere at all, for a leaf or for a
-# branch. This tree is emptied and rebuilt whenever a sync finishes, on a timer,
-# so one call here leaks an entry per folder per sync for the life of the
-# process.
+# `wxdragon` keeps tree item data in a process-global map. Before wxdragon
+# 0.9.22, `delete_all_items` called the raw FFI and removed nothing from it, and
+# `cleanup_all_custom_data`, the escape hatch, removed nothing either, so on a
+# tree emptied and rebuilt whenever a sync finishes one call here leaked an
+# entry per folder per sync. 0.9.22 frees each row's entry before the row goes
+# (upstream #214 and #215). The rule stays for the reason the test's doc gives:
+# the rows live in one vector beside the control, read by position.
 #
 # This is a source read rather than a behaviour test because this tree is drawn
 # inside a running application, so no test can fence a build of it and count
@@ -18068,7 +18067,7 @@ tests_last_seen = [
 # navigates to it. The half-written message goes off the screen.
 #
 # Turning that setting off is the direct fix and is out of reach. It lives on
-# `ICoreWebView2Controller4`; wxWidgets 3.3.2 keeps the controller in
+# `ICoreWebView2Controller4`; wxWidgets 3.3.4 keeps the controller in
 # `wx/msw/private/webview_edge.h` and `GetNativeBackend` hands out the
 # `ICoreWebView2_2` underneath it, which cannot be asked for its controller. So
 # the refusal is written in the page, and this is what says it is still there.
@@ -27721,7 +27720,7 @@ tests_last_seen = [
 
 # ── A tool's new label reaches the control ──────────────────────────────────
 #
-# #27: the toolbar's label follows the state, and wxdragon 0.9.17 offers no
+# #27: the toolbar's label follows the state, and wxdragon 0.9.23 offers no
 # relabel, so it goes through TB_SETBUTTONINFOW with TBIF_TEXT. The break
 # sends the message with no mask, so the control is told nothing; both
 # readings of the label after the relabel go red on "Mark Read", through

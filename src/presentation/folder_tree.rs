@@ -1240,33 +1240,27 @@ fn unread_underneath(folders: &[&FolderInTheTree], at: usize) -> i32 {
 mod nothing_hangs_off_the_control {
     /// No file that draws a tree keys a row on the control's own item data.
     ///
-    /// `wxdragon` stores that data in a process-global map. `store_item_data`
-    /// inserts into a static registry; `delete_all_items` calls the raw FFI and
-    /// removes nothing from it; and `cleanup_all_custom_data`, which is meant
-    /// to be the escape hatch, removes nothing either. It walks the tree from
-    /// the root through `clean_item_and_children`, and that function calls
-    /// `remove_item_data` nowhere at all, for a leaf or for a branch. So a
-    /// control that is asked to clean up after itself clears nothing, and the
-    /// same call runs automatically when the control is destroyed, which is
-    /// where anybody reading this would expect the entries to go.
-    ///
-    /// The folder tree is emptied and rebuilt whenever a sync finishes, which
-    /// happens on a timer rather than because anybody asked. So a row keyed on
-    /// item data leaks one entry per folder per sync, for the life of the
-    /// process.
-    ///
-    /// This used to say the leak had no observable behaviour, and that a
-    /// source read was therefore the only thing that could see it. It is
-    /// observable. The registry hands out its keys from a monotonic counter,
-    /// and `store_item_data` and `get_item_data` are both public, so storing a
-    /// throwaway entry either side of a build fences the keys that build issued
-    /// and asking the registry for each of them counts what is still there.
-    /// `tests/tree_rows_leave_no_registry_entry.rs` does that for the two
-    /// dialogs it can build; this tree is drawn inside a running application
-    /// and cannot be reached that way, so it keeps the source read.
-    ///
     /// The pattern instead is a vector held beside the control, paired with it
-    /// by position. `WxUIState::tree_rows` is that vector.
+    /// by position. `WxUIState::tree_rows` is that vector: the rebuild appends
+    /// to it and `collect_rows` reads the built tree back, both depth first,
+    /// so one vector read by position is a row's whole identity, and it is
+    /// plain data this program owns rather than an entry in the toolkit's
+    /// process-global registry.
+    ///
+    /// The rule was written for a leak. Before wxdragon 0.9.22 that registry
+    /// was never cleared for a rebuilt tree: `delete_all_items` called the raw
+    /// FFI and removed nothing, and the clean-up meant as the escape hatch
+    /// removed nothing either. The folder tree is emptied and rebuilt whenever
+    /// a sync finishes, so a row keyed on item data leaked one entry per folder
+    /// per sync. wxdragon 0.9.22 frees each row's entry before the row goes
+    /// (upstream #214 and #215, both reported from here), and
+    /// `tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs` holds that
+    /// with a live tree. The rule and this check stay for the reason above,
+    /// so that every tree in this layer keeps its rows one way.
+    ///
+    /// `tests/tree_rows_leave_no_registry_entry.rs` counts the registry around
+    /// the two dialogs it can build; this tree is drawn inside a running
+    /// application and cannot be reached that way, so it keeps the source read.
     ///
     /// Read from the shipping half of each file rather than cut at the first
     /// `#[cfg(test)]`, because this codebase has test modules sitting between
@@ -1313,9 +1307,10 @@ mod nothing_hangs_off_the_control {
         }
         assert!(
             hung.is_empty(),
-            "these hang a row's data off the control, which leaks an entry per \
-             row per rebuild and is never cleared for a leaf. Hold the rows \
-             beside the control instead, as WxUIState::tree_rows does: {hung:?}"
+            "these hang a row's data off the control, in the toolkit's \
+             process-global registry. Hold the rows beside the control \
+             instead, as WxUIState::tree_rows does, so every tree here keeps \
+             its rows one way: {hung:?}"
         );
     }
 

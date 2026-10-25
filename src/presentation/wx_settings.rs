@@ -313,11 +313,11 @@ impl LaterPages {
         panel.thaw();
         // `wxNotebook::SetSelection` gives the reached page focus before it
         // sends the event this runs on, when the tab row does not hold focus
-        // (Ctrl+Tab from inside a page, `src/msw/notebook.cpp:364-391`). The
+        // (Ctrl+Tab from inside a page, `src/msw/notebook.cpp:322-354`). The
         // page was empty then, so the focus landed on the panel itself and a
         // screen reader spoke an unnamed pane (#68, 2026-09-17). Asking the
         // panel to move it on is refused, because the panel already has it
-        // (`src/common/containr.cpp:110-150`), so the page names its first
+        // (`src/common/containr.cpp:131-171`), so the page names its first
         // control. When the row holds focus nothing is touched, which is
         // what keeps #33's single focus event. Asked after the thaw, so the
         // answer is about the window as it will be shown.
@@ -358,8 +358,8 @@ impl LaterPages {
     // page-changed handler through `build_the_page_for`, and a caller of the
     // public accessors. The order is the whole point: a child created under
     // a panel that already carries a foreground colour inherits it at
-    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
-    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // creation (wxWidgets `src/common/wincmn.cpp:1598-1626`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:406-428`),
     // which Windows' accessible object reports as a push button with no
     // checked state. Painted after its controls exist, a panel hands its
     // colour to nothing (#67, found 2026-09-17 in `1.0.0-alpha.1`).
@@ -706,8 +706,8 @@ pub fn build_settings_dialog(
     // exist. A page built later is painted at the end of its own build in
     // `LaterPages`, after its controls exist, and not before: a child created
     // under a panel that already carries a foreground colour inherits it at
-    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
-    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // creation (wxWidgets `src/common/wincmn.cpp:1598-1626`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:406-428`),
     // which Windows' accessible object reports as a push button with no
     // checked state. From 09-09 until 10-01.1 the six empty panels were
     // painted here, and every checkbox built on them later read as a button
