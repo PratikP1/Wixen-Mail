@@ -131,8 +131,11 @@ fn the_live_half_closes_a_window_at_once() {
 // `show_compose_dialog_full` and `show_send_preview` are modal: they do not
 // return until a person closes them, so no test can drive them. What a test
 // can do is what `tests/theme_reach.rs` does for the panels it cannot build:
-// read the source and confirm the close path is written the way it must be.
-// Weaker than the live half above, and says so.
+// read the source and confirm each close destroys its dialog there and then,
+// handing it to nothing that waits for the browser. The live half above is
+// where closing a window that early is shown to be safe; this reading only
+// holds the two closes to doing it. Weaker than a live run of the product's
+// own close, and says so.
 
 fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
     let start = source
@@ -157,18 +160,26 @@ fn function_body<'a>(source: &'a str, signature_start: &str) -> &'a str {
 }
 
 #[test]
-fn test_the_two_dialogs_holding_a_browser_are_closed_through_the_browser_watch() {
+fn test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close() {
     let source = std::fs::read_to_string("src/presentation/wx_compose.rs")
         .expect("src/presentation/wx_compose.rs should be readable");
-    for signature in ["fn show_compose_dialog_full(", "fn show_send_preview("] {
+    let closes = [
+        ("fn show_compose_dialog_full(", "dialog"),
+        ("fn show_send_preview(", "dlg"),
+    ];
+    let mut wrong = Vec::new();
+    for (signature, dialog) in closes {
         let body = function_body(&source, signature);
-        assert!(
-            body.contains(".destroy_when_ready("),
-            "{signature} does not hand its dialog to BrowserReady::destroy_when_ready"
-        );
-        assert!(
-            !body.contains(".destroy();"),
-            "{signature} still destroys its dialog directly, which is the crash"
-        );
+        if !body.contains(&format!("{dialog}.destroy();")) {
+            wrong.push(format!(
+                "{signature} never destroys `{dialog}` when it closes"
+            ));
+        }
+        if body.contains("when_ready(") {
+            wrong.push(format!(
+                "{signature} still hands `{dialog}` to a watch that waits for its browser"
+            ));
+        }
     }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }

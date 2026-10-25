@@ -24635,7 +24635,7 @@ suite = "closing_a_window_before_its_browser_exists"
 before = """    browser.destroy_when_ready(dlg);"""
 after = """    dlg.destroy();"""
 red = [
-    "test_the_two_dialogs_holding_a_browser_are_closed_through_the_browser_watch",
+    "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
