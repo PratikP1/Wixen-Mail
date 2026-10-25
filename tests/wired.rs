@@ -4112,7 +4112,7 @@ fn what_the_vanished_folders_question_asks(source: &str) -> WhatTheQuestionAsks 
         whether_somebody_is_typing: the_typing_answer_reads_both_ways(source, &typing),
         nothing_opens_when_there_is_nothing_to_raise: when_there_is_nothing.contains("else")
             && when_there_is_nothing.contains("return"),
-        raised_before_the_window: match (body.find(".raised("), body.find("show_modal(")) {
+        raised_before_the_window: match (body.find(".raised("), body.find("asking::ask(")) {
             (Some(written_down), Some(opened)) => written_down < opened,
             _ => false,
         },
@@ -4138,7 +4138,7 @@ fn what_the_vanished_folders_question_asks(source: &str) -> WhatTheQuestionAsks 
 /// was not: a file under `tests/` is its own process and gets its own, as
 /// `tests/tree_rows_leave_no_registry_entry.rs` does. It is not used, for a
 /// different reason. Every path that would tell a right argument from a wrong
-/// one ends at `MessageDialog::show_modal`, which blocks until somebody
+/// one ends at `asking::ask`, which blocks until somebody
 /// answers, and in a test there is nobody. A wrong argument would hang this
 /// file rather than fail it, and a check that hangs the commit gate is one that
 /// gets deleted. The window itself has still never been opened in a running
@@ -4198,7 +4198,7 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {{
         return;
     }};
     waiting.borrow_mut().raised(&question);
-    let asked = MessageDialog::builder(frame, &question.words, &question.title).show_modal();
+    let asked = asking::ask(frame, Question::RemoveFoldersTheServerNoLongerLists, &question.title, &question.words);
 }}
 {THE_TYPING_HELPER_WRITTEN_CORRECTLY}"
     );
@@ -4272,7 +4272,7 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {{
 
     let written_down_late = "\
 fn ask_about_the_folders_that_have_gone(frame: &Frame) {
-    let asked = MessageDialog::builder(frame).show_modal();
+    let asked = asking::ask(frame, Question::RemoveFoldersTheServerNoLongerLists, title, words);
     waiting.borrow_mut().raised(&question);
 }
 ";

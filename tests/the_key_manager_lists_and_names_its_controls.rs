@@ -780,15 +780,12 @@ fn what_is_wrong_with_the_key_attachment_path(source: &str) -> Vec<String> {
         wrong.push("fn offer_the_key_attachment( is not in the main window".to_string());
         return wrong;
     };
-    for wanted in [
-        "the_attachment_question(",
-        "yes_no_where_enter_answers_no()",
-    ] {
+    for wanted in ["the_attachment_question(", "Question::ImportAKey"] {
         if !body.contains(wanted) {
             wrong.push(format!("the offer does not call {wanted}"));
         }
     }
-    match (body.find("ID_YES"), body.find("pgp_keys::import(")) {
+    match (body.find("Answered::Yes"), body.find("pgp_keys::import(")) {
         (Some(asked), Some(imported)) if asked < imported => {}
         (_, None) => wrong.push("the offer never imports the key".to_string()),
         _ => wrong.push("the offer imports the key before it asks".to_string()),

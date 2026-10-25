@@ -248,14 +248,13 @@ pub enum Answer {
     NotNow,
 }
 
-/// What a message dialog's answer means here.
+/// What the question's answer means here.
 ///
-/// Anything that is not one of the two buttons is somebody closing the window,
-/// which is [`Answer::NotNow`]. Written this way round on purpose: the
-/// dangerous reading is a dismissal counting as Yes, and that cannot happen
-/// when only the Yes button itself says yes.
-pub fn what_they_said(from_the_dialog: wxdragon::Id) -> Answer {
-    match crate::presentation::asking::which_of_the_two(from_the_dialog) {
+/// A box closed without a button is [`Answer::NotNow`]. Written this way round
+/// on purpose: the dangerous reading is a dismissal counting as Remove, and
+/// that cannot happen when only the Remove button itself says remove.
+pub fn what_they_said(answered: crate::presentation::asking::Answered) -> Answer {
+    match answered {
         crate::presentation::asking::Answered::Yes => Answer::RemoveThem,
         crate::presentation::asking::Answered::No => Answer::KeepThem,
         crate::presentation::asking::Answered::Neither => Answer::NotNow,
@@ -443,23 +442,32 @@ mod tests {
 
     #[test]
     fn test_the_question_says_the_cached_mail_goes_with_the_folders() {
-        // The whole cost, in the sentence, because Yes cannot be undone. The
+        // The whole cost, in the sentence, because Remove cannot be undone. The
         // folders are the visible part and the mail in them is the part
-        // somebody would not think of.
-        let mut pending = Pending::default();
-        pending.add([gone(1, "Work", "Archive")]);
+        // somebody would not think of. And the sentence ends there: the
+        // buttons say Remove and Keep, so a sentence telling somebody what No
+        // does names a button that is not there.
+        let mut one = Pending::default();
+        one.add([gone(1, "Work", "Archive")]);
+        let mut two = Pending::default();
+        two.add([gone(1, "Work", "Archive"), gone(2, "Work", "Old post")]);
 
-        let question = a_free_moment(&pending).expect("a question");
-        assert!(
-            question.words.to_lowercase().contains("mail"),
-            "the question never mentioned the mail: {:?}",
-            question.words
-        );
-        assert!(
-            question.words.contains("No"),
-            "the question never said what No does, and No is what Enter answers: {:?}",
-            question.words
-        );
+        for (pending, ends) in [
+            (one, "The mail cached in it goes with it."),
+            (two, "The mail cached in them goes with them."),
+        ] {
+            let question = a_free_moment(&pending).expect("a question");
+            assert!(
+                question.words.ends_with(ends),
+                "the question does not end on what goes with the folders: {:?}",
+                question.words
+            );
+            assert!(
+                !question.words.contains("Answer No") && !question.words.contains("Answer Yes"),
+                "the question still tells somebody what a Yes or No button does: {:?}",
+                question.words
+            );
+        }
     }
 
     #[test]
@@ -555,12 +563,12 @@ mod tests {
     #[test]
     fn test_closing_the_window_is_not_an_answer_and_neither_button_is_the_other() {
         // The three routes, at the one place they diverge. The dangerous
-        // confusion is a dismissal counting as Yes: that answers a question
+        // confusion is a dismissal counting as Remove: that answers a question
         // about deleting somebody's mail on their behalf.
-        assert_eq!(what_they_said(wxdragon::id::ID_YES), Answer::RemoveThem);
-        assert_eq!(what_they_said(wxdragon::id::ID_NO), Answer::KeepThem);
-        assert_eq!(what_they_said(wxdragon::id::ID_CANCEL), Answer::NotNow);
-        assert_eq!(what_they_said(wxdragon::id::ID_OK), Answer::NotNow);
+        use crate::presentation::asking::Answered;
+        assert_eq!(what_they_said(Answered::Yes), Answer::RemoveThem);
+        assert_eq!(what_they_said(Answered::No), Answer::KeepThem);
+        assert_eq!(what_they_said(Answered::Neither), Answer::NotNow);
     }
 
     #[test]

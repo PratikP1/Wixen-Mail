@@ -1842,7 +1842,7 @@ mod tests {
     fn the_dialog_waits_for_a_check_by_hand(arm: &str) -> bool {
         const ON_WHO_ASKED: &str = "match asked {";
         let (Some(dialog), Some(by_hand), Some(choice)) = (
-            arm.find("MessageDialog::builder"),
+            arm.find("asking::ask("),
             arm.find("WhoAsked::ByHand =>"),
             arm.find(ON_WHO_ASKED),
         ) else {
@@ -1876,7 +1876,7 @@ mod tests {
              \x20       WhoAsked::AtStart => {}\n\
              \x20       WhoAsked::ByHand => {}\n\
              \x20   }\n\
-             \x20   let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20   let answered = asking::ask(&frame, Question::OpenTheReleasesPage, \"Update\", said);\n\
              }\n";
         assert!(
             !the_dialog_waits_for_a_check_by_hand(whoever_asked),
@@ -1886,7 +1886,7 @@ mod tests {
              \x20   match &WhoAsked::ByHand {\n\
              \x20       WhoAsked::AtStart => {}\n\
              \x20       WhoAsked::ByHand => {\n\
-             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20           let answered = asking::ask(&frame, Question::OpenTheReleasesPage, \"Update\", said);\n\
              \x20       }\n\
              \x20   }\n\
              }\n";
@@ -1898,7 +1898,7 @@ mod tests {
              \x20   match asked {\n\
              \x20       WhoAsked::AtStart => {}\n\
              \x20       WhoAsked::ByHand => {\n\
-             \x20           let answered = MessageDialog::builder(frame, said, \"Update\");\n\
+             \x20           let answered = asking::ask(&frame, Question::OpenTheReleasesPage, \"Update\", said);\n\
              \x20       }\n\
              \x20   }\n\
              }\n";
@@ -1986,9 +1986,15 @@ mod tests {
     ///
     /// Split out so the reading can be shown a violation as well as the tree.
     fn it_asks_somebody_something(source: &str) -> bool {
-        ["MessageDialog", "show_modal", "wxdragon"]
-            .iter()
-            .any(|way| source.contains(way))
+        [
+            "MessageDialog",
+            "show_modal",
+            "wxdragon",
+            "asking::ask",
+            "TaskDialog",
+        ]
+        .iter()
+        .any(|way| source.contains(way))
     }
 
     #[test]
@@ -2011,6 +2017,13 @@ mod tests {
                 "let answered = MessageDialog::builder(frame).show_modal();"
             ),
             "the reading above cannot see the thing it exists to refuse"
+        );
+        assert!(
+            it_asks_somebody_something(
+                "let answered = crate::presentation::asking::ask(&frame, question, title, words);"
+            ),
+            "the reading above cannot see a question asked the way every question is since \
+             13.4-12.3"
         );
     }
 

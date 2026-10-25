@@ -13906,7 +13906,7 @@ fn ask_about_the_folders_that_have_gone(
             .build()
             .show_modal();
 
-        match what_they_said(asked) {
+        match what_they_said(crate::presentation::asking::which_of_the_two(asked)) {
             // Nobody answered. Nothing is written, so a later run of the program
             // asks again, and nothing has been removed in the meantime.
             Answer::NotNow => (),
