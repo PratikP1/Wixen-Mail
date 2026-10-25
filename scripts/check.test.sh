@@ -243,25 +243,28 @@ expect_among manager_dialog_labels "a coupled file beside an uncoupled one" \
     "$registry" src/presentation/wx_managers.rs src/application/threading.rs
 
 # ── The coupling really is what is being read ───────────────────────────────
-# Take the `suite` line off that one record, in a copy, and the answer goes
-# away. Demonstrated against a copy because editing the real registry to prove
-# a point is how a proof becomes a defect.
+# Take the `suite` line off every record naming that target, in a copy, and the
+# answer goes away. Demonstrated against a copy because editing the real
+# registry to prove a point is how a proof becomes a defect.
 #
-# The copy is checked to differ by exactly one line first. Without that, a
-# botched copy step, an empty file or a failed `grep`, makes the case below pass
-# for the wrong reason, and an empty answer would read as a finding when it is
-# really a broken fixture.
+# The copy is checked to lose exactly those lines first, and at least one.
+# Without that, a botched copy step, an empty file or a failed `grep`, makes the
+# case below pass for the wrong reason, and an empty answer would read as a
+# finding when it is really a broken fixture. Until 2026-10-25 it asked for
+# exactly one line, because one record named the target; 13.4-11 added a
+# second, and a count written into a fixture is a count that perishes.
 uncoupled="$work/registry-without-the-suite.toml"
+coupled=$(grep -c '^suite = "manager_dialog_labels"$' "$registry" || true)
 grep -v '^suite = "manager_dialog_labels"$' "$registry" > "$uncoupled" || true
 removed=$(( $(wc -l < "$registry") - $(wc -l < "$uncoupled") ))
-if [ "$removed" -ne 1 ]; then
-    suite_case_failed "the copy of the registry differs by exactly one line" \
-        "removed $removed lines, wanted 1" \
+if [ "$coupled" -lt 1 ] || [ "$removed" -ne "$coupled" ]; then
+    suite_case_failed "the copy of the registry loses exactly the suite lines naming that target" \
+        "removed $removed lines of $coupled naming it, wanted all of them and at least one" \
         "the case below would pass for the wrong reason"
 else
-    suite_case_passed "the copy of the registry differs by exactly one line"
+    suite_case_passed "the copy of the registry loses exactly the suite lines naming that target"
 fi
-expect_not_among manager_dialog_labels "taking the suite line off that record leaves the file uncoupled" \
+expect_not_among manager_dialog_labels "taking the suite line off those records leaves the file uncoupled" \
     "$uncoupled" src/presentation/wx_managers.rs
 # And the real one still answers, so the case above is about the edit rather
 # than about the mapping having stopped working between the two.

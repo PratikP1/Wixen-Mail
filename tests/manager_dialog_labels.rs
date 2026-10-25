@@ -71,18 +71,6 @@ fn stored(field: &str, match_type: &str, pattern: &str) -> FilterRule {
     }
 }
 
-/// Whether a list cell holds exactly `expected`, every character of it.
-///
-/// Until wxdragon 0.9.20 (upstream #205) `ListCtrl::get_item_text` allocated
-/// exactly the length wxWidgets reported and the C++ side's NUL took the last
-/// character, so "Message text" came back as "Message tex\0" and this helper
-/// accepted the text with its last character lost. Since the move to 0.9.23
-/// (13.4-09) the cell reads whole, and a cell whose last character is wrong is
-/// now something this can see.
-fn a_cell_holding(cell: &str, expected: &str) -> bool {
-    !expected.is_empty() && cell == expected
-}
-
 /// One condition of a saved search.
 fn asking(field: &str, match_type: &str, pattern: &str) -> Question {
     Question {
@@ -560,9 +548,11 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             // contains overdue" is the machine name spoken to somebody
             // choosing between rows, which is the fault plan 02-04 found in
             // the filter editor's own lists.
+            // Compared whole: a field with no words at all is `None`, which no
+            // cell equals, so an empty row cannot pass for an empty answer.
             let second_row = conditions.get_item_text(1, 0);
-            let message_text = the_words_for_a_field("body_plain").unwrap_or_default();
-            if !a_cell_holding(&second_row, message_text) {
+            let message_text = the_words_for_a_field("body_plain");
+            if message_text != Some(second_row.as_str()) {
                 wrong.push((
                     "a condition row about the message text".to_string(),
                     format!(

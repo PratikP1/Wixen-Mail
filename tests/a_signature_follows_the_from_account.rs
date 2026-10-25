@@ -765,11 +765,10 @@ struct ListViewItem {
 
 /// One cell of a live list, read from the list itself.
 ///
-/// Not through `ListCtrl::get_item_text`, which loses the last character of
-/// every cell and puts a NUL in its place (`wxdragon-0.9.17`,
-/// `src/widgets/list_ctrl.rs:429`, measured in
-/// `tests/manager_dialog_labels.rs`). This reading is about whole words, "Work"
-/// against "Work, Home", so the cell is read whole.
+/// Through `LVM_GETITEMTEXTW` rather than `ListCtrl::get_item_text`, so what is
+/// read is the text the native list holds, which is what a screen reader is
+/// given for the row, and not what the binding's own reader reports. This
+/// reading is about whole words, "Work" against "Work, Home".
 fn cell(list: &ListCtrl, row: i64, column: i32) -> String {
     let mut buffer = [0u16; 512];
     let mut item = ListViewItem {
