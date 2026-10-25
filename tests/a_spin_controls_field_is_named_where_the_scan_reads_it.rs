@@ -186,6 +186,10 @@ unsafe extern "system" {
     -> i32;
     fn TranslateMessage(message: *const [u8; 48]) -> i32;
     fn DispatchMessageW(message: *const [u8; 48]) -> isize;
+    fn EnumWindows(callback: extern "system" fn(isize, isize) -> i32, lparam: isize) -> i32;
+    fn GetWindowThreadProcessId(hwnd: isize, process: *mut u32) -> u32;
+    fn GetWindowTextW(hwnd: isize, buffer: *mut u16, count: i32) -> i32;
+    fn IsWindowVisible(hwnd: isize) -> i32;
 }
 
 #[link(name = "oleacc")]
@@ -236,6 +240,65 @@ fn class_name(hwnd: isize) -> String {
     // SAFETY: the buffer is as long as the count says.
     let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
     String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+fn window_text(hwnd: isize) -> String {
+    let mut buffer = [0u16; 512];
+    // SAFETY: the buffer is as long as the count says.
+    let len = unsafe { GetWindowTextW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    String::from_utf16_lossy(&buffer[..len.max(0) as usize])
+}
+
+/// The visible top-level windows of this process, each with its class, its
+/// title and the text of every child that has some.
+fn what_this_process_shows() -> Vec<String> {
+    FOUND.with(|found| found.borrow_mut().clear());
+    // SAFETY: the callback only pushes to this thread's local.
+    unsafe { EnumWindows(collect, 0) };
+    let every_window = FOUND.with(|found| found.borrow().clone());
+    every_window
+        .into_iter()
+        .filter(|hwnd| {
+            let mut owner = 0u32;
+            // SAFETY: a window handle Windows just enumerated; the pointer is
+            // to a local.
+            unsafe { GetWindowThreadProcessId(*hwnd, &mut owner) };
+            // SAFETY: as above.
+            owner == std::process::id() && unsafe { IsWindowVisible(*hwnd) } != 0
+        })
+        .map(|hwnd| {
+            let inside: Vec<String> = descendants_of(hwnd)
+                .into_iter()
+                .map(|child| (class_name(child), window_text(child)))
+                .filter(|(_, text)| !text.is_empty())
+                .map(|(class, text)| format!("{class} {text:?}"))
+                .collect();
+            format!(
+                "{} {:?}: {}",
+                class_name(hwnd),
+                window_text(hwnd),
+                inside.join("; ")
+            )
+        })
+        .collect()
+}
+
+/// A diagnostic for GitHub's runner, where the not-readied window process at
+/// wxDragon 0.9.23 destroyed its windows and then never ran its queued end:
+/// after `seconds`, say what windows the process still shows, so whatever
+/// holds the event loop is named rather than guessed at.
+fn say_what_is_open_after(seconds: u64) {
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(seconds));
+        let shown = what_this_process_shows();
+        reached(&format!(
+            "{} visible windows after {seconds} s",
+            shown.len()
+        ));
+        for window in shown {
+            reached(&format!("still shown: {window}"));
+        }
+    });
 }
 
 /// One spin control to read: which window, the dialog it sits in, the arrows
@@ -665,6 +728,7 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     bare_dialog.destroy();
     preview.destroy();
     reached("the windows destroyed");
+    say_what_is_open_after(20);
 
     Ok(printed?
         .lines()
