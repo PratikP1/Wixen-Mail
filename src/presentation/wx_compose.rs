@@ -768,7 +768,9 @@ fn format_menu() -> Vec<FormatMenuLine> {
     let insertions = [
         FormatMenuEntry {
             id: ID_INSERT_LINK,
-            label: "Insert &Link...".to_string(),
+            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert Lin&k...".to_string(),
             help: "Turn the selected text into a link".to_string(),
         },
         FormatMenuEntry {

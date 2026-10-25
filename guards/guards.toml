@@ -13164,7 +13164,7 @@ red = [
     "presentation::wx_compose::tests::test_forwarding_a_message_passes_its_pictures_on",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -16097,7 +16097,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/conversations.rs", tests = 26 },
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
 ]
 
 # ── A row that is not a folder offered a folder's commands ───────────────────
@@ -18054,7 +18054,7 @@ red = [
     "test_the_one_door_is_the_only_place_a_path_becomes_an_attachment",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/every_way_a_file_goes_on_a_message.rs", tests = 7 },
 ]
 
@@ -18255,7 +18255,7 @@ red = [
     "test_the_decorative_question_is_one_enter_answers_by_asking_for_a_description",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_picture_is_only_decorative_because_somebody_said_so.rs", tests = 14 },
 ]
 
@@ -19258,7 +19258,7 @@ red = [
     "test_the_key_that_takes_a_file_off_a_message_is_in_the_composers_section",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs", tests = 3 },
 ]
 
@@ -24587,7 +24587,7 @@ red = [
     "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]
 
@@ -24603,7 +24603,7 @@ red = [
     "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]
 
@@ -25389,7 +25389,7 @@ red = [
     "test_the_reading_complains_when_the_comment_names_a_key_that_does_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]
 
@@ -31566,7 +31566,7 @@ red = [
     "test_a_signature_somebody_typed_into_stays_when_the_from_account_changes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
@@ -32249,7 +32249,7 @@ red = [
     "test_every_box_a_person_types_into_keeps_a_history",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/every_text_box_keeps_a_history.rs", tests = 10 },
 ]
 
@@ -32317,7 +32317,7 @@ red = [
     "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
@@ -34127,7 +34127,7 @@ red = [
     "test_a_key_still_locked_after_its_passphrase_is_not_asked_for_twice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
 ]
 
@@ -35624,7 +35624,7 @@ red = [
     "test_the_from_list_is_named_from_on_msaa_where_focus_lands",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
@@ -35641,7 +35641,7 @@ red = [
     "test_people_are_looked_up_in_the_chosen_entrys_account",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
@@ -45722,7 +45722,7 @@ red = [
     "test_the_automatic_save_ticks_on_its_own_and_reaches_nothing_else",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_automatic_save_has_a_timer_of_its_own.rs", tests = 1 },
 ]
 
@@ -45740,7 +45740,7 @@ red = [
     "test_the_composer_hands_its_save_to_a_timer_owned_by_the_message_body",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
 ]
 
@@ -45764,7 +45764,7 @@ red = [
     "test_the_other_timer_saves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
 ]
 
@@ -45828,7 +45828,7 @@ red = [
     "test_leaving_the_body_forward_reaches_save_draft_and_backward_reaches_the_subject",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/tab_leaves_the_message_body_both_ways.rs", tests = 1 },
 ]
 
