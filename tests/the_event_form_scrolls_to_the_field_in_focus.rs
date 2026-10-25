@@ -384,7 +384,7 @@ struct Stop {
 
 /// Tab from `widget`, the way wxWidgets' own Tab handling moves on.
 ///
-/// `false` because wxdragon 0.9.17 passes `navigate(true)` to wxWidgets as
+/// `false` because wxdragon 0.9.23 passes `navigate(true)` to wxWidgets as
 /// its backward flag: `WXD_NAVIGATION_NEXT` is 0, and 0 is
 /// `wxNavigationKeyEvent::IsBackward`. Measured here on 2026-09-28, when the
 /// first walk went from the title back to the tabs; `wx_compose.rs` found the

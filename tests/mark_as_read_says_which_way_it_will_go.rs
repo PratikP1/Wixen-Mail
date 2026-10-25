@@ -11,7 +11,7 @@
 //! beginning with it, on the `WM_CHAR` that follows the key-down. A handler
 //! that runs but leaves the event skipped is one the search still gets, and
 //! under wxdragon a closure that says nothing is exactly that
-//! (`wxdragon-sys-0.9.17/cpp/src/event.cpp:379` resets `Skip(true)` before
+//! (`wxdragon-sys-0.9.23/cpp/src/event.cpp:464` resets `Skip(true)` before
 //! every closure). So the reading builds a list with rows "Alpha", "Mango"
 //! and "Zulu", selects the first, wires M through
 //! `presentation::list_keys::wire_letter`, sends `WM_KEYDOWN` for M and the
@@ -23,7 +23,7 @@
 //! otherwise reach.
 //!
 //! **Reading B, the toolbar's label where a screen reader reads it.** The
-//! main toolbar is `Flat | Text`, and wxdragon 0.9.17 can set a tool's short
+//! main toolbar is `Flat | Text`, and wxdragon 0.9.23 can set a tool's short
 //! help and not its label, so `presentation::toolbar_text::relabel` goes
 //! through `TB_SETBUTTONINFOW` on the toolbar's own window. The reading
 //! builds a toolbar with one tool "Mark Read", relabels it "Mark as Unread",

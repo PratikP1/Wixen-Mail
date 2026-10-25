@@ -14,7 +14,7 @@
 //! taken in this process against a browser control this test builds: what a
 //! navigating event carries when a link in the page is followed. It carries
 //! no address. wxWidgets keeps a navigating event's address in
-//! `wxWebViewEvent::GetURL`, and wxdragon 0.9.17 hands `WebViewEventData`
+//! `wxWebViewEvent::GetURL`, and wxdragon 0.9.23 hands `WebViewEventData`
 //! only the command event's string, which a navigating event never sets. So
 //! the handler's guard against vetoing the control's own document load,
 //! `!url.is_empty()`, skipped every link, and the browser followed each one

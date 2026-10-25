@@ -19,13 +19,13 @@
 //!
 //! **The chain being read.** wxWidgets answers `WM_ACTIVATE` in
 //! `wxTopLevelWindowMSW::OnActivate`
-//! (`target/debug/wxWidgets/src/msw/toplevel.cpp:1325-1361`): activating,
+//! (`target/debug/wxWidgets/src/msw/toplevel.cpp:1349-1385`): activating,
 //! it calls `DoRestoreLastFocus` unless a descendant already has the
 //! keyboard, and `DoRestoreLastFocus` calls `wxSetFocusToChild` on the child
 //! it saved when the window was deactivated, or on the window itself, which
 //! picks the first child that takes focus. For this window that child is the
 //! WebView, and `wxWebViewEdge::OnSetFocus`
-//! (`src/msw/webview_edge.cpp:1171-1175`) calls `MoveFocus(PROGRAMMATIC)` on
+//! (`src/msw/webview_edge.cpp:1240-1244`) calls `MoveFocus(PROGRAMMATIC)` on
 //! the controller, which is what puts the keyboard inside the document rather
 //! than on the host window. Three links, and nothing in this tree had ever
 //! read the end of them.
@@ -45,7 +45,7 @@
 //! does for a key it cannot send: it sets up the exact precondition and calls
 //! the same entry point the system calls. `WM_ACTIVATE` sent to the window
 //! runs `wxWindowMSW::MSWWindowProc`'s own arm
-//! (`src/msw/window.cpp:3120-3128`) and everything after it is wx's code and
+//! (`src/msw/window.cpp:3255-3263`) and everything after it is wx's code and
 //! this window's. What is not read here is whether Windows delivers that
 //! message, which it does for every window it activates, and which the run on
 //! the runner exercises for real. NVDA runs 35839692317 and 35839954840 of
@@ -56,7 +56,7 @@
 //! child when a window is deactivated, and `IsDescendant` is true for the
 //! frame itself, so a frame holding the keyboard at that moment is saved as
 //! its own last focused child and given the keyboard back on every activation
-//! after it (`msw/toplevel.cpp:1301-1324`, `common/containr.cpp:611-661`). That
+//! after it (`msw/toplevel.cpp:1325-1348`, `common/containr.cpp:648-698`). That
 //! is the one path in wx's code that ends with the keyboard on the frame. The
 //! steps take it: the keyboard put on the frame and the window deactivated in
 //! the same step, so nothing runs between the two, then the keyboard cleared
