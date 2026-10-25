@@ -4,7 +4,9 @@
 
 use std::path::{Path, PathBuf};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{EnvFilter, Layer, Registry, fmt, layer::SubscriberExt};
+use tracing_subscriber::{
+    EnvFilter, Layer, Registry, fmt, layer::SubscriberExt, util::SubscriberInitExt,
+};
 
 /// Log level configuration
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,14 +68,23 @@ pub fn default_level_for(version: &str) -> LogLevel {
     }
 }
 
-/// The filter the log runs under: this crate at `level`, and nothing else.
+/// The filter the log runs under: this crate at `level`, the window toolkit
+/// at warn whatever the level, and nothing else.
 ///
-/// One target, on purpose. A library switched on at debug logs what the
-/// library chooses, and for an IMAP crate that is the literals on the wire,
-/// which is message text. A second target cannot be added here without the
-/// test that holds this to one moving.
+/// A library switched on at debug logs what the library chooses, and for an
+/// IMAP crate that is the literals on the wire, which is message text. So no
+/// library is named but one, and that one only at warn. wxDragon's warnings
+/// and errors say what it refused or skipped: a tree item id the C++ side
+/// returned that is not valid, a bitmap it could not make, and from 0.9.23 a
+/// handler call it skipped because the handler was already running and a
+/// panic it caught in a callback from C++. Each names a pointer, a size or a
+/// function wxDragon passes, never anything a person typed or received, and
+/// each is an upstream failure the program would otherwise paper over without
+/// a word. Held at warn rather than following `level`, so a quieter setting
+/// never hides one. A third target cannot be added without the test that
+/// holds this to two moving.
 pub fn filter_for(level: LogLevel) -> String {
-    format!("wixen_mail={}", level.as_stored())
+    format!("wixen_mail={},wxdragon=warn", level.as_stored())
 }
 
 /// Logger configuration
@@ -178,15 +189,24 @@ pub fn init_logging(config: LoggerConfig) -> Result<WorkerGuard, Box<dyn std::er
 
     let subscriber = Registry::default().with(file_layer);
 
-    // Add console layer if enabled
+    // try_init rather than set_global_default, because try_init is what
+    // carries the `log` crate's records, and wxDragon writes through `log`.
+    // It sets the global subscriber and then installs tracing-log's
+    // LogTracer, which tracing-subscriber compiles in by default, at the
+    // filter's most verbose level (tracing-subscriber 0.3.23, `util.rs`
+    // 61-77). set_global_default installs no `log` logger, so until
+    // 2026-10-25 every wxDragon warning was dropped. The cost: a library's
+    // `log::debug!` now reaches LogTracer's enabled check, Debug being the
+    // alpha's ceiling, and is refused there by the filter before any argument
+    // is formatted, so html5ever's per-token check is one filter call and its
+    // token text is never written. That cost is not measured.
     if config.console_logging {
         let console_layer = fmt::layer()
             .with_writer(std::io::stdout)
             .with_filter(filter);
-        let subscriber = subscriber.with(console_layer);
-        tracing::subscriber::set_global_default(subscriber)?;
+        subscriber.with(console_layer).try_init()?;
     } else {
-        tracing::subscriber::set_global_default(subscriber)?;
+        subscriber.try_init()?;
     }
 
     tracing::info!("Logging initialized at level: {:?}", config.level);
@@ -274,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn test_the_filter_names_this_crate_at_the_level_and_nothing_else() {
+    fn test_the_filter_names_this_crate_at_the_level_and_the_toolkit_at_warn_and_nothing_else() {
         // A library switched on at debug logs what the library chooses, and an
         // IMAP crate at debug logs the literals on the wire, which is message
         // text. So the one target beside this crate is the window toolkit, and
