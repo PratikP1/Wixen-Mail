@@ -71,23 +71,16 @@ fn stored(field: &str, match_type: &str, pattern: &str) -> FilterRule {
     }
 }
 
-/// Whether a list cell holds `expected`, allowing for a defect in
-/// `wxdragon 0.9.17` that this test cannot fix and must not hide.
+/// Whether a list cell holds exactly `expected`, every character of it.
 ///
-/// `ListCtrl::get_item_text` asks wxWidgets how long the text is, which
-/// answers with the room a NUL-terminated copy needs, and then allocates a
-/// buffer of exactly that many bytes and calls the result that many characters
-/// long. So the last character of every non-empty cell is lost and a NUL takes
-/// its place: "Message text" comes back as "Message tex\0". Measured against
-/// `wxdragon-0.9.17/src/widgets/list_ctrl.rs:429`.
-///
-/// This still discriminates: a cell holding the stored name `body_plain` is
-/// not a prefix of `Message text`, which is the fault the check is about. What
-/// it cannot see is a cell whose last character is wrong, and that is the
-/// upstream defect's cost rather than a decision taken here.
+/// Until wxdragon 0.9.20 (upstream #205) `ListCtrl::get_item_text` allocated
+/// exactly the length wxWidgets reported and the C++ side's NUL took the last
+/// character, so "Message text" came back as "Message tex\0" and this helper
+/// accepted the text with its last character lost. Since the move to 0.9.23
+/// (13.4-09) the cell reads whole, and a cell whose last character is wrong is
+/// now something this can see.
 fn a_cell_holding(cell: &str, expected: &str) -> bool {
-    let read_back = cell.trim_end_matches('\0');
-    !expected.is_empty() && expected.starts_with(read_back) && read_back.len() + 1 == expected.len()
+    !expected.is_empty() && cell == expected
 }
 
 /// One condition of a saved search.
