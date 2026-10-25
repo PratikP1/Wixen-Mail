@@ -26,24 +26,25 @@ use wxdragon::dialogs::message_dialog::MessageDialogStyle;
 
 /// The flag that stops Enter answering Yes.
 ///
-/// `wxNO_DEFAULT`. wxWidgets has it and the Rust binding does not name it, so
-/// it is built from the constant the binding does carry rather than from the
-/// number, which would go stale silently if the number ever moved.
-pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle =
-    MessageDialogStyle::from_bits_retain(wxdragon::ffi::WXD_NO_DEFAULT);
+/// `wxNO_DEFAULT`, which the binding calls `NoDefault`. This project calls it
+/// by what it does here, so a question reads as a decision about Enter rather
+/// than about a default button.
+pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle = MessageDialogStyle::NoDefault;
 
 /// A question with two answers, where Enter answers No.
 ///
 /// For anything that cannot be undone. The question still says what Yes does,
-/// because the button labels are Yes and No and this builder cannot change
-/// them, so "Delete Ada Lovelace?" has to be a question those two words answer.
+/// because the buttons say Yes and No, so "Delete Ada Lovelace?" has to be a
+/// question those two words answer. The binding can give a message box other
+/// button labels; this module keeps Yes and No, because other labels would
+/// change what people hear, which is a decision rather than a tidy-up.
 pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
     let two_answers = yes_no_where_enter_answers_yes();
     // `|` here could be `^` and nothing would change: `ENTER_DOES_NOT_ANSWER_YES`
     // is bit 7 (128) and `two_answers` never sets it, the same disjointness
     // `yes_no_where_enter_answers_yes` checks below for its own two flags. The
-    // assert is what would notice a future wxdragon giving `WXD_NO_DEFAULT`
-    // a bit one of `MessageDialogStyle::YesNo` or `IconQuestion` already uses,
+    // assert is what would notice a future wxdragon giving `NoDefault` a
+    // bit one of `MessageDialogStyle::YesNo` or `IconQuestion` already uses,
     // which is the only way `|` and `^` could ever start disagreeing here.
     debug_assert_eq!(
         two_answers.bits() & ENTER_DOES_NOT_ANSWER_YES.bits(),

@@ -1357,6 +1357,25 @@ pub fn save_on_a_timer_of_its_own<W: WxEvtHandler>(
     timer
 }
 
+/// Move the keyboard out of the message body, back to the Subject line when
+/// `back`, on to the control after the body otherwise.
+///
+/// Both directions ask the window, so the answer is whatever the tab order
+/// says and stays right when a control is added. Naming a control was tried
+/// for forward and arrives one further on: focus set to Save Draft landed on
+/// Discard, and Tab is not a key anybody should have to aim at a destructive
+/// button. Backward used to name the Subject line by hand, while the toolbar
+/// was made between the fields and the message; it is made before the fields
+/// now, so the window's answer is the Subject line too.
+///
+/// `navigate`'s argument reads backwards because it does at wxdragon 0.9.23:
+/// `navigate(true)` moves to the control before this one. Upstream's #248, not
+/// yet released, flips it, and `tests/tab_leaves_the_message_body_both_ways.rs`
+/// is what notices when a move brings it in.
+pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(back);
+}
+
 /// The compose dialog, with automatic draft saving.
 ///
 /// `autosave` decides how often, and `on_autosave` is handed the fields as
@@ -2448,28 +2467,10 @@ pub fn show_compose_dialog_full(
                 // Where the toolbar was left, so leaving and coming back lands
                 // where somebody was. The group is named on arrival, always,
                 // because arriving is the moment nobody knows where they are.
-                // The two directions are not done the same way, and each is
-                // the one that was measured to land where it should.
-                //
-                // Forward asks the window, so the answer is whatever the tab
-                // order says and stays right when a control is added. Naming a
-                // control was tried and arrives one further on: focus set to
-                // Save Draft landed on Discard, and Tab is not a key anybody
-                // should have to aim at a destructive button. The argument
-                // reads backwards because it does: `navigate(true)` moves to
-                // the control before this one.
-                //
-                // Backward asks the window too, now that it gives the right
-                // answer. It used to name the Subject line by hand, because
-                // the toolbar was made between the fields and the message and
-                // asking would have walked into it: somebody pressing
-                // Shift+Tab in the body is going back to the recipients, not
-                // to the Bold button, which has its own key. The toolbar is
-                // made before the fields now, so the window's own answer and
-                // the one that was named by hand are the same, and asking
-                // stays right when a control is added.
+                // Which way each direction goes, and why the window is asked,
+                // is on `leave_the_message_body`.
                 Some(Deferred::Leaving { back }) => {
-                    body_editor.navigate(back);
+                    leave_the_message_body(&body_editor, back);
                 }
                 // The first button, which is Send. Reaching the toolbar from
                 // the body is otherwise Shift+Tab five times, back through

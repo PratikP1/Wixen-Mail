@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 967 records have arrived since and have not been through it.
+# 969 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -3529,6 +3529,10 @@ tests_last_seen = [
 # found, and it is the direction that announces itself rather than the silent
 # one: the break stops applying and the run says so. The count check cannot see
 # it, because a refactor that moves an expression changes no test count.
+#
+# Re-measured on 2026-10-25 by 13.4-11, after the flag became the binding's own
+# `MessageDialogStyle::NoDefault` at wxdragon 0.9.23: the anchor still names
+# one place, and against the whole library exactly the one test named went red.
 
 [[guard]]
 name = "a deletion that cannot be undone does not let Enter answer Yes"
@@ -45786,6 +45790,51 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs", tests = 1 },
+]
+
+# A saved search's condition row starts with the words the editor offers for
+# its field, compared whole now that a list cell reads whole (13.4-11, ledgers
+# 28 and 53). The break writes the stored field name into the row's first
+# cell. Measured by hand and through the runner on 2026-10-25 at 0.9.23: the
+# one live test failed on the condition row alone, reading "body_plain" rather
+# than "Message text".
+[[guard]]
+name = "a condition row reads the words for its field, compared whole"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''        let [looks_at, compares, against] = what_a_condition_row_says(question);
+        list.insert_item(idx, &looks_at, None);'''
+after = '''        let [looks_at, compares, against] = what_a_condition_row_says(question);
+        let _ = &looks_at;
+        list.insert_item(idx, &question.field, None);'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+# Leaving the message body goes the way it was asked (13.4-11). wxdragon
+# 0.9.23's `navigate` reads its argument backwards and an unreleased upstream
+# change (#248) flips it, so the break is the flip itself, the argument
+# swapped inside the one function the composer leaves the body through.
+# Measured by hand on 2026-10-25 at 0.9.23: the one live test failed both
+# ways, forward landing on the Subject line and backward on Save Draft.
+[[guard]]
+name = "leaving the message body forward goes on and backward goes back"
+file = "src/presentation/wx_compose.rs"
+suite = "tab_leaves_the_message_body_both_ways"
+before = '''pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(back);'''
+after = '''pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(!back);'''
+red = [
+    "test_leaving_the_body_forward_reaches_save_draft_and_backward_reaches_the_subject",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/tab_leaves_the_message_body_both_ways.rs", tests = 1 },
 ]
 
 # The lock holds the three wxDragon crates at one version (13.4-09). The break
