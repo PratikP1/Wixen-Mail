@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 952 records have arrived since and have not been through it.
+# 958 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -4814,7 +4814,7 @@ red = [
     "application::draft_copy::tests::test_a_reason_that_already_ends_in_a_full_stop_does_not_get_a_second_one",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 [[guard]]
@@ -4900,7 +4900,7 @@ red = [
     "test_no_answer_about_somebody_s_mail_is_worked_out_and_thrown_away",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "tests/house_style.rs", tests = 80 },
 ]
 
@@ -5114,20 +5114,25 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
 # Rewritten 2026-10-22 by 13.3-21 onto the block that asks the once-per-draft
 # rule (ledger 912), with the comment above it as context; the break is the
-# one it was, a log line in place of the saying.
+# one it was, a log line in place of the saying. Rewritten again 2026-10-24 by
+# 13.4-04 onto the comment that says a refusal is said once until a save
+# reaches the server (ledger 941) and the call that now names whose save it
+# was; the break is unchanged and reddens the same one test.
 [[guard]]
 name = "a draft the server would not take is said rather than logged"
 file = "src/presentation/wx_app.rs"
 suite = "wired"
-before = """        // An older copy left beside the new one is said once for this draft,
-        // not at every save after it; a refused save is said every time.
-        if filed.needs_saying_once_per_draft(&draft_id) {
+before = """        // At an automatic save, an older copy left beside the new one is said
+        // once for this draft, a refusal once until a save of it reaches the
+        // server, and the first save that does after a refusal once; a save
+        // the person asked for is told anything but an ordinary save.
+        if filed.needs_saying_once_per_draft(&draft_id, save) {
             handle.block_on(async {
                 let _ = tx
                     .send(UIUpdate::StatusUpdated(filed.what_happened()))
@@ -7189,7 +7194,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_draft_filed_at_the_server_is_flagged_as_a_draft_that_has_been_read",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -7207,7 +7212,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_the_copies_the_server_is_told_to_remove_are_the_ones_it_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -40967,7 +40972,7 @@ red = [
     "application::draft_copy::tests::test_sending_takes_away_exactly_the_copies_the_server_named",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 # A sent draft's copy on this computer found and left where it is: the
@@ -41011,7 +41016,7 @@ red = [
     "application::draft_copy::tests::test_a_removal_waits_for_a_filing_that_began_before_it",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 # The Send arm reading the sent draft and taking nothing away: the row goes
@@ -41880,7 +41885,7 @@ red = [
     "application::renumbered::tests::test_a_renumbered_change_whose_one_match_carries_a_longer_identifier_is_put_back",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "src/application/moves_waiting.rs", tests = 76 },
     { file = "src/application/renumbered.rs", tests = 17 },
 ]
@@ -43615,7 +43620,7 @@ red = [
     "application::draft_copy::tests::test_saving_leaves_a_message_whose_identifier_only_contains_the_drafts",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 # A saved draft's older copies taken from the server's search alone, so a
@@ -43639,7 +43644,7 @@ red = [
     "application::mail_controller::against_a_server_that_answers::test_a_draft_the_server_takes_is_filed_before_the_older_copy_is_removed",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
     { file = "src/application/mail_controller.rs", tests = 75 },
 ]
 
@@ -43673,7 +43678,7 @@ red = [
     "application::draft_copy::tests::test_a_second_try_that_failed_again_is_forgotten_and_said_with_the_servers_words",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 # The check no longer trying the kept removals: the call in spawn_mail_sync
@@ -44876,21 +44881,139 @@ tests_last_seen = [
 
 # The rule saying every older copy left beside a saved draft, which on a
 # server without UIDPLUS is a sentence at every automatic save, once a minute
-# (13.3-21, ledger 912).
+# (13.3-21, ledger 912). Rewritten 2026-10-24 by 13.4-04, whose green made
+# the arm also end a said refusal (ledger 941); the break is the one it was,
+# `|| true` after the older-copy insert, and it now reddens the Save Draft
+# case as well, which says each answer once more at the next automatic save.
 [[guard]]
 name = "an older copy of a draft is said once for each draft"
 file = "src/application/draft_copy.rs"
-before = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
-                told_of_an_older_copy.insert(draft_id.to_string())
-            }'''
-after = '''            Self::FiledAndAnOlderCopyMayStillBeThere(_) => {
-                told_of_an_older_copy.insert(draft_id.to_string()) || true
-            }'''
+before = '''                let ends_a_refusal = told.forget_the_refusals_of(draft_id);
+                let first_older_copy = told.of_an_older_copy.insert(draft_id.to_string());'''
+after = '''                let ends_a_refusal = told.forget_the_refusals_of(draft_id);
+                let first_older_copy = told.of_an_older_copy.insert(draft_id.to_string()) || true;'''
 red = [
+    "application::draft_copy::tests::test_a_save_the_person_asked_for_is_told_what_the_server_answered_every_time",
     "application::draft_copy::tests::test_an_older_copy_that_may_still_be_there_is_said_once_for_each_draft",
 ]
 tests_last_seen = [
-    { file = "src/application/draft_copy.rs", tests = 31 },
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# The rule saying a refusal while the server cannot be reached once for each
+# draft, rather than at every automatic save, once a minute (13.4-04, ledger
+# 941). Taken by hand 2026-10-24: the whole library, 9,514 passed and 4 failed.
+[[guard]]
+name = "a draft the server would not take is said once until a save of it is taken"
+file = "src/application/draft_copy.rs"
+before = '''            Self::NotFiledAndTheOlderOneIsStillThere(_) => told
+                .refused_beside_an_older_copy
+                .insert(draft_id.to_string()),'''
+after = '''            Self::NotFiledAndTheOlderOneIsStillThere(_) => told
+                .refused_beside_an_older_copy
+                .insert(draft_id.to_string())
+                || true,'''
+red = [
+    "application::draft_copy::tests::test_a_draft_the_server_would_not_take_is_said_once_for_each_draft_whatever_its_words",
+    "application::draft_copy::tests::test_a_draft_with_no_copy_anywhere_is_said_once_for_each_draft",
+    "application::draft_copy::tests::test_a_refusal_after_a_save_was_taken_is_said_again",
+    "application::draft_copy::tests::test_a_save_the_person_asked_for_is_told_what_the_server_answered_every_time",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# The same rule for a server that refuses every copy and holds none, a full
+# mailbox for one (13.4-04, on Pratik's "Fold the other items in." of
+# 2026-10-24). Taken by hand 2026-10-24: 9,516 passed and 2 failed.
+[[guard]]
+name = "a draft with no copy anywhere is said once until a save of it is taken"
+file = "src/application/draft_copy.rs"
+before = '''            Self::NotFiledAndThereIsNoCopyThere(_) => {
+                told.refused_with_no_copy_there.insert(draft_id.to_string())
+            }'''
+after = '''            Self::NotFiledAndThereIsNoCopyThere(_) => {
+                told.refused_with_no_copy_there.insert(draft_id.to_string()) || true
+            }'''
+red = [
+    "application::draft_copy::tests::test_a_draft_with_no_copy_anywhere_is_said_once_for_each_draft",
+    "application::draft_copy::tests::test_a_save_the_person_asked_for_is_told_what_the_server_answered_every_time",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# A save that reached the server ends the draft's refusals, so a later refusal
+# is news again (13.4-04). The break keeps the refusal where it was. Taken by
+# hand 2026-10-24: 9,516 passed and 2 failed.
+[[guard]]
+name = "a save that reaches the server forgets the draft's refusal"
+file = "src/application/draft_copy.rs"
+before = '''    fn forget_the_refusals_of(&mut self, draft_id: &str) -> bool {
+        let beside_an_older_copy = self.refused_beside_an_older_copy.remove(draft_id);'''
+after = '''    fn forget_the_refusals_of(&mut self, draft_id: &str) -> bool {
+        let beside_an_older_copy = self.refused_beside_an_older_copy.contains(draft_id);'''
+red = [
+    "application::draft_copy::tests::test_a_refusal_after_a_save_was_taken_is_said_again",
+    "application::draft_copy::tests::test_the_first_save_taken_after_a_said_refusal_is_said_once",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# The refusal is said once, so the save that reaches the server after it is
+# said once too, or silence could not be told from "still out of reach"
+# (13.4-04, decision C-1). Taken by hand 2026-10-24: 9,517 passed and 1 failed.
+[[guard]]
+name = "the first save the server takes after a said refusal is said"
+file = "src/application/draft_copy.rs"
+before = '''    pub fn needs_saying_for(&self, draft_id: &str, told: &mut ToldSoFar) -> bool {
+        match self {
+            Self::Replaced => told.forget_the_refusals_of(draft_id),'''
+after = '''    pub fn needs_saying_for(&self, draft_id: &str, told: &mut ToldSoFar) -> bool {
+        match self {
+            Self::Replaced => told.forget_the_refusals_of(draft_id) && false,'''
+red = [
+    "application::draft_copy::tests::test_the_first_save_taken_after_a_said_refusal_is_said_once",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# The end of a said refusal names the server, since the composer says "Draft
+# saved." at every automatic save on the same status topic (13.4-04, decision
+# C-1). The break puts back the old words. Taken by hand 2026-10-24: 9,517
+# passed and 1 failed.
+[[guard]]
+name = "the end of a said refusal names the server"
+file = "src/application/draft_copy.rs"
+before = '''            Self::Replaced => {
+                "The server has taken the draft, so your other devices will have the newest copy."
+                    .to_string()
+            }'''
+after = '''            Self::Replaced => "The draft was saved.".to_string(),'''
+red = [
+    "application::draft_copy::tests::test_the_sentence_after_a_said_refusal_names_the_server",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
+]
+
+# A Save Draft the person pressed is told the server's answer every time, the
+# automatic saves once (13.4-04, on Pratik's "Fold the other items in." of
+# 2026-10-24). Taken by hand 2026-10-24: 9,517 passed and 1 failed.
+[[guard]]
+name = "a save the person asked for is told what the server answered"
+file = "src/application/draft_copy.rs"
+before = '''        let said_for_the_run = self.needs_saying_for(draft_id, told);
+        said_for_the_run || self.needs_saying()'''
+after = '''        let said_for_the_run = self.needs_saying_for(draft_id, told);
+        said_for_the_run'''
+red = [
+    "application::draft_copy::tests::test_a_save_the_person_asked_for_is_told_what_the_server_answered_every_time",
+]
+tests_last_seen = [
+    { file = "src/application/draft_copy.rs", tests = 36 },
 ]
 
 # The attribute that keeps the wrapper reading an account's labels for one

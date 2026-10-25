@@ -1468,6 +1468,20 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Fixed
 
+- **While your mail server cannot be reached, automatic saving no longer says every minute that
+  the server would not take your draft (2026-10-24, FOUND-04).** Wixen Mail saves a draft once a
+  minute while you write. Each of those saves tried to put a copy in the server's Drafts folder,
+  and while the server could not be reached, each one said "The draft is saved on this computer.
+  The server would not take it", read aloud over what you were writing. Now that is said once
+  for each draft, and again only if a later save reaches the server and the one after it does
+  not. The first save that reaches the server after that sentence says once, "The server has
+  taken the draft, so your other devices will have the newest copy." It names the server so it
+  is not mistaken for the "Draft saved." that automatic saving says each time it saves on this
+  computer. A server that refuses every copy of a draft when it holds none, a full mailbox for
+  one, is said once for each draft in the same way. When you press Save Draft yourself, you
+  still hear what the server answered every time, even when an automatic save said it already.
+  Known limitation: nobody has listened to this yet (ledger 961).
+
 - **The text reader no longer reads what a sender hid (2026-10-24, LIST-25).** The text reader,
   the window `Enter` opens on a message, read every block of an HTML message, including the
   blocks its sender had hidden from view or from screen readers. So a newsletter's hidden
@@ -1592,7 +1606,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   minute, said that an older copy may still be on the server, and each save looked up every
   copy marked at the saves before, read each one and marked it again. Now that sentence is
   said once for each draft while Wixen Mail is open, and copies already marked for removal are
-  no longer looked up. A save the server would not take is still said every time. And when you
+  no longer looked up. A save the server would not take is still said every time. (Since
+  2026-10-24 that is said once for each draft while the server keeps refusing it, and Save Draft
+  still says it every time; see the entry of that day.) And when you
   send a draft from an account whose Drafts folder is on this computer, every copy of that
   draft in the folder is taken out, not only the first one found. Known limitations: on such a
   server the older copies stay in Drafts, marked for removal, until the server or another
@@ -1600,7 +1616,7 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   there, you hear once that its copy may still be in Drafts, and the try at the next check for
   mail no longer says it failed again, because no try can take that copy away. And while the
   server cannot be reached, each automatic save still says the server would not take the draft
-  (ledger 941).
+  (ledger 941). That limitation was fixed on 2026-10-24.
 - **The uninstaller no longer says your mail folder stays when it is about to remove it
   (2026-10-22).** When the program had already gone from its folder before you uninstalled,
   for example because antivirus took it away, the uninstaller said your mail and settings
