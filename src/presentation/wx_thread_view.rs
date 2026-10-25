@@ -551,11 +551,12 @@ pub fn build_thread_dialog(
     // tree is built once and never touched again while the dialog is open.
     // Nothing is inserted, removed or re-sorted under it.
     //
-    // Hanging the id off the row instead is what this used to do, and it is
-    // not the cheap option it looks like: `set_custom_data` puts the id in a
-    // process-global map in `wxdragon` and nothing takes it out, so every
-    // opening of this dialog left one entry per message behind for the life of
-    // the program. `tests/tree_rows_leave_no_registry_entry.rs` counts them.
+    // Hanging the id off the row instead is what this used to do, and it was
+    // not the cheap option it looked like: `set_custom_data` puts the id in a
+    // process-global map in `wxdragon`, and before wxdragon 0.9.22 nothing took
+    // it out, so every opening of this dialog left one entry per message behind
+    // for the life of the program. 0.9.22 frees it when the row goes (upstream
+    // #214 and #215); `tests/tree_rows_leave_no_registry_entry.rs` counts them.
     let mut items: Vec<Option<TreeItemId>> = vec![None; nodes.len()];
     let mut ids: Vec<i64> = Vec::with_capacity(nodes.len());
     for row in rows_in_walk_order(nodes) {
