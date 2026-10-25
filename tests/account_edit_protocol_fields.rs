@@ -339,7 +339,7 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let manager = build_account_manager_dialog(&frame, &[], None, None, None);
@@ -841,8 +841,10 @@ fn test_the_dialog_opens_on_the_identity_page_and_moves_to_connection_on_next() 
             expect_no_connection_field_shown("imap.example.com, back to identity", &w, &mut wrong);
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

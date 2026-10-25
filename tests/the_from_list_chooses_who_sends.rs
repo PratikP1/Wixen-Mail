@@ -331,15 +331,17 @@ fn take_the_harvest() -> Result<Harvest, String> {
     let outcome: Arc<Mutex<Option<Result<Harvest, String>>>> = Arc::new(Mutex::new(None));
     let result = {
         let outcome = outcome.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let finish = {
                 let outcome = outcome.clone();
                 move |taken: Result<Harvest, String>| {
                     if let Ok(mut slot) = outcome.lock() {
                         *slot = Some(taken);
                     }
-                    wxdragon::call_after(Box::new(move || {
-                        app.exit_main_loop();
+                    wxdragon::call_after(Box::new(|| {
+                        if let Some(app) = wxdragon::get_app_instance() {
+                            app.exit_main_loop();
+                        }
                     }));
                 }
             };

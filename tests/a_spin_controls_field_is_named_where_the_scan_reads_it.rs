@@ -649,13 +649,15 @@ fn the_window_process_builds_names_and_has_its_fields_read() {
     let outcome: Arc<Mutex<Option<Reported>>> = Arc::new(Mutex::new(None));
     let result = {
         let outcome = outcome.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let taken = build_name_and_read(condition == READIED);
             if let Ok(mut slot) = outcome.lock() {
                 *slot = Some(taken);
             }
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

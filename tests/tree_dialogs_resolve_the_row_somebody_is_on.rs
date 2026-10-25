@@ -153,7 +153,7 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
     let answers: Arc<Mutex<Vec<Answer>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let answers = answers.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let mut said = Vec::new();
 
@@ -290,8 +290,10 @@ fn test_choosing_a_row_in_either_dialog_resolves_to_that_row() {
 
             *answers.lock().unwrap() = said;
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

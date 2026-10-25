@@ -847,12 +847,16 @@ fn take_the_harvest() -> Result<Harvest, String> {
         let outcome = outcome.clone();
         let cache = Some(cache.clone());
         let runtime = runtime.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let settle = move |taken: TheButtonsRead| {
                 if let Ok(mut slot) = outcome.lock() {
                     *slot = Some(taken);
                 }
-                wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
+                }));
             };
             let a11y = match Accessibility::new() {
                 Ok(a11y) => Arc::new(a11y),

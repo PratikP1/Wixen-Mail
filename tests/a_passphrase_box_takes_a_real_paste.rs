@@ -571,7 +571,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
     let outcome: Arc<Mutex<Option<Harvest>>> = Arc::new(Mutex::new(None));
     let result = {
         let outcome = outcome.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
 
             let asking = build(&frame, WHOSE, None);
@@ -603,8 +603,10 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     held_briefly,
                 });
             }
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

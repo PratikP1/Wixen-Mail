@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 958 records have arrived since and have not been through it.
+# 959 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -45518,4 +45518,82 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/reader_text.rs", tests = 155 },
     { file = "tests/what_the_sender_hid_is_not_read.rs", tests = 26 },
+]
+
+# A live window test ends its loop by asking for the application on the main
+# thread, never by handing the one wxdragon::main gave it to call_after, which
+# wxDragon 0.9.19 and later refuse because the application is not Send
+# (13.4-05). Broken by putting one test's ending back the old way, the
+# parameter named and the queued closure capturing it. The break spans the
+# whole closure because the reading needs both halves of the old shape. The
+# reading is not one of the guards every commit runs, so this record is what
+# runs it on a commit that changes this file.
+[[guard]]
+name = "a window test's queued ending asks for the application rather than capturing it"
+file = "tests/tree_selection_raises.rs"
+suite = "every_window_test_ends_on_the_thread_that_owns_it"
+before = '''        wxdragon::main(move |_| {
+            let frame = Frame::builder().build();
+            let tree = TreeCtrl::builder(&frame).build();
+
+            let root = tree.add_root("Mail Folders", None, None).expect("a root");
+            let all_inboxes = tree
+                .append_item(&root, "All Inboxes", None, None)
+                .expect("the combined inbox row");
+            tree.append_item(&root, "Inbox", None, None);
+            tree.expand(&root);
+
+            tree.on_selection_changed({
+                let heard = heard.clone();
+                move |event| {
+                    if let Some(item) = event.get_item()
+                        && let Some(text) = tree.get_item_text(&item)
+                    {
+                        heard.lock().unwrap().push(text);
+                    }
+                }
+            });
+
+            // The call the menu command makes.
+            tree.select_item(&all_inboxes);
+
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
+            }));'''
+after = '''        wxdragon::main(move |app| {
+            let frame = Frame::builder().build();
+            let tree = TreeCtrl::builder(&frame).build();
+
+            let root = tree.add_root("Mail Folders", None, None).expect("a root");
+            let all_inboxes = tree
+                .append_item(&root, "All Inboxes", None, None)
+                .expect("the combined inbox row");
+            tree.append_item(&root, "Inbox", None, None);
+            tree.expand(&root);
+
+            tree.on_selection_changed({
+                let heard = heard.clone();
+                move |event| {
+                    if let Some(item) = event.get_item()
+                        && let Some(text) = tree.get_item_text(&item)
+                    {
+                        heard.lock().unwrap().push(text);
+                    }
+                }
+            });
+
+            // The call the menu command makes.
+            tree.select_item(&all_inboxes);
+
+            wxdragon::call_after(Box::new(move || {
+                app.exit_main_loop();
+            }));'''
+red = [
+    "test_no_window_test_hands_the_application_to_call_after",
+]
+tests_last_seen = [
+    { file = "tests/every_window_test_ends_on_the_thread_that_owns_it.rs", tests = 3 },
+    { file = "tests/tree_selection_raises.rs", tests = 1 },
 ]

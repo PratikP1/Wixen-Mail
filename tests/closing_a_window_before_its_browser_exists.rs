@@ -86,7 +86,7 @@ fn what_the_exit_means(status: ExitStatus) -> String {
 #[test]
 #[ignore = "the live half of the test above, which runs it in a child process"]
 fn the_live_half_closes_a_window_at_once() {
-    let result = wxdragon::main(move |app| {
+    let result = wxdragon::main(move |_| {
         let frame = Frame::builder().build();
         let dialog = Dialog::builder(&frame, "closed before its browser exists").build();
         let view = WebView::builder(&dialog)
@@ -102,7 +102,11 @@ fn the_live_half_closes_a_window_at_once() {
         // completion arrives while there is a process to arrive in. Queued
         // rather than called from the report, the way theme_reach exits.
         browser.when_ready(move || {
-            wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
+            }));
         });
 
         // A browser that never reports would hang this forever. Say so and

@@ -126,7 +126,7 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
     let left: Arc<Mutex<Vec<(&'static str, usize)>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let left = left.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let mut found = Vec::new();
 
@@ -159,8 +159,10 @@ fn test_neither_tree_dialog_leaves_an_entry_in_the_process_global_registry() {
 
             *left.lock().unwrap() = found;
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

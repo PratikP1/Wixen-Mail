@@ -1053,13 +1053,15 @@ fn test_the_editor_offers_the_action_and_the_sound_and_reads_a_stored_rule_back(
         std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             {
                 let mut wrong = wrong.lock().unwrap();
                 what_is_wrong_with_the_editor(&mut wrong);
             }
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

@@ -518,7 +518,7 @@ fn test_delete_removes_the_right_row_against_real_widgets() {
     let results: Arc<Mutex<Vec<Outcome>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let results = results.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
 
@@ -544,8 +544,10 @@ fn test_delete_removes_the_right_row_against_real_widgets() {
 
             *results.lock().unwrap() = outcomes;
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

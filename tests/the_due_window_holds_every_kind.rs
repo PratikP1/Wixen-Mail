@@ -88,7 +88,7 @@ fn test_the_due_window_holds_one_row_of_each_kind_and_offers_what_each_can_take(
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let now = chrono::Local::now();
@@ -108,8 +108,10 @@ fn test_the_due_window_holds_one_row_of_each_kind_and_offers_what_each_can_take(
 
             window.dialog.destroy();
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

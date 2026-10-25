@@ -25,7 +25,7 @@ fn test_choosing_a_row_in_code_raises_the_selection_event() {
     let heard: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let heard = heard.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let tree = TreeCtrl::builder(&frame).build();
 
@@ -50,8 +50,10 @@ fn test_choosing_a_row_in_code_raises_the_selection_event() {
             // The call the menu command makes.
             tree.select_item(&all_inboxes);
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

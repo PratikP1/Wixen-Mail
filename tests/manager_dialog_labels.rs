@@ -169,7 +169,7 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let parent = Dialog::builder(&frame, "Filter Manager").build();
@@ -585,8 +585,10 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             conditions_shell.destroy();
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

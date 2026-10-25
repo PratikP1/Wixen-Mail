@@ -63,7 +63,7 @@ fn test_checking_one_sort_in_one_group_leaves_one_checked_and_a_separator_leaves
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
 
             // The new shape: one group. As built, before any sort, wxWidgets
@@ -128,8 +128,10 @@ fn test_checking_one_sort_in_one_group_leaves_one_checked_and_a_separator_leaves
             frame.destroy();
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

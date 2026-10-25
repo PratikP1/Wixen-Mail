@@ -573,7 +573,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
     let outcome: Arc<Mutex<Option<Result<Harvest, String>>>> = Arc::new(Mutex::new(None));
     let result = {
         let outcome = outcome.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder()
                 .with_title("A rule runs over a folder when asked, the reading")
                 .build();
@@ -602,7 +602,11 @@ fn take_the_harvest() -> Result<Harvest, String> {
             if let Ok(mut slot) = outcome.lock() {
                 *slot = Some(Ok(harvest));
             }
-            wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
+            }));
         })
     };
     if let Err(why) = result {

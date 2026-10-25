@@ -48,7 +48,7 @@ fn test_the_event_form_can_really_ask_when_the_people_invited_are_free() {
     let result = {
         let wrong = wrong.clone();
         let asked_with = asked_with.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
@@ -155,7 +155,11 @@ fn test_the_event_form_can_really_ask_when_the_people_invited_are_free() {
                 ));
                 widgets.dialog.destroy();
                 drop(wrong);
-                wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
+                }));
                 return;
             };
 
@@ -243,8 +247,10 @@ fn test_the_event_form_can_really_ask_when_the_people_invited_are_free() {
             widgets.dialog.destroy();
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

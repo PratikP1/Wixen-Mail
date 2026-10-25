@@ -1452,7 +1452,7 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
     let results: Arc<Mutex<Vec<SiteResult>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let results = results.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let palette = Theme::Light
                 .palette(false)
                 .expect("Theme::Light always has a palette");
@@ -1521,8 +1521,10 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             // the reason the harness self-check gives above.
             let browsers = [preview_browser, compose_browser];
             let exit = move || {
-                wxdragon::call_after(Box::new(move || {
-                    app.exit_main_loop();
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
                 }));
             };
             let [first, second] = browsers.clone();
