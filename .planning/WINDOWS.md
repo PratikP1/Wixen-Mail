@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 795
+open_count: 798
 waived_count: 0
 fixed_count: 173
-total_count: 968
-last_updated: 2026-10-25T18:00:00.000Z
+total_count: 971
+last_updated: 2026-10-25T21:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -28,14 +28,14 @@ last_updated: 2026-10-25T18:00:00.000Z
 | 11 | 02 | unrun-verify | src/application/mail_sync.rs |  | The bulk body fetch has never run against a real IMAP server: whether a provider permits, throttles or drops a run of hundreds of BODY.PEEK fetches is untestable here and is the one risk the experimental sentence names. Corrected on 2026-09-17 by 10-05: the fetch is the text pass of the download of everything now, fifty messages or 16 MiB a chunk with three refusals in a row ending the chunk and a wait of thirty seconds doubling to thirty minutes before the run is tried again, started by every check for mail rather than by a command, so the tester's Gmail account meets it unasked on the first check after the build; the question is unchanged and still open. Amended on 2026-10-06 by 14-07, from phase 14's first research reading the tester's logs of 18 to 20 September on 2026-10-04: Gmail met the text pass: 932 times a message's text could not be fetched because the connection closed while the folder was opening, 139 text runs stopped after some of their messages, and 321 times the download said it would be tried again after a wait. Whether each stop is told apart from a finished folder, and what the ear hears, are still open | open |  | 2026-09-01T03:56:05.356Z |  |
 | 12 | 02 | unrun-verify | src/presentation/wx_app.rs |  | The offer button and its experimental sentence have not been heard under a screen reader: whether the button is announced with its full label after a saved search, and whether the message text topic is heard rather than coalesced away, is unverified by ear | fixed |  | 2026-09-01T03:56:05.812Z | 2026-09-18T02:49:01.000Z |
 | 13 | 02 | stub | src/presentation/wx_app.rs |  | The offer only appears while a saved search that reads message text is run; a person who never uses saved searches is never offered the fetch, which is where D-2-08 puts it and is a narrower reach than a menu command would have | fixed |  | 2026-09-01T03:56:12.023Z | 2026-09-01T17:15:20.187Z |
-| 14 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear | open |  | 2026-09-01T04:57:49.641Z |  |
+| 14 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear. Amended on 2026-10-25 by 13.4-12, after the move to wxDragon 0.9.23: a test now reads the name. tests/manager_dialog_labels.rs reads each of the three over MSAA with AccessibleObjectFromWindow and compares it with the words the code sets, and with each naming call taken out it reads the label instead, 'Match Field:', 'Match Type:' and 'Action:', and goes red; a guard record holds each. Whether NVDA says them in a way a person follows stays a question for the ear | open |  | 2026-09-01T04:57:49.641Z |  |
 | 15 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Pattern box is disabled for the four ways of matching that read no pattern. Whether a disabled edit box is skipped cleanly in the tab order, and whether changing the Match Type while focus is nearby moves focus or is announced, is unverified by ear | open |  | 2026-09-01T04:57:57.259Z |  |
 | 16 | 02 | unrun-verify | src/application/filters.rs |  | The eleven field names and eleven ways of matching are now read aloud as words. Whether 'Read is yes', 'Flagged is yes' and 'matches a text pattern' are understood when heard rather than seen is unverified by ear | open |  | 2026-09-01T04:57:57.717Z |  |
 | 17 | 02 | unrun-verify | src/application/saved_searches.rs |  | The Save This Search window now reads out one clause per question, so a three-question search says a longer sentence than the one fixed sentence it replaced. Whether that is clearer or merely longer when heard is unverified by ear | open |  | 2026-09-01T06:59:55.094Z |  |
 | 18 | 02 | unrun-verify | src/presentation/wx_app.rs |  | Saving a search whose folder belongs to another account is refused out loud through refuse_a_command. Reaching that state needs two accounts and Set Active, so whether the refusal is heard and understood is unverified | open |  | 2026-09-01T07:00:02.733Z |  |
 | 19 | 02 | unrun-verify | src/presentation/wx_app.rs |  | A saved search narrowed to a folder has never been run against a real account. Whether the stored path resolves through get_folder for a real IMAP mailbox, rather than refusing with THAT_FOLDER_IS_NOT_HERE, is unverified against a live server | open |  | 2026-09-01T07:00:03.177Z |  |
 | 20 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog says what a saved search cannot find with the chosen field, on a line of text under the controls and through the announcement queue. Whether it is heard when the field list changes, and whether a sentence that long is useful there rather than in the way, is unverified by ear | open |  | 2026-09-01T08:59:42.387Z |  |
-| 21 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified | open |  | 2026-09-01T08:59:51.835Z |  |
+| 21 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified. Amended on 2026-10-25 by 13.4-12, after the move to wxDragon 0.9.23: a test now reads the name. tests/manager_dialog_labels.rs reads both lists over MSAA with AccessibleObjectFromWindow and compares each with the words the code sets, and with each naming call taken out it reads the label instead, 'Match Field:' and 'Match Type:', and goes red; a guard record holds each. Whether NVDA says them in a way a person follows stays a question for the ear | open |  | 2026-09-01T08:59:51.835Z |  |
 | 22 | 02 | unrun-verify | src/presentation/wx_managers.rs |  | The Add/Edit Condition dialog refuses an empty pattern through a message box and puts focus back on the Pattern box. Whether the refusal is heard and whether focus lands where somebody expects is unverified by ear | open |  | 2026-09-01T08:59:52.282Z |  |
 | 23 | 02 | stub | src/presentation/wx_managers.rs |  | build_rule_edit_dialog and show_rule_edit are built and tested and nothing in the running program opens them. Plan 02-07 wires the rule editor that does | fixed |  | 2026-09-01T08:59:52.753Z | 2026-09-01T10:38:15.106Z |
 | 24 | 02 | stub | src/data/message_cache/saved_searches.rs |  | replace_saved_search is written and tested and has no caller outside its tests. Plan 02-07's rule editor is what calls it | fixed |  | 2026-09-01T08:59:53.265Z | 2026-09-01T10:38:15.561Z |
@@ -983,6 +983,9 @@ last_updated: 2026-10-25T18:00:00.000Z
 | 966 | 13.4 | deviation | tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs |  | 13.4-09, 2026-10-25, at wxDragon 0.9.23 on GitHub's Windows runner: in this target, one of the two window processes that run side by side came back from on_init and never reached idle, where wxdragon::call_after's queue is drained, so the exit_main_loop it had queued never ran and the parent stopped it at 180 s. Each window process builds a WebView2 and three dialogs inside on_init, has a third process read the spin fields while it pumps messages by hand, and destroys them. Four Test Suite runs on pull request #224 failed this way: 40169928896, 40171952691 and 40174486301 under not-readied, and 40176721216 under readied while not-readied passed. No run at 0.9.17 and no run on this machine did it. The step lines added in 7e218a3f showed the reader finishing in 14 s and the windows destroyed, and 1dea969d's watchdog found no visible window of the process 20 s later, so no modal box held the loop. Not diagnosed. 07f9a0b9 has the window process print its reading and a line saying so and end itself inside on_init, and run 40179071738 passed the target with the rest. That steps around a toolkit behaviour rather than explaining it: whether the program's own loop can meet it after a long on_init is not known, though the program's on_init neither pumps messages by hand nor destroys a browser, and the Accessibility and NVDA runs at 0.9.23 opened every window they open. Closed when the cause is named, or at 13.4-14's reading if no other target has shown it by then | open |  | 2026-10-25T09:40:00.000Z |  |
 | 967 | 13.4 | todo | src/presentation/asking.rs |  | 13.4-11, 2026-10-25, a question for Pratik: wxdragon 0.9.23 can set a message box's button labels (MessageDialog::set_yes_no_labels), so a question asked before something that cannot be undone could carry buttons saying what each does, such as Delete and Keep, rather than Yes and No. asking.rs keeps Yes and No, because other labels change what people hear and every question is written to be answered by those two words. The recommendation is to keep Yes and No through the sittings and ask the testers there. Closed on his answer | open |  | 2026-10-25T14:00:00.000Z |  |
 | 968 | 13.4 | fixme | src/presentation/wx_compose.rs |  | 13.4-11.1, 2026-10-25, found while reading the composer's comments: the message window's toolbar is meant to name its group on every arrival, and the comments above toolbar_at say that going to the toolbar forgets where focus was, but nothing sets toolbar_at back to None. Read in wx_compose.rs: the cell is only replaced in each button's focus handler, and the Deferred::Toolbar arm focuses the first button without clearing it. So after a first visit, arriving at Send by Ctrl+backslash names the group only when the button last left was in another group. A behaviour change, owed a live test first, for a later plan; only the three stale lines on the leaving arm went in 13.4-11.1 | open |  | 2026-10-25T18:00:00.000Z |  |
+| 969 | 13.4 | unrun-verify | src/presentation/wx_contacts_module.rs |  | 13.4-12, 2026-10-25: wxWidgets 3.3.4 stops a panel holding nothing the keyboard can reach from taking focus itself. The Contacts module's detail pane holds one line of text, so by the change log Tab from the contact list could stop on it at 0.9.17, a pane with no name, and at 0.9.23 it passes over it. Nothing focuses the pane, and neither scan tree shows the change, because UI Automation's IsKeyboardFocusable for a Win32 pane did not move. Whether Tab now goes from the contact list straight on, under NVDA and under Narrator, is for 13.4-13's sitting | open |  | 2026-10-25T21:00:00.000Z |  |
+| 970 | 13.4 | unrun-verify | src/presentation/wx_app.rs |  | 13.4-12, 2026-10-25: no test presses Ctrl+X, Ctrl+C, Ctrl+V or Ctrl+A in a box of the main window or the composer, or Esc in any dialog, at wxDragon 0.9.23. wxWidgets 3.3 gives a menu accelerator priority over the focused window in every port, which Windows already did, and 3.3.4 stops Esc closing a dialog while an input method or autocomplete popup is open, which nothing in src uses. Ctrl+Z and Ctrl+Y are pressed by tests/several_steps_come_back.rs and pass, at the box rather than through the Edit menu. Whether cut, copy, paste and select all work in the search box, a compose field and the reader, and whether Esc closes the settings, a manager and the item form, is for 13.4-13's sitting | open |  | 2026-10-25T21:00:00.000Z |  |
+| 971 | 13.4 | todo | src/presentation/wx_compose.rs |  | 13.4-12, 2026-10-25: since wxDragon 0.9.19 a dialog's asked size goes through FromDIP, so it grows with the display's scale. At this machine's 125% every one of the 37 sized dialogs fits the 1920 by 1140 working area, and at 150% too. At 200% on the same screen three would not: the Calendar (wx_calendar.rs, 800 by 600 asked, 1600 by 1200), the composer (wx_compose.rs, 850 by 700, 1700 by 1400) and the contact editor (wx_managers.rs, 560 by 580, 1120 by 1160). Only the item form places and caps itself inside its screen. Before the move the same dialogs were their asked size in pixels at any scale, so they fitted and their contents, which scale with the text, were cut off instead. For a later plan: cap each sized dialog to its screen's working area the way the item form does, each with a test of the fit | open |  | 2026-10-25T21:00:00.000Z |  |
 
 ````json
 [
@@ -1148,7 +1151,7 @@ last_updated: 2026-10-25T18:00:00.000Z
     "phase": "02",
     "file": "src/presentation/wx_managers.rs",
     "line": null,
-    "description": "The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear",
+    "description": "The filter rule dialog's three Choice controls have an accessible object attached, which a test can see, but the name each one carries cannot be read back from wxdragon. Whether NVDA says 'Match field', 'Match type' and 'Action' rather than an unnamed combo box is unverified by ear. Amended on 2026-10-25 by 13.4-12, after the move to wxDragon 0.9.23: a test now reads the name. tests/manager_dialog_labels.rs reads each of the three over MSAA with AccessibleObjectFromWindow and compares it with the words the code sets, and with each naming call taken out it reads the label instead, 'Match Field:', 'Match Type:' and 'Action:', and goes red; a guard record holds each. Whether NVDA says them in a way a person follows stays a question for the ear",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T04:57:49.641Z",
@@ -1232,7 +1235,7 @@ last_updated: 2026-10-25T18:00:00.000Z
     "phase": "02",
     "file": "src/presentation/wx_managers.rs",
     "line": null,
-    "description": "The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified",
+    "description": "The Add/Edit Condition dialog's two lists carry accessible names set by this code, and wxdragon's Accessible has no name getter, so a test can only prove an object was attached. Whether NVDA says Match field and Match type rather than unnamed combo boxes is unverified. Amended on 2026-10-25 by 13.4-12, after the move to wxDragon 0.9.23: a test now reads the name. tests/manager_dialog_labels.rs reads both lists over MSAA with AccessibleObjectFromWindow and compares each with the words the code sets, and with each naming call taken out it reads the label instead, 'Match Field:' and 'Match Type:', and goes red; a guard record holds each. Whether NVDA says them in a way a person follows stays a question for the ear",
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-01T08:59:51.835Z",
@@ -12600,6 +12603,42 @@ last_updated: 2026-10-25T18:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-25T18:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 969,
+    "kind": "unrun-verify",
+    "phase": "13.4",
+    "file": "src/presentation/wx_contacts_module.rs",
+    "line": null,
+    "description": "13.4-12, 2026-10-25: wxWidgets 3.3.4 stops a panel holding nothing the keyboard can reach from taking focus itself. The Contacts module's detail pane holds one line of text, so by the change log Tab from the contact list could stop on it at 0.9.17, a pane with no name, and at 0.9.23 it passes over it. Nothing focuses the pane, and neither scan tree shows the change, because UI Automation's IsKeyboardFocusable for a Win32 pane did not move. Whether Tab now goes from the contact list straight on, under NVDA and under Narrator, is for 13.4-13's sitting",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T21:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 970,
+    "kind": "unrun-verify",
+    "phase": "13.4",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.4-12, 2026-10-25: no test presses Ctrl+X, Ctrl+C, Ctrl+V or Ctrl+A in a box of the main window or the composer, or Esc in any dialog, at wxDragon 0.9.23. wxWidgets 3.3 gives a menu accelerator priority over the focused window in every port, which Windows already did, and 3.3.4 stops Esc closing a dialog while an input method or autocomplete popup is open, which nothing in src uses. Ctrl+Z and Ctrl+Y are pressed by tests/several_steps_come_back.rs and pass, at the box rather than through the Edit menu. Whether cut, copy, paste and select all work in the search box, a compose field and the reader, and whether Esc closes the settings, a manager and the item form, is for 13.4-13's sitting",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T21:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 971,
+    "kind": "todo",
+    "phase": "13.4",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13.4-12, 2026-10-25: since wxDragon 0.9.19 a dialog's asked size goes through FromDIP, so it grows with the display's scale. At this machine's 125% every one of the 37 sized dialogs fits the 1920 by 1140 working area, and at 150% too. At 200% on the same screen three would not: the Calendar (wx_calendar.rs, 800 by 600 asked, 1600 by 1200), the composer (wx_compose.rs, 850 by 700, 1700 by 1400) and the contact editor (wx_managers.rs, 560 by 580, 1120 by 1160). Only the item form places and caps itself inside its screen. Before the move the same dialogs were their asked size in pixels at any scale, so they fitted and their contents, which scale with the text, were cut off instead. For a later plan: cap each sized dialog to its screen's working area the way the item form does, each with a test of the fit",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T21:00:00.000Z",
     "resolved_at": null
   }
 ]

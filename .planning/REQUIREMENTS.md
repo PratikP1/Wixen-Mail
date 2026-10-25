@@ -2939,6 +2939,14 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     no control without a name on any of them; the second `[D]` line below quotes the five
     lines. Ledger 489 closed on that run. The walk still crashes on this machine (ledger 390)
     and 11-02 did not run it. The last `[S]` line stays (ledger 490).**
+  - **Read again 2026-10-25 by 13.4-12, after the move to wxDragon 0.9.23 and wxWidgets 3.3.4,
+    on both channels.** Accessibility runs 40155889217 (0.9.17) and 40171952674 (0.9.23)
+    compared window by window: the five editors' MSAA trees are byte for byte the same and
+    their UI Automation trees the same element by element, as are the other 44 windows'.
+    `tests/checkbox_labels.rs` now reads each editor checkbox's name over MSAA and compares it
+    with its label's words, where it used to ask only whether an object was attached, which
+    3.3.4 can answer yes to with no name set; with the naming call taken out the names stay,
+    because each checkbox is named by its own label. No `[D]` line is added.
   - **Read 2026-09-17 by the phase's closing read in 09-10; 09-05, merged 2026-09-16 at
     `165fd811`; left open on its second `[D]` line.** The first `[D]` line by
     `scan_target::tests::test_every_window_a_fresh_profile_can_reach_has_a_name` and
@@ -8582,7 +8590,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | FOUND-05 | Phase 9 | Complete, 09-03 at `f58b9271`; ledger 155's listening question open |
 | FOUND-06 | Phase 9 | Complete, 09-04 at `c928cae4`; the listening pass is the tester's |
 | FOUND-07 | Phase 9 | Complete, 09-04 at `c928cae4` |
-| FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490 |
+| FOUND-08 | Phase 9 | Complete, 09-05 at `165fd811` and 11-02 on 2026-09-18, on Accessibility run 35336142914's walk of the five editors, 0 without a name on each; the walk still crashes here, ledger 390; the tester's listening pass on the two editors stays his, ledger 490; read again on both channels after the move to wxDragon 0.9.23 by 13.4-12 on 2026-10-25, unchanged, the checkbox names now read over MSAA by `tests/checkbox_labels.rs` |
 | FOUND-09 | Phase 9 | Complete, 09-06 at `de58771a` and 11-02 on 2026-09-18, on the tester's ear (#33 closed on his word); the runner's corrected case is pending the next push of `main`, ledger 531 |
 | FOUND-10 | Phase 9 | Complete, 09-07 at `f990d023`; no real key or signed message met |
 | FOUND-11 | Phase 9 | Complete, 09-08 at `06fdc9b7` and 09-10 at `8eba6a38`; points 4 to 6 of #53 later work, no real data file read; phase 13.2, planned 2026-10-14: 13.2-16, and 2026-10-17: 13.2-31.7, and 2026-10-18: 13.2-31.8, adding no `[D]` clause; 13.2-16 done 2026-10-16, a saved attachment and a message saved as a file carry the Mark of the Web, ledger 871; 13.2-31.7 done 2026-10-19, on zip 9.0.4 every zip entry is read from where it was found, so a folder named in the old DOS alphabet brings its mail in, and a damaged or changed archive says so, adding no `[D]` clause; 13.2-31.8 done 2026-10-19, a mailbox file in a zip holding more than its archive records is said to be damaged or changed with whether any of its mail came in, ledger 906, adding no `[D]` clause; phase 13.3, 13.3-12 done 2026-10-21, an import of a zip or folder says the files and folders its first look left out, each file once, and a broken packed zip entry is said to be damaged, ledgers 906 and 908 dated and 929 opened, adding no `[D]` clause |

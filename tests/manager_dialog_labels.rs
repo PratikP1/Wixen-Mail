@@ -25,13 +25,14 @@
 //!
 //! A `CheckBox` therefore has to carry its label on the control, which is
 //! readable here through `get_label`. A `Choice` has no text of its own in
-//! these dialogs, so it needs `set_accessible_name`, and that is where this
-//! file stops being able to say much: `wxdragon`'s `Accessible` has no name
-//! getter, so the most this can ask is whether an accessible object was
-//! attached at all. That catches the control somebody added and forgot, which
-//! is the common fault. It cannot say the name is the right words, or that it
-//! is not the empty string. Those need a real NVDA pass, which is recorded in
-//! `.planning/WINDOWS.md` rather than claimed here.
+//! these dialogs, so it needs `set_accessible_name`. `wxdragon`'s `Accessible`
+//! has no name getter, so the name is read the way NVDA reads it, over MSAA
+//! with `AccessibleObjectFromWindow`, and compared with the words the code
+//! sets. Until 13.4-12 this file asked only whether an accessible object was
+//! attached, and wxWidgets 3.3.4 creates one of its own for more controls when
+//! anything asks, so that question could answer yes with no name set. What a
+//! reading cannot say is how the name sounds in a sentence a person hears;
+//! that is a real NVDA pass, recorded in `.planning/WINDOWS.md`.
 //!
 //! Worth stating plainly because the absence of a failure here is easy to
 //! misread: a control with a visible label beside it gets that label as its
@@ -54,6 +55,124 @@ use wxdragon::prelude::*;
 
 /// One check that failed: what it was about, and what was wrong with it.
 type Wrong = Vec<(String, String)>;
+
+/// The MSAA name a reader is given for a window, read through
+/// `AccessibleObjectFromWindow` the way NVDA asks for a native control's.
+/// Read in this process, which is enough for a name written through
+/// wxWidgets' own accessible object: the object answers whoever asks.
+#[cfg(target_os = "windows")]
+mod msaa {
+    use std::ffi::c_void;
+
+    const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+    const VT_I4: u16 = 3;
+    // IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accParent
+    // (7), get_accChildCount (8), get_accChild (9), get_accName (10).
+    const VTBL_RELEASE: usize = 2;
+    const VTBL_GET_ACC_NAME: usize = 10;
+
+    #[repr(C)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    /// {618736E0-3C3D-11CF-810C-00AA00389B71}
+    const IID_IACCESSIBLE: Guid = Guid {
+        data1: 0x618736E0,
+        data2: 0x3C3D,
+        data3: 0x11CF,
+        data4: [0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+    };
+
+    /// A VARIANT as the 64-bit ABI lays it out: 24 bytes, the type at offset
+    /// 0 and the payload at offset 8.
+    #[repr(C)]
+    struct Variant {
+        vt: u16,
+        reserved: [u16; 3],
+        val: i64,
+        extra: u64,
+    }
+
+    type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+    type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> i32;
+
+    #[link(name = "oleacc")]
+    unsafe extern "system" {
+        fn AccessibleObjectFromWindow(
+            hwnd: isize,
+            id_object: u32,
+            riid: *const Guid,
+            out: *mut *mut c_void,
+        ) -> i32;
+    }
+
+    #[link(name = "oleaut32")]
+    unsafe extern "system" {
+        fn SysStringLen(s: *mut u16) -> u32;
+        fn SysFreeString(s: *mut u16);
+    }
+
+    unsafe fn vtable_entry(object: *mut c_void, index: usize) -> *const c_void {
+        // SAFETY: a COM object is a pointer to its vtable.
+        unsafe { *(*(object as *const *const *const c_void)).add(index) }
+    }
+
+    /// The name of `hwnd`'s client object at `CHILDID_SELF`, or why there
+    /// is none.
+    fn name_of(hwnd: isize) -> Result<String, String> {
+        let mut object: *mut c_void = std::ptr::null_mut();
+        // SAFETY: the out pointer is a local; on success it holds an
+        // IAccessible, released once below.
+        let hr = unsafe {
+            AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object)
+        };
+        if hr < 0 || object.is_null() {
+            return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+        }
+        let child_self = Variant {
+            vt: VT_I4,
+            reserved: [0; 3],
+            val: 0,
+            extra: 0,
+        };
+        // SAFETY: a live IAccessible; the slots are get_accName and Release,
+        // and the BSTR it hands out carries its length and is freed once.
+        unsafe {
+            let get_name: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
+            let mut s: *mut u16 = std::ptr::null_mut();
+            let hr = get_name(object, child_self, &mut s);
+            let name = (!s.is_null()).then(|| {
+                let text = String::from_utf16_lossy(std::slice::from_raw_parts(
+                    s,
+                    SysStringLen(s) as usize,
+                ));
+                SysFreeString(s);
+                text
+            });
+            let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+            release(object);
+            match hr >= 0 {
+                true => Ok(name.unwrap_or_default()),
+                false => Err(format!("get_accName failed 0x{hr:x}")),
+            }
+        }
+    }
+
+    /// Why `hwnd` is not named `words` on MSAA, or nothing when it is.
+    pub fn not_named(hwnd: isize, words: &str) -> Option<String> {
+        match name_of(hwnd) {
+            Ok(name) if name == words => None,
+            Ok(name) => Some(format!(
+                "reads {name:?} on MSAA, the channel NVDA reads, where the code sets {words:?}"
+            )),
+            Err(why) => Some(format!("has no name to read on MSAA: {why}")),
+        }
+    }
+}
 
 /// A stored rule, so a dialog can be opened on one.
 fn stored(field: &str, match_type: &str, pattern: &str) -> FilterRule {
@@ -174,27 +293,26 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             // ── Every control this dialog builds carries a name ─────────────
             //
             // The three Choice controls have no visible text of their own, so
-            // each needs an accessible object. The two check boxes have to
-            // carry their label on the control instead, because that is the
-            // only thing UI Automation reads for one.
+            // each is named by the code, and the name is read back over MSAA
+            // and compared with the words it sets. The two check boxes have
+            // to carry their label on the control instead, because that is
+            // the only thing UI Automation reads for one.
             let mut choices_seen = 0;
-            for (what, choice) in [
-                ("the Match Field list", &fresh.field_choice),
-                ("the Match Type list", &fresh.match_choice),
-                ("the Action list", &fresh.action_choice),
+            for (what, choice, words) in [
+                ("the Match Field list", &fresh.field_choice, "Match field"),
+                ("the Match Type list", &fresh.match_choice, "Match type"),
+                ("the Action list", &fresh.action_choice, "Action"),
             ] {
                 choices_seen += 1;
-                // wxdragon has the accessible object on Windows only, since
-                // 0.9.23, and so does every check of it below.
+                // The names are read on Windows only, where wxWidgets has an
+                // accessible object to carry them, and so is every reading
+                // below.
                 #[cfg(target_os = "windows")]
-                if choice.get_accessible().is_none() {
-                    wrong.push((
-                        what.to_string(),
-                        "carries no accessible object, and a Choice has no text of its own \
-                         here, so NVDA reads an unnamed combo box"
-                            .to_string(),
-                    ));
+                if let Some(why) = msaa::not_named(choice.get_handle() as isize, words) {
+                    wrong.push((what.to_string(), why));
                 }
+                #[cfg(not(target_os = "windows"))]
+                let _ = (what, choice, words);
             }
             if choices_seen == 0 {
                 wrong.push((
@@ -356,19 +474,24 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             }
 
             // ── Every control the condition editor builds carries a name ────
-            for (what, choice) in [
-                ("the Match Field list", &fresh_rule.field_choice),
-                ("the Match Type list", &fresh_rule.match_choice),
+            for (what, choice, words) in [
+                (
+                    "the Match Field list",
+                    &fresh_rule.field_choice,
+                    "Match field",
+                ),
+                (
+                    "the Match Type list",
+                    &fresh_rule.match_choice,
+                    "Match type",
+                ),
             ] {
                 #[cfg(target_os = "windows")]
-                if choice.get_accessible().is_none() {
-                    wrong.push((
-                        format!("{what} in the condition editor"),
-                        "carries no accessible object, and a Choice has no text of its own \
-                         here, so NVDA reads an unnamed combo box"
-                            .to_string(),
-                    ));
+                if let Some(why) = msaa::not_named(choice.get_handle() as isize, words) {
+                    wrong.push((format!("{what} in the condition editor"), why));
                 }
+                #[cfg(not(target_os = "windows"))]
+                let _ = (what, choice, words);
             }
             if fresh_rule
                 .cs_check
@@ -491,12 +614,11 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             let (shell, _sizer, list, _status) =
                 make_shell(&frame, "Filter Manager", "Filters", 450, 400, None);
             #[cfg(target_os = "windows")]
-            if list.get_accessible().is_none() {
-                wrong.push((
-                    "the manager window's list of rules".to_string(),
-                    "carries no accessible object".to_string(),
-                ));
+            if let Some(why) = msaa::not_named(list.get_handle() as isize, "Filters") {
+                wrong.push(("the manager window's list of rules".to_string(), why));
             }
+            #[cfg(not(target_os = "windows"))]
+            let _ = &list;
             shell.destroy();
 
             // ── The condition manager's own list ────────────────────────────
@@ -529,11 +651,8 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             );
 
             #[cfg(target_os = "windows")]
-            if conditions.get_accessible().is_none() {
-                wrong.push((
-                    "the condition manager's list".to_string(),
-                    "carries no accessible object".to_string(),
-                ));
+            if let Some(why) = msaa::not_named(conditions.get_handle() as isize, "Conditions") {
+                wrong.push(("the condition manager's list".to_string(), why));
             }
             if conditions.get_item_count() != 3 {
                 wrong.push((
