@@ -45526,8 +45526,9 @@ tests_last_seen = [
 # (13.4-05). Broken by putting one test's ending back the old way, the
 # parameter named and the queued closure capturing it. The break spans the
 # whole closure because the reading needs both halves of the old shape. The
-# reading is not one of the guards every commit runs, so this record is what
-# runs it on a commit that changes this file.
+# commit gate does not yet run a record's suite when the record's file is a
+# test file (ledger 962), so a commit changing this file does not run the
+# reading; a guard run and the phase's full gate do.
 [[guard]]
 name = "a window test's queued ending asks for the application rather than capturing it"
 file = "tests/tree_selection_raises.rs"

@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 791
+open_count: 792
 waived_count: 0
 fixed_count: 170
-total_count: 961
-last_updated: 2026-10-24T23:18:00.000Z
+total_count: 962
+last_updated: 2026-10-25T00:39:03.000Z
 ---
 
 # Broken Windows Ledger
@@ -976,6 +976,7 @@ last_updated: 2026-10-24T23:18:00.000Z
 | 959 | 13.4 | unrun-verify | src/application/contacts_sync.rs |  | 13.4-01, ledger 936, for the tester at phase 14's sittings on a build holding 13.4-01's merge: on a Google account with Allow Changes off, add a contact here and run a contacts sync; it says one change is waiting here and to turn on Allow Changes, and no error, and the log holds no error line for that contact; then turn Allow Changes on and the next contacts sync adds the contact at Google. The same on an Outlook account where one is set up. Proven only against the scripted address books in application::contacts_sync; nothing has met a real Google or Outlook account. Closed when the tester has seen both | open |  | 2026-10-24T17:33:00.000Z |  |
 | 960 | 13.4 | unrun-verify | src/presentation/reader_text.rs |  | 13.4-03, ledger 938, for the tester's ear on a build holding 13.4-03's merge, at 13.4-13's NVDA sitting or phase 14's: the tester's newsletter (#90) opened with Enter under NVDA reads its subtitle once and no padding, and says nothing about blocks left out; a message with a hidden block of words below its text says "1 block the sender did not show was left out." once, before its words; and Space on that message in the list reads the sentence too. The cases read the document's text; nobody has heard it. Row 939, the formatted view's ear, is separate. Closed when the tester has heard all three | open |  | 2026-10-24T23:00:00.000Z |  |
 | 961 | 13.4 | unrun-verify | src/application/draft_copy.rs |  | 13.4-04, ledger 941, for the tester's ear on a build holding 13.4-04's merge, at 13.4-13's NVDA sitting or phase 14's, on an IMAP account: with the network turned off, a draft written in Compose for three minutes says "The draft is saved on this computer. The server would not take it..." once, heard whole and not cut off by the "Draft saved." beside it, then only "Draft saved." each minute; after the network is back the next automatic save says "The server has taken the draft, so your other devices will have the newest copy." once, heard as different from "Draft saved.", and nothing about the server after it; and pressing Save Draft while the network is off says "Draft saved: <subject>." and then the server's refusal again. The cases read the rule; nobody has heard it, and the order of the two lines on the status topic is not fixed by code. Closed when the tester has heard all three | open |  | 2026-10-24T23:18:00.000Z |  |
+| 962 | 13.4 | todo | scripts/check.sh |  | 13.4-05, 2026-10-24: the gate never runs a guard record's suite when the record's file is a test file. the_suites_that_guard_what_changed skips every changed tests/*.rs path, on the reasoning that a changed test file already runs its own target; that holds only when the record's suite is that same target. So the record "a window test's queued ending asks for the application rather than capturing it", whose file is tests/tree_selection_raises.rs and whose suite is every_window_test_ends_on_the_thread_that_owns_it, does not bring the reading into a commit changing that file: green commit 40eb4c05 changed it and its hook's list did not hold the reading, and `bash scripts/check.sh --suites-for guards/guards.toml tests/tree_selection_raises.rs` answers nothing. The same hole refused 13.4-05's planned first-half red commit: its named test sits in a target that only a change to the reading's own file reaches, so red-commit.sh said the test never ran. Until it is closed, the reading runs when its own file changes, by name in the verify of 13.4-06 to 13.4-08, and in the phase's full gate. Recommended: skip a changed tests/X.rs only for a record whose suite is X, with a case in check.test.sh; Pratik's to decide | open |  | 2026-10-25T00:39:03.000Z |  |
 
 ````json
 [
@@ -12509,6 +12510,18 @@ last_updated: 2026-10-24T23:18:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-24T23:18:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 962,
+    "kind": "todo",
+    "phase": "13.4",
+    "file": "scripts/check.sh",
+    "line": null,
+    "description": "13.4-05, 2026-10-24: the gate never runs a guard record's suite when the record's file is a test file. the_suites_that_guard_what_changed skips every changed tests/*.rs path, on the reasoning that a changed test file already runs its own target; that holds only when the record's suite is that same target. So the record \"a window test's queued ending asks for the application rather than capturing it\", whose file is tests/tree_selection_raises.rs and whose suite is every_window_test_ends_on_the_thread_that_owns_it, does not bring the reading into a commit changing that file: green commit 40eb4c05 changed it and its hook's list did not hold the reading, and `bash scripts/check.sh --suites-for guards/guards.toml tests/tree_selection_raises.rs` answers nothing. The same hole refused 13.4-05's planned first-half red commit: its named test sits in a target that only a change to the reading's own file reaches, so red-commit.sh said the test never ran. Until it is closed, the reading runs when its own file changes, by name in the verify of 13.4-06 to 13.4-08, and in the phase's full gate. Recommended: skip a changed tests/X.rs only for a record whose suite is X, with a case in check.test.sh; Pratik's to decide",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T00:39:03.000Z",
     "resolved_at": null
   }
 ]
