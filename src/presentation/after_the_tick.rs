@@ -28,15 +28,75 @@
 //! once the work in hand returns. So a second window waits for the first to
 //! close rather than opening over it.
 
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
+
+/// A piece of work handed on by the tick.
+type Work = Box<dyn FnOnce()>;
+
+thread_local! {
+    /// What is waiting to run, oldest first.
+    static WAITING: RefCell<VecDeque<Work>> = const { RefCell::new(VecDeque::new()) };
+    /// Whether a drain has been handed to `call_after` and has not started.
+    static A_DRAIN_IS_QUEUED: Cell<bool> = const { Cell::new(false) };
+    /// Whether a drain is running a piece of work right now.
+    static A_DRAIN_IS_RUNNING: Cell<bool> = const { Cell::new(false) };
+}
+
 /// Run `work` after the handler that is running now has returned, after any
 /// work handed on before it, and never while another piece is running.
 pub fn after_the_tick(work: impl FnOnce() + 'static) {
-    work();
+    WAITING.with(|waiting| waiting.borrow_mut().push_back(Box::new(work)));
+    queue_a_drain();
 }
 
-/// Nothing waits yet, so there is nothing to drain.
-#[cfg(test)]
-fn drain() {}
+/// Hand a drain to the event loop unless one is already waiting there.
+fn queue_a_drain() {
+    if !A_DRAIN_IS_QUEUED.replace(true) {
+        wxdragon::call_after(Box::new(drain));
+    }
+}
+
+/// Run what is waiting, one piece at a time, until nothing is.
+///
+/// Returns at once when another drain is running further up this thread's
+/// stack, which is the case while a piece of work holds a modal window open
+/// and its loop calls the idle handler again. The running drain takes what
+/// arrived when the window closes.
+fn drain() {
+    A_DRAIN_IS_QUEUED.set(false);
+    if A_DRAIN_IS_RUNNING.replace(true) {
+        return;
+    }
+    let _running = Running;
+    while let Some(work) = the_next_piece() {
+        work();
+    }
+}
+
+/// The oldest waiting piece, with the queue's borrow released before it runs,
+/// so the work can hand on more work.
+fn the_next_piece() -> Option<Work> {
+    WAITING.with(|waiting| waiting.borrow_mut().pop_front())
+}
+
+/// Says a drain is running, and stops saying so however the drain ends.
+///
+/// Without it a piece of work that panicked would leave the flag set, and
+/// every drain after would return at once: nothing handed on would ever run
+/// again, and nothing would say why.
+struct Running;
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        A_DRAIN_IS_RUNNING.set(false);
+        // Only after a panic is anything still waiting here, since the loop
+        // runs until the queue is empty. What is left gets a drain of its own.
+        if WAITING.with(|waiting| !waiting.borrow().is_empty()) {
+            queue_a_drain();
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

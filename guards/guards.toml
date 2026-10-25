@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 959 records have arrived since and have not been through it.
+# 961 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -45597,4 +45597,44 @@ red = [
 tests_last_seen = [
     { file = "tests/every_window_test_ends_on_the_thread_that_owns_it.rs", tests = 3 },
     { file = "tests/tree_selection_raises.rs", tests = 1 },
+]
+
+# Work the main window's tick hands on runs after the tick has returned, one
+# piece at a time, so a window it opens never runs the tick inside itself
+# (13.4-06). Broken by running the work inside the call that hands it on,
+# which is what the tick did before. Two records for one break, because the
+# unit tests are in the library and the live test over the real Due now window
+# is a target of its own.
+[[guard]]
+name = "work the tick hands on waits for the event loop, seen from the queue's own tests"
+file = "src/presentation/after_the_tick.rs"
+before = '''    WAITING.with(|waiting| waiting.borrow_mut().push_back(Box::new(work)));
+    queue_a_drain();
+}'''
+after = '''    work();
+}'''
+red = [
+    "presentation::after_the_tick::tests::test_a_piece_that_panics_does_not_stop_the_queue",
+    "presentation::after_the_tick::tests::test_work_handed_on_does_not_run_until_the_event_loop_drains_it",
+    "presentation::after_the_tick::tests::test_work_handed_on_while_a_piece_runs_waits_for_that_piece_to_end",
+]
+tests_last_seen = [
+    { file = "src/presentation/after_the_tick.rs", tests = 3 },
+]
+
+[[guard]]
+name = "work the tick hands on waits for the event loop, seen from the live Due now window"
+file = "src/presentation/after_the_tick.rs"
+suite = "the_main_tick_never_runs_inside_itself"
+before = '''    WAITING.with(|waiting| waiting.borrow_mut().push_back(Box::new(work)));
+    queue_a_drain();
+}'''
+after = '''    work();
+}'''
+red = [
+    "test_the_tick_runs_beside_the_due_now_window_and_never_inside_itself",
+]
+tests_last_seen = [
+    { file = "src/presentation/after_the_tick.rs", tests = 3 },
+    { file = "tests/the_main_tick_never_runs_inside_itself.rs", tests = 1 },
 ]
