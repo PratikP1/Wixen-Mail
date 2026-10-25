@@ -1764,7 +1764,7 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 
 /// Dialogs whose labels this cannot judge by reading them.
 ///
-/// One entry, and it is here because the answer it would give would be wrong
+/// Two entries, each here because the answer it would give would be wrong
 /// rather than because the answer is inconvenient.
 ///
 /// The account window builds every control in one function and then shows a
@@ -1782,7 +1782,16 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 /// IMAP, POP and the browser sign-in and reads the letters of the windows
 /// that are showing; it found five letters claimed twice on one page, which
 /// is ledger 606.
-const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog"];
+///
+/// The second entry is `presentation::asking::answers`, the table of every
+/// question's two buttons (13.4-12.3). It is twenty-two boxes written in one
+/// function, and only the two labels of one row ever share a box, so reading
+/// the body as one scope calls Delete and Don't Move a clash. Its letters are
+/// judged box by box instead, by
+/// `test_no_box_gives_one_letter_to_both_answers_or_takes_the_check_boxs_g` in
+/// that module, and the buttons of a real box are read where the keyboard
+/// lands by `tests/a_question_names_what_each_answer_does.rs`.
+const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog", "answers"];
 
 /// Every literal in one body that claims an Alt key.
 ///

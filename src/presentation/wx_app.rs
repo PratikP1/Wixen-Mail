@@ -9366,7 +9366,9 @@ fn delete_the_chosen_search(
     frame: &Frame,
     a11y: &Arc<Accessibility>,
 ) {
+    use crate::application::questions_before_acting::Question;
     use crate::presentation::accessibility::announcements::Priority;
+    use crate::presentation::asking::Answered;
 
     let AppHandles { state, tx, rt } = app;
     let chosen = the_chosen_saved_search(&lock_state(state));
@@ -9375,20 +9377,18 @@ fn delete_the_chosen_search(
     };
 
     // Confirmed, because a Delete key is one row away from every other key
-    // somebody might have meant. Enter answers No, so pressing it partway
+    // somebody might have meant. Enter gives Keep, so pressing it partway
     // through hearing the question does not remove anything.
-    let asked = MessageDialog::builder(
+    let asked = crate::presentation::asking::ask(
         frame,
+        Question::DeleteASavedSearch,
+        "Delete Saved Search",
         &format!(
             "Delete the saved search {}? The mail it listed stays where it is.",
             chosen.name()
         ),
-        "Delete Saved Search",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build()
-    .show_modal();
-    if asked != ID_YES {
+    );
+    if asked != Answered::Yes {
         return;
     }
 

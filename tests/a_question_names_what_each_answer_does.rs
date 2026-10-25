@@ -16,6 +16,15 @@
 //! `WM_SYSCOMMAND` with `SC_CLOSE` for Alt+F4, and `TDM_CLICK_BUTTON` for the
 //! first button. None of these ever holds the foreground.
 //!
+//! Both sit on a desktop made for this run, named with the reader's process
+//! id, as every target here that sends a key does: a box on the interactive
+//! desktop is put in front of whoever uses the machine and read by their
+//! screen reader, and takes the keys they type. The reader makes the desktop
+//! and moves its own thread onto it, since window messages pass only between
+//! threads on one desktop, and hands its name to the window process, which
+//! moves its thread there before the box opens and clears the modifier keys
+//! the box will read Enter and Escape with.
+//!
 //! The whole of one reading is bounded at 60 seconds, and the window process
 //! is stopped by its id if it outlives it. A key or command meant to close the
 //! box is given five seconds; if the box is still up after them the reader
@@ -53,6 +62,102 @@ const BS_TYPEMASK: isize = 0x0000_000F;
 const TDM_CLICK_BUTTON: u32 = 0x0400 + 102;
 const VK_RETURN: usize = 0x0D;
 const VK_ESCAPE: usize = 0x1B;
+
+// ── A desktop made for the run ─────────────────────────────────────────────
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+/// winuser.h: Shift, Control and Alt, each with its left and right key.
+const MODIFIERS: [usize; 9] = [0x10, 0x11, 0x12, 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5];
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const c_void,
+        flags: u32,
+        access: u32,
+        attributes: *const c_void,
+    ) -> isize;
+    fn OpenDesktopW(name: *const u16, flags: u32, inherit: i32, access: u32) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
+    fn GetKeyboardState(state: *mut u8) -> i32;
+    fn SetKeyboardState(state: *const u8) -> i32;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetLastError() -> u32;
+}
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain([0]).collect()
+}
+
+/// The name of the desktop this run's boxes open on.
+fn the_runs_desktop_name() -> String {
+    format!("wixen-question-{}", std::process::id())
+}
+
+/// The desktop this run's boxes open on, made once and open for the life of
+/// the process, since windows live on it.
+fn the_runs_desktop() -> Result<isize, String> {
+    static MADE: std::sync::OnceLock<Result<isize, String>> = std::sync::OnceLock::new();
+    MADE.get_or_init(|| {
+        // SAFETY: the name is null-terminated and every other pointer is
+        // null, which CreateDesktopW takes as "none".
+        let desktop = unsafe {
+            CreateDesktopW(
+                wide(&the_runs_desktop_name()).as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                GENERIC_ALL,
+                std::ptr::null(),
+            )
+        };
+        match desktop {
+            // SAFETY: reads this thread's last error and nothing else.
+            0 => Err(format!("CreateDesktopW failed: {}", unsafe {
+                GetLastError()
+            })),
+            made => Ok(made),
+        }
+    })
+    .clone()
+}
+
+/// Move the calling thread onto `desktop`, before it has any window.
+fn move_this_thread_to(desktop: isize) -> Result<(), String> {
+    // SAFETY: a desktop handle this process holds open.
+    match unsafe { SetThreadDesktop(desktop) } {
+        // SAFETY: reads this thread's last error and nothing else.
+        0 => Err(format!("SetThreadDesktop failed: {}", unsafe {
+            GetLastError()
+        })),
+        _ => Ok(()),
+    }
+}
+
+/// Set this thread's keyboard state with exactly `down` of the modifier keys
+/// held and every other key as it was, before the box that reads Enter and
+/// Escape with it opens. A desktop of the run's own keeps out the keys a
+/// person presses but not the ones they hold: measured 2026-10-02, every one
+/// of eight failed runs of two key targets came while the person at the
+/// machine held Shift.
+fn only_these_modifiers_down(down: &[usize]) {
+    let mut held = [0u8; 256];
+    // SAFETY: the buffer is the 256 bytes the call writes.
+    unsafe { GetKeyboardState(held.as_mut_ptr()) };
+    for key in MODIFIERS {
+        held[key] = 0;
+    }
+    for &key in down {
+        held[key] = 0x80;
+    }
+    // SAFETY: the buffer is the 256 bytes the call reads, for this thread.
+    unsafe { SetKeyboardState(held.as_ptr()) };
+}
 
 // ── MSAA, by hand, as `tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs` reads it
 
@@ -325,9 +430,24 @@ fn press(window: HWND, key: usize) -> Result<(), String> {
 #[test]
 #[ignore = "started by the tests below, in a process of its own"]
 fn the_window_process_asks_one_question() {
-    if std::env::var(BE_THE_WINDOW_PROCESS).is_err() {
+    let Ok(desktop) = std::env::var(BE_THE_WINDOW_PROCESS) else {
+        return;
+    };
+    // SAFETY: the name is null-terminated; the handle stays open for the life
+    // of the process, since the box lives on it.
+    let opened = unsafe { OpenDesktopW(wide(&desktop).as_ptr(), 0, 0, GENERIC_ALL) };
+    let moved = match opened {
+        // SAFETY: reads this thread's last error and nothing else.
+        0 => Err(format!("OpenDesktopW {desktop} failed: {}", unsafe {
+            GetLastError()
+        })),
+        opened => move_this_thread_to(opened),
+    };
+    if let Err(why) = moved {
+        println!("{ANSWERED}could not reach the run's desktop: {why}");
         return;
     }
+    only_these_modifiers_down(&[]);
     let the_box = asking::the_box(Question::DeleteASavedSearch, TITLE, WORDS);
     let answered = asking::show(&the_box, None);
     println!("{ANSWERED}{answered:?}");
@@ -364,6 +484,7 @@ struct Reading {
 /// back what was found; every failure is a sentence.
 fn read_then_answer(answer: Answer) -> Result<Reading, String> {
     let deadline = Instant::now() + Duration::from_secs(60);
+    move_this_thread_to(the_runs_desktop()?)?;
     let me = std::env::current_exe().map_err(|why| format!("current_exe: {why}"))?;
     let mut child = std::process::Command::new(me)
         .args([
@@ -373,7 +494,7 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
             "--test-threads=1",
             THE_WINDOW_PROCESS,
         ])
-        .env(BE_THE_WINDOW_PROCESS, "1")
+        .env(BE_THE_WINDOW_PROCESS, the_runs_desktop_name())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -391,7 +512,7 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
             }
         });
     }
-    let reading = read_and_answer(child.id(), answer, deadline);
+    let reading = read_and_answer(child.id(), answer, deadline, &printed);
     if reading.is_err() {
         // Nothing will answer the box now, so the process is stopped by its id
         // rather than left waiting for the bound.
@@ -425,14 +546,23 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
     Ok(reading)
 }
 
-fn read_and_answer(process: u32, answer: Answer, deadline: Instant) -> Result<Reading, String> {
+/// Find the box of `process`, read it and answer it with `answer`. `printed`
+/// is what the window process has printed so far, so one that ended before
+/// its box opened is reported with its own words rather than at the bound.
+fn read_and_answer(
+    process: u32,
+    answer: Answer,
+    deadline: Instant,
+    printed: &Mutex<String>,
+) -> Result<Reading, String> {
     let dialog = loop {
         if let Some(dialog) = the_box_of(process) {
             break dialog;
         }
-        if Instant::now() > deadline {
+        let so_far = printed.lock().map(|p| p.clone()).unwrap_or_default();
+        if so_far.contains(ANSWERED) || Instant::now() > deadline {
             return Err(format!(
-                "no box titled {TITLE} opened in the window process"
+                "no box titled {TITLE} opened in the window process, which printed:\n{so_far}"
             ));
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -498,6 +628,9 @@ fn reading_after(answer: Answer) -> Reading {
 #[test]
 fn test_a_question_names_both_answers_on_both_channels_with_the_keyboard_on_keep() {
     let reading = reading_after(Answer::Enter);
+    // Printed whatever the verdict, so a run with --nocapture carries what was
+    // heard.
+    println!("{reading:#?}");
     let named = |name: &str| (name.to_string(), name.to_string());
     assert_eq!(
         reading.buttons,

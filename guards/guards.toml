@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 981 records have arrived since and have not been through it.
+# 987 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -3543,7 +3543,7 @@ red = [
     "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 5 },
+    { file = "src/presentation/asking.rs", tests = 13 },
 ]
 
 # What each first-run answer costs is the button's description, which is what a
@@ -46151,4 +46151,143 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/wired.rs", tests = 80 },
+]
+
+# The questions asked before acting (13.4-12.3, ledger 967). Six records, one
+# for each decision `presentation::asking` makes about a question with two
+# answers, each written from what its break really reddened.
+
+# Enter on a question that cannot be undone gives the answer that keeps things
+# as they are. The break hands Delete Folder's Enter to Delete.
+
+[[guard]]
+name = "enter on a question that cannot be undone gives keep"
+file = "src/presentation/asking.rs"
+before = '''        Question::RunARule | Question::MoveTheMailABlockCatches | Question::SendDespiteSpelling => {
+            Answered::Yes
+        }
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer
+        | Question::DeleteAConversation
+        | Question::DeleteAConversationPermanently
+        | Question::DeleteASavedSearch
+        | Question::MoveAFolder
+        | Question::DeleteAFolder
+        | Question::EmptyAFolder'''
+after = '''        Question::RunARule
+        | Question::MoveTheMailABlockCatches
+        | Question::SendDespiteSpelling
+        | Question::DeleteAFolder => Answered::Yes,
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer
+        | Question::DeleteAConversation
+        | Question::DeleteAConversationPermanently
+        | Question::DeleteASavedSearch
+        | Question::MoveAFolder
+        | Question::EmptyAFolder'''
+red = [
+    "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
+]
+
+# Escape and Alt+F4 close a question with nothing done, which on a box with no
+# Cancel button Windows does not allow unless it is told to. Measured against
+# the window target, where a real box is answered by both; the same break also
+# reddens test_escape_may_close_any_question and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "escape and alt+f4 close a question with neither answer"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''            Answered::No | Answered::Neither => IDNO,
+        },
+        cancellation_allowed: true,'''
+after = '''            Answered::No | Answered::Neither => IDNO,
+        },
+        cancellation_allowed: false,'''
+red = [
+    "test_alt_f4_closes_a_question_with_neither_answer",
+    "test_escape_closes_a_question_with_neither_answer",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
+]
+
+# A question's buttons say what each does, read from another process on both
+# channels at the handle the keyboard reaches. The break gives Delete Saved
+# Search, the question the window test opens, Yes and No again. It also
+# reddens test_every_question_says_what_each_of_its_answers_does and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "a question names what each of its answers does"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''        | Question::DeleteASavedSearch
+        | Question::DeleteAFolder
+        | Question::DeleteASoundScheme => ("&Delete", "&Keep"),'''
+after = '''        | Question::DeleteAFolder
+        | Question::DeleteASoundScheme => ("&Delete", "&Keep"),
+        Question::DeleteASavedSearch => ("&Yes", "&No"),'''
+red = [
+    "test_a_question_names_both_answers_on_both_channels_with_the_keyboard_on_keep",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
+]
+
+# Every other shown, enabled window of the asking thread is disabled while a
+# question is up, as wxWidgets did around its message box, so nothing else
+# can be acted on behind it. The break disables nothing.
+
+[[guard]]
+name = "other windows are disabled while a question is up"
+file = "src/presentation/asking.rs"
+before = '''        .filter(|window| window.visible && window.enabled && Some(window.handle) != owner)'''
+after = '''        .filter(|_| false)'''
+red = [
+    "presentation::asking::tests::test_every_other_shown_window_is_disabled_while_a_question_is_up",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
+]
+
+# A first line followed by a blank one stands out above the rest, the way
+# wxWidgets split a message box's words, so the update, spelling and
+# decorative questions read in the order they did. The break splits nothing.
+
+[[guard]]
+name = "a question's words split the way wxwidgets split them"
+file = "src/presentation/asking.rs"
+before = '''    let (main_instruction, content) = the_words_split_the_way_wx_splits_them(words);'''
+after = '''    let (main_instruction, content) = (None, words.to_string());'''
+red = [
+    "presentation::asking::tests::test_the_words_split_the_way_wx_splits_them",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
+]
+
+# A box closed without a button is neither answer, never the second: every
+# caller goes on only on the first, but a closed box read as Keep would also
+# be recorded as an answer somebody gave. The break reads a closed box as the
+# second answer; it also reddens the window target's Escape and Alt+F4 cases.
+
+[[guard]]
+name = "a question closed without a button is neither answer"
+file = "src/presentation/asking.rs"
+before = '''        IDNO => Answered::No,'''
+after = '''        IDNO | IDCANCEL => Answered::No,'''
+red = [
+    "presentation::asking::tests::test_a_box_closed_without_a_button_is_neither_answer",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 13 },
 ]

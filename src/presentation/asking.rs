@@ -1,26 +1,62 @@
-//! Which answer Enter gives on a question with two answers.
+//! How a question with two answers is put, and how its answer is read.
 //!
-//! A wxWidgets message box with Yes and No on it makes Yes the answer Enter
-//! gives unless it is told otherwise, and that is the wrong way round for a
-//! question asked before something that cannot be undone. Somebody who presses
-//! Enter partway through hearing the question has deleted the thing before the
-//! sentence finished.
+//! Every such question is a `Question`, and this module decides three things
+//! about each, once: what its two buttons say, which of them Enter gives, and
+//! that a box closed without a button is neither answer. `ask` is the one way
+//! to put one up.
 //!
-//! Anybody can be caught by that and it costs a screen reader user more, for
-//! two reasons. Hearing a question takes longer than reading one, so there is
-//! more of it left when the finger moves. And Enter is how a person working by
-//! keyboard answers everything, so it is already on its way.
+//! **What the buttons say.** Each names what it does, Delete and Keep, Run and
+//! Don't Run, rather than Yes and No (Pratik's answer to ledger 967 on
+//! 2026-10-25). A screen reader user hears the question and then the button
+//! the keyboard is on, and "Keep, button" says what Enter will do where
+//! "No, button" asked them to remember how the question was worded. Each
+//! button's access letter is its own within the box, and none is G, which
+//! 13.4-12.4's "Don't ask me again" takes in every box.
 //!
-//! Not every question wants No, though. The composer asks whether to send a
-//! message the spell checker has doubts about, and there Yes on Enter is the
-//! point: somebody who meant to send and heard the warning should not have to
-//! go looking for a button, and the whole question is in the words, so it can
-//! be answered from hearing it.
+//! **Which answer Enter gives.** On a question asked before something that
+//! cannot be undone, the one that keeps things as they are. Somebody who
+//! presses Enter partway through hearing the question has otherwise deleted
+//! the thing before the sentence finished. Anybody can be caught by that and
+//! it costs a screen reader user more: hearing a question takes longer than
+//! reading one, so there is more of it left when the finger moves, and Enter
+//! is how a person working by keyboard answers everything.
 //!
-//! So the answer Enter gives is a decision, and both answers live here so that
-//! asking a new question means picking one of them. A house style check holds
-//! that: nothing outside this file names the flag that puts two answers on a
-//! box.
+//! Three questions give Enter the first answer on purpose, because there it is
+//! the thing somebody came to do and the whole question is in its words.
+//! Sending a message the spell checker has doubts about: somebody who meant to
+//! send and heard the warning should not have to go looking for a button.
+//! Running a rule that does not delete, which `running_a_rule_now` decides.
+//! And moving the mail already here that a new block catches, which the user
+//! guide describes.
+//!
+//! **The box is Windows' own task dialog**, the same kind of window the
+//! wxWidgets message box was, because that box already called
+//! `TaskDialogIndirect` underneath under the common controls this program's
+//! manifest asks for (`src/msw/msgdlg.cpp:525-559` at wxWidgets 3.3.4). Calling
+//! it here is what lets 13.4-12.4 add a check box, which wxDragon's message box
+//! cannot carry. Of what wxWidgets does around the call, this reproduces: every
+//! other shown, enabled window of the thread disabled while the box is up and
+//! enabled again after (`wxWindowDisabler`, `src/common/utilscmn.cpp:1529-1571`);
+//! the owner (`src/common/dlgcmn.cpp:179-204`, in part, as `ask` says); its
+//! flags, sized to the words and placed on an owner that is not minimised
+//! (`msgdlg.cpp:675-690`); a first line followed by a blank one made the line
+//! that stands out (`msgdlg.cpp:641-655`, `:699-707`); the two buttons as
+//! `IDYES` and `IDNO` with the default named (`:732-745`, `:786-808`); and no
+//! icon, as a question had none (`:710-727`). It adds one thing: Escape,
+//! Alt+F4 and the title bar's Close close the box, which on a box with no
+//! Cancel button they could not do (`:759-762`), and that is neither answer.
+//!
+//! What it does not reproduce. The callback (`:591-624`) only turns on
+//! wxWidgets' dark mode, which this program never does. The modal hooks
+//! (`include/wx/modalhook.h:113-117`) are not exposed by wxDragon; the two
+//! wxWidgets registers are a veto of closing a frame while a modal box is up,
+//! whose work the disabled windows do, and a flush of a log window this
+//! program does not have. The event loop is the task dialog's own, as it was:
+//! timers still reach their windows, and wxDragon's queued calls, drained on
+//! idle, wait until the box closes.
+//!
+//! A house style check holds that nothing outside this file builds a box with
+//! two answers.
 
 use crate::application::questions_before_acting::Question;
 use wxdragon::dialogs::message_dialog::MessageDialogStyle;
@@ -34,11 +70,8 @@ pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle = MessageDialogStyle::No
 
 /// A question with two answers, where Enter answers No.
 ///
-/// For anything that cannot be undone. The question still says what Yes does,
-/// because the buttons say Yes and No, so "Delete Ada Lovelace?" has to be a
-/// question those two words answer. The binding can give a message box other
-/// button labels; this module keeps Yes and No, because other labels would
-/// change what people hear, which is a decision rather than a tidy-up.
+/// For anything that cannot be undone, on a question not yet asked through
+/// `ask`, which names its buttons; it goes when the last one moves.
 pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
     let two_answers = yes_no_where_enter_answers_yes();
     // `|` here could be `^` and nothing would change: `ENTER_DOES_NOT_ANSWER_YES`
@@ -132,11 +165,31 @@ pub struct TwoAnswers {
 
 /// What each of a question's two buttons says.
 pub fn answers(question: Question) -> TwoAnswers {
-    let _ = question;
-    TwoAnswers {
-        first: "&Yes",
-        second: "&No",
-    }
+    let (first, second) = match question {
+        Question::DeleteAnItem
+        | Question::DeleteAContainer
+        | Question::DeleteAConversation
+        | Question::DeleteASavedSearch
+        | Question::DeleteAFolder
+        | Question::DeleteASoundScheme => ("&Delete", "&Keep"),
+        Question::TakeAwayACopy => ("&Take Away", "&Keep"),
+        Question::DeleteAConversationPermanently => ("&Delete Permanently", "&Keep"),
+        Question::MoveAFolder => ("&Move", "&Don't Move"),
+        Question::EmptyAFolder => ("&Empty", "&Don't Empty"),
+        Question::EmptyAFolderForGood => ("&Empty for Good", "&Don't Empty"),
+        Question::RunARule | Question::RunARuleThatDeletes => ("&Run", "&Don't Run"),
+        Question::RemoveFoldersTheServerNoLongerLists | Question::RemoveAKey => {
+            ("&Remove", "&Keep")
+        }
+        Question::ImportAKey => ("&Import", "&Don't Import"),
+        Question::ApplyAViewToOtherFolders => ("&Apply", "&Don't Apply"),
+        Question::OpenTheReleasesPage => ("&Open the Page", "&Don't Open"),
+        Question::InstallAnUpdate => ("&Install Now", "&Don't Install"),
+        Question::MoveTheMailABlockCatches => ("&Move Them", "&Leave Them"),
+        Question::SendDespiteSpelling => ("&Send Anyway", "&Back to the Message"),
+        Question::MarkAPictureDecorative => ("&Mark as Decorative", "&Describe It"),
+    };
+    TwoAnswers { first, second }
 }
 
 /// The answer Enter gives on a question: the button the keyboard is on when
@@ -201,9 +254,63 @@ pub fn the_box(question: Question, title: &str, words: &str) -> TheBox {
             Answered::Yes => IDYES,
             Answered::No | Answered::Neither => IDNO,
         },
-        cancellation_allowed: false,
+        cancellation_allowed: true,
         sized_to_content: true,
     }
+}
+
+/// Ask `question` over the window `over`, with `title` and `words`, and hand
+/// back the answer.
+///
+/// The box is owned by the top-level window `over` sits in when that is shown,
+/// the first of the three owners wxWidgets tries
+/// (`src/common/dlgcmn.cpp:179-204`); its other two, the active window and the
+/// main window, are that same frame or nothing in this program, since every
+/// question names the frame or a dialog on it. A hidden one gives no owner.
+#[cfg(windows)]
+pub fn ask(
+    over: &dyn wxdragon::window::WxWidget,
+    question: Question,
+    title: &str,
+    words: &str,
+) -> Answered {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsWindowVisible};
+
+    let asking = HWND(over.get_handle());
+    // SAFETY: a window this program built, or null, which both calls refuse.
+    let top = unsafe { GetAncestor(asking, GA_ROOT) };
+    // SAFETY: as above.
+    let owner = (!top.is_invalid() && unsafe { IsWindowVisible(top) }.as_bool()).then_some(top);
+    show(&the_box(question, title, words), owner)
+}
+
+/// Ask `question` over the window `over`, off Windows: wxWidgets' own message
+/// box with the two labels and the answer Enter gives, and no "Don't ask me
+/// again" box, which it cannot carry. Nothing this project runs by default
+/// compiles this; `.github/workflows/other-platforms.yml` does, when it is
+/// dispatched.
+#[cfg(not(windows))]
+pub fn ask(
+    over: &dyn wxdragon::window::WxWidget,
+    question: Question,
+    title: &str,
+    words: &str,
+) -> Answered {
+    use wxdragon::dialogs::message_dialog::MessageDialog;
+
+    let style = match enter_gives(question) {
+        Answered::Yes => MessageDialogStyle::YesNo,
+        Answered::No | Answered::Neither => {
+            MessageDialogStyle::YesNo | MessageDialogStyle::NoDefault
+        }
+    };
+    let TwoAnswers { first, second } = answers(question);
+    let dialog = MessageDialog::builder(over, words, title)
+        .with_style(style)
+        .build();
+    dialog.set_yes_no_labels(first, second);
+    which_of_the_two(dialog.show_modal())
 }
 
 /// A first line followed by a blank one stands out above the rest, the way
