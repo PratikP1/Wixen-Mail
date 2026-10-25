@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 794
+open_count: 795
 waived_count: 0
 fixed_count: 173
-total_count: 967
-last_updated: 2026-10-25T14:00:00.000Z
+total_count: 968
+last_updated: 2026-10-25T18:00:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -982,6 +982,7 @@ last_updated: 2026-10-25T14:00:00.000Z
 | 965 | 13.4 | todo | src/main.rs |  | 13.4-08, 2026-10-25: a debug build of Wixen Mail closes with an access violation. Started on a fresh profile in the scratchpad with WIXEN_MAIL_DATA and WIXEN_NO_AUDIO set, left idle for 60 s or 10 s, and sent WM_CLOSE to its main window, it logged Frame on_close fired, window is closing and left within 10 s with exit code -1073741819 (0xC0000005), three runs out of three: two on 13.4-08's branch at c957aa14 and one built with main's logging.rs at 38cb5443, so the bridge is not its cause. The Windows Application log's event 1000 names wixen-mail.exe itself as the faulting module at offsets 0x318c87f and 0x319032f, and once an unknown module at offset 0, which is a call through a null pointer. No crash.log entry is written, since the panic hook sees no panic. The event log held no fault of an installed copy in the 30 days before, so whether a release build or the tester's copy does the same is not known, and a release build is not started on this machine. Not diagnosed: which teardown step faults, and whether it is wxWidgets' WebView2 teardown of ledger 466, which ends a process with 0xC000041D rather than this code, nor whether wxDragon 0.9.23 changes it; no plan is handed it. Closed when the cause is named and fixed, or the same runs leave with code 0 | open |  | 2026-10-25T05:30:00.000Z |  |
 | 966 | 13.4 | deviation | tests/a_spin_controls_field_is_named_where_the_scan_reads_it.rs |  | 13.4-09, 2026-10-25, at wxDragon 0.9.23 on GitHub's Windows runner: in this target, one of the two window processes that run side by side came back from on_init and never reached idle, where wxdragon::call_after's queue is drained, so the exit_main_loop it had queued never ran and the parent stopped it at 180 s. Each window process builds a WebView2 and three dialogs inside on_init, has a third process read the spin fields while it pumps messages by hand, and destroys them. Four Test Suite runs on pull request #224 failed this way: 40169928896, 40171952691 and 40174486301 under not-readied, and 40176721216 under readied while not-readied passed. No run at 0.9.17 and no run on this machine did it. The step lines added in 7e218a3f showed the reader finishing in 14 s and the windows destroyed, and 1dea969d's watchdog found no visible window of the process 20 s later, so no modal box held the loop. Not diagnosed. 07f9a0b9 has the window process print its reading and a line saying so and end itself inside on_init, and run 40179071738 passed the target with the rest. That steps around a toolkit behaviour rather than explaining it: whether the program's own loop can meet it after a long on_init is not known, though the program's on_init neither pumps messages by hand nor destroys a browser, and the Accessibility and NVDA runs at 0.9.23 opened every window they open. Closed when the cause is named, or at 13.4-14's reading if no other target has shown it by then | open |  | 2026-10-25T09:40:00.000Z |  |
 | 967 | 13.4 | todo | src/presentation/asking.rs |  | 13.4-11, 2026-10-25, a question for Pratik: wxdragon 0.9.23 can set a message box's button labels (MessageDialog::set_yes_no_labels), so a question asked before something that cannot be undone could carry buttons saying what each does, such as Delete and Keep, rather than Yes and No. asking.rs keeps Yes and No, because other labels change what people hear and every question is written to be answered by those two words. The recommendation is to keep Yes and No through the sittings and ask the testers there. Closed on his answer | open |  | 2026-10-25T14:00:00.000Z |  |
+| 968 | 13.4 | fixme | src/presentation/wx_compose.rs |  | 13.4-11.1, 2026-10-25, found while reading the composer's comments: the message window's toolbar is meant to name its group on every arrival, and the comments above toolbar_at say that going to the toolbar forgets where focus was, but nothing sets toolbar_at back to None. Read in wx_compose.rs: the cell is only replaced in each button's focus handler, and the Deferred::Toolbar arm focuses the first button without clearing it. So after a first visit, arriving at Send by Ctrl+backslash names the group only when the button last left was in another group. A behaviour change, owed a live test first, for a later plan; only the three stale lines on the leaving arm went in 13.4-11.1 | open |  | 2026-10-25T18:00:00.000Z |  |
 
 ````json
 [
@@ -12587,6 +12588,18 @@ last_updated: 2026-10-25T14:00:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-25T14:00:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 968,
+    "kind": "fixme",
+    "phase": "13.4",
+    "file": "src/presentation/wx_compose.rs",
+    "line": null,
+    "description": "13.4-11.1, 2026-10-25, found while reading the composer's comments: the message window's toolbar is meant to name its group on every arrival, and the comments above toolbar_at say that going to the toolbar forgets where focus was, but nothing sets toolbar_at back to None. Read in wx_compose.rs: the cell is only replaced in each button's focus handler, and the Deferred::Toolbar arm focuses the first button without clearing it. So after a first visit, arriving at Send by Ctrl+backslash names the group only when the button last left was in another group. A behaviour change, owed a live test first, for a later plan; only the three stale lines on the leaving arm went in 13.4-11.1",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T18:00:00.000Z",
     "resolved_at": null
   }
 ]
