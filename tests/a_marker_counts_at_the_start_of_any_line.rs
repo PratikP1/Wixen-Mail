@@ -59,7 +59,7 @@
 
 #![cfg(windows)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::ffi::{OsStr, c_void};
 use std::fmt;
 use std::os::windows::ffi::OsStrExt;
@@ -1271,6 +1271,22 @@ fn say(line: &str) {
     println!("{line}");
 }
 
+/// Set once WebView2 has made the browser in `view`, or failed to, which
+/// is when the page can be acted on. Bound before the loop turns, so the
+/// report cannot arrive before anything listens for it.
+fn the_browser_reports(view: &WebView) -> Rc<Cell<bool>> {
+    let made = Rc::new(Cell::new(false));
+    view.on_created({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    view.on_error({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    made
+}
+
 #[test]
 fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
     if ran_in_a_child_on_a_desktop_of_its_own(
@@ -1305,7 +1321,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
             );
             let dialog = widgets.dialog;
             let body_editor = widgets.body_editor;
-            let browser = widgets.browser.clone();
+            let browser_made = the_browser_reports(&body_editor);
             let run = Rc::new(RefCell::new(Run {
                 acts: the_steps(),
                 next: 0,
@@ -1333,7 +1349,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
             ticker.on_tick({
                 let run = run.clone();
                 let outcome = outcome.clone();
-                let browser = browser.clone();
+                let browser_made = browser_made.clone();
                 let ticker = ticker.clone();
                 move |_| {
                     let phase = {
@@ -1354,7 +1370,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                     };
                     let next = match phase {
                         Phase::WaitingForBrowser => {
-                            if browser.is_ready() {
+                            if browser_made.get() {
                                 Phase::Acting
                             } else {
                                 phase
@@ -1401,7 +1417,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                         // Stopped before its owner goes: a timer firing on a
                         // destroyed dialog is an access violation.
                         ticker.stop();
-                        browser.destroy_when_ready(dialog);
+                        dialog.destroy();
                         wxdragon::call_after(Box::new(|| {
                             if let Some(app) = wxdragon::get_app_instance() {
                                 app.exit_main_loop();

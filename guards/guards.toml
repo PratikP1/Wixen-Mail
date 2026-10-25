@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 968 records have arrived since and have not been through it.
+# 967 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -24550,90 +24550,52 @@ tests_last_seen = [
     { file = "tests/the_guard_sweep_runs_on_runners.rs", tests = 2 },
 ]
 
-# ── A window holding a browser waits for the browser before it goes ──────────
+# ── A window holding a browser goes the moment it closes ─────────────────────
 #
-# WebView2 makes the browser inside a `WebView` after `build()` returns, and
-# wxWidgets 3.3.2 delivers the completions to the control whether or not it
-# still exists (wxWidgets #26491, fixed upstream for the unreleased 3.3.4).
-# A window destroyed inside that moment took the application down with exit
-# code 0xc000041d and no message, and `tests/theme_reach.rs` died that way on
-# every run on GitHub's runners on 2026-09-15. `presentation::browser_ready`
-# is the answer, and three records hold its three halves.
+# From 2026-09-15 to 2026-10-25 Compose and Preview Before Send were hidden at
+# once and destroyed only when WebView2 reported, because wxWidgets 3.3.2
+# delivered the browser's creation reply to a control that had gone and the
+# program ended with 0xc000041d (wxWidgets #26491). Three records held that
+# watch. wxWidgets 3.3.4, which wxdragon 0.9.23 builds, fixed the crash, and
+# 13.4-10 retired the watch, its two records with its file, and the third, on
+# the preview's close through the watch, replaced by the two below.
 #
-# The first is the state machine: the browser's report is what frees what was
-# waiting. The break makes a report leave the browser unready, so a wait
-# queued after it never runs and one queued during the drain is lost. Three of
-# the module's four tests go red; the fourth, that a second report runs
-# nothing twice, is satisfied by a report that runs nothing at all.
+# One per close, because a window a person can close is a window that can be
+# left alive by mistake: a hidden dialog and its browser processes kept for the
+# rest of the session. Both dialogs are modal, so no test can drive them, and
+# the reading holds each close to destroying its dialog. The break hides the
+# dialog in place of destroying it. The live half in the same target builds the
+# real composer and closes it before its browser exists, and stays green under
+# either break, because it does not run either close.
 #
-# Measured by hand on 2026-09-15 against the whole library with the break
-# applied: exactly these three failed.
+# Measured by hand on 2026-10-25 by 13.4-10 at wxDragon 0.9.23, each break
+# applied on its own and `closing_a_window_before_its_browser_exists` run:
+# exactly the reading failed, saying the one function whose close was broken.
 
 [[guard]]
-name = "the browser's report is what frees a window waiting on it"
-file = "src/presentation/browser_ready.rs"
-before = """            state.reported = true;"""
-after = """            state.reported = false;"""
-red = [
-    "presentation::browser_ready::tests::test_nothing_waiting_runs_before_the_browser_reports",
-    "presentation::browser_ready::tests::test_once_the_browser_has_reported_a_new_wait_runs_at_once",
-    "presentation::browser_ready::tests::test_a_wait_queued_by_something_that_was_waiting_runs_too",
-]
-tests_last_seen = [
-    { file = "src/presentation/browser_ready.rs", tests = 4 },
-]
-
-# The second is the live half: a window handed to `destroy_when_ready` before
-# its browser exists is not destroyed until the browser reports. The break
-# destroys it at once, which is what every caller did before 2026-09-15, and
-# the child process the test spawns dies with 0xc000041d. The parent reads the
-# exit status, so a crash is a failing test here and not a run that never
-# finished. The reading over `wx_compose` in the same target stays green,
-# because the dialogs there still go through the watch.
-#
-# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
-# with the break applied: exactly this one test failed.
-#
-# Measured again on 2026-10-25 by 13.4-09 at wxDragon 0.9.23, through
-# `scripts/guards.sh --remeasure` and then by hand: the same one test fails,
-# for a different reason. wxWidgets 3.3.4 no longer crashes when the window
-# goes first, and the browser of a destroyed window never reports, so the live
-# half's way out, which waits for that report, never comes; its 60-second
-# give-up exits 2 ("the live half died: exit code 2"). So the record now holds
-# that the watch is still in the path, not that the crash is still there;
-# `tests/a_browser_closed_while_it_is_made_ends_the_program_cleanly.rs` holds
-# the crash's absence, and 13.4-10 retires the watch and this record with it.
-
-[[guard]]
-name = "a window handed over before its browser exists is not destroyed until the browser reports"
-file = "src/presentation/browser_ready.rs"
+name = "the compose window is destroyed when it closes"
+file = "src/presentation/wx_compose.rs"
 suite = "closing_a_window_before_its_browser_exists"
-before = """        self.when_ready(move || window.destroy());"""
-after = """        window.destroy();"""
+before = """    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.destroy();"""
+after = """    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.hide();"""
 red = [
-    "test_closing_a_window_before_its_browser_exists_does_not_kill_the_process",
+    "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
-    { file = "src/presentation/browser_ready.rs", tests = 4 },
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]
 
-# The third is the two dialogs a person can close early, Compose and Preview
-# Before Send. Both are modal, so no test can drive them, and the reading
-# holds each close path to the watch rather than to `destroy()`. The break
-# puts the preview's direct `destroy()` back, the line as it stood before
-# 2026-09-15. The live half above stays green, because it does not read
-# `wx_compose` at all.
-#
-# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
-# with the break applied: exactly this one test failed.
-
 [[guard]]
-name = "the two dialogs holding a browser close through the watch on it"
+name = "the send preview is destroyed when it closes"
 file = "src/presentation/wx_compose.rs"
 suite = "closing_a_window_before_its_browser_exists"
-before = """    browser.destroy_when_ready(dlg);"""
-after = """    dlg.destroy();"""
+before = """    // gives at its own close.
+    dlg.destroy();"""
+after = """    // gives at its own close.
+    dlg.hide();"""
 red = [
     "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]

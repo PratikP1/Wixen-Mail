@@ -42,7 +42,6 @@ use wixen_mail::application::opening_links::{self, Asked, Route, Where};
 use wixen_mail::common::what_ships::what_ships;
 use wixen_mail::data::config::AppConfig;
 use wixen_mail::presentation::accessibility::Accessibility;
-use wixen_mail::presentation::browser_ready::BrowserReady;
 use wixen_mail::presentation::page_links;
 use wixen_mail::presentation::wx_settings;
 use wxdragon::event::WebViewEvents;
@@ -151,7 +150,6 @@ fn the_live_half_measures_what_a_navigating_event_carries() {
         let view = WebView::builder(&dialog)
             .with_backend(WebViewBackend::Edge)
             .build();
-        let browser = BrowserReady::watch(&view);
         let seen: Rc<RefCell<WhatTheEventCarried>> = Rc::default();
 
         // Recorded, never vetoed: a veto of the control's own document load
@@ -209,12 +207,17 @@ fn the_live_half_measures_what_a_navigating_event_carries() {
         // Polled rather than awaited: the events arrive on the loop, and the
         // click's navigation is one or two of them.
         let waited = Rc::new(std::cell::Cell::new(0));
+        let ended = Rc::new(std::cell::Cell::new(false));
         let poll = Timer::new(&frame);
         poll.on_tick({
             let seen = seen.clone();
-            let browser = browser.clone();
             let waited = waited.clone();
             move |_| {
+                // A tick may still arrive before the queued end of the loop,
+                // and the dialog is destroyed once.
+                if ended.get() {
+                    return;
+                }
                 waited.set(waited.get() + 250);
                 let done = {
                     let seen = seen.borrow();
@@ -237,14 +240,13 @@ fn the_live_half_measures_what_a_navigating_event_carries() {
                     seen.after_the_load.first().map(|(_, i)| *i) == Some(Some(1)),
                     seen.followed
                 );
-                browser.destroy_when_ready(dialog);
-                browser.when_ready(move || {
-                    wxdragon::call_after(Box::new(|| {
-                        if let Some(app) = wxdragon::get_app_instance() {
-                            app.exit_main_loop();
-                        }
-                    }));
-                });
+                ended.set(true);
+                dialog.destroy();
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
+                }));
             }
         });
         poll.start(250, false);
