@@ -3,6 +3,7 @@
 //! Native wxdragon (wxWidgets) UI with built-in accessibility support.
 
 pub mod accessibility;
+pub mod after_the_tick;
 pub mod art;
 pub mod asking;
 pub mod browser_ready;

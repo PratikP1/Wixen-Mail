@@ -4148,8 +4148,8 @@ fn test_the_question_about_vanished_folders_is_put_at_a_moment_that_is_free() {
     );
     assert!(
         asks.raised_before_the_window,
-        "the question is written down after the window opens rather than before, so the tick \
-         that runs inside the modal puts it a second time"
+        "the question is written down after the window opens rather than before, so the tick, \
+         which keeps running while the window is open, puts it a second time"
     );
 }
 
@@ -4278,7 +4278,7 @@ struct WhatTheReminderLookAsks {
     /// reminder.
     the_turn_is_taken_before_the_loop: bool,
     /// The reminder is written into `already` before its window is reached,
-    /// because `show_modal` is inside `raise` and the tick runs inside it.
+    /// because the tick keeps running while the window `raise` opens is up.
     written_down_before_the_window: bool,
 }
 
@@ -4339,8 +4339,8 @@ fn test_the_reminder_look_asks_whether_somebody_is_typing_through_the_shared_hel
     );
     assert!(
         asks.written_down_before_the_window,
-        "the reminder is not written into `already` before its window is reached, so the tick \
-         that runs inside the modal raises it a second time"
+        "the reminder is not written into `already` before its window is reached, so the tick, \
+         which keeps running while the window is open, raises it a second time"
     );
 }
 

@@ -29,6 +29,7 @@ use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::platform_bridge;
+use crate::presentation::after_the_tick::after_the_tick;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::landing_after_a_removal;
@@ -6589,8 +6590,9 @@ impl WxMailApp {
                 let tick_count = std::cell::Cell::new(0u64);
                 // What one look at the reminders leaves for the next. Held for
                 // the session rather than stored, because what somebody has
-                // already been shown is a fact about now.
-                let between_looks = BetweenLooks::default();
+                // already been shown is a fact about now. Shared, because the
+                // Due now window and its answers run after this tick returns.
+                let between_looks = Rc::new(BetweenLooks::default());
                 // The folders a sync has found the server no longer lists,
                 // waiting to be asked about (D-27). One set for every account,
                 // which is what makes two accounts syncing together one
@@ -13866,10 +13868,10 @@ fn ask_about_the_folders_that_have_gone(
 ) {
     use crate::presentation::one_question_at_a_time::{Answer, what_they_said, what_to_raise};
 
-    // Taken here and held to the end, so the window this may open cannot be
-    // covered by a reminder alert and cannot cover one: the tick keeps running
-    // inside a modal, and one gate shared between the two is what stops either
-    // opening over the other.
+    // Taken here and held until the window closes, so the window this may open
+    // cannot be covered by a reminder alert and cannot cover one: the tick keeps
+    // running while either is open, and one gate shared between the two is what
+    // stops either opening over the other.
     let turn = one_question_on_screen.take();
 
     let an_editor_has_focus = whether_somebody_is_typing(somewhere_to_type);
@@ -13882,67 +13884,78 @@ fn ask_about_the_folders_that_have_gone(
         return;
     };
 
-    // Before the window opens, not after. The window is modal and the event
-    // loop keeps running inside it, so this tick happens again while somebody
-    // is still reading the question, and without this it would be asked twice.
+    // Before the window opens, not after. The tick keeps running while the
+    // window is open, so it happens again while somebody is still reading the
+    // question, and without this it would be asked twice.
     waiting.borrow_mut().raised(&question);
 
-    // Enter answers No, because Yes here removes mail and cannot be undone.
-    let asked = MessageDialog::builder(frame, &question.words, &question.title)
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build()
-        .show_modal();
+    // The question and its answer run after this tick returns, so the tick
+    // runs beside the window rather than inside itself, holding the turn
+    // until the window closes.
+    let frame = *frame;
+    let state = Arc::clone(state);
+    let cache = Arc::clone(cache);
+    let tx = tx.clone();
+    after_the_tick(move || {
+        let _turn = turn;
 
-    match what_they_said(asked) {
-        // Nobody answered. Nothing is written, so a later run of the program
-        // asks again, and nothing has been removed in the meantime.
-        Answer::NotNow => (),
-        Answer::KeepThem => {
-            let Some(said) = one_question_at_a_time::what_to_record(Answer::KeepThem) else {
-                return;
-            };
-            for folder in &question.folders {
-                if let Err(e) = cache.set_what_the_server_said(*folder, said) {
-                    tracing::warn!("The answer about the folder could not be recorded: {e}");
+        // Enter answers No, because Yes here removes mail and cannot be undone.
+        let asked = MessageDialog::builder(&frame, &question.words, &question.title)
+            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+            .build()
+            .show_modal();
+
+        match what_they_said(asked) {
+            // Nobody answered. Nothing is written, so a later run of the program
+            // asks again, and nothing has been removed in the meantime.
+            Answer::NotNow => (),
+            Answer::KeepThem => {
+                let Some(said) = one_question_at_a_time::what_to_record(Answer::KeepThem) else {
+                    return;
+                };
+                for folder in &question.folders {
+                    if let Err(e) = cache.set_what_the_server_said(*folder, said) {
+                        tracing::warn!("The answer about the folder could not be recorded: {e}");
+                    }
                 }
+                let _ = tx.try_send(UIUpdate::CommandAnswered(
+                    one_question_at_a_time::what_keeping_them_did(question.folders.len()),
+                ));
             }
-            let _ = tx.try_send(UIUpdate::CommandAnswered(
-                one_question_at_a_time::what_keeping_them_did(question.folders.len()),
-            ));
-        }
-        Answer::RemoveThem => {
-            // Counted before anything is removed, because afterwards there is
-            // nothing left to count and the sentence has to carry what went.
-            let messages = cache.messages_stored_in(&question.folders).unwrap_or(0);
-            // Whether the folder somebody is standing in is one of these, asked
-            // before the rows go, because afterwards its id resolves to nothing.
-            let was_open = {
-                let s = lock_state(state);
-                s.selected_folder
-                    .as_ref()
-                    .and_then(|which| which.opens())
-                    .and_then(|which| the_id_of(&s, &which))
-                    .is_some_and(|open| question.folders.contains(&open))
-            };
-            let mut removed = 0usize;
-            for folder in &question.folders {
-                match cache.forget_folder(*folder) {
-                    Ok(()) => removed += 1,
-                    // Said rather than swallowed, and the count that is
-                    // reported is what really went rather than what was asked
-                    // for.
-                    Err(e) => tracing::warn!("The folder could not be removed: {e}"),
+            Answer::RemoveThem => {
+                // Counted before anything is removed, because afterwards there is
+                // nothing left to count and the sentence has to carry what went.
+                let messages = cache.messages_stored_in(&question.folders).unwrap_or(0);
+                // Whether the folder somebody is standing in is one of these, asked
+                // before the rows go, because afterwards its id resolves to nothing.
+                let was_open = {
+                    let s = lock_state(&state);
+                    s.selected_folder
+                        .as_ref()
+                        .and_then(|which| which.opens())
+                        .and_then(|which| the_id_of(&s, &which))
+                        .is_some_and(|open| question.folders.contains(&open))
+                };
+                let mut removed = 0usize;
+                for folder in &question.folders {
+                    match cache.forget_folder(*folder) {
+                        Ok(()) => removed += 1,
+                        // Said rather than swallowed, and the count that is
+                        // reported is what really went rather than what was asked
+                        // for.
+                        Err(e) => tracing::warn!("The folder could not be removed: {e}"),
+                    }
                 }
+                if was_open {
+                    let _ = tx.try_send(UIUpdate::ChosenFolderIsGone);
+                }
+                read_the_tree_back(&Some(cache.clone()), &state, &tx);
+                let _ = tx.try_send(UIUpdate::CommandAnswered(
+                    one_question_at_a_time::what_removing_them_did(removed, messages),
+                ));
             }
-            if was_open {
-                let _ = tx.try_send(UIUpdate::ChosenFolderIsGone);
-            }
-            read_the_tree_back(&Some(cache.clone()), state, tx);
-            let _ = tx.try_send(UIUpdate::CommandAnswered(
-                one_question_at_a_time::what_removing_them_did(removed, messages),
-            ));
         }
-    }
+    });
 }
 
 /// Whether somebody is typing, read both ways they can be.
@@ -14258,7 +14271,7 @@ fn raise_what_is_due(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
     a11y: &Arc<Accessibility>,
-    between_looks: &BetweenLooks,
+    between_looks: &Rc<BetweenLooks>,
     dates: date_display::DateSettings,
     somewhere_to_type: &[TextCtrl],
 ) {
@@ -14270,15 +14283,15 @@ fn raise_what_is_due(
         already,
         said_and_waiting,
         one_question_on_screen: one_at_a_time,
-    } = between_looks;
+    } = &**between_looks;
 
-    // Before anything else. The window below is modal and the event loop keeps
-    // running inside it, so this function runs again while somebody is still
-    // reading the first alert, and without this the next one due opens on top
-    // of it. Held to the end of this function: a look that says a sentence
-    // and opens nothing returns, and returning drops the turn, so the folders
-    // question is never blocked by a window that did not open.
-    let Some(_turn) = one_at_a_time.take() else {
+    // Before anything else. The tick keeps running while the window below is
+    // open, so this function runs again while somebody is still reading the
+    // first alert, and without this the next one due opens on top of it. Held
+    // until the window closes, by the work that opens it: a look that says a
+    // sentence and opens nothing returns, and returning drops the turn, so the
+    // folders question is never blocked by a window that did not open.
+    let Some(turn) = one_at_a_time.take() else {
         return;
     };
 
@@ -14392,9 +14405,9 @@ fn raise_what_is_due(
         }
     }
 
-    // Marked before the window opens, not after. The window is modal and
-    // the event loop keeps running inside it, so this tick can happen again
-    // while somebody is still looking at the first one.
+    // Marked before the window opens, not after. The tick keeps running
+    // while the window is open, so it can happen again while somebody is
+    // still looking at the first one.
     for item in &due {
         said_and_waiting.borrow_mut().remove(&item.identity);
         already.borrow_mut().insert(item.identity.clone());
@@ -14418,12 +14431,42 @@ fn raise_what_is_due(
         }),
         None => Box::new(wx_reminder_alert::NoEditors),
     };
-    let answers =
-        wx_reminder_alert::raise(frame, due, now, dates, a11y, due::Snooze::ALL[2], editors);
+    // The window and its answers run after this tick returns, so the tick
+    // runs beside the window rather than inside itself, and the turn goes
+    // with them, held until the window closes.
+    let frame = *frame;
+    let a11y = Arc::clone(a11y);
+    let cache = cache.clone();
+    let state = Arc::clone(state);
+    let between_looks = Rc::clone(between_looks);
+    after_the_tick(move || {
+        let _turn = turn;
+        let answers =
+            wx_reminder_alert::raise(&frame, due, now, dates, &a11y, due::Snooze::ALL[2], editors);
+        if let Some(cache) = cache.as_ref() {
+            write_down_what_was_answered(
+                answers,
+                &titles,
+                cache,
+                &between_looks.already,
+                &state,
+                &a11y,
+            );
+        }
+    });
+}
 
-    let Some(cache) = cache.as_ref() else {
-        return;
-    };
+/// Write down what somebody answered in the Due now window, one row at a time.
+fn write_down_what_was_answered(
+    answers: Vec<(crate::application::due::Identity, wx_reminder_alert::Answer)>,
+    titles: &HashMap<crate::application::due::Identity, String>,
+    cache: &MessageCache,
+    already: &RefCell<std::collections::HashSet<crate::application::due::Identity>>,
+    state: &Arc<StdMutex<WxUIState>>,
+    a11y: &Accessibility,
+) {
+    use crate::application::due;
+
     for (identity, answer) in answers {
         let title = titles.get(&identity).cloned().unwrap_or_default();
         // Written by naming the row rather than by reading the whole thing
@@ -23839,7 +23882,9 @@ struct UpdateTargets<'a> {
     /// the row can make Mark as Read say which way it will go there too
     /// (#27). A copy of the handle rather than a borrow: it is one pointer.
     toolbar: Option<ToolBar>,
-    a11y: &'a Accessibility,
+    /// Shared rather than borrowed, so a window an update opens after the
+    /// tick has returned can still speak.
+    a11y: &'a Arc<Accessibility>,
     pim: &'a PimPanelRefs,
     message_cache: &'a Option<Arc<MessageCache>>,
     /// The offer to go back online, raised when the network returns.
@@ -23878,8 +23923,9 @@ struct UpdateTargets<'a> {
     /// close nobody marked as a Quit is the window's own close button: with
     /// "keep running in the notification area" on, the handler would hide the
     /// window and say Wixen Mail was still running while the installer waited
-    /// for it to end. See `really_quit`.
-    really_quitting: &'a std::cell::Cell<bool>,
+    /// for it to end. See `really_quit`. Shared, because the question about an
+    /// installer is answered after the tick has returned.
+    really_quitting: &'a Rc<std::cell::Cell<bool>>,
 }
 
 /// The database id of whichever folder is open right now, if any.
@@ -24325,14 +24371,25 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         // A rule chosen by hand has been counted: said when nothing would
         // change, otherwise asked about and run (#61, 13-44).
         UIUpdate::ARuleWasCounted(counted) => {
-            ask_then_run_the_counted_rule(
-                AppHandles { state, tx, rt },
-                message_cache,
-                msg_list,
-                frame,
-                a11y,
-                counted,
-            );
+            // The question runs after this tick returns, so the tick runs
+            // beside it rather than inside itself.
+            let (state, tx, rt) = (Arc::clone(state), tx.clone(), Arc::clone(rt));
+            let (cache, list, frame) = (message_cache.clone(), *msg_list, *frame);
+            let (a11y, counted) = (Arc::clone(a11y), counted.clone());
+            after_the_tick(move || {
+                ask_then_run_the_counted_rule(
+                    AppHandles {
+                        state: &state,
+                        tx: &tx,
+                        rt: &rt,
+                    },
+                    &cache,
+                    &list,
+                    &frame,
+                    &a11y,
+                    &counted,
+                );
+            });
         }
         UIUpdate::MessagesLoaded(messages, why) => {
             // The cursor's message and its row, remembered before the rows
@@ -24476,11 +24533,14 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         }
         UIUpdate::KeyAttachmentOffered(offered) => {
             let over = if reader.is_open() {
-                reader.frame()
+                *reader.frame()
             } else {
-                frame
+                *frame
             };
-            offer_the_key_attachment(over, message_cache, tx, offered);
+            // The question runs after this tick returns, so the tick runs
+            // beside it rather than inside itself.
+            let (cache, tx, offered) = (message_cache.clone(), tx.clone(), offered.clone());
+            after_the_tick(move || offer_the_key_attachment(&over, &cache, &tx, &offered));
         }
         UIUpdate::MessageBodyLoaded(body) => {
             let showing = {
@@ -24766,20 +24826,26 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     // the file: a question offering to run an installer that
                     // failed its check is the one thing this feature may not
                     // do. Enter answers no, so nothing opens for somebody who
-                    // pressed Enter to dismiss the sentence.
-                    let answered = MessageDialog::builder(
-                        frame,
-                        &format!("{said}\n\nOpen the releases page in your browser?"),
-                        "Update",
-                    )
-                    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-                    .build()
-                    .show_modal();
-                    if answered == ID_YES && open::that(page).is_err() {
-                        let could_not = format!("Could not open a browser. The page is {page}");
-                        frame.set_status_text(&could_not, 0);
-                        let _ = a11y.announce_topic(&could_not, Priority::High, "command");
-                    }
+                    // pressed Enter to dismiss the sentence. After this tick
+                    // returns, so the tick runs beside it rather than inside
+                    // itself.
+                    let (frame, said, page) = (*frame, said.clone(), page.clone());
+                    let a11y = Arc::clone(a11y);
+                    after_the_tick(move || {
+                        let answered = MessageDialog::builder(
+                            &frame,
+                            &format!("{said}\n\nOpen the releases page in your browser?"),
+                            "Update",
+                        )
+                        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+                        .build()
+                        .show_modal();
+                        if answered == ID_YES && open::that(&page).is_err() {
+                            let could_not = format!("Could not open a browser. The page is {page}");
+                            frame.set_status_text(&could_not, 0);
+                            let _ = a11y.announce_topic(&could_not, Priority::High, "command");
+                        }
+                    });
                 }
             }
         }
@@ -24798,57 +24864,64 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             //
             // Enter answers no, so somebody who pressed Enter to dismiss a
             // sentence does not find their program replacing itself.
-            let asked = MessageDialog::builder(
-                frame,
-                &update_download::the_question_about(installer),
-                "Install Update",
-            )
-            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-            .build()
-            .show_modal();
+            //
+            // The question and what follows its answer run after this tick
+            // returns, so the tick runs beside it rather than inside itself.
+            let (frame, installer) = (*frame, installer.clone());
+            let (a11y, really_quitting) = (Arc::clone(a11y), Rc::clone(really_quitting));
+            after_the_tick(move || {
+                let asked = MessageDialog::builder(
+                    &frame,
+                    &update_download::the_question_about(&installer),
+                    "Install Update",
+                )
+                .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
+                .build()
+                .show_modal();
 
-            if asked != ID_YES {
-                let declined = format!(
-                    "Wixen Mail {} was not installed. You are still running {}, and the \
-                     downloaded file has been removed.",
-                    installer.version(),
-                    crate::common::version::current()
-                );
-                if let Err(why) = update_download::say_no(installer.clone()) {
-                    tracing::warn!("A declined update could not be removed: {why}");
+                if asked != ID_YES {
+                    let declined = format!(
+                        "Wixen Mail {} was not installed. You are still running {}, and the \
+                         downloaded file has been removed.",
+                        installer.version(),
+                        crate::common::version::current()
+                    );
+                    if let Err(why) = update_download::say_no(installer.clone()) {
+                        tracing::warn!("A declined update could not be removed: {why}");
+                    }
+                    frame.set_status_text(&declined, 0);
+                    let _ = a11y.announce_topic(&declined, Priority::High, "command");
+                    return;
                 }
-                frame.set_status_text(&declined, 0);
-                let _ = a11y.announce_topic(&declined, Priority::High, "command");
-                return;
-            }
 
-            // Said before it happens rather than after, and said twice on
-            // purpose. The durable half is in the question above, where the
-            // person can still decline after reading that the window will
-            // close; this is the marker of the moment, because an announcement
-            // alone can be coalesced away by whatever a sync is saying
-            // underneath it and a second dialog would be the second question
-            // this feature may not ask.
-            let warning = update_download::what_is_said_before_the_window_closes(installer);
-            frame.set_status_text(&warning, 0);
-            let _ = a11y.announce_topic(&warning, Priority::High, "command");
+                // Said before it happens rather than after, and said twice on
+                // purpose. The durable half is in the question above, where the
+                // person can still decline after reading that the window will
+                // close; this is the marker of the moment, because an announcement
+                // alone can be coalesced away by whatever a sync is saying
+                // underneath it and a second dialog would be the second question
+                // this feature may not ask.
+                let warning = update_download::what_is_said_before_the_window_closes(&installer);
+                frame.set_status_text(&warning, 0);
+                let _ = a11y.announce_topic(&warning, Priority::High, "command");
 
-            // The installer starts first and this program closes after. The
-            // other order leaves nothing running to report a start that failed.
-            match update_download::hand_over_to(installer) {
-                Ok(()) => {
-                    // As a Quit, so the notification area setting cannot turn
-                    // it into a hide while the installer waits for this to end.
-                    really_quit(really_quitting, frame);
+                // The installer starts first and this program closes after. The
+                // other order leaves nothing running to report a start that failed.
+                match update_download::hand_over_to(&installer) {
+                    Ok(()) => {
+                        // As a Quit, so the notification area setting cannot turn
+                        // it into a hide while the installer waits for this to end.
+                        really_quit(&really_quitting, &frame);
+                    }
+                    Err(why) => {
+                        // Still running, which is the point of this order, so there
+                        // is somewhere to say this.
+                        let said = why.said();
+                        frame.set_status_text(&said, 0);
+                        let _ = a11y.announce_topic(&said, Priority::High, "refusal");
+                    }
                 }
-                Err(why) => {
-                    // Still running, which is the point of this order, so there
-                    // is somewhere to say this.
-                    let said = why.said();
-                    frame.set_status_text(&said, 0);
-                    let _ = a11y.announce_topic(&said, Priority::High, "refusal");
-                }
-            }
+            });
         }
         UIUpdate::CommandRefused(why) => {
             {
@@ -25068,15 +25141,26 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
         UIUpdate::WhatABlockCaught(caught) => {
             // Counted on a worker; asked about and moved here, on the
             // window's thread, where a question can be put (13-25).
+            // The question runs after this tick returns, so the tick runs
+            // beside it rather than inside itself.
             if let Some(cache) = message_cache {
-                answer_what_a_block_caught(
-                    AppHandles { state, tx, rt },
-                    frame,
-                    msg_list,
-                    cache,
-                    a11y,
-                    caught,
-                );
+                let (state, tx, rt) = (Arc::clone(state), tx.clone(), Arc::clone(rt));
+                let (cache, list, frame) = (Arc::clone(cache), *msg_list, *frame);
+                let (a11y, caught) = (Arc::clone(a11y), caught.clone());
+                after_the_tick(move || {
+                    answer_what_a_block_caught(
+                        AppHandles {
+                            state: &state,
+                            tx: &tx,
+                            rt: &rt,
+                        },
+                        &frame,
+                        &list,
+                        &cache,
+                        &a11y,
+                        &caught,
+                    );
+                });
             }
         }
         UIUpdate::TheNetworkIsBack => {

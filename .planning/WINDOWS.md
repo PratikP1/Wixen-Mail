@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 792
+open_count: 794
 waived_count: 0
 fixed_count: 170
-total_count: 962
-last_updated: 2026-10-25T00:39:03.000Z
+total_count: 964
+last_updated: 2026-10-25T02:55:00.000Z
 ---
 
 # Broken Windows Ledger
@@ -977,6 +977,8 @@ last_updated: 2026-10-25T00:39:03.000Z
 | 960 | 13.4 | unrun-verify | src/presentation/reader_text.rs |  | 13.4-03, ledger 938, for the tester's ear on a build holding 13.4-03's merge, at 13.4-13's NVDA sitting or phase 14's: the tester's newsletter (#90) opened with Enter under NVDA reads its subtitle once and no padding, and says nothing about blocks left out; a message with a hidden block of words below its text says "1 block the sender did not show was left out." once, before its words; and Space on that message in the list reads the sentence too. The cases read the document's text; nobody has heard it. Row 939, the formatted view's ear, is separate. Closed when the tester has heard all three | open |  | 2026-10-24T23:00:00.000Z |  |
 | 961 | 13.4 | unrun-verify | src/application/draft_copy.rs |  | 13.4-04, ledger 941, for the tester's ear on a build holding 13.4-04's merge, at 13.4-13's NVDA sitting or phase 14's, on an IMAP account: with the network turned off, a draft written in Compose for three minutes says "The draft is saved on this computer. The server would not take it..." once, heard whole and not cut off by the "Draft saved." beside it, then only "Draft saved." each minute; after the network is back the next automatic save says "The server has taken the draft, so your other devices will have the newest copy." once, heard as different from "Draft saved.", and nothing about the server after it; and pressing Save Draft while the network is off says "Draft saved: <subject>." and then the server's refusal again. The cases read the rule; nobody has heard it, and the order of the two lines on the status topic is not fixed by code. Closed when the tester has heard all three | open |  | 2026-10-24T23:18:00.000Z |  |
 | 962 | 13.4 | todo | scripts/check.sh |  | 13.4-05, 2026-10-24: the gate never runs a guard record's suite when the record's file is a test file. the_suites_that_guard_what_changed skips every changed tests/*.rs path, on the reasoning that a changed test file already runs its own target; that holds only when the record's suite is that same target. So the record "a window test's queued ending asks for the application rather than capturing it", whose file is tests/tree_selection_raises.rs and whose suite is every_window_test_ends_on_the_thread_that_owns_it, does not bring the reading into a commit changing that file: green commit 40eb4c05 changed it and its hook's list did not hold the reading, and `bash scripts/check.sh --suites-for guards/guards.toml tests/tree_selection_raises.rs` answers nothing. The same hole refused 13.4-05's planned first-half red commit: its named test sits in a target that only a change to the reading's own file reaches, so red-commit.sh said the test never ran. Until it is closed, the reading runs when its own file changes, by name in the verify of 13.4-06 to 13.4-08, and in the phase's full gate. Recommended: skip a changed tests/X.rs only for a record whose suite is X, with a case in check.test.sh; Pratik's to decide | open |  | 2026-10-25T00:39:03.000Z |  |
+| 963 | 13.4 | unrun-verify | src/presentation/wx_app.rs |  | 13.4-06, 2026-10-24, for the tester's ear at 13.4-13's NVDA sitting, on a build holding 13.4-06's merge: with the Due now window left open, a message sent from his phone is announced when the next check brings it and the message list moves, both while the window is still open; and a question about an update that comes while the Due now window is open, if one can be staged, opens only after the Due now window is answered. The live test shows the tick running beside the real Due now window and five readings hold the seven windows to the queue; nobody has heard it. Closed when the tester has heard the first, and the second or a sentence saying it could not be staged | open |  | 2026-10-25T02:55:00.000Z |  |
+| 964 | 13.4 | todo | .planning/phases/13.4-the-wxdragon-move/13.4-06-SUMMARY.md |  | 13.4-06, 2026-10-24: the 0.9.17 baseline was not read before the plan ended. Its pull request #223's Accessibility run, 40155889217, artifacts accessibility-scan-results and accessibility-scan-program-log, kept until 2027-01-23, is the baseline 13.4-12 compares the 0.9.23 run against, and the plan's task 3 said to read it once, 49 windows each with entries in msaa-names.json and named elements of the program in an .a11ytest tree, so a short artifact is found while it can still be taken again. The merge train's brief said not to wait for a pull request's checks, and the run was still in progress when the documents commit was made. Handed to 13.4-07, whose premise corrections name it: read the artifact once with gh run download into an empty scratchpad folder and a script run with py -I, re-run the job once with gh run rerun if a window falls short, and stop and report which windows if it still does, before 13.4-09 merges. Closed when the per-window counts on both channels are written in 13.4-07's summary under "The 0.9.17 baseline" | open |  | 2026-10-25T02:55:00.000Z |  |
 
 ````json
 [
@@ -12522,6 +12524,30 @@ last_updated: 2026-10-25T00:39:03.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-10-25T00:39:03.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 963,
+    "kind": "unrun-verify",
+    "phase": "13.4",
+    "file": "src/presentation/wx_app.rs",
+    "line": null,
+    "description": "13.4-06, 2026-10-24, for the tester's ear at 13.4-13's NVDA sitting, on a build holding 13.4-06's merge: with the Due now window left open, a message sent from his phone is announced when the next check brings it and the message list moves, both while the window is still open; and a question about an update that comes while the Due now window is open, if one can be staged, opens only after the Due now window is answered. The live test shows the tick running beside the real Due now window and five readings hold the seven windows to the queue; nobody has heard it. Closed when the tester has heard the first, and the second or a sentence saying it could not be staged",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T02:55:00.000Z",
+    "resolved_at": null
+  },
+  {
+    "id": 964,
+    "kind": "todo",
+    "phase": "13.4",
+    "file": ".planning/phases/13.4-the-wxdragon-move/13.4-06-SUMMARY.md",
+    "line": null,
+    "description": "13.4-06, 2026-10-24: the 0.9.17 baseline was not read before the plan ended. Its pull request #223's Accessibility run, 40155889217, artifacts accessibility-scan-results and accessibility-scan-program-log, kept until 2027-01-23, is the baseline 13.4-12 compares the 0.9.23 run against, and the plan's task 3 said to read it once, 49 windows each with entries in msaa-names.json and named elements of the program in an .a11ytest tree, so a short artifact is found while it can still be taken again. The merge train's brief said not to wait for a pull request's checks, and the run was still in progress when the documents commit was made. Handed to 13.4-07, whose premise corrections name it: read the artifact once with gh run download into an empty scratchpad folder and a script run with py -I, re-run the job once with gh run rerun if a window falls short, and stop and report which windows if it still does, before 13.4-09 merges. Closed when the per-window counts on both channels are written in 13.4-07's summary under \"The 0.9.17 baseline\"",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-10-25T02:55:00.000Z",
     "resolved_at": null
   }
 ]

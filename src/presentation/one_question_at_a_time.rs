@@ -99,9 +99,8 @@ impl Pending {
     /// Record that the question has been put, before the window opens.
     ///
     /// Before and not after, for the reason `raise_what_is_due` gives about
-    /// reminders: the window is modal and the event loop keeps running inside
-    /// it, so the tick that opened it happens again while somebody is still
-    /// reading it.
+    /// reminders: the tick that hands the window on keeps running while it is
+    /// open, so it happens again while somebody is still reading the question.
     pub fn raised(&mut self, question: &Question) {
         self.asked.extend(question.folders.iter().copied());
         self.waiting
@@ -656,8 +655,8 @@ mod tests {
 
     #[test]
     fn test_something_already_up_outranks_somebody_typing() {
-        // Both at once is a tick running inside a modal while an editor in the
-        // main window has focus. The stronger answer wins: nothing this look,
+        // Both at once is a tick running while a window it opened is up and an
+        // editor in the main window has focus. The stronger answer wins: nothing this look,
         // not "say it and hold the window" over a window somebody is reading.
         assert_eq!(
             whether_a_window_may_open(true, true),
