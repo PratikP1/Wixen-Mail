@@ -712,13 +712,15 @@ mod the_built_list {
         let outcome: Arc<Mutex<Option<Result<Harvest, String>>>> = Arc::new(Mutex::new(None));
         let result = {
             let outcome = outcome.clone();
-            wxdragon::main(move |app| {
+            wxdragon::main(move |_| {
                 let taken = Ok(read_the_list());
                 if let Ok(mut slot) = outcome.lock() {
                     *slot = Some(taken);
                 }
-                wxdragon::call_after(Box::new(move || {
-                    app.exit_main_loop();
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
                 }));
             })
         };

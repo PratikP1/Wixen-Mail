@@ -48,7 +48,7 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
     let found: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let found = found.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let tree = TreeCtrl::builder(&frame).build();
 
@@ -133,8 +133,10 @@ fn test_a_row_drawn_on_a_real_control_is_found_again_by_its_identity() {
             ));
 
             drop(said);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

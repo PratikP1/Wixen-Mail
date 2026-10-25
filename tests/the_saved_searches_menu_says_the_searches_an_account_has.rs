@@ -485,12 +485,16 @@ fn take_the_harvest() -> Result<Harvest, String> {
     let result = {
         let outcome = outcome.clone();
         let store_at = store_at.path().to_path_buf();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let settle = move |taken: Result<Harvest, String>| {
                 if let Ok(mut slot) = outcome.lock() {
                     *slot = Some(taken);
                 }
-                wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
+                }));
             };
             let frame = Frame::builder()
                 .with_title("The saved searches menu says the searches an account has, the reading")

@@ -635,7 +635,7 @@ fn test_how_long_the_settings_dialog_takes_to_build_and_which_part_takes_it() {
     let result = {
         let builds = builds.clone();
         let first_visits = first_visits.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
             let config = AppConfig::default();
@@ -658,8 +658,10 @@ fn test_how_long_the_settings_dialog_takes_to_build_and_which_part_takes_it() {
                 .collect();
             *first_visits.lock().expect("the visits") = visits;
             widgets.dialog.destroy();
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };
@@ -794,7 +796,7 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
     let wrong: Arc<Mutex<Vec<String>>> = Arc::default();
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().expect("the findings");
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
@@ -906,8 +908,10 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
 
             widgets.dialog.destroy();
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

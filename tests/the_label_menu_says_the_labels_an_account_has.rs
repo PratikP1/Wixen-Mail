@@ -447,7 +447,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
     let result = {
         let outcome = outcome.clone();
         let store_at = store_at.path().to_path_buf();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let taken = (|| {
                 let frame = Frame::builder()
                     .with_title("The label menu says the labels an account has, the reading")
@@ -465,8 +465,10 @@ fn take_the_harvest() -> Result<Harvest, String> {
             if let Ok(mut slot) = outcome.lock() {
                 *slot = Some(taken);
             }
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

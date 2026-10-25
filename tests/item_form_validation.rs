@@ -49,7 +49,7 @@ fn test_a_live_dialogs_own_fields_are_read_back_the_way_save_reads_them() {
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
@@ -168,8 +168,10 @@ fn test_a_live_dialogs_own_fields_are_read_back_the_way_save_reads_them() {
             widgets.dialog.destroy();
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

@@ -552,7 +552,7 @@ mod the_built_menu {
         let outcome: Arc<Mutex<Option<Result<TheActionMenu, String>>>> = Arc::new(Mutex::new(None));
         let result = {
             let outcome = outcome.clone();
-            wxdragon::main(move |app| {
+            wxdragon::main(move |_| {
                 let taken = (|| {
                     let frame = Frame::builder()
                         .with_title("Report as Junk is on the Action menu, the reading")
@@ -574,8 +574,10 @@ mod the_built_menu {
                 if let Ok(mut slot) = outcome.lock() {
                     *slot = Some(taken);
                 }
-                wxdragon::call_after(Box::new(move || {
-                    app.exit_main_loop();
+                wxdragon::call_after(Box::new(|| {
+                    if let Some(app) = wxdragon::get_app_instance() {
+                        app.exit_main_loop();
+                    }
                 }));
             })
         };

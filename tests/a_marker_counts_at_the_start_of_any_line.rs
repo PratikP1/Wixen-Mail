@@ -1289,7 +1289,7 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
     let outcome: Arc<Mutex<Result<(), Vec<String>>>> = Arc::new(Mutex::new(Ok(())));
     let result = {
         let outcome = outcome.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let widgets = wx_compose::build_compose_dialog(
                 &frame,
@@ -1402,8 +1402,10 @@ fn test_a_marker_typed_at_the_start_of_any_line_makes_its_structure() {
                         // destroyed dialog is an access violation.
                         ticker.stop();
                         browser.destroy_when_ready(dialog);
-                        wxdragon::call_after(Box::new(move || {
-                            app.exit_main_loop();
+                        wxdragon::call_after(Box::new(|| {
+                            if let Some(app) = wxdragon::get_app_instance() {
+                                app.exit_main_loop();
+                            }
                         }));
                     }
                 }

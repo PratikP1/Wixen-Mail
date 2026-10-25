@@ -728,7 +728,11 @@ fn run_the_reading() -> Result<WhatTheReadingSaw, String> {
                     // Stopped before its owner goes: a timer firing on a
                     // destroyed window is an access violation.
                     ticker.stop();
-                    wxdragon::call_after(Box::new(move || app.exit_main_loop()));
+                    wxdragon::call_after(Box::new(|| {
+                        if let Some(app) = wxdragon::get_app_instance() {
+                            app.exit_main_loop();
+                        }
+                    }));
                 }
             });
             ticker.start(TICK_MS, false);

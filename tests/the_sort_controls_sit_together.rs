@@ -126,7 +126,7 @@ fn test_then_by_is_the_tab_stop_after_default_sort_order() {
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let mut wrong = wrong.lock().unwrap();
             let frame = Frame::builder().build();
             let a11y = Arc::new(Accessibility::new().expect("accessibility"));
@@ -208,8 +208,10 @@ fn test_then_by_is_the_tab_stop_after_default_sort_order() {
             planted.destroy();
 
             drop(wrong);
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };

@@ -84,7 +84,7 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
     let wrong: Arc<Mutex<Wrong>> = Arc::new(Mutex::new(Vec::new()));
     let result = {
         let wrong = wrong.clone();
-        wxdragon::main(move |app| {
+        wxdragon::main(move |_| {
             let frame = Frame::builder().build();
             let a11y = Accessibility::new().expect("accessibility");
             let widgets = build_account_manager_dialog(&frame, &[], None, None, None);
@@ -255,8 +255,10 @@ fn test_the_four_immediate_actions_mutate_state_and_report_correctly() {
 
             *wrong.lock().unwrap() = into;
 
-            wxdragon::call_after(Box::new(move || {
-                app.exit_main_loop();
+            wxdragon::call_after(Box::new(|| {
+                if let Some(app) = wxdragon::get_app_instance() {
+                    app.exit_main_loop();
+                }
             }));
         })
     };
