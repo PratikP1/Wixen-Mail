@@ -801,6 +801,19 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **The window toolkit moved to its newest release, wxWidgets 3.3.4 (2026-10-25, SHIP-05).**
+  Wixen Mail draws its windows with wxWidgets, through a Rust layer over it, and both moved from
+  the versions it had used since July, wxWidgets 3.3.2 among them, to their newest releases. Two
+  parts of the toolkit the program never used, docking panes and a rich text editor, are no
+  longer built into it, so the program file is about 1 MB smaller: 50,409,472 bytes before and
+  49,431,040 after, for the release build. The program's web client and the library that packs
+  cached message text each moved up one small version with it; message text already cached
+  reads as before. Nothing you see or hear is meant to change apart from the fix under Fixed.
+  The automated scan read all 49 windows it opens and found the same number of controls, and of
+  named ones, on both of the channels screen readers read as before the move; whether each name
+  is word for word the same is being compared window by window before the next build is handed
+  out. Known limitations: Wixen Mail now builds on Linux and macOS, which it had never been shown
+  to do, but its tests do not pass there yet and nobody has run it on either.
 - **Windows that open on their own now wait for the main window's regular check to finish
   (2026-10-24, MAIL-04).** Wixen Mail checks for news twenty times a second, and seven windows
   could open from inside that check: the Due now window, the question about folders a server no
@@ -1493,6 +1506,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   last line alone, and before its window opens, the few lines waiting for it.
 
 ### Fixed
+
+- **Quitting just after a message preview or a conversation window appears no longer ends the
+  program with an error (2026-10-25, SHIP-05).** The message preview and the conversation window
+  are web pages that Windows' Edge component builds for the program, which takes about a quarter
+  of a second, and longer just after Edge has updated. A window holding one that closed while it
+  was still being built, quitting at that moment among others, made the program end with error
+  0xc000041d instead of closing normally. The new toolkit (see Changed) fixes this in wxWidgets
+  itself. Tested ten times each way on 2026-10-25: before the move, ten closes out of ten ended
+  with that error; after it, none did. The Compose and Preview Before Send windows already waited
+  for their page before closing, so they were never affected, and that wait can now go. Two
+  smaller toolkit defects are fixed by the same move: reading a list's cell back lost its last
+  character, and a tree let go of nothing a row held when the row was deleted. Neither changed
+  what you hear, because Wixen Mail never relied on either, but tests can now check list text
+  exactly. Two security advisories against a library the toolkit used while the program was being
+  built, never inside the program itself, no longer apply.
 
 - **While your mail server cannot be reached, automatic saving no longer says every minute that
   the server would not take your draft (2026-10-24, FOUND-04).** Wixen Mail saves a draft once a

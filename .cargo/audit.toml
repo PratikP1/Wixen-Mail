@@ -38,31 +38,25 @@ ignore = [
     # applying as a side effect of an unrelated upgrade, and they would have gone
     # on sitting here silencing four advisory ids indefinitely.
 
-    # quick-xml denial of service, reached only through wxdragon-macros.
-    # That is a proc macro: it runs at compile time and never sees network
-    # data, so neither issue is reachable in a shipped binary. The other
-    # quick-xml in Cargo.lock is a separate, fixed 0.41.0, and it arrives with
-    # phonenumber 0.3.10, which names it as both a dependency and a build
-    # dependency; nothing in this program calls it. Corrected on 2026-10-18
-    # (13.2-30, audit #50): until then this said the 0.41 read CalDAV
-    # responses, and it never did. CalDAV is parsed by hand in `service::caldav`.
-    # Clears when wxdragon updates its macro crate. Accepted on 2026-07-26,
-    # the day this file was written; on 2026-09-14 Cargo.lock still resolves
-    # wxdragon-macros 0.9.17 over quick-xml 0.38.4, so the condition has not
-    # been met. The date is here so the next reader knows how long it has
-    # stood rather than reading it as recent.
-    "RUSTSEC-2026-0194",
-    "RUSTSEC-2026-0195",
+    # Two entries went on 2026-10-25, in the commit that moved wxDragon from
+    # 0.9.17 to 0.9.23 (13.4-09), which was the exit condition they were
+    # accepted under on 2026-07-26. RUSTSEC-2026-0194 and RUSTSEC-2026-0195
+    # were a quick-xml denial of service, reached only through the proc macro
+    # wxdragon-macros 0.9.17 and its quick-xml 0.38.4. wxdragon-macros 0.9.23
+    # asks for quick-xml 0.42.0, and the unsuppressed audit over the new lock
+    # no longer reports either id.
 
     # paste 1.0.15, unmaintained, no known vulnerability. Note that cargo audit
     # does not fail on an unmaintained warning without `-D warnings`, so this
     # entry has never changed an exit status. What it does is keep the warning
     # out of the output, which is why it still has to be checked: an entry that
     # silences a line is an entry that can silence the wrong line later.
-    # Accepted on 2026-07-26 with the two above. `cargo tree -i paste` on
-    # 2026-09-14 names two roots, wxdragon 0.9.17 and the boa crates behind a
-    # dev-dependency, so it clears when both stop pulling paste in, and
-    # neither has since it was accepted.
+    # Accepted on 2026-07-26 with the two quick-xml entries that went on
+    # 2026-10-25. `cargo tree -i paste` on 2026-09-14 named two roots,
+    # wxdragon 0.9.17 and the boa crates behind a dev-dependency; wxdragon
+    # 0.9.23 still asks for paste in its own manifest, read on 2026-10-25, so
+    # it clears when both stop pulling paste in, and neither has since it was
+    # accepted.
     "RUSTSEC-2024-0436",
 
     # atomic-polyfill 1.0.3, unmaintained, no known vulnerability and no patch.

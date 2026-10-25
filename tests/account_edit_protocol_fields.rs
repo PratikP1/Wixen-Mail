@@ -13,6 +13,12 @@
 //! `tests/theme_reach.rs`'s own file comment gives: wxWidgets supports
 //! exactly one application per process, and `cargo test` runs each file
 //! under `tests/` as its own process.
+//!
+//! Windows only, like every target here that reads a window through Win32:
+//! the names it reads are MSAA's, through `oleacc`, which no other platform
+//! has, and the run of 2026-10-25 on macOS failed to link it for `user32`.
+
+#![cfg(windows)]
 
 use std::ffi::c_void;
 use std::sync::{Arc, Mutex};

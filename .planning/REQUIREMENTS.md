@@ -2069,6 +2069,24 @@ write path added by this milestone passes through that gate.
     `build-installer.sh:170` and linted separately at `ci.yml:150` to 153, and it is a Windows
     COM server. "The crate builds on Linux" means the main crate only, and the plan should say
     so rather than leave somebody to find out.
+    2026-10-25, 13.4-09, the move to wxDragon 0.9.23: the crate now builds on Linux and on
+    macOS, every target, and its tests do not yet pass on either. 0.9.23 makes wxdragon's
+    `accessible` module Windows only, so `names.rs` attaches its object through one function
+    behind a Windows gate with a fallback that does nothing, and the six test lines that ask
+    for the object carry the same gate (`6d62bb4e`). The first dispatch of `other-platforms.yml`
+    ever, run 40169878263 on the branch, failed to build on both: Linux at `alsa-sys`, which
+    needs ALSA's headers, and macOS linking two test targets whose Win32 link blocks had no
+    Windows gate; `755424d3` added `libasound2-dev` to the apt step and `#![cfg(windows)]` to
+    the two targets, a pair whose red is that run. Run 40171949117 at `755424d3`: `cargo build
+    --all-targets` succeeded on ubuntu-24.04 and on macos-26-arm64; `cargo test --all-targets
+    --no-fail-fast` failed on both, Linux 10,589 passed and 45 failed, macOS 10,549 passed and 7
+    failed with 25 targets ending on SIGTRAP, the counts and images on ledger 323. Nothing was
+    put to Pratik under 13.4-09's premise 10, since both compile failures were the gate-shaped
+    and package-shaped kind it fixes. The evidence sentence above that says `wxdragon` is
+    pinned at `=0.9.17` with the `aui`, `richtext` and `webview` features was true until this
+    date; since `6d62bb4e` it is `=0.9.23`, building wxWidgets 3.3.4, with `webview` and the
+    crate's default features only. No `[D]` clause is added and the box stays open: the tests
+    do not pass, and closing it is Pratik's.
 
   - [S] Roadmap Cross-Platform, unticked.
   - [D] A CI job builds the crate and runs the test suite on Linux, and another on macOS, so a
@@ -8548,7 +8566,7 @@ Declined on purpose. Each is a decision recorded in the sources, not an omission
 | SHIP-02 | Phase 7 | Pending; phase 13.2, planned 2026-10-14: 13.2-16, adding no `[D]` clause; 13.2-16 done 2026-10-16, the update check requires this project's certificate profile beside its name, the identifier empty until Pratik's signing account gives it, ledger 870; phase 13.3: 13.3-23 done 2026-10-23, nothing fetched while no installer could pass, a check at start opens no window, one check at a time, limits on a stalled connection, adding no `[D]` clause, ledger 944; 13.3-24 done 2026-10-23, Yes to an update quits the way Quit does, the control names about 15 MB held to the measured size, adding no `[D]` clause, ledger 945 and 946 |
 | SHIP-03 | Phase 7 | Complete |
 | SHIP-04 | Phase 7 | Complete |
-| SHIP-05 | Phase 7 | Pending |
+| SHIP-05 | Phase 7 | Pending; phase 13.4: 13.4-09 done 2026-10-25, the move to wxDragon 0.9.23 with the `accessible` module's uses behind Windows gates; the first dispatches of Other platforms, runs 40169878263 and 40171949117, show the crate building on Linux and macOS after `755424d3` and its tests not yet passing on either (ledgers 323 and 324), adding no `[D]` clause |
 | SHIP-06 | Phase 7 | Complete |
 | PERF-01 | Phase 8 | Complete, on the reading the evidence states, pending Pratik's word |
 | PERF-02 | Phase 8 | Complete |

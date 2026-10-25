@@ -21,6 +21,11 @@
 //!
 //! One window session, behind a `OnceLock`: `cargo test` gives this file a
 //! process of its own, and a second `wxdragon::main` in one process hangs.
+//!
+//! Windows only, like every target here that drives a window through Win32:
+//! it presses keys with `user32` and `kernel32`, which no other platform has.
+
+#![cfg(windows)]
 
 use std::fs;
 use std::sync::{Arc, Mutex, OnceLock};

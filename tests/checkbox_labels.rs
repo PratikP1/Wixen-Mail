@@ -92,6 +92,8 @@ const A_STATIC_TEXT: &str = "wxStaticText";
 /// Windows picks when it names what follows from the nearest static.
 fn what_is_wrong_with_an_editor_checkbox(tick: &CheckBox) -> Vec<String> {
     let mut wrong = Vec::new();
+    // wxdragon has the accessible object on Windows only, since 0.9.23.
+    #[cfg(target_os = "windows")]
     if tick.get_accessible().is_none() {
         wrong.push(
             "carries no accessible object, so on the channel NVDA reads its name is whatever \

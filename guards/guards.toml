@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 967 records have arrived since and have not been through it.
+# 968 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -24593,6 +24593,16 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
 # with the break applied: exactly this one test failed.
+#
+# Measured again on 2026-10-25 by 13.4-09 at wxDragon 0.9.23, through
+# `scripts/guards.sh --remeasure` and then by hand: the same one test fails,
+# for a different reason. wxWidgets 3.3.4 no longer crashes when the window
+# goes first, and the browser of a destroyed window never reports, so the live
+# half's way out, which waits for that report, never comes; its 60-second
+# give-up exits 2 ("the live half died: exit code 2"). So the record now holds
+# that the watch is still in the path, not that the crash is still there;
+# `tests/a_browser_closed_while_it_is_made_ends_the_program_cleanly.rs` holds
+# the crash's absence, and 13.4-10 retires the watch and this record with it.
 
 [[guard]]
 name = "a window handed over before its browser exists is not destroyed until the browser reports"
@@ -30531,28 +30541,19 @@ tests_last_seen = [
     { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
 ]
 
-# The check's timer belongs to the page. The frame owns the window's way back,
-# and a timer event reaches every tick handler bound on its owner, so a timer
-# on the frame runs the way back on its first tick and opens the conversation
-# again over a window still showing. The break gives the timer to the frame;
-# the reading's way-back count is what goes red, which is what says that
-# assertion can fail. The way back in the reading is a counter, so the break
-# opens nothing.
-#
-# Measured 2026-09-23 through `scripts/guards.sh --remeasure`, the target named.
-[[guard]]
-name = "the keyboard check's timer is the page's and never runs the window's way back"
-file = "src/presentation/page_focus.rs"
-suite = "the_page_window_keeps_the_document_focused_when_it_comes_back"
-before = """    let check = std::rc::Rc::new(Timer::new(page));"""
-after = """    let check = std::rc::Rc::new(Timer::new(frame));"""
-red = [
-    "test_the_page_takes_the_keyboard_back_when_the_window_restored_it_to_itself",
-]
-tests_last_seen = [
-    { file = "src/presentation/page_focus.rs", tests = 7 },
-    { file = "tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs", tests = 4 },
-]
+# Retired on 2026-10-25 by 13.4-09, at the move to wxDragon 0.9.23: "the
+# keyboard check's timer is the page's and never runs the window's way back",
+# written 2026-09-23. Its break gave the check's timer to the frame instead of
+# the page, and at 0.9.17 a timer event reached every tick handler bound on its
+# owner, so a timer on the frame ran the window's way back on its first tick.
+# At 0.9.23 a timer reaches only its own handler, and the break reddens
+# nothing: measured through `scripts/guards.sh --remeasure` at 0.9.23, rebuild
+# 25 s, run 7 s, "1 of 1 named test stayed green with the guard broken". What
+# holds the rule now is the toolkit, which no longer routes one timer's tick to
+# another's handler; the reading's way-back count stays in
+# `tests/the_page_window_keeps_the_document_focused_when_it_comes_back.rs`
+# under the record above. The page focus comment that explains the old routing
+# is 13.4-11.1's to rewrite.
 
 # Every text an NVDA case waits for is held to a place in shipped source that
 # says it (FOUND-22, 12-03.1). The break makes the predicate that decides
@@ -45804,4 +45805,44 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
+]
+
+# A list cell reads back whole (13.4-09, ledgers 28 and 159). wxdragon 0.9.17
+# lost every cell's last character to a NUL, and the move to 0.9.23 is the
+# fix; no edit to this tree can put the old toolkit back, so the break puts
+# back the expectation the tree held at 0.9.17 instead, a cell one character
+# shorter than its text. Measured by hand on 2026-10-25 at 0.9.23: the one
+# live test failed on the list cell alone, its two tree checks still clean.
+[[guard]]
+name = "a list cell is held to its whole text, not to the text with its last character lost"
+file = "tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs"
+suite = "a_list_cell_reads_whole_and_a_tree_frees_its_rows"
+before = '''    (read_back != A_CELL_SAYS).then(|| {'''
+after = '''    (read_back.len() + 1 != A_CELL_SAYS.len()).then(|| {'''
+red = [
+    "test_a_list_cell_reads_whole_and_a_tree_frees_what_its_rows_held",
+]
+tests_last_seen = [
+    { file = "tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs", tests = 1 },
+]
+
+# The lock holds the three wxDragon crates at one version (13.4-09). The break
+# makes the check accept every lock, the red body it was committed with. The
+# two planted locks go red and the real lock stays green. Measured by hand on
+# 2026-10-25 at 0.9.23.
+[[guard]]
+name = "a lock holding the wxDragon crates at two versions, or missing one, is refused"
+file = "tests/the_three_wxdragon_crates_are_locked_together.rs"
+suite = "the_three_wxdragon_crates_are_locked_together"
+before = '''fn why_the_lock_is_refused(lock: &str) -> Option<String> {
+    let read: toml::Value = match toml::from_str(lock) {'''
+after = '''fn why_the_lock_is_refused(lock: &str) -> Option<String> {
+    return None;
+    let read: toml::Value = match toml::from_str(lock) {'''
+red = [
+    "test_a_lock_missing_a_wxdragon_crate_is_refused",
+    "test_a_lock_with_the_wxdragon_crates_at_two_versions_is_refused",
+]
+tests_last_seen = [
+    { file = "tests/the_three_wxdragon_crates_are_locked_together.rs", tests = 3 },
 ]

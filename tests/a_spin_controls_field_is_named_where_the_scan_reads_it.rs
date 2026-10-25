@@ -89,6 +89,24 @@ const THE_READER_PROCESS: &str = "the_reader_process_reads_each_field_it_is_hand
 const A_FIELD_HEARD: &str = "HEARD\t";
 const A_FIELD_REPORTED: &str = "FIELD\t";
 const A_FAILURE: &str = "FAILED\t";
+const A_STEP_REACHED: &str = "REACHED\t";
+/// The line each child prints last, which says it finished: the reader's is
+/// libtest's own, and the window process, which ends itself, prints its own.
+const THE_READER_PASSED: &str = "test result: ok. 1 passed";
+const THE_READING_PRINTED: &str = "PRINTED\tthe whole reading";
+
+/// Say on stdout that the window process got as far as `step`, with the
+/// time, so a parent that has to stop it can say where it stopped. A window
+/// process at wxDragon 0.9.23 ran past its parent's 180 seconds on GitHub's
+/// runner under the not-readied condition, twice on 2026-10-25, and never
+/// here; the parent then had nothing to say but that.
+fn reached(step: &str) {
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_millis())
+        .unwrap_or_default();
+    println!("{A_STEP_REACHED}{step}\t{at}");
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -493,11 +511,13 @@ fn answer_waiting_messages() {
 }
 
 /// Start `test` of this binary as a child with `env` set, answering this
-/// thread's messages while it runs, and hand back what it printed.
+/// thread's messages while it runs, and hand back what it printed once it
+/// has printed `done`, the line that says it finished.
 fn run_a_child(
     test: &str,
     env: (&str, String),
     at_most: std::time::Duration,
+    done: &str,
 ) -> Result<String, String> {
     let me = std::env::current_exe().map_err(|why| format!("current_exe: {why}"))?;
     let mut child = std::process::Command::new(me)
@@ -516,16 +536,34 @@ fn run_a_child(
     // The child's reads are messages to this thread's windows, so they are
     // answered here while it runs; a parent that only waited would never let
     // it finish. The output is drained on a thread of its own so a full pipe
-    // cannot stall the child.
+    // cannot stall the child, a line at a time into a buffer this thread can
+    // also read, so a child that never finishes still says how far it got.
+    //
+    // What it printed is read from that buffer rather than by joining the
+    // thread, so a pipe some other process still holds open after the child
+    // ends cannot hold this up either.
     let mut out = child.stdout.take();
-    let drained = std::thread::spawn(move || {
-        let mut printed = String::new();
-        if let Some(out) = out.as_mut() {
-            use std::io::Read;
-            let _ = out.read_to_string(&mut printed);
-        }
-        printed
-    });
+    let so_far = Arc::new(Mutex::new(String::new()));
+    let printed_so_far = || {
+        so_far
+            .lock()
+            .map(|printed| printed.clone())
+            .unwrap_or_default()
+    };
+    {
+        let so_far = so_far.clone();
+        std::thread::spawn(move || {
+            if let Some(out) = out.as_mut() {
+                use std::io::BufRead;
+                for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                    if let Ok(mut printed) = so_far.lock() {
+                        printed.push_str(&line);
+                        printed.push('\n');
+                    }
+                }
+            }
+        });
+    }
     let deadline = std::time::Instant::now() + at_most;
     let finished = loop {
         answer_waiting_messages();
@@ -533,16 +571,22 @@ fn run_a_child(
             Ok(Some(status)) => break Ok(status),
             Ok(None) if std::time::Instant::now() > deadline => {
                 let _ = child.kill();
-                break Err(format!("{test} was still running after {at_most:?}"));
+                break Err(format!(
+                    "{test} was still running after {at_most:?}, having printed:\n{}",
+                    printed_so_far()
+                ));
             }
             Ok(None) => std::thread::sleep(std::time::Duration::from_millis(5)),
             Err(why) => break Err(format!("waiting for {test}: {why}")),
         }
     }?;
-    let printed = drained
-        .join()
-        .map_err(|_| format!("reading {test}'s output panicked"))?;
-    if !finished.success() || !printed.contains("test result: ok. 1 passed") {
+    // The child has ended; give its last lines a moment to come through.
+    let read_until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !printed_so_far().contains(done) && std::time::Instant::now() < read_until {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    let printed = printed_so_far();
+    if !finished.success() || !printed.contains(done) {
         return Err(format!("{test} ran no reading ({finished}):\n{printed}"));
     }
     Ok(printed)
@@ -554,6 +598,7 @@ fn run_a_child(
 fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     if readied {
         ready_the_annotation_store();
+        reached("the store readied");
     }
     let frame = Frame::builder().build();
     if !WebView::is_backend_available(WebViewBackend::Edge) {
@@ -567,6 +612,7 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     let preview = WebView::builder(&frame)
         .with_backend(WebViewBackend::Edge)
         .build();
+    reached("the preview built");
     let a11y =
         Arc::new(Accessibility::new().map_err(|why| format!("Accessibility::new failed: {why}"))?);
 
@@ -596,6 +642,7 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
     let bare_dialog = Dialog::builder(&frame, "Bare").build();
     let bare = SpinCtrl::builder(&bare_dialog).with_range(0, 9).build();
     set_accessible_name(&bare, BARE_WORDS);
+    reached("the dialogs built and named");
 
     let windows = [
         (SEND_LATER.0, send_later.get_handle() as isize),
@@ -613,16 +660,24 @@ fn build_name_and_read(readied: bool) -> Result<Vec<String>, String> {
             ));
         }
     }
+    reached("the reader starting");
     let printed = run_a_child(
         THE_READER_PROCESS,
         (THE_FIELDS_TO_READ, list),
         std::time::Duration::from_secs(60),
+        THE_READER_PASSED,
     );
+    reached(if printed.is_ok() {
+        "the reader finished"
+    } else {
+        "the reader failed"
+    });
 
     send_later.destroy();
     form.dialog.destroy();
     bare_dialog.destroy();
     preview.destroy();
+    reached("the windows destroyed");
 
     Ok(printed?
         .lines()
@@ -646,36 +701,31 @@ fn the_window_process_builds_names_and_has_its_fields_read() {
     let Ok(condition) = std::env::var(THE_CONDITION) else {
         return;
     };
-    let outcome: Arc<Mutex<Option<Reported>>> = Arc::new(Mutex::new(None));
-    let result = {
-        let outcome = outcome.clone();
-        wxdragon::main(move |_| {
-            let taken = build_name_and_read(condition == READIED);
-            if let Ok(mut slot) = outcome.lock() {
-                *slot = Some(taken);
-            }
-            wxdragon::call_after(Box::new(|| {
-                if let Some(app) = wxdragon::get_app_instance() {
-                    app.exit_main_loop();
-                }
-            }));
-        })
-    };
-    let taken = match result {
-        Err(why) => Err(format!("wxdragon::main returned {why:?}")),
-        Ok(()) => outcome
-            .lock()
-            .map_err(|_| "the outcome's lock was poisoned".to_string())
-            .and_then(|mut slot| {
-                slot.take().unwrap_or_else(|| {
-                    Err("the window session ended without a reading".to_string())
-                })
-            }),
-    };
+    let result = wxdragon::main(move |_| {
+        report(build_name_and_read(condition == READIED));
+        // The process ends here, inside on_init, rather than by returning to
+        // the event loop and ending it from a queued call. On GitHub's runner
+        // at wxDragon 0.9.23, one of the two window processes running side by
+        // side came back from on_init and never reached idle, where the queued
+        // end waited, in each of three runs on 2026-10-25, the readied one in
+        // one of them; no window of the process was showing (ledger 966). The
+        // reading is printed by then, and nothing after it is this test's.
+        std::process::exit(0);
+    });
+    report(Err(format!(
+        "wxdragon::main returned {result:?} without running the reading"
+    )));
+}
+
+/// Print what the window process found, and then the line that says it is
+/// all printed, which the parent waits for.
+fn report(taken: Reported) {
     match taken {
         Ok(lines) => lines.iter().for_each(|line| println!("{line}")),
         Err(why) => println!("{A_FAILURE}{}", why.replace('\n', " | ")),
     }
+    println!("{THE_READING_PRINTED}");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
 // ── The tests ──────────────────────────────────────────────────────────────
@@ -702,6 +752,7 @@ fn take_a_reading(condition: &'static str) -> Reading {
         THE_WINDOW_PROCESS,
         (THE_CONDITION, condition.to_string()),
         std::time::Duration::from_secs(180),
+        THE_READING_PRINTED,
     )?;
     if let Some(failed) = printed.lines().find_map(|line| line.split_once(A_FAILURE)) {
         return Err(failed.1.to_string());
