@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 969 records have arrived since and have not been through it.
+# 976 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -25636,22 +25636,18 @@ tests_last_seen = [
 #
 # Measured 2026-09-16 on the branch the record was written on,
 # `cargo test --test checkbox_labels`: four rows in the one complaint.
-[[guard]]
-name = "a checkbox in an editor grid is named outright, not left to the fallback"
-file = "src/presentation/wx_managers.rs"
-suite = "checkbox_labels"
-before = """    let check = CheckBox::builder(parent).with_label(label).build();
-    set_accessible_name(&check, &name_from_label(label));
-    leave_the_cell_empty(sizer);"""
-after = """    let check = CheckBox::builder(parent).with_label(label).build();
-    leave_the_cell_empty(sizer);"""
-red = [
-    "test_every_check_box_in_a_form_carries_its_own_label",
-]
-tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/checkbox_labels.rs", tests = 1 },
-]
+#
+# Retired 2026-10-25 by 13.4-12: the record "a checkbox in an editor grid is
+# named outright, not left to the fallback" stood here. Its four rows were the
+# target asking whether an accessible object was attached, which wxWidgets
+# 3.3.4 can answer yes to with no name set. The target now reads each editor
+# checkbox's name over MSAA and compares it with the label's words, and with
+# the naming call taken out the names read are the same words, "Case
+# Sensitive" and "Enabled" among them: Windows names a checkbox that set no
+# name from its own label, now that no empty static text sits before it. So
+# the break reddens nothing and the call is not what names these boxes on
+# MSAA. The call stays, harmless, and the spacer record below still guards
+# the half of the rule a reading can see.
 
 # The other half of the same rule, on the box the tester reported on the
 # contact editor's Basic tab (#40, point 5). The break puts the spacer back
@@ -45855,4 +45851,213 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/the_three_wxdragon_crates_are_locked_together.rs", tests = 3 },
+]
+
+# The contact editor's Prefix and Suffix boxes are named by the label built
+# before each (13.4-12), deliberately not by an object of ours (pull request
+# #99), and the label's words reach the Edit inside the box, where the
+# keyboard lands, on both channels. The break builds the label empty. Measured
+# by hand on 2026-10-25 at 0.9.23: both typing fields read "" on MSAA and on
+# UI Automation from the reader process, where they read "Prefix:" and
+# "Suffix:". Removing the Category box's naming call instead reddens nothing,
+# because its label "Cate&gory" names it with the same words.
+[[guard]]
+name = "an editable combo box in the contact editor is named where typing lands by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "an_editable_combo_box_is_named_where_typing_lands"
+before = '''    let lbl = StaticText::builder(parent).with_label(label).build();
+    let field = ComboBox::builder(parent)'''
+after = '''    let lbl = StaticText::builder(parent).with_label("").build();
+    let _ = label;
+    let field = ComboBox::builder(parent)'''
+red = [
+    "test_every_editable_combo_box_is_named_where_typing_lands_on_both_channels",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/an_editable_combo_box_is_named_where_typing_lands.rs", tests = 5 },
+]
+
+# The six lists the manager dialogs name, read over MSAA and compared with the
+# code's words (13.4-12), where the target used to ask only whether an
+# accessible object was attached. Each break takes one naming call out.
+# Measured by hand on 2026-10-25 at 0.9.23, `cargo test --test
+# manager_dialog_labels`, one row each in the one complaint: without its call a
+# list reads its label as Windows falls back to it, "Match Field:", "Match
+# Type:" and "Action:", and the shell's list, which has no label, reads "" in
+# both the rule manager and the condition manager.
+[[guard]]
+name = "the filter editor's Match Field list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    // Through the shared builder, which the condition editor reads too.
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
+    set_accessible_name(&field_choice, "Match field");'''
+after = '''    // Through the shared builder, which the condition editor reads too.
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the filter editor's Match Type list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&match_choice, "Match type");
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    let action_label'''
+after = '''    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    let action_label'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the filter editor's Action list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();
+    set_accessible_name(&action_choice, "Action");'''
+after = '''    let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the condition editor's Match Field list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''        .with_label("Match &Field:")
+        .build();
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
+    set_accessible_name(&field_choice, "Match field");'''
+after = '''        .with_label("Match &Field:")
+        .build();
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the condition editor's Match Type list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&match_choice, "Match type");
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    sizer.add_sizer('''
+after = '''    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    sizer.add_sizer('''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "a manager window's list is named for what it holds"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&list, holds);
+    // Empty until there is something to say, not a space: an empty label is'''
+after = '''    let _ = holds;
+    // Empty until there is something to say, not a space: an empty label is'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+# The filter editor's value box is named for the label showing beside it, and
+# the name follows the label when the action changes (#62, 13.4-12). The
+# target reads the name over MSAA on a new rule and on a stored Say this first
+# rule. The break takes out the call that follows the label. Measured by hand
+# on 2026-10-25 at 0.9.23: the Say this first box reads "Action Value," where
+# the code sets "Phrase to say first,". Taking out the box's first naming call
+# instead reddens nothing, because the following call names the box again
+# before the dialog is shown.
+[[guard]]
+name = "the rule editor's value box is named for the label showing beside it"
+file = "src/presentation/wx_managers.rs"
+suite = "a_rule_can_change_how_a_row_is_announced"
+before = '''        value_label.set_label(label);
+        set_accessible_name(&action_value_f, &name_from_label(label));'''
+after = '''        value_label.set_label(label);'''
+red = [
+    "test_the_editor_offers_the_action_and_the_sound_and_reads_a_stored_rule_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
 ]
