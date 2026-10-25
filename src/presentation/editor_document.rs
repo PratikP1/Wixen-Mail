@@ -1662,10 +1662,14 @@ impl Format {
             Self::Heading3 => "Heading &3",
             Self::Paragraph => "&Normal Text",
             Self::BulletList => "Bulleted &List",
-            Self::NumberedList => "N&umbered List",
+            // M, Thunderbird's letter for it, because U is Underline's and N
+            // is Normal Text's on the Format menu (ledger 972).
+            Self::NumberedList => "Nu&mbered List",
             Self::Quote => "&Quote",
             Self::RemoveFormatting => "Remove &Formatting",
-            Self::Undo => "U&ndo",
+            // O, because U is Underline's and N is Normal Text's on the Format
+            // menu, and D is Delete's in the text menus people know (ledger 972).
+            Self::Undo => "Und&o",
             Self::Redo => "&Redo",
         };
         format!("{name}\t{}", self.shortcut())

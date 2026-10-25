@@ -480,16 +480,17 @@ pub struct WxUIState {
     /// Every row of the folder tree, in the order it was appended.
     ///
     /// This is the parallel vector, and it is deliberately here rather than
-    /// hung off the control. `wxdragon`'s tree item data goes into a
-    /// process-global map: `store_item_data` inserts into a static registry,
-    /// `delete_all_items` does not clear it, and `cleanup_all_custom_data`
-    /// returns early on any item with no children, so it never clears a leaf
-    /// and every folder row is a leaf. This tree is rebuilt on every sync, on a
-    /// timer, so keying rows on the control would leak one entry per folder per
-    /// sync for the life of the process.
+    /// hung off the control. The rebuild appends to it and `collect_rows`
+    /// reads the built tree back, both depth first, so the two line up by
+    /// position and a row's identity is plain data this program owns.
     ///
-    /// `collect_rows` walks the built tree depth first and the rebuild appends
-    /// depth first, so `collect_rows`'s items and this line up by position.
+    /// It was first kept here because `wxdragon`'s tree item data lived in a
+    /// process-global registry that a rebuilt tree never cleared, which on a
+    /// tree rebuilt every sync leaked one entry per folder per sync. wxdragon
+    /// 0.9.22 frees each row's entry before the row goes (upstream #214 and
+    /// #215), and `tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs`
+    /// holds that. The vector stays because one vector read by position is
+    /// simpler than a toolkit registry, not because the registry leaks.
     pub tree_rows: Vec<crate::presentation::folder_tree::TreeRow>,
     pub messages: Vec<MessageItem>,
     /// Whether the list is drawing one row per message or one per conversation.
@@ -13173,7 +13174,7 @@ pub fn the_chosen_rows_have_unread(s: &WxUIState, rows: &[usize]) -> Option<bool
 /// change under the label. The context menu is not set here: it is built at
 /// the moment the menu key is pressed, from the same state. Nothing selected
 /// keeps the unread form, which is what the surfaces are built with. The
-/// toolbar's text goes through `toolbar_text`, because wxdragon 0.9.17
+/// toolbar's text goes through `toolbar_text`, because wxdragon 0.9.23
 /// offers no relabel for a tool.
 fn refresh_mark_read_wording(
     frame: &Frame,
@@ -15535,7 +15536,7 @@ impl PageHost {
     /// The second line behind the page's listener: a navigation this window
     /// did not ask for is stopped, and a new window is never opened.
     ///
-    /// Neither reads an address. wxdragon 0.9.17 hands a navigating event
+    /// Neither reads an address. wxdragon 0.9.23 hands a navigating event
     /// the command event's string, which is empty for it, so the veto that
     /// stood here until 2026-09-20 and keyed on that string being non-empty
     /// vetoed nothing, ever (#80). What can be read is whether the event is

@@ -15,7 +15,7 @@
 //! (`src/msw/window.cpp`, the `WM_KEYDOWN` and `WM_CHAR` cases). Under
 //! wxdragon "not skipped" is not the same as "did not call skip": the
 //! dispatcher resets `Skip(true)` before every closure it calls
-//! (`wxdragon-sys-0.9.17/cpp/src/event.cpp:379`) and treats the event as
+//! (`wxdragon-sys-0.9.23/cpp/src/event.cpp:464`) and treats the event as
 //! consumed only when the closure cleared it. A closure that says nothing
 //! therefore leaves the event skipped, the char reaches the control, and the
 //! search gets the letter. The handler here calls `event.skip(false)` for a

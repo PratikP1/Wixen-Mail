@@ -11,11 +11,11 @@
 //! The two moments, each its own live half:
 //!
 //! - a window holding a browser destroyed at once, with the event loop kept
-//!   alive long enough for the reply to arrive. `presentation::browser_ready`
-//!   holds this off in the program today by hiding such a window and
-//!   destroying it only when the browser reports; this half uses no
-//!   `BrowserReady`, because what it asks is whether the toolkit still needs
-//!   one, which is 13.4-10's question;
+//!   alive long enough for the reply to arrive. Until 13.4-10 the program
+//!   held this off by hiding such a window and destroying it only when the
+//!   browser reported; this half waits for nothing, because what it asked
+//!   was whether the toolkit still needed that, and the answer let Compose
+//!   and Preview Before Send close at once;
 //! - the program ended while a browser is being made, the case of somebody
 //!   who quits within a quarter of a second of the main window's preview or
 //!   a conversation window appearing.

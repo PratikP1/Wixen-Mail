@@ -7,8 +7,8 @@
 //! after General are built the first time their tab is shown, and the dialog
 //! painted their empty panels with the theme before that. wxWidgets hands a
 //! parent's foreground colour to every child created after it
-//! (`src/common/wincmn.cpp:1524-1552`) and makes a checkbox given a colour
-//! owner-drawn (`src/msw/control.cpp:422-444`), so its `BS_CHECKBOX` style
+//! (`src/common/wincmn.cpp:1598-1626`) and makes a checkbox given a colour
+//! owner-drawn (`src/msw/control.cpp:406-428`), so its `BS_CHECKBOX` style
 //! became `BS_OWNERDRAW`, which Windows' standard accessible object reports as
 //! a push button with no checked state. General was spared because its boxes
 //! existed before the paint.

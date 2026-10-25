@@ -8,9 +8,9 @@
 // browser." That was against a handler in `src/presentation/wx_app.rs` that
 // vetoed every navigation and handed the address to the browser. The probe
 // in `tests/a_link_opens_where_the_setting_says.rs` found why by reading and
-// then measured it: wxdragon 0.9.17 hands a navigating event an empty
-// string where the address should be, so the veto's guard against the
-// control's own document load skipped every link, and the browser followed
+// then measured it: wxdragon hands a navigating event an empty string where
+// the address should be, and still does at 0.9.23, so the veto's guard
+// against the control's own document load skipped every link, and the browser followed
 // each one inside the window. Since 2026-09-20 the page's own script catches
 // the anchor's activation before the browser navigates and posts the
 // address to the window, which routes it by the setting. This is the case

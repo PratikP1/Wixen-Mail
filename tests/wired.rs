@@ -144,6 +144,13 @@ fn test_every_handled_command_has_something_that_raises_it() {
                 raised.extend(names_after(&text, field));
             }
         }
+
+        // The composer's Format menu is described as data in `format_menu`,
+        // so its ids are the `id: ` fields of that list rather than the first
+        // argument of an append call.
+        if path.ends_with("wx_compose.rs") {
+            raised.extend(names_after(&text, "id: "));
+        }
     }
 
     let mut dead: Vec<String> = handled
@@ -235,6 +242,17 @@ fn test_every_command_something_raises_is_handled() {
         ] {
             raised.extend(
                 names_after(&text, marker)
+                    .into_iter()
+                    .map(|name| (path.clone(), name)),
+            );
+        }
+        // The composer's Format menu is described as data in `format_menu`,
+        // so its ids are the `id: ` fields of that list rather than the first
+        // argument of an append call. The formatting run's base is among them,
+        // which is why it is still raised for its place on KNOWN_DEAF.
+        if path.ends_with("wx_compose.rs") {
+            raised.extend(
+                names_after(&text, "id: ")
                     .into_iter()
                     .map(|name| (path.clone(), name)),
             );

@@ -1207,6 +1207,15 @@ Two limitations, stated rather than hidden:
 - These keys work while the caret is in the message body. In the To, Cc, Bcc and
   Subject fields there is nothing to format, so they do nothing there.
 
+On the Format menu (`Alt+O`, or the Format button) every item has a letter of
+its own: `B` for Bold, `I` Italic, `U` Underline, `1`, `2` and `3` the three
+headings, `N` Normal Text, `L` Bulleted List, `M` Numbered List, `Q` Quote, `F`
+Remove Formatting, `O` Undo, `R` Redo, `K` Insert Link, `T` Insert Table and
+`P` Insert Picture. Pressing the letter with the menu open runs the item at
+once. Until 2026-10-25 Numbered List shared `U` with Underline, Undo shared `N`
+with Normal Text and Insert Link shared `L` with Bulleted List, so those letters
+moved between two items rather than choosing one.
+
 **Spelling.** `F7`, or the Spelling button on the toolbar, walks the message a
 word at a time. Each word is selected in the message before you are asked about
 it, so your screen reader reads it where it sits rather than quoted out of its
