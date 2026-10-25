@@ -2125,8 +2125,8 @@ pub fn show_compose_dialog_full(
 
     // Reading the window, and the automatic save that uses it.
     //
-    // Both live above the timer handler because the handler calls the save,
-    // and there is one handler for every timer this dialog owns.
+    // The save is handed to a timer of its own on the message body, further
+    // down, and that timer's handler is the only thing that calls it.
     let save_draft_now = {
         let read_compose_data = read_compose_data.clone();
         move || {
@@ -2414,16 +2414,20 @@ pub fn show_compose_dialog_full(
         }
     });
 
-    // One handler for every timer this window owns, because that is what a
-    // timer event is here.
+    // The handler for `later`, the window's timer for work that waits: a
+    // spelling check, a look-up of a name and its answer, Send Later's
+    // question, and a move to the toolbar or out of the message body.
     //
-    // `Timer::on_tick` binds the timer event on the *owner*, with nothing to
-    // say which timer fired. Three timers on one dialog therefore meant three
-    // handlers all running on every tick, and that was not only a tidiness
-    // problem: the autosave timer and the spelling timer were both on this
-    // dialog, so every automatic draft save was also opening the spelling
-    // check, a modal dialog, in the middle of somebody typing. It was latent
-    // until a third timer made it obvious.
+    // Each timer here reaches its own handler and nothing else. `later` is the
+    // only timer on this dialog, so at wxDragon 0.9.17, where a timer event
+    // reaches every handler bound on its owner, this handler hears `later` and
+    // nothing more; at 0.9.23 a timer reaches only the handler bound to its own
+    // id. The automatic save has a timer of its own on the message body, with
+    // its own handler (`save_on_a_timer_of_its_own`), so a tick here is always
+    // `later`'s and runs only what it was started for. Until 13.4-07 the save's
+    // timer sat on this dialog with no handler, and its ticks reached this one,
+    // which saved when nothing was waiting and started the waiting work early
+    // when something was.
     later.on_tick({
         let waiting = waiting.clone();
         let a11y = a11y.clone();
@@ -2436,15 +2440,6 @@ pub fn show_compose_dialog_full(
         // neither is ever freed and every compose window would leave one
         // behind.
         let put_back_on = Rc::downgrade(&later);
-        // When the message was last kept, and how often it should be. The
-        // autosave timer carries no mark of its own, so a tick that arrives
-        // while something else is waiting is taken for that something else and
-        // that save is lost. Looking somebody up makes that likely rather than
-        // theoretical: it can hold the mark for as long as a directory takes to
-        // answer. Asked by the clock as well, so a save that is overdue happens
-        // whatever the tick turned out to be for.
-        let saved_at = std::cell::Cell::new(std::time::Instant::now());
-        let save_every = autosave.interval();
         move |_| {
             let again = |wanted: Deferred, when: i32| {
                 if let Some(timer) = put_back_on.upgrade() {
@@ -2452,15 +2447,6 @@ pub fn show_compose_dialog_full(
                     timer.start(when, true);
                 }
             };
-            let keep_the_message = || {
-                saved_at.set(std::time::Instant::now());
-                save_draft_now();
-            };
-            if let Some(every) = save_every
-                && saved_at.get().elapsed() >= every
-            {
-                keep_the_message();
-            }
             match waiting.take() {
                 Some(Deferred::Spelling) => check_spelling(&dialog, body_editor, &a11y),
                 Some(Deferred::Schedule) => {
@@ -2518,13 +2504,13 @@ pub fn show_compose_dialog_full(
                 // Come and ask again while there is still something to wait
                 // for. Put back on here rather than left running, so nothing
                 // keeps ticking once the answer is in.
-                Some(Deferred::AnAnswerToASearch) => {
-                    if take_any_answers(&a11y) {
-                        again(Deferred::AnAnswerToASearch, LOOKING_FOR_AN_ANSWER_MS);
-                    }
+                Some(Deferred::AnAnswerToASearch) if take_any_answers(&a11y) => {
+                    again(Deferred::AnAnswerToASearch, LOOKING_FOR_AN_ANSWER_MS);
                 }
-                // Nothing was asked for, so this is the autosave timer.
-                None => keep_the_message(),
+                // The answer is all in, or nothing waits, so there is nothing
+                // to do. The automatic save never comes this way: it has a
+                // timer and a handler of its own.
+                Some(Deferred::AnAnswerToASearch) | None => {}
             }
         }
     });
@@ -2823,18 +2809,14 @@ pub fn show_compose_dialog_full(
     // does not fit, so anything asked for here has to be safe to run twice. A
     // script that changes the message must either return nothing or return
     // something small; `wixenReplaceWord` returns a position, which is both.
-    // Held for the life of the dialog: dropping the timer stops it, and the
-    // dialog is what it belongs to.
-    // Held for the life of the dialog: dropping the timer stops it, and the
-    // dialog is what it belongs to. It carries no handler of its own, because
-    // a timer event here reaches every handler bound on the dialog, so there
-    // is one of those and it decides what the tick was for.
-    let _autosave_timer = autosave.interval().map(|every| {
-        let timer = Timer::new(&dialog);
-        // Milliseconds, and the cast is safe: the range stops at ten minutes.
-        timer.start(every.as_millis() as i32, false);
-        timer
-    });
+    // Held for the life of the dialog and stopped before it goes. The timer
+    // belongs to the message body, not the dialog, and carries the save as a
+    // handler of its own, so its ticks reach the save and nothing else, and no
+    // tick of `later` ever reaches the save. Why the owner matters is on
+    // `save_on_a_timer_of_its_own`.
+    let autosave_timer = autosave
+        .interval()
+        .map(|every| save_on_a_timer_of_its_own(&body_editor, every, save_draft_now));
 
     // ── Show dialog modally (loop for preview-then-send) ───────────────
     //
@@ -2961,11 +2943,12 @@ pub fn show_compose_dialog_full(
         }
     };
 
-    // Stopped before the window goes, not after. Both are owned by it, and a
-    // timer that fires into a handler that is no longer there is a crash
-    // rather than a leak. Stopping is enough: each frees itself when its value
-    // drops at the end of this function.
-    if let Some(timer) = &_autosave_timer {
+    // Stopped before the window goes, not after. `later` is owned by the
+    // window and the save's timer by the message body inside it, and a timer
+    // that fires into a handler that is no longer there is a crash rather than
+    // a leak. Stopping is enough: each frees itself when its value drops at
+    // the end of this function.
+    if let Some(timer) = &autosave_timer {
         timer.stop();
     }
     later.stop();

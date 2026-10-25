@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 964 records have arrived since and have not been through it.
+# 966 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -45730,4 +45730,46 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_compose.rs", tests = 43 },
     { file = "tests/the_automatic_save_has_a_timer_of_its_own.rs", tests = 1 },
+]
+
+# The composer hands its automatic save to a timer owned by the message body,
+# not the window (13.4-07). Broken by handing it the window instead, where at
+# 0.9.17 every tick of the save would also reach `later`'s handler. Measured by
+# hand on 2026-10-25: the reading of the owner failed, nothing else.
+[[guard]]
+name = "the composer's save timer is owned by the message body"
+file = "src/presentation/wx_compose.rs"
+suite = "the_composer_saves_on_a_timer_of_its_own"
+before = '''        .map(|every| save_on_a_timer_of_its_own(&body_editor, every, save_draft_now));'''
+after = '''        .map(|every| save_on_a_timer_of_its_own(&dialog, every, save_draft_now));'''
+red = [
+    "test_the_composer_hands_its_save_to_a_timer_owned_by_the_message_body",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
+]
+
+# The window's other timer, `later`, saves nothing when nothing waits
+# (13.4-07). Broken by giving its empty arm back the first line of the clock it
+# kept for the save. The save itself cannot be put back in one edit, because it
+# now moves into its own timer, so this measures the reading's eye for the
+# save and its clock in that handler. Measured by hand on 2026-10-25: the
+# reading of the handler failed, nothing else.
+[[guard]]
+name = "the window's other timer saves nothing when nothing waits"
+file = "src/presentation/wx_compose.rs"
+suite = "the_composer_saves_on_a_timer_of_its_own"
+before = '''                Some(Deferred::AnAnswerToASearch) | None => {}'''
+after = '''                Some(Deferred::AnAnswerToASearch) => {}
+                None => {
+                    let save_every = autosave.interval();
+                    let _ = save_every;
+                }'''
+red = [
+    "test_the_other_timer_saves_nothing",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
 ]

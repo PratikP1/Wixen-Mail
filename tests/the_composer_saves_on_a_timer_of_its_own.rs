@@ -207,7 +207,7 @@ fn the_composer_hands_its_save_on(source: &str) -> Result<(), String> {
             arguments.first()
         ));
     }
-    the_interval_comes_from_the_setting(composer, call, &arguments)?;
+    the_interval_comes_from_the_setting(composer)?;
     let on_the_window = composer.match_indices("Timer::new(&dialog)").count();
     let later = composer.matches(THE_OTHER_TIMER_MADE).count();
     match (on_the_window, later) {
@@ -219,22 +219,26 @@ fn the_composer_hands_its_save_on(source: &str) -> Result<(), String> {
     }
 }
 
-/// The call at `call` sits inside `autosave.interval().map(|every| ...)` and
-/// is handed `every` as its interval.
-fn the_interval_comes_from_the_setting(
-    composer: &str,
-    call: usize,
-    arguments: &[&str],
-) -> Result<(), String> {
-    let mapped = composer[..call].rfind(THE_SETTING).ok_or(format!(
+/// The one call of the save's timer sits inside
+/// `autosave.interval().map(|every| ...)` and is handed `every` as its
+/// interval. Read with every space and line break taken out, because the
+/// formatter breaks that chain across lines however it fits.
+fn the_interval_comes_from_the_setting(composer: &str) -> Result<(), String> {
+    let squeezed: String = composer.chars().filter(|c| !c.is_whitespace()).collect();
+    let call = calls_of(&squeezed, THE_SAVE_TIMER)
+        .first()
+        .copied()
+        .ok_or(format!("{THE_COMPOSER} never calls {THE_SAVE_TIMER}("))?;
+    let arguments = arguments_of(&squeezed, call, THE_SAVE_TIMER);
+    let mapped = squeezed[..call].rfind(THE_SETTING).ok_or(format!(
         "the save's interval is not taken from {THE_SETTING}"
     ))?;
-    let parameter: String = composer[mapped + THE_SETTING.len()..]
+    let parameter: String = squeezed[mapped + THE_SETTING.len()..]
         .chars()
         .take_while(|c| is_part_of_a_name(*c))
         .collect();
     let map_opens = mapped + THE_SETTING.len() - 2;
-    let inside_the_map = where_it_closes(composer, map_opens) > call;
+    let inside_the_map = where_it_closes(&squeezed, map_opens) > call;
     match (inside_the_map, arguments.get(1)) {
         (true, Some(every)) if *every == parameter => Ok(()),
         _ => Err(format!(
@@ -397,16 +401,24 @@ const TODAYS_SAVE: &str = "    let _autosave_timer = autosave.interval().map(|ev
                            \x20       timer.start(every.as_millis() as i32, false);\n\
                            \x20       timer\n\
                            \x20   });";
-const THE_SAVE_HANDED_ON: &str = "    let autosave_timer = autosave.interval().map(|every| {\n\
-                                  \x20       save_on_a_timer_of_its_own(&body_editor, every, save_draft_now)\n\
-                                  \x20   });";
+/// The shape the formatter gives the call, the chain broken across lines.
+const THE_SAVE_HANDED_ON: &str = "    let autosave_timer = autosave\n\
+                                  \x20       .interval()\n\
+                                  \x20       .map(|every| save_on_a_timer_of_its_own(&body_editor, every, save_draft_now));";
+/// The same call on one line, which the reading accepts as well.
+const THE_SAVE_HANDED_ON_IN_ONE_LINE: &str = "    let autosave_timer = autosave.interval().map(|every| {\n\
+                                              \x20       save_on_a_timer_of_its_own(&body_editor, every, save_draft_now)\n\
+                                              \x20   });";
 
 #[test]
 fn test_the_save_reading_refuses_a_save_left_on_the_window() {
-    assert_eq!(
-        the_composer_hands_its_save_on(&a_composer(NOTHING_WAITING, THE_SAVE_HANDED_ON)),
-        Ok(())
-    );
+    for right in [THE_SAVE_HANDED_ON, THE_SAVE_HANDED_ON_IN_ONE_LINE] {
+        assert_eq!(
+            the_composer_hands_its_save_on(&a_composer(NOTHING_WAITING, right)),
+            Ok(()),
+            "the reading refused:\n{right}"
+        );
+    }
     let on_the_dialog = THE_SAVE_HANDED_ON.replace("&body_editor", "&dialog");
     let a_test_interval = THE_SAVE_HANDED_ON.replace(
         "every, save_draft_now",
