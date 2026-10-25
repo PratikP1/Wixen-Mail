@@ -25,7 +25,7 @@
 ## Frameworks
 
 **Core:**
-- `wxdragon` `=0.9.17` (pinned exact version) - wxWidgets Rust bindings, the GUI framework; features: `aui`, `richtext`, `webview`
+- `wxdragon` `=0.9.17` (pinned exact version) - wxWidgets Rust bindings, the GUI framework; features: `aui`, `richtext`, `webview`. Since 2026-10-25 (13.4-09, `6d62bb4e`): `=0.9.23`, building wxWidgets 3.3.4, with the `webview` feature and the crate's default features only; `aui` and `richtext` dropped, nothing used them
 - `tokio` `1` (`full` features) - async runtime for network I/O (IMAP/POP3/SMTP/HTTP)
 - `rusqlite` `0.40` (`bundled`, `functions`) - embedded SQLite for the local message/data cache; `functions` feature used to register a custom Unicode-aware `LOWER`
 
