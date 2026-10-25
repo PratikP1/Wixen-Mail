@@ -50,8 +50,8 @@
 //! labels rather than any of this. A clean scan says the labels are present. It
 //! says nothing at all about these.
 
+#[cfg(target_os = "windows")]
 use wxdragon::accessible::{AccStatus, Accessible, AccessibleImpl};
-use wxdragon::ffi;
 use wxdragon::prelude::{SpinCtrl, WxWidget};
 
 /// Whether a name set here reaches the accessibility tree on this build.
@@ -82,11 +82,16 @@ pub const A_NAME_REACHES_THE_ACCESSIBILITY_TREE: bool = false;
 /// Supplies one fixed name, and optionally a description, for a control,
 /// leaving every other accessibility property to the platform's default
 /// handling.
+///
+/// Windows only, because wxdragon's `accessible` module is, since 0.9.23:
+/// `wxAccessible` exists only there, as the module header says.
+#[cfg(target_os = "windows")]
 struct FixedName {
     name: String,
     description: Option<String>,
 }
 
+#[cfg(target_os = "windows")]
 impl AccessibleImpl for FixedName {
     /// Name the control itself, and nothing inside it.
     ///
@@ -98,9 +103,9 @@ impl AccessibleImpl for FixedName {
     /// categories".
     fn get_name(&self, child_id: i32) -> (AccStatus, Option<String>) {
         if child_id != 0 {
-            return (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None);
+            return (AccStatus::NotImplemented, None);
         }
-        (ffi::wxd_AccStatus_WXD_ACC_OK, Some(self.name.clone()))
+        (AccStatus::Ok, Some(self.name.clone()))
     }
 
     /// Defer to the control's own child enumeration.
@@ -116,7 +121,7 @@ impl AccessibleImpl for FixedName {
     /// is what makes wxWidgets use its own implementation. Only the name and
     /// the description are meant to be replaced here.
     fn get_child_count(&self) -> (AccStatus, i32) {
-        (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, 0)
+        (AccStatus::NotImplemented, 0)
     }
 
     /// The sentence a screen reader reads after the name, on focus.
@@ -131,8 +136,8 @@ impl AccessibleImpl for FixedName {
     /// own description must not be handed the control's.
     fn get_description(&self, child_id: i32) -> (AccStatus, Option<String>) {
         match (&self.description, child_id) {
-            (Some(description), 0) => (ffi::wxd_AccStatus_WXD_ACC_OK, Some(description.clone())),
-            _ => (ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED, None),
+            (Some(description), 0) => (AccStatus::Ok, Some(description.clone())),
+            _ => (AccStatus::NotImplemented, None),
         }
     }
 }
@@ -159,13 +164,7 @@ impl AccessibleImpl for FixedName {
 /// Use the same wording as the control's visible heading or tree root, so what
 /// is spoken matches what is on screen.
 pub fn set_accessible_name(window: &dyn WxWidget, name: &str) {
-    window.set_accessible(Accessible::new(
-        window,
-        FixedName {
-            name: name.to_string(),
-            description: None,
-        },
-    ));
+    attach_a_fixed_name(window, name, None);
 }
 
 /// Give `window` a name and the sentence that explains it.
@@ -184,14 +183,26 @@ pub fn set_accessible_name(window: &dyn WxWidget, name: &str) {
 /// One call, not two. Attaching an accessible object replaces the last one, so
 /// setting a name and then a description would leave only the description.
 pub fn set_accessible_name_and_description(window: &dyn WxWidget, name: &str, description: &str) {
+    attach_a_fixed_name(window, name, Some(description));
+}
+
+/// Attach the object that answers with `name`, and `description` where
+/// there is one, replacing whatever was attached before.
+#[cfg(target_os = "windows")]
+fn attach_a_fixed_name(window: &dyn WxWidget, name: &str, description: Option<&str>) {
     window.set_accessible(Accessible::new(
         window,
         FixedName {
             name: name.to_string(),
-            description: Some(description.to_string()),
+            description: description.map(str::to_string),
         },
     ));
 }
+
+/// Nothing to attach to: wxWidgets has no accessible object here, and
+/// [`A_NAME_REACHES_THE_ACCESSIBILITY_TREE`] says so to the person.
+#[cfg(not(target_os = "windows"))]
+fn attach_a_fixed_name(_window: &dyn WxWidget, _name: &str, _description: Option<&str>) {}
 
 /// Turn a visible label into the name a screen reader should announce.
 ///
@@ -538,10 +549,9 @@ pub fn leave_the_cell_empty(grid: &wxdragon::sizers::FlexGridSizer) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AccessibleImpl, FieldProperty, FixedName, name_from_label, what_the_typing_field_carries,
-    };
-    use wxdragon::ffi;
+    #[cfg(target_os = "windows")]
+    use super::{AccStatus, AccessibleImpl, FixedName};
+    use super::{FieldProperty, name_from_label, what_the_typing_field_carries};
 
     #[test]
     fn test_a_spin_controls_description_travels_to_the_field_a_person_types_in() {
@@ -558,17 +568,19 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_the_name_is_the_only_thing_replaced() {
         let named = FixedName {
             name: "Messages".to_string(),
             description: None,
         };
         let (status, name) = named.get_name(0);
-        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(status, AccStatus::Ok);
         assert_eq!(name.as_deref(), Some("Messages"));
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_children_name_themselves() {
         // A list row, a tree node and a notebook tab each ask for their own
         // name through the parent. Answering with the control's name labels
@@ -578,11 +590,12 @@ mod tests {
             description: None,
         };
         let (status, name) = named.get_name(1);
-        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(status, AccStatus::NotImplemented);
         assert!(name.is_none());
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_a_description_is_offered_for_the_control_itself() {
         // The bug this was written for: the first-run screen's three choices
         // each had a sentence beside them saying what it costs, and a screen
@@ -597,7 +610,7 @@ mod tests {
 
         let (status, description) = described.get_description(0);
 
-        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_OK);
+        assert_eq!(status, AccStatus::Ok);
         assert_eq!(
             description.as_deref(),
             Some("Nothing you do here reaches your provider.")
@@ -605,6 +618,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_a_control_with_no_description_leaves_the_question_to_the_platform() {
         // NOT_IMPLEMENTED rather than an empty string. Answering with nothing
         // is a claim that there is no description, which stops wxWidgets
@@ -616,11 +630,12 @@ mod tests {
 
         let (status, description) = named.get_description(0);
 
-        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(status, AccStatus::NotImplemented);
         assert!(description.is_none());
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_children_describe_themselves() {
         // Same trap as the name. Handing every row of a list the control's
         // description would have each one read it out.
@@ -631,11 +646,12 @@ mod tests {
 
         let (status, description) = described.get_description(1);
 
-        assert_eq!(status, ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED);
+        assert_eq!(status, AccStatus::NotImplemented);
         assert!(description.is_none());
     }
 
     #[test]
+    #[cfg(target_os = "windows")]
     fn test_child_enumeration_is_left_to_the_control() {
         // The trait default answers OK with zero children, which is a claim
         // that the control is empty rather than a request to fall back. With
@@ -648,7 +664,7 @@ mod tests {
         let (status, count) = named.get_child_count();
         assert_eq!(
             status,
-            ffi::wxd_AccStatus_WXD_ACC_NOT_IMPLEMENTED,
+            AccStatus::NotImplemented,
             "naming a control must not claim it has no children"
         );
         assert_eq!(count, 0);

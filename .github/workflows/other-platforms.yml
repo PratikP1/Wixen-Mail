@@ -124,9 +124,10 @@ jobs:
     #   libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libexpat1-dev
     #   libtiff-dev cmake libssl-dev libwebkit2gtk-4.1-dev
     #
-    # libwebkit2gtk-4.1-dev is on that list for the webview feature, which
-    # Cargo.toml enables alongside aui and richtext. These come from Ubuntu's
-    # own repositories. Nothing here fetches a script and runs it.
+    # libwebkit2gtk-4.1-dev is on that list for the webview feature, the only
+    # one Cargo.toml turns on beyond the crate's defaults since the move to
+    # wxDragon 0.9.23 (13.4-09). These come from Ubuntu's own repositories.
+    # Nothing here fetches a script and runs it.
     - name: Install what wxDragon asks for on Linux
       run: |
         sudo apt-get update

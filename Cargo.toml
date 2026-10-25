@@ -76,7 +76,7 @@ mail-parser = "0.11"
 reqwest = { version = "0.13", features = ["json", "rustls", "form"] }
 
 # UI Framework: wxdragon (wxWidgets bindings)
-wxdragon = { version = "=0.9.17", features = ["aui", "richtext", "webview"] }
+wxdragon = { version = "=0.9.23", features = ["webview"] }
 
 # Database for persistent caching
 # `functions` so `LOWER` in a query can be this project's own, folding
@@ -222,10 +222,11 @@ flate2 = "1.1.9"
 # one.
 #
 # TWO THINGS THAT LOOK AVAILABLE AND ARE NOT, so nobody proposes them again.
-# Both re-checked against the tree on 2026-09-05. wxWidgets can decode images
-# itself, but `wxdragon 0.9.17` exposes no loader: `src/bitmap.rs` has
-# `from_rgba`, `new`, `null_bitmap` and `get_rgba_data`, and nothing that reads
-# a file or a byte slice. A `Bitmap::new_from_file` appears in a doc-comment
+# Both re-checked against the tree on 2026-09-05, and the loader again on
+# 2026-10-25 at the move to 0.9.23. wxWidgets can decode images itself, but
+# `wxdragon 0.9.23` exposes no loader: `src/bitmap.rs` has `from_rgba`, `new`,
+# `null_bitmap` and `get_rgba_data`, and nothing that reads a file or a byte
+# slice. A `Bitmap::new_from_file` appears in a doc-comment
 # example in `widgets/generic_static_bitmap.rs` and exists nowhere in the crate.
 # That is why `art.rs` decodes with `image` first. Separately, `jpeg-decoder`
 # 0.3.2 is already in `Cargo.lock`, pulled in by `pdfpurr`, so a JPEG decoder is

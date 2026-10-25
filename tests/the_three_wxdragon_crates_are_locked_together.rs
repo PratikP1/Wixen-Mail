@@ -11,15 +11,57 @@
 //!
 //! Reads the lock as TOML and touches no wxWidgets API, so it opens no window.
 
+use std::collections::BTreeMap;
+
 /// The three crates wxDragon is released as, in the order a refusal names them.
 const THE_THREE: [&str; 3] = ["wxdragon", "wxdragon-sys", "wxdragon-macros"];
 
 /// Why `lock` must be refused, or `None` when it holds each of the three
 /// wxDragon crates once and all at one version.
 fn why_the_lock_is_refused(lock: &str) -> Option<String> {
-    // The red half: every lock is accepted.
-    let _ = (lock, THE_THREE);
-    None
+    let read: toml::Value = match toml::from_str(lock) {
+        Ok(read) => read,
+        Err(why) => return Some(format!("the lock cannot be read as TOML: {why}")),
+    };
+    let mut held: BTreeMap<&str, Vec<String>> = BTreeMap::new();
+    for package in read
+        .get("package")
+        .and_then(toml::Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let name = package.get("name").and_then(toml::Value::as_str);
+        let version = package.get("version").and_then(toml::Value::as_str);
+        if let (Some(name), Some(version)) = (name, version)
+            && let Some(crate_name) = THE_THREE.iter().find(|it| **it == name)
+        {
+            held.entry(crate_name)
+                .or_default()
+                .push(version.to_string());
+        }
+    }
+
+    let missing: Vec<&str> = THE_THREE
+        .into_iter()
+        .filter(|name| !held.contains_key(name))
+        .collect();
+    if !missing.is_empty() {
+        return Some(format!("the lock holds no {}", missing.join(" and no ")));
+    }
+
+    let versions: Vec<String> = THE_THREE
+        .iter()
+        .map(|name| format!("{name} {}", held[name].join(" and ")))
+        .collect();
+    let mut distinct: Vec<&String> = held.values().flatten().collect();
+    distinct.sort();
+    distinct.dedup();
+    (distinct.len() > 1).then(|| {
+        format!(
+            "the lock holds {}, and the three are built from one release or not at all",
+            versions.join(", ")
+        )
+    })
 }
 
 /// A lock holding the three crates at the versions given, beside one

@@ -196,6 +196,9 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
                 ("the Action list", &fresh.action_choice),
             ] {
                 choices_seen += 1;
+                // wxdragon has the accessible object on Windows only, since
+                // 0.9.23, and so does every check of it below.
+                #[cfg(target_os = "windows")]
                 if choice.get_accessible().is_none() {
                     wrong.push((
                         what.to_string(),
@@ -369,6 +372,7 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
                 ("the Match Field list", &fresh_rule.field_choice),
                 ("the Match Type list", &fresh_rule.match_choice),
             ] {
+                #[cfg(target_os = "windows")]
                 if choice.get_accessible().is_none() {
                     wrong.push((
                         format!("{what} in the condition editor"),
@@ -498,6 +502,7 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
             // ── The manager shell's own list ────────────────────────────────
             let (shell, _sizer, list, _status) =
                 make_shell(&frame, "Filter Manager", "Filters", 450, 400, None);
+            #[cfg(target_os = "windows")]
             if list.get_accessible().is_none() {
                 wrong.push((
                     "the manager window's list of rules".to_string(),
@@ -535,6 +540,7 @@ fn test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answer
                 ],
             );
 
+            #[cfg(target_os = "windows")]
             if conditions.get_accessible().is_none() {
                 wrong.push((
                     "the condition manager's list".to_string(),

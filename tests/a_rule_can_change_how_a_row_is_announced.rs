@@ -984,6 +984,8 @@ fn what_is_wrong_with_the_editor(wrong: &mut Wrong) {
             "opens ticked, so a sound is on unless somebody turns it off".to_string(),
         ));
     }
+    // wxdragon has the accessible object on Windows only, since 0.9.23.
+    #[cfg(target_os = "windows")]
     if fresh.action_value_f.get_accessible().is_none() {
         wrong.push((
             "the value box".to_string(),
