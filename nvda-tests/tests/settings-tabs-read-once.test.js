@@ -15,18 +15,21 @@
 // event where there were two. What it cannot say is what NVDA does with one
 // event, and whether one event is one reading. This is the test that can.
 //
-// The seven tab names, read from `src/presentation/wx_settings.rs` rather
+// The eight tab names, read from `src/presentation/wx_settings.rs` rather
 // than guessed, at the `notebook.add_page` calls on lines 329, 341, 364, 370,
 // 376, 381 and 387 on 2026-09-16: "General", "Compose", "Reading",
 // "Permissions", "Calendar && PIM" (a doubled ampersand is wxWidgets' way of
-// writing one, so the tab reads "Calendar & PIM"), "Feedback" and "Advanced".
-// NVDA may say the ampersand as "and", so that tab is matched on the word
-// no other tab has.
+// writing one, so the tab reads "Calendar & PIM"), "Feedback" and "Advanced";
+// and "Questions", the eighth, added after Advanced by 13.4-12.4 on
+// 2026-10-25. NVDA may say the ampersand as "and", so that tab is matched on
+// the word no other tab has. The Questions page's own words say "questions"
+// in lower case, which the case-sensitive count below does not read as the
+// tab.
 //
 // A fresh profile opens Settings on the General tab with the tab row itself
 // focused: the win-event capture of 2026-09-16 shows the control raising
 // EVENT_OBJECT_FOCUS on tab 1 as the dialog opens, before any key. So the
-// first Right reaches Compose, and six of them reach Advanced. That is the
+// first Right reaches Compose, and seven of them reach Questions. That is the
 // capture's word and not yet the runner's: the case's first run there heard
 // nothing before its first key (see the note above the first wait below),
 // and which tab the first Right reaches on the runner's fresh profile is
@@ -58,6 +61,7 @@ const TABS = [
   { name: "Calendar & PIM", heardAs: "PIM" },
   { name: "Feedback", heardAs: "Feedback" },
   { name: "Advanced", heardAs: "Advanced" },
+  { name: "Questions", heardAs: "Questions" },
 ];
 
 // How long to leave after the last key for a late second reading to arrive
@@ -176,8 +180,8 @@ test("NVDA says each Settings tab once as Right and Left move along the tab row"
   // in the log if the harness captured any of it, and the count begins at
   // the first Right.
   //
-  // What this case proves: Compose to Advanced heard once each and in
-  // order going Right, General not heard going Right, Feedback once going
+  // What this case proves: Compose to Questions heard once each and in
+  // order going Right, General not heard going Right, Advanced once going
   // Left. What it no longer proves: General's own reading at open, which
   // is outside what the harness's log holds and which only the tester's
   // ear settled (#33, closed 2026-09-18). If the tab row does not hold
@@ -187,7 +191,7 @@ test("NVDA says each Settings tab once as Right and Left move along the tab row"
   await sleep(SETTLE_AFTER_KEYS_MS);
   const opened = (await nvda.spokenPhraseLog()).length;
 
-  // Six Rights, Compose to Advanced, each waited for so the next key is
+  // Seven Rights, Compose to Questions, each waited for so the next key is
   // not pressed into a reading still being spoken.
   const reachedGoingRight = TABS.slice(1);
   for (const tab of reachedGoingRight) {
@@ -203,12 +207,12 @@ test("NVDA says each Settings tab once as Right and Left move along the tab row"
   // General was heard once at open and is not reached again going right.
   expect(timesHeard(heardGoingRight, TABS[0].heardAs)).toBe(0);
 
-  // One Left, back from Advanced to Feedback, counted from a fresh mark.
+  // One Left, back from Questions to Advanced, counted from a fresh mark.
   const beforeLeft = (await nvda.spokenPhraseLog()).length;
   await nvda.press("Left");
-  await waitToHearAll(nvda, [TABS[5].heardAs]);
+  await waitToHearAll(nvda, [TABS[6].heardAs]);
   await sleep(SETTLE_AFTER_KEYS_MS);
 
   const heardGoingLeft = await saidSince(beforeLeft);
-  expect(whatWentWrong(heardGoingLeft, [TABS[5]])).toEqual([]);
+  expect(whatWentWrong(heardGoingLeft, [TABS[6]])).toEqual([]);
 });

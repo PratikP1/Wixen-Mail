@@ -2,6 +2,7 @@
 
 ## Table of Contents
 1. [Getting Started](#getting-started)
+   - [Questions Wixen Mail asks first](#questions-wixen-mail-asks-first)
 2. [Account Setup](#account-setup)
 3. [Email provider setup guides](PROVIDER_SETUP.md)
 4. [Reading and Managing Email](#reading-and-managing-email)
@@ -44,6 +45,45 @@ name:
 
 Until 2026-09-20 two more waited for a restart without saying so: Mark as read
 after, and how dates are written in the lists. Both apply on OK now.
+
+### Questions Wixen Mail asks first
+
+Before Wixen Mail does something you might not mean, such as deleting a saved
+search or running a rule over a folder, it asks. Each question has two buttons
+that say what they do, such as Delete and Keep, and a check box under them,
+**Don't ask me again** (`Alt+G`), which is never ticked when the question
+opens.
+
+- Tick **Don't ask me again** and choose the button that goes ahead, such as
+  Delete, and that question stops. Next time Wixen Mail does that straight
+  away, with no question, and says what it did.
+- Tick it and choose the other button, such as Keep, or press `Escape`, and
+  nothing is remembered. The question is asked again next time.
+- The question about a small picture in a message you write is the one
+  exception: there the box remembers **Describe It**, so a stopped question
+  goes straight to the description. It never remembers Mark as Decorative,
+  because that would send every later picture with no description.
+- The question about spelling before you send is stopped by turning off
+  **Check spelling before sending a message** on the General tab of Settings,
+  and that is also where it comes back.
+
+Every other question you stopped is on the **Questions** tab of Settings, the
+last tab, as a check box that starts "Ask before". A ticked box means the
+question is asked; tick an unticked one and press OK to have that question
+asked again.
+
+For example, move to a saved search called Weekly in the folder tree and
+choose Delete from Saved Searches on the Action menu. The question says
+"Delete the saved search Weekly? The mail it listed stays where it is." Press
+`Alt+G`, then `Alt+D` for Delete: Weekly is gone, and Wixen Mail says "Weekly is
+gone. The mail it listed is untouched." Delete another saved search and it
+goes at once, with its own sentence and no question. To have the question back, open Settings with
+`Ctrl+,`, move along the tabs to Questions, tick **Ask before deleting a saved
+search** (`Alt+S`), and press OK.
+
+A question stopped from inside Settings, deleting a sound scheme on the
+Feedback tab, shows ticked on the Questions tab until Settings is opened again.
+It is still stopped, and pressing OK does not undo it.
 
 ### Numbers you set
 

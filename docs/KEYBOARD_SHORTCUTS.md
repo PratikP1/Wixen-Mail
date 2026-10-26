@@ -1731,8 +1731,44 @@ Install does.
 | PGP Keys, Remove | Remove (`R`) | Keep (`K`) | Keep |
 | Settings, Feedback, Delete sound scheme | Delete (`D`) | Keep (`K`) | Keep |
 
-No button on these questions uses `G`. It is kept for the "Don't ask me again"
-check box the next change adds to each of them.
+`Alt+G` ticks or clears **Don't ask me again**, the check box under the buttons
+on every one of these questions, and no button uses `G`. Ticked with the button
+that goes ahead, the question stops being asked; with the other button or
+`Escape`, nothing is remembered. On the picture question it remembers Describe
+It. [Questions Wixen Mail asks first](USER_GUIDE.md#questions-wixen-mail-asks-first)
+says more.
+
+### Settings, Questions
+
+The last tab of Settings holds a check box for every question you can stop,
+ticked while the question is asked. Tick one and press OK to have that question
+asked again. The spelling question has no box here: it comes back with Check
+spelling before sending a message on the General tab. Every letter on this tab
+is its own.
+
+| Check box | Key |
+|---|---|
+| Ask before deleting a contact, event, task, note or reminder | `Alt+C` |
+| Ask before Undo takes away a copy | `Alt+Y` |
+| Ask before deleting a list, calendar, notebook or contact group | `Alt+L` |
+| Ask before deleting a conversation | `Alt+V` |
+| Ask before deleting a conversation permanently | `Alt+P` |
+| Ask before deleting a saved search | `Alt+S` |
+| Ask before moving a folder | `Alt+M` |
+| Ask before deleting a folder from the server | `Alt+F` |
+| Ask before emptying a folder into the Trash | `Alt+E` |
+| Ask before emptying a folder for good | `Alt+G` |
+| Ask before running a rule over a folder | `Alt+R` |
+| Ask before running a rule that deletes | `Alt+D` |
+| Ask before removing folders the mail server no longer lists | `Alt+N` |
+| Ask before importing a key from an attachment | `Alt+K` |
+| Ask before applying a view to other folders | `Alt+W` |
+| Ask before opening the releases page | `Alt+O` |
+| Ask before installing an update | `Alt+I` |
+| Ask before moving mail already here when blocking a sender | `Alt+B` |
+| Ask whether a small picture is decorative | `Alt+T` |
+| Ask before removing a PGP key | `Alt+A` |
+| Ask before deleting a sound scheme | `Alt+H` |
 
 ### Dialog Navigation
 

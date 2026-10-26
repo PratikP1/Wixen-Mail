@@ -8,6 +8,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Added
 
+- **"Don't ask me again" on every question, and a Questions tab in Settings to bring one
+  back (Pratik's answer of 2026-10-25, ledger 967).** Every question with two buttons now has
+  a check box under them, Don't ask me again (`Alt+G`), never ticked when the question opens.
+  Ticked with the button that goes ahead, such as Delete or Run, the question stops: next
+  time Wixen Mail does that at once and says what it did. Ticked with the other button, or
+  with the question closed by `Escape`, nothing is remembered. On the question about a small
+  picture in a message you write it remembers Describe It, never Mark as Decorative, so no
+  picture is ever sent with no description because of it. The spelling question is stopped
+  by turning off Check spelling before sending a message on the General tab, which is where
+  it comes back. Every other stopped question is a check box on the new last tab of
+  Settings, Questions, reading "Ask before ...", ticked while the question is asked; tick it
+  and press OK to be asked again. Opening the releases page now says "Opening the releases
+  page in your browser." before the browser comes up, since there may be no question first.
+  Known limitations: nobody has heard any of this yet with a screen reader; a question
+  stopped from inside Settings, deleting a sound scheme, shows ticked on the Questions tab
+  until Settings is opened again, though it stays stopped; and every question can be
+  stopped, including those asked before something that cannot be undone, while which of
+  them should have no box is still being decided.
 - **Every calendar on a Gmail account comes, not only its main one (#22, REAL-01).** Sync
   Calendar asked Google for the main calendar and nothing else, so a calendar of your own
   beside it, or one somebody shared with you, never arrived. It now reads your Google

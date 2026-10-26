@@ -3004,6 +3004,10 @@ requirements to a later phase's section rather than here. Added 2026-09-17: grou
     listening pass.
 
 - [x] **FOUND-09**: Arrowing through the Settings tab row says each tab once.
+  - **2026-10-25, 13.4-12.4:** the tab row has an eighth tab, Questions, after Advanced, and
+    `nvda-tests/tests/settings-tabs-read-once.test.js` now walks seven Rights from Compose to
+    Questions and one Left back to Advanced, so the case holds the new tab to once as well.
+    No `[D]` clause is added and the box is left as it is.
   - **Ticked 2026-09-18 by 11-02 on the tester's ear, on the `[S]` line's own terms:** #33
     closed 2026-09-18T11:34:22Z on his word, quoted: "Heard on 2026-09-18 by the tester on
     `1.0.0-alpha.1+149.g744d05ef` with NVDA: the Settings dialog speaks as it should;
@@ -3254,6 +3258,11 @@ lines are the ones the diagnosis in the planning session quoted.
 
 - [x] **FOUND-13**: Every checkbox on every Settings tab reads as a check box with its checked
   state, and toggles on Space with the new state announced, after its page is built lazily.
+  - **2026-10-25, 13.4-12.4:** the eighth tab, Questions, holds 21 check boxes built the first
+    time its tab is shown, and
+    `tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs` reads it
+    as its seventh later page, each box a check button that toggles, in both themes. No `[D]`
+    clause is added and the box is left as it is.
   - **Closed 2026-09-17 by 10-01.1, merged at `d020aa60`.** The first `[D]` line by the paint
     moved into `APage::built` on both paths, with
     `test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_from_the_settings_when_never_shown`
