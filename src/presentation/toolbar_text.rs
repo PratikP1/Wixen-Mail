@@ -2,7 +2,7 @@
 //!
 //! The main toolbar is `Flat | Text`, so each button's label is shown and is
 //! what a screen reader says for it. Mark as Read's label has to follow the
-//! message under the cursor (#27), and wxdragon 0.9.17 can change a tool's
+//! message under the cursor (#27), and wxdragon 0.9.23 can change a tool's
 //! short help and not its label: `ToolBar` offers `set_tool_short_help` and
 //! `Tool` offers enable, toggle and their readings, nothing for the text. So
 //! the text goes through Windows directly: `TB_SETBUTTONINFOW` with

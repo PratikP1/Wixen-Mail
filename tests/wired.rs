@@ -144,6 +144,13 @@ fn test_every_handled_command_has_something_that_raises_it() {
                 raised.extend(names_after(&text, field));
             }
         }
+
+        // The composer's Format menu is described as data in `format_menu`,
+        // so its ids are the `id: ` fields of that list rather than the first
+        // argument of an append call.
+        if path.ends_with("wx_compose.rs") {
+            raised.extend(names_after(&text, "id: "));
+        }
     }
 
     let mut dead: Vec<String> = handled
@@ -235,6 +242,17 @@ fn test_every_command_something_raises_is_handled() {
         ] {
             raised.extend(
                 names_after(&text, marker)
+                    .into_iter()
+                    .map(|name| (path.clone(), name)),
+            );
+        }
+        // The composer's Format menu is described as data in `format_menu`,
+        // so its ids are the `id: ` fields of that list rather than the first
+        // argument of an append call. The formatting run's base is among them,
+        // which is why it is still raised for its place on KNOWN_DEAF.
+        if path.ends_with("wx_compose.rs") {
+            raised.extend(
+                names_after(&text, "id: ")
                     .into_iter()
                     .map(|name| (path.clone(), name)),
             );
@@ -1229,6 +1247,13 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // the string `Alt+Left`, and posts the way back to the window.
         // src/presentation/page_links.rs.
         "Alt+Left",
+        // Closing a question with two answers (13.4-12.3). Windows' own task
+        // dialog binds it once `asking::the_box` allows cancellation, as it
+        // does for Escape; no source here names the key.
+        // `tests/a_question_names_what_each_answer_does.rs` closes a real box
+        // with `WM_SYSCOMMAND` and `SC_CLOSE`, what the key sends, and reads
+        // neither answer back.
+        "Alt+F4",
     ]
 }
 
@@ -1746,7 +1771,7 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 
 /// Dialogs whose labels this cannot judge by reading them.
 ///
-/// One entry, and it is here because the answer it would give would be wrong
+/// Two entries, each here because the answer it would give would be wrong
 /// rather than because the answer is inconvenient.
 ///
 /// The account window builds every control in one function and then shows a
@@ -1764,7 +1789,16 @@ fn builder_bodies(text: &str) -> Vec<(String, &str)> {
 /// IMAP, POP and the browser sign-in and reads the letters of the windows
 /// that are showing; it found five letters claimed twice on one page, which
 /// is ledger 606.
-const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog"];
+///
+/// The second entry is `presentation::asking::answers`, the table of every
+/// question's two buttons (13.4-12.3). It is twenty-two boxes written in one
+/// function, and only the two labels of one row ever share a box, so reading
+/// the body as one scope calls Delete and Don't Move a clash. Its letters are
+/// judged box by box instead, by
+/// `test_no_box_gives_one_letter_to_both_answers_or_takes_the_check_boxs_g` in
+/// that module, and the buttons of a real box are read where the keyboard
+/// lands by `tests/a_question_names_what_each_answer_does.rs`.
+const READ_AT_RUN_TIME_INSTEAD: &[&str] = &["build_account_edit_dialog", "answers"];
 
 /// Every literal in one body that claims an Alt key.
 ///
@@ -4085,7 +4119,7 @@ fn what_the_vanished_folders_question_asks(source: &str) -> WhatTheQuestionAsks 
         whether_somebody_is_typing: the_typing_answer_reads_both_ways(source, &typing),
         nothing_opens_when_there_is_nothing_to_raise: when_there_is_nothing.contains("else")
             && when_there_is_nothing.contains("return"),
-        raised_before_the_window: match (body.find(".raised("), body.find("show_modal(")) {
+        raised_before_the_window: match (body.find(".raised("), body.find("asking::ask(")) {
             (Some(written_down), Some(opened)) => written_down < opened,
             _ => false,
         },
@@ -4111,7 +4145,7 @@ fn what_the_vanished_folders_question_asks(source: &str) -> WhatTheQuestionAsks 
 /// was not: a file under `tests/` is its own process and gets its own, as
 /// `tests/tree_rows_leave_no_registry_entry.rs` does. It is not used, for a
 /// different reason. Every path that would tell a right argument from a wrong
-/// one ends at `MessageDialog::show_modal`, which blocks until somebody
+/// one ends at `asking::ask`, which blocks until somebody
 /// answers, and in a test there is nobody. A wrong argument would hang this
 /// file rather than fail it, and a check that hangs the commit gate is one that
 /// gets deleted. The window itself has still never been opened in a running
@@ -4171,7 +4205,7 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {{
         return;
     }};
     waiting.borrow_mut().raised(&question);
-    let asked = MessageDialog::builder(frame, &question.words, &question.title).show_modal();
+    let asked = asking::ask(frame, Question::RemoveFoldersTheServerNoLongerLists, &question.title, &question.words);
 }}
 {THE_TYPING_HELPER_WRITTEN_CORRECTLY}"
     );
@@ -4245,7 +4279,7 @@ fn ask_about_the_folders_that_have_gone(frame: &Frame) {{
 
     let written_down_late = "\
 fn ask_about_the_folders_that_have_gone(frame: &Frame) {
-    let asked = MessageDialog::builder(frame).show_modal();
+    let asked = asking::ask(frame, Question::RemoveFoldersTheServerNoLongerLists, title, words);
     waiting.borrow_mut().raised(&question);
 }
 ";

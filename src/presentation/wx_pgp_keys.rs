@@ -217,7 +217,7 @@ impl TheKeysUnderneath {
     }
 }
 
-/// Asking a yes or no question over the window.
+/// Asking whether to remove a key over the window, true on Remove.
 pub type AskingYesOrNo = Box<dyn Fn(&Dialog, &str) -> bool>;
 /// Putting text on the clipboard, and whether it took it.
 pub type PuttingOnTheClipboard = Box<dyn Fn(&str) -> bool>;
@@ -225,10 +225,11 @@ pub type PuttingOnTheClipboard = Box<dyn Fn(&str) -> bool>;
 /// What the window needs from the desktop around it.
 ///
 /// Handed in so the MSAA test can answer the question and read the clipboard
-/// without a person to press No and without overwriting whatever the person
+/// without a person to press Keep and without overwriting whatever the person
 /// running it had copied.
 pub struct TheDesktop {
-    /// Ask a question with Yes and No, No the answer Enter gives.
+    /// Ask whether to remove a key, with Remove and Keep, Keep the answer
+    /// Enter gives.
     pub ask: AskingYesOrNo,
     /// Put text on the clipboard.
     pub clipboard: PuttingOnTheClipboard,
@@ -239,11 +240,12 @@ impl TheDesktop {
     pub fn this_one() -> Self {
         TheDesktop {
             ask: Box::new(|over, question| {
-                MessageDialog::builder(over, question, "Remove a PGP Key")
-                    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-                    .build()
-                    .show_modal()
-                    == ID_YES
+                crate::presentation::asking::ask(
+                    over,
+                    crate::application::questions_before_acting::Question::RemoveAKey,
+                    "Remove a PGP Key",
+                    question,
+                ) == crate::presentation::asking::Answered::Yes
             }),
             clipboard: Box::new(|text| Clipboard::get().set_text(text)),
         }

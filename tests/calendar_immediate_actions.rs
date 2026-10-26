@@ -25,9 +25,9 @@
 //! click event and observe what a nested modal dialog does from inside a
 //! test:
 //!
-//! - `delete_selected_event` always shows a Confirm Delete dialog before it
-//!   can answer anything once a row is selected, so only its "nothing is
-//!   selected" answer is reachable.
+//! - `delete_selected_event` always asks Confirm Delete, through
+//!   `presentation::asking`, before it can answer anything once a row is
+//!   selected, so only its "nothing is selected" answer is reachable.
 //! - `edit_selected_event`'s "selected, and the calendar allows it" answer
 //!   always shows the event editor, so that path is unreachable too.
 //!
@@ -191,8 +191,8 @@ fn test_the_three_immediate_actions_mutate_state_and_report_correctly() {
 
             // ── Delete, nothing selected ───────────────────────────────
             // The one path of Delete's this file can reach: a selected row
-            // always shows Confirm Delete first, and there is no way to
-            // drive that dialog's own click from inside a test.
+            // always asks Confirm Delete first, and that question waits
+            // for an answer this file has nobody in another process to give.
             let mut state = CalendarDialogState {
                 events_data: vec![a_non_repeating_event("evt-1", "Standup")],
                 allows: vec![ordinarily_allowed()],

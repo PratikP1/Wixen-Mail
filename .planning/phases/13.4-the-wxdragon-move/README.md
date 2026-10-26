@@ -10,6 +10,12 @@ landing these plans. Phase 14 stood at 9 of 15 plans with none of its sittings h
 and `.planning/WINDOWS.md` held 957 entries before the landing and 958 after it, 792 open and
 166 fixed.
 
+Four more, 13.4-12.1 to 13.4-12.4, landed on 2026-10-25 against `main` at
+`7c04003e`, 13.4-12's merge, between 13.4-12 and 13.4-13, on Pratik's answer of 2026-10-25
+under "Pratik's answers", so the phase holds nineteen plans. They were planned outside the tree
+that day under their own ids; 13.4-12.3 was split when its file list outgrew one executor,
+which is why three answers make four plans.
+
 The plans were written outside the tree: the four fixes on 2026-10-23, the eleven wxDragon plans
 and the research on 2026-10-20. They were staged under working names, `FIX-01` to `FIX-04` and
 `WXD-01` to `WXD-10` with `WXD-07.1`, and renamed to their 13.4 ids when they landed. The research,
@@ -25,13 +31,18 @@ of the way first (13.4-05 to 13.4-08), the move itself (13.4-09), then three pla
 what the move makes unnecessary and correct what still names the old toolkit (13.4-10, 13.4-11,
 13.4-11.1), the check of every window's names on both channels (13.4-12), Pratik's NVDA sitting
 on the build the sittings install (13.4-13), and the close with the phase's full gate (13.4-14).
+Between 13.4-12 and 13.4-13, since 2026-10-25: the fixes
+of 2026-10-25, 13.4-12.1 to 13.4-12.4.
 
 **Requirements.** No requirement is added. Ten plans name the requirements they work under, nine
 between them: REAL-01, LIST-25, FOUND-04, MAIL-04, LIST-02, SHIP-05, FOUND-08, FOUND-09 and
 FOUND-23. Each adds a dated line under its requirement, adding no `[D]` clause and ticking no box.
 Five plans name none and each says why: 13.4-05 (test plumbing), 13.4-07 (the composer's own
 timer), 13.4-10, 13.4-11 and 13.4-11.1 (workarounds and comments the move made unnecessary). Those
-five leave three completion marks, not four.
+five leave three completion marks, not four. Since 2026-10-25: eleven plans name a requirement, still
+nine between them, 13.4-12.1 naming FOUND-23; eight name none, 13.4-12.2, 13.4-12.3 and
+13.4-12.4 joining the five as fixes no requirement names. 13.4-12.3 adds a dated line under
+GAP-12 and 13.4-12.4 under FOUND-09 and FOUND-13, adding no `[D]` clause.
 
 ## The plans
 
@@ -55,8 +66,15 @@ plan depends on the one before it; 13.4-01 depends on 13.3-25.
 | 13.4-11 | WXD-07 | 11 | The list cell allowance gone, the flag that stops Enter answering Yes taken by its name, and Tab out of the message body pinned both ways by a test (ledger 53) | none | no |
 | 13.4-11.1 | WXD-07.1 | 12 | Every comment and upstream line citation that still names the old toolkit corrected, comments only | none | no |
 | 13.4-12 | WXD-08 | 13 | Every window's names compared on MSAA and UI Automation between 13.4-06's run and 13.4-09's, the editable combo boxes' typing fields named on both channels, the Tab order, keys and dialog sizes checked | FOUND-08 | yes |
-| 13.4-13 | WXD-09 | 14 | The build at 13.4-12's merge, its install page and the NVDA sheet; Pratik installs it and holds the sitting; the same build is the one phase 14's sittings install | FOUND-08, FOUND-09 | no |
-| 13.4-14 | WXD-10 | 15 | The close: the ledger rows the move was for, the move's guard records measured, the cold build costs, every plan's marks read back, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | FOUND-23 | only if its read changes the changelog |
+| 13.4-12.1 | its own id | 14 | A commit changing a test file runs the guard records whose suite is another target, passing over a changed `tests/X.rs` only for a record whose suite is X, held by cases in `check.test.sh` that were red first (ledger 962) | FOUND-23 | no |
+| 13.4-12.2 | its own id | 15 | Each of the composer's sixteen Format menu items gets a letter no other item holds, Numbered List M, Undo O and Insert Link K among them, held by a test red on the old labels (ledger 972) | none | yes |
+| 13.4-12.3 | its own id | 16 | Every two-answer question asked through Windows' task dialog with buttons named for what each does, such as Delete and Keep; Escape and Alt+F4 close it with nothing done (ledger 967, its first half) | none | yes |
+| 13.4-12.4 | its own id | 17 | A "Don't ask me again" check box (Alt+G) in every such question, and a Settings page, Questions, where a stopped question comes back (ledger 967) | none | yes |
+| 13.4-13 | WXD-09 | 18 | The build at 13.4-12.4's merge, after the fixes of 2026-10-25, its install page and the NVDA sheet; Pratik installs it and holds the sitting; the same build is the one phase 14's sittings install | FOUND-08, FOUND-09 | no |
+| 13.4-14 | WXD-10 | 19 | The close: the ledger rows the move was for, the move's guard records measured, the cold build costs, every plan's marks read back, and the phase's full gate, `scripts/check.sh all` once by hand on its branch before its merge | FOUND-23 | only if its read changes the changelog |
+
+The four rows from 13.4-12.1 were added on 2026-10-25; until
+then 13.4-13 was at wave 14 with its build at 13.4-12's merge, and 13.4-14 at wave 15.
 
 One per wave because every plan writes `docs/changelog.md`, `guards/guards.toml`,
 `.planning/WINDOWS.md`, `.planning/ROADMAP.md` and `.planning/STATE.md`, and most write
@@ -70,7 +88,9 @@ wxDragon plans after it were written before the train and say "a branch cut from
 13.4-NN's merge"; read that under the train the same way. Some preconditions ask for `main`
 itself and so wait for the merge before them: 13.4-09's checkpoint and 13.4-13's build require
 `main` to stand at that merge, and 13.4-10, 13.4-11.1, 13.4-12 and 13.4-14 require the plan before
-to be merged into `main`.
+to be merged into `main`. Since 2026-10-25, 13.4-13's build requires
+`main` at 13.4-12.4's merge; 13.4-12.1 is cut from `main` after the landing, and 13.4-12.2 to
+13.4-12.4 each from the branch of the plan before.
 
 **What was renamed, and what was not.** Every plan id became its 13.4 id, in the text and in the
 file names, branch names and log names a plan writes: `WXD-08-WHAT-THE-MOVE-CHANGED.md` is
@@ -79,12 +99,15 @@ hear", and the sitting's pages are `13.4-13-INSTALLING-THE-BUILD.md` and `13.4-1
 Threat ids were renamed with their plans, `T-WXD-05-SC` becoming `T-13.4-09-SC`, which is the
 shape phase 13.3's plans use. The preconditions that read a merge message now read the train's,
 `--grep='^Merge 13.4-08'` in 13.4-09, `^Merge 13.4-12` in 13.4-13 and `^Merge 13.4-05` in
-13.4-14. The research is unchanged, and so are the scratchpad paths the plans cite as evidence.
+13.4-14. Since 2026-10-25,
+13.4-13 reads `^Merge 13\.4-12\.4:`, because `^Merge 13.4-12` matches every `Merge 13.4-12.N`.
+The research is unchanged, and so are the scratchpad paths the plans cite as evidence.
 The references to `FIXES-STAGING.md`, the staging note that is not in the tree, now point at this
 README, which carries its content. 13.4-14's counts of the phase's plans were raised from eleven to
 fifteen so its closing read covers the four fixes; its guard sweep still starts at 13.4-05's merge,
 because the sweep is for records the toolkit move could have made stale, and 13.4-01 to 13.4-04
-re-measure the records their own changes flag.
+re-measure the records their own changes flag. On 2026-10-25 they were raised again, to nineteen, for
+13.4-12.1 to 13.4-12.4.
 
 ## Pratik's answers
 
@@ -138,6 +161,26 @@ wxdragon-sys and wxdragon-macros from 0.9.17 to 0.9.23 with the packages the loc
 them; 13.4-09 takes the preview again, proceeds if every package and version matches, and stops
 at its checkpoint to report the difference if any does not. Recorded here once, by 13.4-02, the
 first plan to run after the answer.
+
+**The questions that stopped the train at 13.4-13, answered 2026-10-25 in chat: "Yes to fixes. As
+to yes/no buttons, do it. But, also include a "do not ask again" checkbox in order to ensure that
+the user is not bothered by them in the future. Once fixes are done, create the build."** He was
+asked four things at 13.4-13's first task: whether `scripts/build-installer.sh` may run as
+written, with its two `sed` reads; ledger 967, whether a question asked before something that
+cannot be undone should carry buttons saying what each does rather than Yes and No, recommended
+to keep Yes and No through the sittings; ledger 972, the composer's Format menu giving U, N and L
+to two items each, recommended as a small fix before the sittings; and ledger 962, the commit
+check passing over a guard record's suite when the record's file is a test file, recommended to
+pass over a changed `tests/X.rs` only for a record whose suite is X. "Yes to fixes" is 962 and
+972 on their recommendations, 13.4-12.1 and 13.4-12.2. "As to yes/no buttons, do it" answers 967
+against the recommendation: every two-answer question gets buttons named for what each does,
+13.4-12.3. The check box is 13.4-12.4: "Don't ask me again" on each question, and, since
+`CLAUDE.md` asks that every setting be reachable from Settings, a Settings page, Questions, where
+a stopped question comes back. "Once fixes are done, create the build" is his yes to item 1:
+13.4-13 builds at 13.4-12.4's merge with the script as written, and its sheet covers the fixes.
+13.4-12.4 carries one question of its own, "For Pratik": it recommends no box on eight questions
+whose stop would let one key do something that cannot be undone, and gives every question the box
+unless he names some before its second task.
 
 ## What upstream changed since the research
 
@@ -200,7 +243,8 @@ re-measure in the background before its green. 13.4-03's cases go in the target 
 2. **13.4-13, his NVDA sitting.** He installs the build himself and works through the sheet with
    NVDA and Narrator. Its precondition also asks for his ruling on running
    `scripts/build-installer.sh`, which reads two values with `sed`, recorded for this run in this
-   README or the plan's brief.
+   README or the plan's brief. His ruling came on 2026-10-25, "Once fixes are
+   done, create the build." (under "Pratik's answers"), and 13.4-13's premise 7 records it.
 
 Everything else runs without him. Pull requests open under the standing OK of 2026-09-23, and
 tags and releases stay his word.
@@ -212,7 +256,10 @@ sittings. So 13.4-13's build is the one the sittings install, its sheet opens Si
 14's sittings resume on that build. 13.3-25 wrote that 14-08.2 builds after this phase closes;
 the roadmap and the state file were corrected by dating when these plans landed. Phase 14's own
 plan files are not edited here: 13.4-13's task 2 adds one line each to 14-08.2's and 14-10's
-`<premise_corrections>` and one at the top of `14-SITTING-2.md`.
+`<premise_corrections>` and one at the top of `14-SITTING-2.md`. Since 2026-10-25 it also corrects the steps of
+`14-SITTING-1.md`, `14-SITTING-2.md` and `14-SITTING-4.md` that answer a question with Yes or
+No, because 13.4-12.3 names both answers of every such question, and adds a line to 14-12's
+`<premise_corrections>`.
 
 After this phase, a small plan fixes the Visual C++ runtime gap (ledger 958), on Pratik's "yes" of
 2026-10-20; where it falls among the sittings is his to say.

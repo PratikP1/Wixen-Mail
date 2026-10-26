@@ -6,13 +6,14 @@
 
 use crate::application::conversations;
 use crate::application::identities::FromEntry;
+use crate::application::questions_before_acting::Question;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
     name_from_label, name_the_spin_control, set_accessible_name,
     set_accessible_name_and_description,
 };
-use crate::presentation::browser_ready::BrowserReady;
+use crate::presentation::asking::Answered;
 use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
@@ -711,36 +712,85 @@ fn files_on_the_clipboard() -> OnTheClipboard {
 /// is why it is a function: the button, and Alt+O pressed inside the message
 /// body, which is a web view and keeps every key it is given until the page
 /// hands one back.
+///
+/// What the menu holds is decided by [`format_menu`], which needs no window;
+/// this only turns that description into a menu and pops it up.
 fn show_format_menu(dialog: &Dialog) {
     let mut menu = Menu::builder();
-    for (index, format) in editor_document::Format::ALL.iter().enumerate() {
-        menu = menu.append_item(
-            ID_FORMAT_FIRST + index as Id,
-            &format.label(),
-            // A menu's help text describes what the item does, so it says
-            // what would be asked for rather than a state nothing has read.
-            &format.spoken(None),
-        );
+    for line in format_menu() {
+        menu = match line {
+            FormatMenuLine::Command(entry) => menu.append_item(entry.id, &entry.label, &entry.help),
+            FormatMenuLine::Separator => menu.append_separator(),
+        };
     }
-    let mut menu = menu
-        .append_separator()
-        .append_item(
-            ID_INSERT_LINK,
-            "Insert &Link...",
-            "Turn the selected text into a link",
-        )
-        .append_item(
-            ID_INSERT_TABLE,
-            "Insert &Table...",
-            "Add a table with proper column headers",
-        )
-        .append_item(
-            ID_INSERT_PICTURE,
-            "Insert &Picture...",
-            "Put a picture in the message, and describe it",
-        )
-        .build();
+    let mut menu = menu.build();
     dialog.popup_menu(&mut menu, None);
+}
+
+/// One command on the Format menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FormatMenuEntry {
+    /// The command the dialog's menu handler already answers.
+    id: Id,
+    /// The words shown, with `&` in front of the letter that runs it while
+    /// the menu is open, and the command's key after a tab where it has one.
+    label: String,
+    /// A sentence saying what choosing it does.
+    help: String,
+}
+
+/// One line of the Format menu.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum FormatMenuLine {
+    /// A command a person can choose.
+    Command(FormatMenuEntry),
+    /// The rule between changing how text looks and putting something in.
+    Separator,
+}
+
+/// The Format menu, in the order it is read.
+///
+/// The menu is built from this list and the test of its letters reads this
+/// list, so what the test holds apart is what Windows is handed. Each id is
+/// written as an `id: ` field with its constant's name right after it, which
+/// is how `tests/wired.rs` finds what this menu raises.
+fn format_menu() -> Vec<FormatMenuLine> {
+    let formatting = editor_document::Format::ALL
+        .iter()
+        .enumerate()
+        .map(|(index, format)| {
+            FormatMenuLine::Command(FormatMenuEntry {
+                id: ID_FORMAT_FIRST + index as Id,
+                label: format.label(),
+                // A menu's help text describes what the item does, so it says
+                // what would be asked for rather than a state nothing has read.
+                help: format.spoken(None),
+            })
+        });
+    let insertions = [
+        FormatMenuEntry {
+            id: ID_INSERT_LINK,
+            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert Lin&k...".to_string(),
+            help: "Turn the selected text into a link".to_string(),
+        },
+        FormatMenuEntry {
+            id: ID_INSERT_TABLE,
+            label: "Insert &Table...".to_string(),
+            help: "Add a table with proper column headers".to_string(),
+        },
+        FormatMenuEntry {
+            id: ID_INSERT_PICTURE,
+            label: "Insert &Picture...".to_string(),
+            help: "Put a picture in the message, and describe it".to_string(),
+        },
+    ]
+    .map(FormatMenuLine::Command);
+    formatting
+        .chain([FormatMenuLine::Separator])
+        .chain(insertions)
+        .collect()
 }
 
 /// The compose dialog's widgets: the fields `show_compose_dialog_full`
@@ -776,9 +826,6 @@ pub struct ComposeDialogWidgets {
     pub spell_btn: Button,
     pub attach_btn: Button,
     pub body_editor: WebView,
-    /// Whether WebView2 has finished making `body_editor`. The dialog is not
-    /// destroyed before it has; see `browser_ready`.
-    pub browser: BrowserReady,
     pub attachment_label: StaticText,
     pub attachment_list: ListBox,
     pub draft_btn: Button,
@@ -1091,7 +1138,6 @@ pub fn build_compose_dialog(
     let body_editor = WebView::builder(&dialog)
         .with_backend(WebViewBackend::Default)
         .build();
-    let browser = BrowserReady::watch(&body_editor);
     set_accessible_name(&body_editor, "Message body");
     body_editor.enable_context_menu(true);
     body_editor.enable_access_to_dev_tools(false);
@@ -1206,7 +1252,6 @@ pub fn build_compose_dialog(
         spell_btn,
         attach_btn,
         body_editor,
-        browser,
         attachment_label,
         attachment_list,
         draft_btn,
@@ -1363,6 +1408,25 @@ pub fn save_on_a_timer_of_its_own<W: WxEvtHandler>(
     timer
 }
 
+/// Move the keyboard out of the message body, back to the Subject line when
+/// `back`, on to the control after the body otherwise.
+///
+/// Both directions ask the window, so the answer is whatever the tab order
+/// says and stays right when a control is added. Naming a control was tried
+/// for forward and arrives one further on: focus set to Save Draft landed on
+/// Discard, and Tab is not a key anybody should have to aim at a destructive
+/// button. Backward used to name the Subject line by hand, while the toolbar
+/// was made between the fields and the message; it is made before the fields
+/// now, so the window's answer is the Subject line too.
+///
+/// `navigate`'s argument reads backwards because it does at wxdragon 0.9.23:
+/// `navigate(true)` moves to the control before this one. Upstream's #248, not
+/// yet released, flips it, and `tests/tab_leaves_the_message_body_both_ways.rs`
+/// is what notices when a move brings it in.
+pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(back);
+}
+
 /// The compose dialog, with automatic draft saving.
 ///
 /// `autosave` decides how often, and `on_autosave` is handed the fields as
@@ -1425,7 +1489,6 @@ pub fn show_compose_dialog_full(
         spell_btn,
         attach_btn,
         body_editor,
-        browser,
         attachment_label,
         attachment_list,
         draft_btn,
@@ -2452,31 +2515,10 @@ pub fn show_compose_dialog_full(
                 Some(Deferred::Schedule) => {
                     ask_when_and_close(&dialog, &chosen_moment_for_the_body, &a11y)
                 }
-                // Where the toolbar was left, so leaving and coming back lands
-                // where somebody was. The group is named on arrival, always,
-                // because arriving is the moment nobody knows where they are.
-                // The two directions are not done the same way, and each is
-                // the one that was measured to land where it should.
-                //
-                // Forward asks the window, so the answer is whatever the tab
-                // order says and stays right when a control is added. Naming a
-                // control was tried and arrives one further on: focus set to
-                // Save Draft landed on Discard, and Tab is not a key anybody
-                // should have to aim at a destructive button. The argument
-                // reads backwards because it does: `navigate(true)` moves to
-                // the control before this one.
-                //
-                // Backward asks the window too, now that it gives the right
-                // answer. It used to name the Subject line by hand, because
-                // the toolbar was made between the fields and the message and
-                // asking would have walked into it: somebody pressing
-                // Shift+Tab in the body is going back to the recipients, not
-                // to the Bold button, which has its own key. The toolbar is
-                // made before the fields now, so the window's own answer and
-                // the one that was named by hand are the same, and asking
-                // stays right when a control is added.
+                // Which way each direction goes, and why the window is asked,
+                // is on `leave_the_message_body`.
                 Some(Deferred::Leaving { back }) => {
-                    body_editor.navigate(back);
+                    leave_the_message_body(&body_editor, back);
                 }
                 // The first button, which is Send. Reaching the toolbar from
                 // the body is otherwise Shift+Tab five times, back through
@@ -2958,12 +3000,11 @@ pub fn show_compose_dialog_full(
     // and since the body became a web view that is a browser process tree
     // each time.
     //
-    // Through the watch on the browser rather than `dialog.destroy()`. A
-    // window closed before WebView2 has made the browser inside it, which is
-    // Escape within a quarter of a second warm and within seconds after the
-    // runtime updates itself, took the whole application down with it. See
-    // `browser_ready`.
-    browser.destroy_when_ready(dialog);
+    // At once, even when WebView2 has not finished making the browser inside,
+    // which is Escape within a quarter of a second warm. Until wxWidgets 3.3.4,
+    // which wxdragon 0.9.23 builds, the browser's creation reply then reached a
+    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.destroy();
     outcome
 }
 
@@ -3041,31 +3082,23 @@ fn confirm_spelling(parent: &Dialog, data: &ComposeData) -> bool {
         return true;
     };
 
-    // Enter sends, deliberately, and this is the one question in the program
-    // where that is the right way round. Somebody who meant to send and heard
-    // the warning should not have to find a button, and the words are in the
-    // question, so the decision can be made from hearing it alone. The two
-    // deletion questions answer Enter with No for the opposite reason; see
-    // `presentation::asking`.
-    let asker = MessageDialog::builder(
+    // Enter sends, deliberately, and this is one of the three questions in the
+    // program where that is the right way round. Somebody who meant to send
+    // and heard the warning should not have to find a button, and the words
+    // are in the question, so the decision can be made from hearing it alone.
+    // The deletion questions give Enter the answer that keeps things for the
+    // opposite reason; see `presentation::asking`. The buttons say Send Anyway
+    // and Back to the Message.
+    crate::presentation::asking::ask(
         parent,
-        // The buttons are Yes and No, which this builder cannot relabel, so
-        // the question has to say what each one means. "Send anyway?" answered
-        // Yes or No is unambiguous; "Send anyway, or go back?" answered Yes is
-        // not.
+        Question::SendDespiteSpelling,
+        "Check the spelling",
         &format!(
             "{said}
 
 Send it anyway?"
         ),
-        "Check the spelling",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())
-    .build();
-    let answer = asker.show_modal();
-    asker.destroy();
-
-    answer == ID_YES
+    ) == Answered::Yes
 }
 
 /// Ask for a URL and put it on the selected text.
@@ -3685,50 +3718,43 @@ enum TheDecorativeAnswer {
 
 /// The question, as somebody hears it.
 ///
-/// The buttons are Yes and No and `MessageDialog` cannot relabel them, so the
-/// question has to be one those two words answer and has to say what each one
-/// does. It also has to say what decorative *costs*, because the person
-/// answering is not the person who pays: the cost lands on somebody reading
-/// the message with a screen reader, who is told nothing.
+/// The buttons say Mark as Decorative and Describe It, so the question says
+/// what each does by those names, heard before the button the keyboard is on.
+/// It also has to say what decorative *costs*, because the person answering
+/// is not the person who pays: the cost lands on somebody reading the message
+/// with a screen reader, who is told nothing.
 const THE_DECORATIVE_QUESTION: &str =
     "This picture is small enough to be furniture: a spacer, a rule, a line under \
      a signature.
 
-Yes: send it as decorative. It goes with no description at all, and a screen \
-reader skips over it. Choose this only when there is genuinely nothing to \
-tell somebody.
+Mark as Decorative sends it with no description at all, and a screen reader \
+skips over it. Choose it only when there is genuinely nothing to tell \
+somebody.
 
-No: describe it. This is what Enter does.";
+Describe It is what Enter does.";
 
 /// The title on that question.
 const THE_DECORATIVE_QUESTION_TITLE: &str = "Is this picture decorative?";
 
 /// Ask whether a picture is decorative.
 ///
-/// Enter answers No, through
-/// [`crate::presentation::asking::yes_no_where_enter_answers_no`]. Enter is how
-/// somebody working by keyboard answers everything, so it is already on its
-/// way while the question is still being read out, and the answer it gives has
-/// to be the one that costs nothing. Describing a picture that turned out to
-/// be a spacer costs a moment. Marking a picture decorative that turned out to
-/// say something costs the person receiving it the fact that it was there.
+/// Enter gives Describe It, through `presentation::asking`'s table. Enter is
+/// how somebody working by keyboard answers everything, so it is already on
+/// its way while the question is still being read out, and the answer it
+/// gives has to be the one that costs nothing. Describing a picture that
+/// turned out to be a spacer costs a moment. Marking a picture decorative
+/// that turned out to say something costs the person receiving it the fact
+/// that it was there.
 fn ask_whether_it_is_decorative(dialog: &Dialog) -> TheDecorativeAnswer {
-    let question = MessageDialog::builder(
+    match crate::presentation::asking::ask(
         dialog,
-        THE_DECORATIVE_QUESTION,
+        Question::MarkAPictureDecorative,
         THE_DECORATIVE_QUESTION_TITLE,
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build();
-    let answer = question.show_modal();
-    question.destroy();
-
-    if answer == ID_YES {
-        TheDecorativeAnswer::ItIsDecorative
-    } else if answer == ID_NO {
-        TheDecorativeAnswer::DescribeIt
-    } else {
-        TheDecorativeAnswer::NeverMind
+        THE_DECORATIVE_QUESTION,
+    ) {
+        Answered::Yes => TheDecorativeAnswer::ItIsDecorative,
+        Answered::No => TheDecorativeAnswer::DescribeIt,
+        Answered::Neither => TheDecorativeAnswer::NeverMind,
     }
 }
 
@@ -3898,14 +3924,12 @@ enum PreviewDecision {
 const ID_CONFIRM_SEND: Id = ID_HIGHEST + 180;
 const ID_GO_BACK: Id = ID_HIGHEST + 181;
 
-/// The Preview Before Send dialog, the two buttons `show_send_preview` still
-/// needs to read after a real `.show_modal()`, and the watch on the browser
-/// the preview renders into, which decides when the dialog may go.
+/// The Preview Before Send dialog and the two buttons `show_send_preview`
+/// still needs to read after a real `.show_modal()`.
 pub struct SendPreviewWidgets {
     pub dialog: Dialog,
     pub send_btn: Button,
     pub back_btn: Button,
-    pub browser: BrowserReady,
 }
 
 /// Build the Preview Before Send dialog without showing it.
@@ -3968,7 +3992,6 @@ pub fn build_send_preview_dialog(
     let body_preview = WebView::builder(&dlg)
         .with_backend(WebViewBackend::Edge)
         .build();
-    let browser = BrowserReady::watch(&body_preview);
     set_accessible_name(&body_preview, "Message preview");
     body_preview.set_name("Message preview");
     body_preview.enable_context_menu(false);
@@ -4051,7 +4074,6 @@ pub fn build_send_preview_dialog(
         dialog: dlg,
         send_btn,
         back_btn,
-        browser,
     }
 }
 
@@ -4071,17 +4093,14 @@ fn show_send_preview(
     data: &ComposeData,
     palette: Option<theme::Palette>,
 ) -> PreviewDecision {
-    let SendPreviewWidgets {
-        dialog: dlg,
-        browser,
-        ..
-    } = build_send_preview_dialog(parent, data, palette);
+    let SendPreviewWidgets { dialog: dlg, .. } = build_send_preview_dialog(parent, data, palette);
 
     let answer = dlg.show_modal();
     // With the browser control the preview renders into. One per message sent,
-    // and the compose window holds another. Through the watch on the browser,
-    // for the reason `show_compose_dialog_full` gives at its own close.
-    browser.destroy_when_ready(dlg);
+    // and the compose window holds another. At once, whether or not the
+    // browser has finished being made, for the reason `show_compose_dialog_full`
+    // gives at its own close.
+    dlg.destroy();
     if answer == ID_CONFIRM_SEND {
         PreviewDecision::ConfirmSend
     } else {
@@ -4195,6 +4214,113 @@ mod tests {
                 "{name} sits inside the range kept for the formatting run"
             );
         }
+    }
+
+    /// The letter a label claims, when it claims one.
+    ///
+    /// The reading `wx_tray.rs`'s tests and `tests/wired.rs` make, and the rule
+    /// Windows itself follows: `&&` is a literal ampersand, not a mnemonic.
+    fn alt_key_of(label: &str) -> Option<char> {
+        let letters: Vec<char> = label.chars().collect();
+        let mut at = 0;
+        while at < letters.len() {
+            if letters[at] != '&' {
+                at += 1;
+                continue;
+            }
+            match letters.get(at + 1) {
+                Some('&') => at += 2,
+                Some(letter) if letter.is_alphanumeric() => {
+                    return Some(letter.to_ascii_lowercase());
+                }
+                _ => at += 1,
+            }
+        }
+        None
+    }
+
+    /// Every fault in the letters of one menu, each as a sentence: a letter
+    /// two items claim, naming both, and an item that claims none.
+    ///
+    /// Items are named by their words, without the key after the tab.
+    fn letter_faults(labels: &[String]) -> Vec<String> {
+        let mut faults = Vec::new();
+        let mut claimed: Vec<(char, &str)> = Vec::new();
+        for label in labels {
+            let words = label
+                .split_once('\t')
+                .map_or(label.as_str(), |(words, _)| words);
+            let Some(letter) = alt_key_of(label) else {
+                faults.push(format!("\"{words}\" claims no letter"));
+                continue;
+            };
+            if let Some((_, earlier)) = claimed.iter().find(|(seen, _)| *seen == letter) {
+                faults.push(format!(
+                    "{} is claimed by \"{earlier}\" and \"{words}\"",
+                    letter.to_ascii_uppercase()
+                ));
+            }
+            claimed.push((letter, words));
+        }
+        faults
+    }
+
+    /// Every item on the Format menu claims a letter, and no letter is
+    /// claimed twice.
+    ///
+    /// With a menu open a letter is meant to be one keystroke: press it and
+    /// the item runs. Two items sharing a letter downgrades both to press,
+    /// press again, then Enter, and nothing tells the person that the letter
+    /// NVDA taught them no longer finishes the job; the second item cannot be
+    /// reached by its letter at all. That is worse than an item with no
+    /// letter, which at least does not promise one. Until 2026-10-25 three
+    /// letters here were each held by two items (ledger 972), and nothing
+    /// read this menu's letters: `tests/wired.rs` reads the menu bar's.
+    #[test]
+    fn test_every_item_on_the_format_menu_claims_a_letter_of_its_own() {
+        let labels: Vec<String> = format_menu()
+            .into_iter()
+            .filter_map(|line| match line {
+                FormatMenuLine::Command(entry) => Some(entry.label),
+                FormatMenuLine::Separator => None,
+            })
+            .collect();
+        assert!(!labels.is_empty(), "the Format menu was read as empty");
+
+        let faults = letter_faults(&labels);
+
+        assert!(
+            faults.is_empty(),
+            "the Format menu's letters do not each run one item:\n  {}",
+            faults.join("\n  ")
+        );
+    }
+
+    /// The reading above can see a shared letter and a missing one, and does
+    /// not take a literal ampersand for a letter.
+    ///
+    /// "Fish &&Chips" would claim C if `&&` were read as a mnemonic, and
+    /// "&Cheese" holds C, so a reading that got `&&` wrong reports a clash
+    /// this list does not have.
+    #[test]
+    fn test_companion_the_letter_reading_sees_a_shared_letter_and_a_missing_one() {
+        let planted: Vec<String> = [
+            "&Bold\tCtrl+B",
+            "&Bulleted List",
+            "No Letter",
+            "Fish &&Chips &Vinegar",
+            "&Cheese",
+        ]
+        .map(String::from)
+        .to_vec();
+
+        assert_eq!(
+            letter_faults(&planted),
+            vec![
+                "B is claimed by \"&Bold\" and \"&Bulleted List\"".to_string(),
+                "\"No Letter\" claims no letter".to_string(),
+            ]
+        );
     }
 
     #[test]

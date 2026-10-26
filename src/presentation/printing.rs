@@ -7,12 +7,14 @@
 //!
 //! # Why this is Win32 and not wxWidgets
 //!
-//! wxdragon 0.9.17's printing never starts a print job on Windows. Its C++
+//! wxdragon 0.9.23's printing never starts a print job on Windows. Its C++
 //! shim overrides `wxPrintout::OnBeginDocument` and returns without calling
 //! the base class, which is where `StartDoc` is called, so the pages are drawn
 //! into a device context with no document behind it, nothing is spooled, and
-//! the call reports success (phase 13's research, section 1.2). So the calls
-//! here are the ones wxWidgets itself would have made.
+//! the call reports success (phase 13's research, section 1.2;
+//! `wxdragon-sys-0.9.23/cpp/src/print.cpp:52-58`, upstream #246, its fix
+//! #251 not in 0.9.23). So the calls here are the ones wxWidgets itself would
+//! have made.
 //!
 //! # Why one font measures and draws
 //!

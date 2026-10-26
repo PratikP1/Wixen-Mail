@@ -166,12 +166,11 @@ struct ListViewItem {
 
 /// One cell of the live list, read from the list itself.
 ///
-/// Not through `ListCtrl::get_item_text`, which loses the last character of
-/// every cell and puts a NUL in its place (`wxdragon-0.9.17`,
-/// `src/widgets/list_ctrl.rs:429`): read that way, "27/09/2026" came back as
-/// "27/09/202" and a NUL on 2026-09-29. A date's last digit is the year, so
-/// the cell is read whole, the way `tests/a_signature_follows_the_from_account.rs`
-/// reads one.
+/// Through `LVM_GETITEMTEXTW` rather than `ListCtrl::get_item_text`, so what is
+/// read is the text the native list holds, which is what a screen reader is
+/// given for the row, and not what the binding's own reader reports. The
+/// binding's reader once lost a cell's last character, and a date's last digit
+/// is its year. The same reading as `tests/a_signature_follows_the_from_account.rs`.
 fn cell(list: &ListCtrl, row: i64, column: i32) -> String {
     let mut buffer = [0u16; 512];
     let mut item = ListViewItem {
@@ -781,15 +780,12 @@ fn what_is_wrong_with_the_key_attachment_path(source: &str) -> Vec<String> {
         wrong.push("fn offer_the_key_attachment( is not in the main window".to_string());
         return wrong;
     };
-    for wanted in [
-        "the_attachment_question(",
-        "yes_no_where_enter_answers_no()",
-    ] {
+    for wanted in ["the_attachment_question(", "Question::ImportAKey"] {
         if !body.contains(wanted) {
             wrong.push(format!("the offer does not call {wanted}"));
         }
     }
-    match (body.find("ID_YES"), body.find("pgp_keys::import(")) {
+    match (body.find("Answered::Yes"), body.find("pgp_keys::import(")) {
         (Some(asked), Some(imported)) if asked < imported => {}
         (_, None) => wrong.push("the offer never imports the key".to_string()),
         _ => wrong.push("the offer imports the key before it asks".to_string()),

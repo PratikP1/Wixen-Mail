@@ -136,7 +136,7 @@ fn the_question_comes_before_the_move(app: &str) -> Result<(), String> {
         "run_these_actions_over",
         THE_ANSWER,
     )?;
-    comes_after(&answer, "show_modal", "run_these_actions_over", THE_ANSWER)
+    comes_after(&answer, "asking::ask", "run_these_actions_over", THE_ANSWER)
 }
 
 /// The movers a block must not reach round the runner.
@@ -299,9 +299,7 @@ fn answer_what_a_block_caught(app: AppHandles<'_>) {
     let here = if too_many(count).is_some() {
         MailAlreadyHere::TooMany(count)
     } else {
-        let asked = MessageDialog::builder(frame, &blocking::the_question_about_mail_already_here(&block, count, &junk), "Block")
-            .build()
-            .show_modal();
+        let asked = asking::ask(frame, Question::MoveTheMailABlockCatches, "Block", &blocking::the_question_about_mail_already_here(&block, count, &junk));
         let outcome = Outcome { move_to: Some(junk.clone()), ..Outcome::default() };
         run_these_actions_over(app, list, cache, chosen, &outcome);
         MailAlreadyHere::Nothing
@@ -366,7 +364,7 @@ fn test_the_bound_reading_names_a_question_asked_before_the_bound() {
 fn test_the_question_reading_names_a_move_made_before_asking() {
     let planted = moved(
         "        run_these_actions_over(app, list, cache, chosen, &outcome);",
-        "        let asked = MessageDialog::builder(",
+        "        let asked = asking::ask(",
     );
 
     let said = the_question_comes_before_the_move(&planted).expect_err("a move first");

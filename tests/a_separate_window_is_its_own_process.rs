@@ -3,7 +3,7 @@
 //! #80's third place, 12-02. The Reading tab has offered three since
 //! 11-11.1 and the third opened the default browser with a line saying so,
 //! because every `WebView` in one process shares one WebView2 profile under
-//! wxdragon 0.9.17 and nothing in either crate can clear it or move it. A
+//! wxdragon 0.9.23 and nothing in either crate can clear it or move it. A
 //! window in the same process would therefore have sat in the message
 //! preview's cookie jar, which is what the issue's third item is about. A
 //! process of its own, under an application name of its own, is the

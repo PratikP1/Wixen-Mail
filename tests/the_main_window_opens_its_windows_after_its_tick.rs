@@ -247,7 +247,7 @@ fn the_due_now_window_waits(window: &str) -> Result<(), String> {
 
 fn the_folders_question_waits(window: &str) -> Result<(), String> {
     let asking = body_of(window, THE_FOLDERS_QUESTION)?;
-    every_opening_is_handed_on(&asking, ".show_modal()", THE_FOLDERS_QUESTION)?;
+    every_opening_is_handed_on(&asking, "asking::ask(", THE_FOLDERS_QUESTION)?;
     handed_on_after(&asking, ".raised(", THE_FOLDERS_QUESTION)?;
     the_turn_goes_with_the_window(&asking, "one_question_on_screen", THE_FOLDERS_QUESTION)
 }
@@ -256,7 +256,7 @@ fn the_update_questions_wait(window: &str) -> Result<(), String> {
     let handler = body_of(window, THE_HANDLER)?;
     for variant in ["AnUpdateDidNotHappen", "AnUpdateIsReady"] {
         let arm = arm_of(&handler, variant)?;
-        every_opening_is_handed_on(&arm, ".show_modal()", &format!("the arm for {variant}"))?;
+        every_opening_is_handed_on(&arm, "asking::ask(", &format!("the arm for {variant}"))?;
     }
     Ok(())
 }
@@ -279,7 +279,13 @@ fn the_asking_arms_wait(window: &str) -> Result<(), String> {
 
 fn no_window_opens_in_the_handler(window: &str) -> Result<(), String> {
     let handler = body_of(window, THE_HANDLER)?;
-    every_opening_is_handed_on(&handler, ".show_modal()", "the update handler")
+    every_opening_is_handed_on(&handler, "asking::ask(", "the update handler")?;
+    // A window opened any other way is held to the same rule wherever one
+    // appears; since 13.4-12.3 every question in the handler is asked above.
+    match handler.contains(".show_modal()") {
+        true => every_opening_is_handed_on(&handler, ".show_modal()", "the update handler"),
+        false => Ok(()),
+    }
 }
 
 #[test]
@@ -360,12 +366,11 @@ fn a_folders_question(window: &str) -> String {
 
 #[test]
 fn test_the_folders_reading_refuses_a_question_put_in_the_tick() {
-    let in_the_tick =
-        "    let asked = MessageDialog::builder(frame, &q.words, &q.title).build().show_modal();";
+    let in_the_tick = "    let asked = asking::ask(frame, Question::RemoveFoldersTheServerNoLongerLists, &q.title, &q.words);";
     let handed_on = "    let frame = *frame;\n\
                      \x20   after_the_tick(move || {\n\
                      \x20       let _turn = turn;\n\
-                     \x20       let asked = MessageDialog::builder(&frame, &q.words, &q.title).build().show_modal();\n\
+                     \x20       let asked = asking::ask(&frame, Question::RemoveFoldersTheServerNoLongerLists, &q.title, &q.words);\n\
                      \x20   });";
     assert_eq!(
         the_folders_question_waits(&a_folders_question(handed_on)),
@@ -394,9 +399,10 @@ fn a_handler(did_not_happen: &str, ready: &str, counted: &str, key: &str, block:
     )
 }
 
-const A_QUESTION_IN_THE_TICK: &str = "            let asked = dialog.show_modal();";
+const A_QUESTION_IN_THE_TICK: &str =
+    "            let asked = asking::ask(&frame, Question::InstallAnUpdate, title, words);";
 const A_QUESTION_HANDED_ON: &str = "            after_the_tick(move || {\n\
-                                    \x20               let asked = dialog.show_modal();\n\
+                                    \x20               let asked = asking::ask(&frame, Question::InstallAnUpdate, title, words);\n\
                                     \x20           });";
 
 fn asks_in_the_tick(name: &str) -> String {

@@ -110,6 +110,8 @@ pub mod pop_sync;
 pub mod printing;
 /// Whether a message goes signed, encrypted, both or neither, and with what.
 pub mod protecting;
+/// Every question asked before acting, by name.
+pub mod questions_before_acting;
 /// Quick Steps: a rule's actions under a name, run by hand over the selection.
 pub mod quick_steps;
 /// What a message shows and says, decided once for every surface that shows one.

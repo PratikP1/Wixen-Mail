@@ -801,6 +801,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Every question Wixen Mail asks before it does something now has buttons that say what each
+  does (2026-10-25).** Delete and Keep, Run and Don't Run, Send Anyway and Back to the Message,
+  and so on, instead of Yes and No, so a screen reader reads the question and then "Keep,
+  button" rather than "No, button". Enter presses the same answer as before, which keeps things
+  as they are except where you asked for the thing: sending past the spelling check, running a
+  rule that does not delete, and moving the mail a new block catches. Escape and Alt+F4 now
+  close a question without doing anything, which they could not do before. The Calendar
+  window's Confirm Delete asks the same way, so Enter there now keeps the event rather than
+  deleting it, and the box takes Windows' own colours. Delete and Delete Permanently on a
+  conversation, and emptying a folder into the Trash or for good, say on their first button
+  which one they are. The question about folders your mail server no longer lists no longer
+  ends "Answer No to keep it", and the question about a small picture names Mark as Decorative
+  and Describe It. Each button's letter is in the keyboard shortcuts page, under Questions with
+  Two Answers. Known limitations: nobody has heard these buttons with a screen reader yet.
+
 - **The window toolkit moved to its newest release, wxWidgets 3.3.4 (2026-10-25, SHIP-05).**
   Wixen Mail draws its windows with wxWidgets, through a Rust layer over it, and both moved from
   the versions it had used since July, wxWidgets 3.3.2 among them, to their newest releases. Two
@@ -1506,6 +1521,24 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   last line alone, and before its window opens, the few lines waiting for it.
 
 ### Fixed
+
+- **Every item on the composer's Format menu has a letter of its own (2026-10-25).** Three
+  letters on the menu were each given to two items: `U` to Underline and Numbered List, `N` to
+  Normal Text and Undo, and `L` to Bulleted List and Insert Link. Pressing one of them with the
+  menu open moved between its two items instead of running either, so Numbered List, Undo and
+  Insert Link could not be reached by a letter at all. Numbered List is now `M`, Undo `O` and
+  Insert Link `K`. Underline keeps `U`, Normal Text `N` and Bulleted List `L`, and each of the six
+  now runs its item the moment it is pressed. The Keyboard shortcuts page lists the letter of
+  every item on the menu. The version does not move: no build has been cut since 1.0.0-alpha.1.
+  Known limitation: nobody has pressed the new letters with a screen reader yet.
+
+- **Compose and Preview Before Send close the moment you close them (2026-10-25).** Until now,
+  either window closed before its message body had finished loading was hidden and kept until
+  the browser inside it was ready, because closing it sooner crashed the program. The newer
+  toolkit (see Changed) has fixed that crash, so both windows now go at once, even before the
+  body has loaded. One thing changes that you might have met: a window whose browser never
+  finished loading used to stay hidden for the rest of the session, with the browser's own
+  processes running behind it. That no longer happens.
 
 - **Quitting just after a message preview or a conversation window appears no longer ends the
   program with an error (2026-10-25, SHIP-05).** The message preview and the conversation window
@@ -4949,7 +4982,9 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
   main window and the conversation-as-headings window hold browsers too and
   are only ever destroyed when the application exits; if that happens inside
   the same moment the exit code is wrong and nothing else is, and that is
-  left as it is until the wxWidgets fix arrives.
+  left as it is until the wxWidgets fix arrives. Since 2026-10-25 both
+  windows close at once, because wxWidgets 3.3.4 fixed the crash; see that
+  day's entry under Unreleased.
 
 - **CI's Test Suite job checks out the whole history.** The push of `main`
   at `0fa393ba` on 2026-09-15 failed that job on one test,

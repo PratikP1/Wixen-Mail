@@ -3,12 +3,13 @@
 //! A dialog that needs to know what a tree row means has two ways to find out.
 //! It can hang the meaning off the row, which is what `set_custom_data` and
 //! `append_item_with_data` look like they do; they actually put it in a
-//! process-global map in `wxdragon` and store the map key on the row, and
-//! nothing ever takes it out again, so every row of every opening stays there
-//! for the life of the process. Or it can keep the meanings in a vector beside
+//! process-global map in `wxdragon` and store the map key on the row. Before
+//! wxdragon 0.9.22 nothing took it out again, so every row of every opening
+//! stayed there for the life of the process; 0.9.22 frees it when the row goes
+//! (upstream #214 and #215). Or it can keep the meanings in a vector beside
 //! the control and pair them by position, which is what
 //! `WxUIState::tree_rows` does for the folder tree and what the two dialogs
-//! using this module do.
+//! using this module do, so a row's meaning is plain data this program owns.
 //!
 //! Pairing by position needs the position, and that is the part with no
 //! obvious answer: `wxdragon`'s `TreeItemId` has no equality and does not
