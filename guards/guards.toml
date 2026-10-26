@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 968 records have arrived since and have not been through it.
+# 994 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -3529,17 +3529,31 @@ tests_last_seen = [
 # found, and it is the direction that announces itself rather than the silent
 # one: the break stops applying and the run says so. The count check cannot see
 # it, because a refactor that moves an expression changes no test count.
+#
+# Re-measured on 2026-10-25 by 13.4-11, after the flag became the binding's own
+# `MessageDialogStyle::NoDefault` at wxdragon 0.9.23: the anchor still names
+# one place, and against the whole library exactly the one test named went red.
+#
+# Rewritten on 2026-10-25 by 13.4-12.3, when the flag and the two style
+# functions went and every question took its Enter from `enter_gives`. The
+# break is the same kind: it gives the first answer, Delete, to Enter on the
+# question asked before deleting a contact, event, task, note or reminder.
 
 [[guard]]
 name = "a deletion that cannot be undone does not let Enter answer Yes"
 file = "src/presentation/asking.rs"
-before = """    two_answers | ENTER_DOES_NOT_ANSWER_YES"""
-after = """    two_answers"""
+before = """        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer"""
+after = """        Question::DeleteAnItem => Answered::Yes,
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer"""
 red = [
-    "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
+    "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 5 },
+    { file = "src/presentation/asking.rs", tests = 14 },
 ]
 
 # What each first-run answer costs is the button's description, which is what a
@@ -13160,7 +13174,7 @@ red = [
     "presentation::wx_compose::tests::test_forwarding_a_message_passes_its_pictures_on",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
 ]
 
 [[guard]]
@@ -14019,14 +14033,13 @@ tests_last_seen = [
 [[guard]]
 # No row of the folder tree hangs its identity off the control.
 #
-# `wxdragon` keeps tree item data in a process-global map. `store_item_data`
-# inserts into a static registry, `delete_all_items` calls the raw FFI and
-# removes nothing from it, and `cleanup_all_custom_data`, the escape hatch,
-# removes nothing either: it walks the tree through `clean_item_and_children`,
-# and that function calls `remove_item_data` nowhere at all, for a leaf or for a
-# branch. This tree is emptied and rebuilt whenever a sync finishes, on a timer,
-# so one call here leaks an entry per folder per sync for the life of the
-# process.
+# `wxdragon` keeps tree item data in a process-global map. Before wxdragon
+# 0.9.22, `delete_all_items` called the raw FFI and removed nothing from it, and
+# `cleanup_all_custom_data`, the escape hatch, removed nothing either, so on a
+# tree emptied and rebuilt whenever a sync finishes one call here leaked an
+# entry per folder per sync. 0.9.22 frees each row's entry before the row goes
+# (upstream #214 and #215). The rule stays for the reason the test's doc gives:
+# the rows live in one vector beside the control, read by position.
 #
 # This is a source read rather than a behaviour test because this tree is drawn
 # inside a running application, so no test can fence a build of it and count
@@ -16094,7 +16107,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/application/conversations.rs", tests = 26 },
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
 ]
 
 # ── A row that is not a folder offered a folder's commands ───────────────────
@@ -18051,7 +18064,7 @@ red = [
     "test_the_one_door_is_the_only_place_a_path_becomes_an_attachment",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/every_way_a_file_goes_on_a_message.rs", tests = 7 },
 ]
 
@@ -18064,7 +18077,7 @@ tests_last_seen = [
 # navigates to it. The half-written message goes off the screen.
 #
 # Turning that setting off is the direct fix and is out of reach. It lives on
-# `ICoreWebView2Controller4`; wxWidgets 3.3.2 keeps the controller in
+# `ICoreWebView2Controller4`; wxWidgets 3.3.4 keeps the controller in
 # `wx/msw/private/webview_edge.h` and `GetNativeBackend` hands out the
 # `ICoreWebView2_2` underneath it, which cannot be asked for its controller. So
 # the refusal is written in the page, and this is what says it is still there.
@@ -18241,18 +18254,26 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-06 the same way. One test in the census, nothing
 # else in 6,416.
+#
+# Rewritten on 2026-10-25 by 13.4-12.3: the question now names itself and
+# `presentation::asking` gives its Enter, so the break asks the spelling
+# question instead, whose Enter is the first answer. The same break leaves
+# `tests/every_question_is_asked_by_something.rs` red as well, a suite of its
+# own.
 
 [[guard]]
 name = "enter does not mark a picture decorative"
 file = "src/presentation/wx_compose.rs"
 suite = "a_picture_is_only_decorative_because_somebody_said_so"
-before = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())"""
-after = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())"""
+before = """        Question::MarkAPictureDecorative,
+        THE_DECORATIVE_QUESTION_TITLE,"""
+after = """        Question::SendDespiteSpelling,
+        THE_DECORATIVE_QUESTION_TITLE,"""
 red = [
     "test_the_decorative_question_is_one_enter_answers_by_asking_for_a_description",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_picture_is_only_decorative_because_somebody_said_so.rs", tests = 14 },
 ]
 
@@ -19255,7 +19276,7 @@ red = [
     "test_the_key_that_takes_a_file_off_a_message_is_in_the_composers_section",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_key_is_documented_where_the_surface_that_binds_it_is.rs", tests = 3 },
 ]
 
@@ -22521,7 +22542,7 @@ red = [
     "service::update_download::tests::test_the_usages_read_off_a_signed_file_include_code_signing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # An installer carrying this project's name is refused unless its certificate
@@ -22541,7 +22562,7 @@ red = [
     "service::update_download::tests::test_while_the_profile_is_unknown_even_our_name_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -22582,7 +22603,7 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The person chose whether the day comes before the month and whether the month
@@ -24550,95 +24571,57 @@ tests_last_seen = [
     { file = "tests/the_guard_sweep_runs_on_runners.rs", tests = 2 },
 ]
 
-# ── A window holding a browser waits for the browser before it goes ──────────
+# ── A window holding a browser goes the moment it closes ─────────────────────
 #
-# WebView2 makes the browser inside a `WebView` after `build()` returns, and
-# wxWidgets 3.3.2 delivers the completions to the control whether or not it
-# still exists (wxWidgets #26491, fixed upstream for the unreleased 3.3.4).
-# A window destroyed inside that moment took the application down with exit
-# code 0xc000041d and no message, and `tests/theme_reach.rs` died that way on
-# every run on GitHub's runners on 2026-09-15. `presentation::browser_ready`
-# is the answer, and three records hold its three halves.
+# From 2026-09-15 to 2026-10-25 Compose and Preview Before Send were hidden at
+# once and destroyed only when WebView2 reported, because wxWidgets 3.3.2
+# delivered the browser's creation reply to a control that had gone and the
+# program ended with 0xc000041d (wxWidgets #26491). Three records held that
+# watch. wxWidgets 3.3.4, which wxdragon 0.9.23 builds, fixed the crash, and
+# 13.4-10 retired the watch, its two records with its file, and the third, on
+# the preview's close through the watch, replaced by the two below.
 #
-# The first is the state machine: the browser's report is what frees what was
-# waiting. The break makes a report leave the browser unready, so a wait
-# queued after it never runs and one queued during the drain is lost. Three of
-# the module's four tests go red; the fourth, that a second report runs
-# nothing twice, is satisfied by a report that runs nothing at all.
+# One per close, because a window a person can close is a window that can be
+# left alive by mistake: a hidden dialog and its browser processes kept for the
+# rest of the session. Both dialogs are modal, so no test can drive them, and
+# the reading holds each close to destroying its dialog. The break hides the
+# dialog in place of destroying it. The live half in the same target builds the
+# real composer and closes it before its browser exists, and stays green under
+# either break, because it does not run either close.
 #
-# Measured by hand on 2026-09-15 against the whole library with the break
-# applied: exactly these three failed.
+# Measured by hand on 2026-10-25 by 13.4-10 at wxDragon 0.9.23, each break
+# applied on its own and `closing_a_window_before_its_browser_exists` run:
+# exactly the reading failed, saying the one function whose close was broken.
 
 [[guard]]
-name = "the browser's report is what frees a window waiting on it"
-file = "src/presentation/browser_ready.rs"
-before = """            state.reported = true;"""
-after = """            state.reported = false;"""
-red = [
-    "presentation::browser_ready::tests::test_nothing_waiting_runs_before_the_browser_reports",
-    "presentation::browser_ready::tests::test_once_the_browser_has_reported_a_new_wait_runs_at_once",
-    "presentation::browser_ready::tests::test_a_wait_queued_by_something_that_was_waiting_runs_too",
-]
-tests_last_seen = [
-    { file = "src/presentation/browser_ready.rs", tests = 4 },
-]
-
-# The second is the live half: a window handed to `destroy_when_ready` before
-# its browser exists is not destroyed until the browser reports. The break
-# destroys it at once, which is what every caller did before 2026-09-15, and
-# the child process the test spawns dies with 0xc000041d. The parent reads the
-# exit status, so a crash is a failing test here and not a run that never
-# finished. The reading over `wx_compose` in the same target stays green,
-# because the dialogs there still go through the watch.
-#
-# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
-# with the break applied: exactly this one test failed.
-#
-# Measured again on 2026-10-25 by 13.4-09 at wxDragon 0.9.23, through
-# `scripts/guards.sh --remeasure` and then by hand: the same one test fails,
-# for a different reason. wxWidgets 3.3.4 no longer crashes when the window
-# goes first, and the browser of a destroyed window never reports, so the live
-# half's way out, which waits for that report, never comes; its 60-second
-# give-up exits 2 ("the live half died: exit code 2"). So the record now holds
-# that the watch is still in the path, not that the crash is still there;
-# `tests/a_browser_closed_while_it_is_made_ends_the_program_cleanly.rs` holds
-# the crash's absence, and 13.4-10 retires the watch and this record with it.
-
-[[guard]]
-name = "a window handed over before its browser exists is not destroyed until the browser reports"
-file = "src/presentation/browser_ready.rs"
+name = "the compose window is destroyed when it closes"
+file = "src/presentation/wx_compose.rs"
 suite = "closing_a_window_before_its_browser_exists"
-before = """        self.when_ready(move || window.destroy());"""
-after = """        window.destroy();"""
+before = """    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.destroy();"""
+after = """    // control that had gone and took the application down (wxWidgets #26491).
+    dialog.hide();"""
 red = [
-    "test_closing_a_window_before_its_browser_exists_does_not_kill_the_process",
+    "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
-    { file = "src/presentation/browser_ready.rs", tests = 4 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]
 
-# The third is the two dialogs a person can close early, Compose and Preview
-# Before Send. Both are modal, so no test can drive them, and the reading
-# holds each close path to the watch rather than to `destroy()`. The break
-# puts the preview's direct `destroy()` back, the line as it stood before
-# 2026-09-15. The live half above stays green, because it does not read
-# `wx_compose` at all.
-#
-# Measured by hand on 2026-09-15 against `closing_a_window_before_its_browser_exists`
-# with the break applied: exactly this one test failed.
-
 [[guard]]
-name = "the two dialogs holding a browser close through the watch on it"
+name = "the send preview is destroyed when it closes"
 file = "src/presentation/wx_compose.rs"
 suite = "closing_a_window_before_its_browser_exists"
-before = """    browser.destroy_when_ready(dlg);"""
-after = """    dlg.destroy();"""
+before = """    // gives at its own close.
+    dlg.destroy();"""
+after = """    // gives at its own close.
+    dlg.hide();"""
 red = [
-    "test_the_two_dialogs_holding_a_browser_are_closed_through_the_browser_watch",
+    "test_the_two_dialogs_holding_a_browser_are_destroyed_when_they_close",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/closing_a_window_before_its_browser_exists.rs", tests = 3 },
 ]
 
@@ -25424,7 +25407,7 @@ red = [
     "test_the_reading_complains_when_the_comment_names_a_key_that_does_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/undo_send_is_where_somebody_looks.rs", tests = 7 },
 ]
 
@@ -25671,22 +25654,18 @@ tests_last_seen = [
 #
 # Measured 2026-09-16 on the branch the record was written on,
 # `cargo test --test checkbox_labels`: four rows in the one complaint.
-[[guard]]
-name = "a checkbox in an editor grid is named outright, not left to the fallback"
-file = "src/presentation/wx_managers.rs"
-suite = "checkbox_labels"
-before = """    let check = CheckBox::builder(parent).with_label(label).build();
-    set_accessible_name(&check, &name_from_label(label));
-    leave_the_cell_empty(sizer);"""
-after = """    let check = CheckBox::builder(parent).with_label(label).build();
-    leave_the_cell_empty(sizer);"""
-red = [
-    "test_every_check_box_in_a_form_carries_its_own_label",
-]
-tests_last_seen = [
-    { file = "src/presentation/wx_managers.rs", tests = 44 },
-    { file = "tests/checkbox_labels.rs", tests = 1 },
-]
+#
+# Retired 2026-10-25 by 13.4-12: the record "a checkbox in an editor grid is
+# named outright, not left to the fallback" stood here. Its four rows were the
+# target asking whether an accessible object was attached, which wxWidgets
+# 3.3.4 can answer yes to with no name set. The target now reads each editor
+# checkbox's name over MSAA and compares it with the label's words, and with
+# the naming call taken out the names read are the same words, "Case
+# Sensitive" and "Enabled" among them: Windows names a checkbox that set no
+# name from its own label, now that no empty static text sits before it. So
+# the break reddens nothing and the call is not what names these boxes on
+# MSAA. The call stays, harmless, and the spacer record below still guards
+# the half of the rule a reading can see.
 
 # The other half of the same rule, on the box the tester reported on the
 # contact editor's Basic tab (#40, point 5). The break puts the spacer back
@@ -27755,7 +27734,7 @@ tests_last_seen = [
 
 # ── A tool's new label reaches the control ──────────────────────────────────
 #
-# #27: the toolbar's label follows the state, and wxdragon 0.9.17 offers no
+# #27: the toolbar's label follows the state, and wxdragon 0.9.23 offers no
 # relabel, so it goes through TB_SETBUTTONINFOW with TBIF_TEXT. The break
 # sends the message with no mask, so the control is told nothing; both
 # readings of the label after the relabel go red on "Mark Read", through
@@ -31605,7 +31584,7 @@ red = [
     "test_a_signature_somebody_typed_into_stays_when_the_from_account_changes",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/a_signature_follows_the_from_account.rs", tests = 18 },
 ]
 
@@ -32288,7 +32267,7 @@ red = [
     "test_every_box_a_person_types_into_keeps_a_history",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/every_text_box_keeps_a_history.rs", tests = 10 },
 ]
 
@@ -32356,7 +32335,7 @@ red = [
     "test_the_programs_own_dialog_box_walks_back_to_what_it_opened_holding",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/several_steps_come_back.rs", tests = 19 },
 ]
 
@@ -32715,19 +32694,21 @@ tests_last_seen = [
 # A delete answered No touching the undo step, here by clearing it, so the
 # last thing somebody did can no longer be taken back because they declined
 # to delete something else. Written 2026-09-25 by 13-09, the break measured
-# against `cargo test --test undoing_a_mark_names_the_message`.
+# against `cargo test --test undoing_a_mark_names_the_message`. Rewritten on
+# 2026-10-25 by 13.4-12.3 onto the question's new text, Keep where it said No,
+# with the same break.
 [[guard]]
 name = "a delete answered No leaves the undo step as it was"
 file = "src/presentation/managers.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''        // The one silence that is right here. The question was answered No,
-        // and the answer to No is that nothing happens.
-        if asked != ID_YES {
+before = '''        // The one silence that is right here. The question was answered Keep,
+        // or closed, and the answer to either is that nothing happens.
+        if asked != Answered::Yes {
             return;
         }'''
-after = '''        // The one silence that is right here. The question was answered No,
-        // and the answer to No is that nothing happens.
-        if asked != ID_YES {
+after = '''        // The one silence that is right here. The question was answered Keep,
+        // or closed, and the answer to either is that nothing happens.
+        if asked != Answered::Yes {
             remember_an_item_action(state, None);
             return;
         }'''
@@ -34166,7 +34147,7 @@ red = [
     "test_a_key_still_locked_after_its_passphrase_is_not_asked_for_twice",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/signing_and_encrypting_from_the_composer.rs", tests = 20 },
 ]
 
@@ -35663,7 +35644,7 @@ red = [
     "test_the_from_list_is_named_from_on_msaa_where_focus_lands",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
@@ -35680,7 +35661,7 @@ red = [
     "test_people_are_looked_up_in_the_chosen_entrys_account",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_from_list_chooses_who_sends.rs", tests = 24 },
 ]
 
@@ -36928,14 +36909,17 @@ tests_last_seen = [
 # A rule run by hand that calls the runner before the question is built, so
 # a folder's mail changes before anybody answered (T-13-44-02). Written
 # 2026-09-30 by 13-44, measured through `scripts/guards.sh --remeasure`
-# against the target.
+# against the target. Rewritten on 2026-10-25 by 13.4-12.3 onto the question
+# asked through `asking::ask`, with the same break.
 [[guard]]
 name = "a rule run by hand is asked about before the runner runs"
 file = "src/presentation/wx_app.rs"
 suite = "a_rule_runs_over_a_folder_when_asked"
-before = '''    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+before = '''    let answered =
+        crate::presentation::asking::ask(frame, asked_about, "Run a Rule", &question.text);'''
 after = '''    let _ = run_these_actions_over(app, list, held, set, outcome);
-    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+    let answered =
+        crate::presentation::asking::ask(frame, asked_about, "Run a Rule", &question.text);'''
 red = [
     "test_the_question_is_answered_before_the_one_runner_runs_once",
 ]
@@ -45100,7 +45084,7 @@ red = [
     "service::update_download::tests::test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The window's releases-page dialog waits for a check asked for by hand, so a
@@ -45120,7 +45104,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # One check for a newer version at a time: while one is under way no other is
@@ -45186,7 +45170,7 @@ red = [
     "service::update_download::tests::test_a_download_that_goes_quiet_partway_is_given_up_on_and_leaves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # Each download is written into a folder of its own, so two downloads of one
@@ -45201,7 +45185,7 @@ red = [
     "service::update_download::tests::test_two_downloads_of_one_name_are_two_files",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # A refused or declined installer takes the folder of its own with it (13.3-23,
@@ -45217,7 +45201,7 @@ red = [
     "service::update_download::tests::test_a_refused_installer_takes_its_folder_with_it",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # Yes to an installed update closes Wixen Mail the way Quit does, so the
@@ -45558,10 +45542,10 @@ tests_last_seen = [
 # wxDragon 0.9.19 and later refuse because the application is not Send
 # (13.4-05). Broken by putting one test's ending back the old way, the
 # parameter named and the queued closure capturing it. The break spans the
-# whole closure because the reading needs both halves of the old shape. The
-# commit gate does not yet run a record's suite when the record's file is a
-# test file (ledger 962), so a commit changing this file does not run the
-# reading; a guard run and the phase's full gate do.
+# whole closure because the reading needs both halves of the old shape. Since
+# 2026-10-25 a commit changing this file runs the reading, because the commit
+# gate answers a record whose file is a test file and whose suite is another
+# target (ledger 962, closed by 13.4-12.1).
 [[guard]]
 name = "a window test's queued ending asks for the application rather than capturing it"
 file = "tests/tree_selection_raises.rs"
@@ -45722,19 +45706,20 @@ tests_last_seen = [
 # The question about a ready installer opens after the main window's tick
 # returns (13.4-06). Broken by handing its closure to `identity` instead of
 # the queue, which leaves the dialog in the arm, outside any work handed on;
-# the census of the whole handler sees it too.
+# the census of the whole handler sees it too. Rewritten on 2026-10-25 by
+# 13.4-12.3 onto the question asked through `asking::ask`, with the same break.
 [[guard]]
 name = "the question about a ready installer opens after the tick"
 file = "src/presentation/wx_app.rs"
 suite = "the_main_window_opens_its_windows_after_its_tick"
 before = '''            after_the_tick(move || {
-                let asked = MessageDialog::builder(
+                let asked = crate::presentation::asking::ask(
                     &frame,
-                    &update_download::the_question_about(&installer),'''
+                    Question::InstallAnUpdate,'''
 after = '''            std::convert::identity(move || {
-                let asked = MessageDialog::builder(
+                let asked = crate::presentation::asking::ask(
                     &frame,
-                    &update_download::the_question_about(&installer),'''
+                    Question::InstallAnUpdate,'''
 red = [
     "test_no_window_opens_inside_handle_update",
     "test_the_two_update_questions_open_after_the_tick",
@@ -45761,7 +45746,7 @@ red = [
     "test_the_automatic_save_ticks_on_its_own_and_reaches_nothing_else",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_automatic_save_has_a_timer_of_its_own.rs", tests = 1 },
 ]
 
@@ -45779,7 +45764,7 @@ red = [
     "test_the_composer_hands_its_save_to_a_timer_owned_by_the_message_body",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
 ]
 
@@ -45803,7 +45788,7 @@ red = [
     "test_the_other_timer_saves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/presentation/wx_compose.rs", tests = 43 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
     { file = "tests/the_composer_saves_on_a_timer_of_its_own.rs", tests = 8 },
 ]
 
@@ -45826,6 +45811,51 @@ tests_last_seen = [
     { file = "tests/a_list_cell_reads_whole_and_a_tree_frees_its_rows.rs", tests = 1 },
 ]
 
+# A saved search's condition row starts with the words the editor offers for
+# its field, compared whole now that a list cell reads whole (13.4-11, ledgers
+# 28 and 53). The break writes the stored field name into the row's first
+# cell. Measured by hand and through the runner on 2026-10-25 at 0.9.23: the
+# one live test failed on the condition row alone, reading "body_plain" rather
+# than "Message text".
+[[guard]]
+name = "a condition row reads the words for its field, compared whole"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''        let [looks_at, compares, against] = what_a_condition_row_says(question);
+        list.insert_item(idx, &looks_at, None);'''
+after = '''        let [looks_at, compares, against] = what_a_condition_row_says(question);
+        let _ = &looks_at;
+        list.insert_item(idx, &question.field, None);'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+# Leaving the message body goes the way it was asked (13.4-11). wxdragon
+# 0.9.23's `navigate` reads its argument backwards and an unreleased upstream
+# change (#248) flips it, so the break is the flip itself, the argument
+# swapped inside the one function the composer leaves the body through.
+# Measured by hand on 2026-10-25 at 0.9.23: the one live test failed both
+# ways, forward landing on the Subject line and backward on Save Draft.
+[[guard]]
+name = "leaving the message body forward goes on and backward goes back"
+file = "src/presentation/wx_compose.rs"
+suite = "tab_leaves_the_message_body_both_ways"
+before = '''pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(back);'''
+after = '''pub fn leave_the_message_body(body: &WebView, back: bool) {
+    body.navigate(!back);'''
+red = [
+    "test_leaving_the_body_forward_reaches_save_draft_and_backward_reaches_the_subject",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+    { file = "tests/tab_leaves_the_message_body_both_ways.rs", tests = 1 },
+]
+
 # The lock holds the three wxDragon crates at one version (13.4-09). The break
 # makes the check accept every lock, the red body it was committed with. The
 # two planted locks go red and the real lock stays green. Measured by hand on
@@ -45845,4 +45875,564 @@ red = [
 ]
 tests_last_seen = [
     { file = "tests/the_three_wxdragon_crates_are_locked_together.rs", tests = 3 },
+]
+
+# The contact editor's Prefix and Suffix boxes are named by the label built
+# before each (13.4-12), deliberately not by an object of ours (pull request
+# #99), and the label's words reach the Edit inside the box, where the
+# keyboard lands, on both channels. The break builds the label empty. Measured
+# by hand on 2026-10-25 at 0.9.23: both typing fields read "" on MSAA and on
+# UI Automation from the reader process, where they read "Prefix:" and
+# "Suffix:". Removing the Category box's naming call instead reddens nothing,
+# because its label "Cate&gory" names it with the same words.
+[[guard]]
+name = "an editable combo box in the contact editor is named where typing lands by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "an_editable_combo_box_is_named_where_typing_lands"
+before = '''    let lbl = StaticText::builder(parent).with_label(label).build();
+    let field = ComboBox::builder(parent)'''
+after = '''    let lbl = StaticText::builder(parent).with_label("").build();
+    let _ = label;
+    let field = ComboBox::builder(parent)'''
+red = [
+    "test_every_editable_combo_box_is_named_where_typing_lands_on_both_channels",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/an_editable_combo_box_is_named_where_typing_lands.rs", tests = 5 },
+]
+
+# The six lists the manager dialogs name, read over MSAA and compared with the
+# code's words (13.4-12), where the target used to ask only whether an
+# accessible object was attached. Each break takes one naming call out.
+# Measured by hand on 2026-10-25 at 0.9.23, `cargo test --test
+# manager_dialog_labels`, one row each in the one complaint: without its call a
+# list reads its label as Windows falls back to it, "Match Field:", "Match
+# Type:" and "Action:", and the shell's list, which has no label, reads "" in
+# both the rule manager and the condition manager.
+[[guard]]
+name = "the filter editor's Match Field list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    // Through the shared builder, which the condition editor reads too.
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
+    set_accessible_name(&field_choice, "Match field");'''
+after = '''    // Through the shared builder, which the condition editor reads too.
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the filter editor's Match Type list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&match_choice, "Match type");
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    let action_label'''
+after = '''    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    let action_label'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the filter editor's Action list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();
+    set_accessible_name(&action_choice, "Action");'''
+after = '''    let action_choice = Choice::builder(&dlg).with_choices(action_choices).build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the condition editor's Match Field list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''        .with_label("Match &Field:")
+        .build();
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();
+    set_accessible_name(&field_choice, "Match field");'''
+after = '''        .with_label("Match &Field:")
+        .build();
+    let field_choice = Choice::builder(&dlg)
+        .with_choices(the_words_for_every_field())
+        .build();'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "the condition editor's Match Type list is named by the code, not by its label"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&match_choice, "Match type");
+    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    sizer.add_sizer('''
+after = '''    fields.add(
+        &match_label,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::All,
+        4,
+    );
+    fields.add(&match_choice, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let pattern_f = add_field(&dlg, &fields, "&Pattern:");
+
+    let cs_check = add_checkbox(&dlg, &fields, "&Case Sensitive");
+
+    sizer.add_sizer('''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+[[guard]]
+name = "a manager window's list is named for what it holds"
+file = "src/presentation/wx_managers.rs"
+suite = "manager_dialog_labels"
+before = '''    set_accessible_name(&list, holds);
+    // Empty until there is something to say, not a space: an empty label is'''
+after = '''    let _ = holds;
+    // Empty until there is something to say, not a space: an empty label is'''
+red = [
+    "test_the_manager_dialogs_name_their_controls_and_offer_what_the_engine_answers",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/manager_dialog_labels.rs", tests = 1 },
+]
+
+# The filter editor's value box is named for the label showing beside it, and
+# the name follows the label when the action changes (#62, 13.4-12). The
+# target reads the name over MSAA on a new rule and on a stored Say this first
+# rule. The break takes out the call that follows the label. Measured by hand
+# on 2026-10-25 at 0.9.23: the Say this first box reads "Action Value," where
+# the code sets "Phrase to say first,". Taking out the box's first naming call
+# instead reddens nothing, because the following call names the box again
+# before the dialog is shown.
+[[guard]]
+name = "the rule editor's value box is named for the label showing beside it"
+file = "src/presentation/wx_managers.rs"
+suite = "a_rule_can_change_how_a_row_is_announced"
+before = '''        value_label.set_label(label);
+        set_accessible_name(&action_value_f, &name_from_label(label));'''
+after = '''        value_label.set_label(label);'''
+red = [
+    "test_the_editor_offers_the_action_and_the_sound_and_reads_a_stored_rule_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_managers.rs", tests = 44 },
+    { file = "tests/a_rule_can_change_how_a_row_is_announced.rs", tests = 20 },
+]
+
+# The composer's Format menu gives every item a letter no other item holds
+# (ledger 972, 13.4-12.2). Until 2026-10-25 Numbered List shared U with
+# Underline, Undo shared N with Normal Text and Insert Link shared L with
+# Bulleted List, and a shared letter moves between two items instead of
+# running one. The first three records put each shared letter back, the
+# fourth takes Quote's letter away, and the fifth points Insert Picture's
+# entry at Insert Table's id, which shows tests/wired.rs reads the insertions
+# from the list the menu is built from. Each measured by hand on 2026-10-25 on
+# the green tree at 0b10e4f0: the whole library, and wired for the fifth.
+[[guard]]
+name = "the Format menu gives Numbered List a letter of its own"
+file = "src/presentation/editor_document.rs"
+before = '''            // M, Thunderbird's letter for it, because U is Underline's and N
+            // is Normal Text's on the Format menu (ledger 972).
+            Self::NumberedList => "Nu&mbered List",'''
+after = '''            // M, Thunderbird's letter for it, because U is Underline's and N
+            // is Normal Text's on the Format menu (ledger 972).
+            Self::NumberedList => "N&umbered List",'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives Undo a letter of its own"
+file = "src/presentation/editor_document.rs"
+before = '''            // O, because U is Underline's and N is Normal Text's on the Format
+            // menu, and D is Delete's in the text menus people know (ledger 972).
+            Self::Undo => "Und&o",'''
+after = '''            // O, because U is Underline's and N is Normal Text's on the Format
+            // menu, and D is Delete's in the text menus people know (ledger 972).
+            Self::Undo => "U&ndo",'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives Insert Link a letter of its own"
+file = "src/presentation/wx_compose.rs"
+before = '''            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert Lin&k...".to_string(),'''
+after = '''            // K, the letter of Ctrl+K, which inserts a link in Word and
+            // Outlook, because L is Bulleted List's (ledger 972).
+            label: "Insert &Link...".to_string(),'''
+red = [
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu gives every item a letter"
+file = "src/presentation/editor_document.rs"
+before = '''            Self::Quote => "&Quote",
+            Self::RemoveFormatting => "Remove &Formatting",'''
+after = '''            Self::Quote => "Quote",
+            Self::RemoveFormatting => "Remove &Formatting",'''
+red = [
+    "presentation::editor_document::tests::test_every_command_carries_its_key_into_the_menu",
+    "presentation::wx_compose::tests::test_every_item_on_the_format_menu_claims_a_letter_of_its_own",
+]
+tests_last_seen = [
+    { file = "src/presentation/editor_document.rs", tests = 91 },
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+]
+
+[[guard]]
+name = "the Format menu offers its insertions from the list the menu is built from"
+file = "src/presentation/wx_compose.rs"
+suite = "wired"
+before = '''            id: ID_INSERT_PICTURE,
+            label: "Insert &Picture...".to_string(),'''
+after = '''            id: ID_INSERT_TABLE,
+            label: "Insert &Picture...".to_string(),'''
+red = [
+    "test_every_handled_command_has_something_that_raises_it",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_compose.rs", tests = 45 },
+    { file = "tests/wired.rs", tests = 80 },
+]
+
+# The questions asked before acting (13.4-12.3, ledger 967). Six records, one
+# for each decision `presentation::asking` makes about a question with two
+# answers, each written from what its break really reddened.
+
+# Enter on a question that cannot be undone gives the answer that keeps things
+# as they are. The break hands Delete Folder's Enter to Delete.
+
+[[guard]]
+name = "enter on a question that cannot be undone gives keep"
+file = "src/presentation/asking.rs"
+before = '''        Question::RunARule | Question::MoveTheMailABlockCatches | Question::SendDespiteSpelling => {
+            Answered::Yes
+        }
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer
+        | Question::DeleteAConversation
+        | Question::DeleteAConversationPermanently
+        | Question::DeleteASavedSearch
+        | Question::MoveAFolder
+        | Question::DeleteAFolder
+        | Question::EmptyAFolder'''
+after = '''        Question::RunARule
+        | Question::MoveTheMailABlockCatches
+        | Question::SendDespiteSpelling
+        | Question::DeleteAFolder => Answered::Yes,
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer
+        | Question::DeleteAConversation
+        | Question::DeleteAConversationPermanently
+        | Question::DeleteASavedSearch
+        | Question::MoveAFolder
+        | Question::EmptyAFolder'''
+red = [
+    "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# Escape and Alt+F4 close a question with nothing done, which on a box with no
+# Cancel button Windows does not allow unless it is told to. Measured against
+# the window target, where a real box is answered by both; the same break also
+# reddens test_escape_may_close_any_question and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "escape and alt+f4 close a question with neither answer"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''            Answered::No | Answered::Neither => IDNO,
+        },
+        cancellation_allowed: true,'''
+after = '''            Answered::No | Answered::Neither => IDNO,
+        },
+        cancellation_allowed: false,'''
+red = [
+    "test_alt_f4_closes_a_question_with_neither_answer",
+    "test_escape_closes_a_question_with_neither_answer",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
+]
+
+# A question's buttons say what each does, read from another process on both
+# channels at the handle the keyboard reaches. The break gives Delete Saved
+# Search, the question the window test opens, Yes and No again. It also
+# reddens test_every_question_says_what_each_of_its_answers_does and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "a question names what each of its answers does"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''        | Question::DeleteASavedSearch
+        | Question::DeleteAFolder
+        | Question::DeleteASoundScheme => ("&Delete", "&Keep"),'''
+after = '''        | Question::DeleteAFolder
+        | Question::DeleteASoundScheme => ("&Delete", "&Keep"),
+        Question::DeleteASavedSearch => ("&Yes", "&No"),'''
+red = [
+    "test_a_question_names_both_answers_on_both_channels_with_the_keyboard_on_keep",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
+]
+
+# Every other shown, enabled window of the asking thread is disabled while a
+# question is up, as wxWidgets did around its message box, so nothing else
+# can be acted on behind it. The break disables nothing.
+
+[[guard]]
+name = "other windows are disabled while a question is up"
+file = "src/presentation/asking.rs"
+before = '''        .filter(|window| window.visible && window.enabled && Some(window.handle) != owner)'''
+after = '''        .filter(|_| false)'''
+red = [
+    "presentation::asking::tests::test_every_other_shown_window_is_disabled_while_a_question_is_up",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# A first line followed by a blank one stands out above the rest, the way
+# wxWidgets split a message box's words, so the update, spelling and
+# decorative questions read in the order they did. The break splits nothing.
+
+[[guard]]
+name = "a question's words split the way wxwidgets split them"
+file = "src/presentation/asking.rs"
+before = '''    let (main_instruction, content) = the_words_split_the_way_wx_splits_them(words);'''
+after = '''    let (main_instruction, content) = (None, words.to_string());'''
+red = [
+    "presentation::asking::tests::test_the_words_split_the_way_wx_splits_them",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# A box closed without a button is neither answer, never the second: every
+# caller goes on only on the first, but a closed box read as Keep would also
+# be recorded as an answer somebody gave. The break reads a closed box as the
+# second answer; it also reddens the window target's Escape and Alt+F4 cases.
+
+[[guard]]
+name = "a question closed without a button is neither answer"
+file = "src/presentation/asking.rs"
+before = '''        IDNO => Answered::No,'''
+after = '''        IDNO | IDCANCEL => Answered::No,'''
+red = [
+    "presentation::asking::tests::test_a_box_closed_without_a_button_is_neither_answer",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# Every question carries "Don't ask me again", read from another process on
+# both channels where the keyboard lands, and a tick on it reaches the answer.
+# The break takes the check box away. Measured against the window target; the
+# same break also reddens test_every_question_carries_dont_ask_me_again and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "every question carries don't ask me again"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''        verification: Some(DONT_ASK_ME_AGAIN),'''
+after = '''        verification: None,'''
+red = [
+    "test_a_question_carries_dont_ask_me_again_unticked_on_both_channels",
+    "test_ticked_and_answered_with_the_first_button_is_yes_and_ticked",
+    "test_ticked_and_answered_with_the_second_button_is_no_and_ticked",
+    "test_ticked_and_closed_with_escape_is_neither_and_ticked",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
+]
+
+# The box counts only with the answer the question remembers: a tick with
+# Keep, or with Escape, stops nothing, so a command never silently does
+# nothing. The break remembers any answer but Neither.
+
+[[guard]]
+name = "don't ask me again counts only with the answer the question remembers"
+file = "src/presentation/asking.rs"
+before = '''    (ticked && answered == remembers(question)).then_some(question)'''
+after = '''    (ticked && answered != Answered::Neither).then_some(question)'''
+red = [
+    "presentation::asking::tests::test_the_box_counts_only_with_the_answer_the_question_remembers",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# A stopped question is answered without a window, with the answer it
+# remembers. The break never finds a question stopped.
+
+[[guard]]
+name = "a stopped question is answered without a window"
+file = "src/presentation/asking.rs"
+before = '''    not_asked.holds(question).then(|| remembers(question))'''
+after = '''    (not_asked.holds(question) && false).then(|| remembers(question))'''
+red = [
+    "presentation::asking::tests::test_a_stopped_question_is_answered_without_asking",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# The spelling question's stop is its own setting on General, "Check spelling
+# before sending a message", and not a second setting meaning the same thing.
+# The break holds it in the Questions set instead.
+
+[[guard]]
+name = "a stop on the spelling question turns off its own setting"
+file = "src/presentation/asking.rs"
+before = '''        Question::SendDespiteSpelling => settings.check_spelling_before_send = false,'''
+after = '''        Question::SendDespiteSpelling => settings.questions_not_asked.stop(question),'''
+red = [
+    "presentation::asking::tests::test_a_stop_is_written_where_its_question_comes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# Settings saves the set stored now with only the boxes the person changed,
+# so a stop made inside Settings, the sound scheme's, survives its OK. The
+# break saves the set the page was built from.
+
+[[guard]]
+name = "settings' save keeps a stop made inside it"
+file = "src/application/questions_before_acting.rs"
+before = '''        let mut saved = stored_now.clone();'''
+after = '''        let mut saved = as_built.clone();'''
+red = [
+    "application::questions_before_acting::tests::test_settings_saves_only_what_the_person_changed_on_the_page",
+]
+tests_last_seen = [
+    { file = "src/application/questions_before_acting.rs", tests = 6 },
+]
+
+# Settings, Questions offers a box for every question asking::in_settings
+# names, each read by its words on both channels where the keyboard lands.
+# The break leaves the first question off the page.
+
+[[guard]]
+name = "the questions page offers every question in_settings names"
+file = "src/presentation/wx_settings.rs"
+suite = "the_questions_page_is_named_on_both_channels"
+before = '''    let offered = Question::ALL.into_iter().filter_map(|question| {'''
+after = '''    let offered = Question::ALL.into_iter().skip(1).filter_map(|question| {'''
+red = [
+    "test_every_box_on_the_questions_page_is_named_where_the_keyboard_lands_on_both_channels",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_questions_page_is_named_on_both_channels.rs", tests = 3 },
+]
+
+# Opening the releases page says so before the browser comes up, because with
+# the question stopped there is no window and a page opened in silence is a
+# key press that seems to do nothing. The break says nothing.
+
+[[guard]]
+name = "opening the releases page says so before the browser opens"
+file = "src/presentation/wx_app.rs"
+before = '''                        let opening = crate::service::update_download::OPENING_THE_RELEASES_PAGE;'''
+after = '''                        let opening = "";'''
+red = [
+    "service::update_download::tests::test_opening_the_releases_page_says_so_before_the_browser_opens",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]

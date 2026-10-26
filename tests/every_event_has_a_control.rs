@@ -18,7 +18,7 @@
 //! functions in parallel threads, and a second one asserted "initializing
 //! twice?" and hung until it was killed.
 //!
-//! **What this cannot reach, and it is the load-bearing limit.** wxdragon 0.9.17
+//! **What this cannot reach, and it is the load-bearing limit.** wxdragon 0.9.23
 //! exposes no way to raise a widget event from outside, so nothing here can
 //! open the picker and choose an item, or press the button. What it does
 //! instead is drive the real controls through the same functions the handlers

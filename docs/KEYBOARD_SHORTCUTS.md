@@ -86,7 +86,8 @@ delete, with the server behind it. Everywhere else it is the row you are on.
 **Deleting always asks, and the question names the row.** "Delete \"File the tax
 return\"? Undo brings it back until your next action." Somebody who arrowed onto
 the wrong row finds out from the question, which only works because the question
-says which row, and `Ctrl+Z` in the list brings it back if they answered Yes.
+says which row, and `Ctrl+Z` in the list brings it back if they pressed Delete.
+The question's buttons are Delete and Keep, and `Enter` presses Keep.
 
 The two toggles say which way they went: "Buy milk, done" or "Buy milk, not
 done". A toggle you cannot see is a toggle you have to be told about. They are
@@ -298,7 +299,7 @@ where the caret is.
 | Previous message in the conversation | `Ctrl+Up` | |
 | Security warning | `F7` | Moves between the message and the warning above it, when there is one |
 | Attachments | `Alt+A` | Moves between the message and the list of attachments, when there is one. Works in the formatted view as well |
-| Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same. On a PGP key somebody sent, it says whose key it names and asks whether to import it; `Enter` answers No |
+| Read an attachment | `Ctrl+O` | Opens a PDF as a tab of its own. `Enter` on a row does the same. On a PGP key somebody sent, it says whose key it names and asks whether to import it; `Enter` presses Don't Import |
 | Save an attachment | `Ctrl+S` | Saves the attachment the list is on, to a file |
 | Print this tab | `Ctrl+P` | Prints the message, the conversation or the attachment in this tab through Windows' own print dialog, with every date written in full. The letter is `P` on the reader's File menu. Works in the formatted view as well, where it prints the message or the conversation the window shows |
 | Accept a meeting invitation | `Alt+C` | Presses the Accept button of a message whose invitation can be answered. Works in the formatted view as well, from the message |
@@ -898,7 +899,7 @@ anything.
 | Delete Permanently | `Shift+Del` | Mail. Every selected message, the same way. `Ctrl+Z` in the message list brings them back only while the mail server has not yet been told; once it has, the message is gone and Undo says so |
 | Move to | `Ctrl+Shift+V` | Every module. Asks for a folder in Mail, on any account you have set up, and for a calendar, list or note folder elsewhere. In Mail it moves every selected message and says how many went, "4 messages moved to Archive"; a conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list moves them back, except a move to another account, which Undo refuses and says so. On a contact it asks twice: which group it is leaving, and which it is joining. On a reminder it asks which account, because an account is the only place a reminder is kept. In every module `Ctrl+Z` in the list moves the item back |
 | Report as Junk | `Ctrl+Shift+J` | Mail. Every selected message goes to its account's junk folder, and one sentence per account says what the provider was told: on a server that keeps a junk mark the mark is set first, on Gmail the move into Spam is the report, and Microsoft is not told, because it offers a mail program no way to. A POP account, an account with no junk folder, and one whose mail changes are off each say why nothing was reported. A conversation row contributes the messages in the folder you are reading. `Ctrl+Z` in the message list takes off a junk mark the report set, puts the not-junk mark on, and then moves them back; `Ctrl+Y` reports them again. Experimental |
-| Block This Sender | `Ctrl+Shift+B` | Mail. On the Block submenu. Mail from the sender of the message the cursor is on goes to the junk folder of the account that message is in from now on, which in All Inboxes may not be the account you have open. When messages from them are already here, it asks once, with the count, whether to move those to the junk folder too: Enter answers Yes, and No leaves them where they are. More than 5,000 are never moved; it says how many there are and to search for the sender and use Move to. Messages in Junk, Trash, Sent, Drafts and the Outbox are left alone. Blocking tells the mail provider nothing; Report as Junk does that. Experimental |
+| Block This Sender | `Ctrl+Shift+B` | Mail. On the Block submenu. Mail from the sender of the message the cursor is on goes to the junk folder of the account that message is in from now on, which in All Inboxes may not be the account you have open. When messages from them are already here, it asks once, with the count, whether to move those to the junk folder too: Enter presses Move Them, and Leave Them leaves them where they are. More than 5,000 are never moved; it says how many there are and to search for the sender and use Move to. Messages in Junk, Trash, Sent, Drafts and the Outbox are left alone. Blocking tells the mail provider nothing; Report as Junk does that. Experimental |
 
 Nine submenus hold the rest. Until 2026-10-03 this line said eight and the
 table left out Answer Invitation, which has been on the Action menu since
@@ -910,7 +911,7 @@ table left out Answer Invitation, which has been on the Action menu since
 | Label | The account's labels in the order it keeps them, each with its key, then Remove every label and Edit Labels (`E` on the submenu), which opens the Label Manager. Each label acts on every selected message and says how many, "3 messages labelled Important"; a conversation row contributes every message in the conversation. `Ctrl+Z` in the message list undoes the last label put on or taken off, and Remove every label |
 | Group | Write to this group, put a contact in a group, take a contact out of one |
 | Sidebar | Rename, delete, or sync the calendar, task list, note folder or contact group you are on |
-| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now. Run a Rule on This Folder (`L` on the submenu), since 2026-10-01, runs one of the account's rules over the folder you have open: it asks which rule, in a list headed with the account's name (`Alt+R` on the list, `Alt+C` for Count), says how many messages the rule would change, and asks before it changes anything. Enter answers Yes, except before a rule that deletes, where it answers No. See Running a rule over a folder in the user guide. Experimental (#61) |
+| This Folder | Refresh (`F5`), Get Older Messages (`Shift+F9`), which carries on the download of everything with this folder first. Download This Whole Folder sat here until 2026-09-17; the download that runs on its own after every check is what it did. Folders to Keep Up to Date sat here from 2026-08-26 until 2026-09-18 and is on the Tools menu now. Run a Rule on This Folder (`L` on the submenu), since 2026-10-01, runs one of the account's rules over the folder you have open: it asks which rule, in a list headed with the account's name (`Alt+R` on the list, `Alt+C` for Count), says how many messages the rule would change, and asks before it changes anything, with Run and Don't Run. Enter presses Run, except before a rule that deletes, where it presses Don't Run. See Running a rule over a folder in the user guide. Experimental (#61) |
 | Saved Searches | The saved searches of the account you are in, in the order the folder tree shows them, the first six with their keys (`Alt+4` to `Alt+9`); choosing one puts the cursor on its row and runs it. Then New Saved Search, which makes one from nothing: a name, where it looks, and its conditions. Then Edit Conditions, Rename and Delete, which act on the saved search you are on in the folder tree. Deleting one never deletes mail. Until 2026-09-30 this row said only rename or delete while Edit Conditions was on the submenu too (#58) |
 | Quick Steps | `Q` on the Action menu. The Quick Steps of the account you are in, in the order the Quick Step Manager keeps them, the first three with their keys (`Ctrl+Shift+7` to `Ctrl+Shift+9`); choosing one runs it over every selected message. Then Manage Quick Steps (`M` on the submenu), which opens the Quick Step Manager, where a Quick Step is named, made, changed, put in order and removed. See Quick Steps, below. Experimental (#60) |
 | Block | This Sender (`Ctrl+Shift+B`), and Everyone at This Domain, which has no key. Both file future mail in the junk folder and ask about the mail already here |
@@ -1207,6 +1208,15 @@ Two limitations, stated rather than hidden:
 - These keys work while the caret is in the message body. In the To, Cc, Bcc and
   Subject fields there is nothing to format, so they do nothing there.
 
+On the Format menu (`Alt+O`, or the Format button) every item has a letter of
+its own: `B` for Bold, `I` Italic, `U` Underline, `1`, `2` and `3` the three
+headings, `N` Normal Text, `L` Bulleted List, `M` Numbered List, `Q` Quote, `F`
+Remove Formatting, `O` Undo, `R` Redo, `K` Insert Link, `T` Insert Table and
+`P` Insert Picture. Pressing the letter with the menu open runs the item at
+once. Until 2026-10-25 Numbered List shared `U` with Underline, Undo shared `N`
+with Normal Text and Insert Link shared `L` with Bulleted List, so those letters
+moved between two items rather than choosing one.
+
 **Spelling.** `F7`, or the Spelling button on the toolbar, walks the message a
 word at a time. Each word is selected in the message before you are asked about
 it, so your screen reader reads it where it sits rather than quoted out of its
@@ -1473,7 +1483,7 @@ can and cannot do in this build. Each letter is used once.
 | Paste a Key | `Alt+P` | Paste a key's text into a box and import it. `Alt+K` there reaches the box |
 | Export Public Key | `Alt+X` | Write the chosen key's public half to a file |
 | Copy Public Key | `Alt+C` | Put the chosen key's public half on the clipboard |
-| Remove | `Alt+R` | Remove the chosen key, after a question that names it. `Enter` answers No |
+| Remove | `Alt+R` | Remove the chosen key, after a question that names it, with Remove and Keep. `Enter` presses Keep |
 | Close | `Alt+O` or `Esc` | Close PGP Keys |
 
 ### Unlock a PGP Key Dialog Accelerators
@@ -1682,6 +1692,83 @@ answer rather than doing nothing.
 |--------|----------|-------------|
 | Save Attachment | (focus button with `Tab`, press `Enter`) | Save attachment to disk |
 | Navigate Attachments | `Tab` | Move between attachments in preview pane |
+
+### Questions with Two Answers
+
+Every question Wixen Mail asks before it does something has two buttons that
+say what each does, such as Delete and Keep. When the question opens, your
+screen reader reads it and then the button the keyboard is on, by name. That is
+the button `Enter` presses, and on a question asked before something that cannot
+be undone it is the one that keeps things as they are. `Tab` moves to the other
+button. Each button's letter presses it.
+
+`Escape` closes any of these questions without doing anything, and so does
+`Alt+F4`. Closing the question about installing an update does what Don't
+Install does.
+
+| Question | First button | Second button | `Enter` presses |
+|---|---|---|---|
+| Delete a contact, event, task, note or reminder, in its list, by Redo, or in the Calendar window | Delete (`D`) | Keep (`K`) | Keep |
+| Undo of a Copy, which takes the copy away | Take Away (`T`) | Keep (`K`) | Keep |
+| Delete a list, calendar, notebook or contact group | Delete (`D`) | Keep (`K`) | Keep |
+| `Delete` on a conversation | Delete (`D`) | Keep (`K`) | Keep |
+| `Shift+Delete` on a conversation | Delete Permanently (`D`) | Keep (`K`) | Keep |
+| Delete Saved Search | Delete (`D`) | Keep (`K`) | Keep |
+| Move Folder | Move (`M`) | Don't Move (`D`) | Don't Move |
+| Delete Folder | Delete (`D`) | Keep (`K`) | Keep |
+| Empty Folder, into a Trash | Empty (`E`) | Don't Empty (`D`) | Don't Empty |
+| Empty Folder, for good | Empty for Good (`E`) | Don't Empty (`D`) | Don't Empty |
+| Run a Rule on This Folder, a rule that does not delete | Run (`R`) | Don't Run (`D`) | Run |
+| Run a Rule on This Folder, a rule that deletes | Run (`R`) | Don't Run (`D`) | Don't Run |
+| Folders your mail server no longer lists | Remove (`R`) | Keep (`K`) | Keep |
+| Import a PGP key from an attachment | Import (`I`) | Don't Import (`D`) | Don't Import |
+| Apply View To Other Folders | Apply (`A`) | Don't Apply (`D`) | Don't Apply |
+| Check for Updates, when a newer version could not be fetched | Open the Page (`O`) | Don't Open (`D`) | Don't Open |
+| Install an update | Install Now (`I`) | Don't Install (`D`) | Don't Install |
+| Block This Sender, with mail from them already here | Move Them (`M`) | Leave Them (`L`) | Move Them |
+| Send a message the spelling check has doubts about | Send Anyway (`S`) | Back to the Message (`B`) | Send Anyway |
+| A small picture inserted in a message | Mark as Decorative (`M`) | Describe It (`D`) | Describe It |
+| PGP Keys, Remove | Remove (`R`) | Keep (`K`) | Keep |
+| Settings, Feedback, Delete sound scheme | Delete (`D`) | Keep (`K`) | Keep |
+
+`Alt+G` ticks or clears **Don't ask me again**, the check box under the buttons
+on every one of these questions, and no button uses `G`. Ticked with the button
+that goes ahead, the question stops being asked; with the other button or
+`Escape`, nothing is remembered. On the picture question it remembers Describe
+It. [Questions Wixen Mail asks first](USER_GUIDE.md#questions-wixen-mail-asks-first)
+says more.
+
+### Settings, Questions
+
+The last tab of Settings holds a check box for every question you can stop,
+ticked while the question is asked. Tick one and press OK to have that question
+asked again. The spelling question has no box here: it comes back with Check
+spelling before sending a message on the General tab. Every letter on this tab
+is its own.
+
+| Check box | Key |
+|---|---|
+| Ask before deleting a contact, event, task, note or reminder | `Alt+C` |
+| Ask before Undo takes away a copy | `Alt+Y` |
+| Ask before deleting a list, calendar, notebook or contact group | `Alt+L` |
+| Ask before deleting a conversation | `Alt+V` |
+| Ask before deleting a conversation permanently | `Alt+P` |
+| Ask before deleting a saved search | `Alt+S` |
+| Ask before moving a folder | `Alt+M` |
+| Ask before deleting a folder from the server | `Alt+F` |
+| Ask before emptying a folder into the Trash | `Alt+E` |
+| Ask before emptying a folder for good | `Alt+G` |
+| Ask before running a rule over a folder | `Alt+R` |
+| Ask before running a rule that deletes | `Alt+D` |
+| Ask before removing folders the mail server no longer lists | `Alt+N` |
+| Ask before importing a key from an attachment | `Alt+K` |
+| Ask before applying a view to other folders | `Alt+W` |
+| Ask before opening the releases page | `Alt+O` |
+| Ask before installing an update | `Alt+I` |
+| Ask before moving mail already here when blocking a sender | `Alt+B` |
+| Ask whether a small picture is decorative | `Alt+T` |
+| Ask before removing a PGP key | `Alt+A` |
+| Ask before deleting a sound scheme | `Alt+H` |
 
 ### Dialog Navigation
 

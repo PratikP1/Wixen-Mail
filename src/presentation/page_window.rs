@@ -6,7 +6,7 @@
 //! two and left the third opening the browser with a line, because a
 //! "separate window" inside the running process would not be separate in the
 //! way the issue's third item is about. Every `WebView` in one process shares
-//! one WebView2 environment under wxdragon 0.9.17, and nothing in either
+//! one WebView2 environment under wxdragon 0.9.23, and nothing in either
 //! crate can clear it or point a second control somewhere else: the data path
 //! is decided once, from `wxStandardPaths::Get().GetUserLocalDataDir()`, and
 //! wxdragon exposes no setter for it. So a page opened in a second frame
@@ -32,7 +32,7 @@
 //!
 //! It cannot decide a navigation by its address. wxWidgets keeps a navigating
 //! event's address in `wxWebViewEvent::GetURL` and a new-window request's in
-//! the same place, and wxdragon 0.9.17 hands `WebViewEventData` only the
+//! the same place, and wxdragon 0.9.23 hands `WebViewEventData` only the
 //! command event's string, which neither sets. That is 11-11.1's finding,
 //! measured against a built control, and it applies here too. So the address
 //! is checked at the two boundaries this program owns: the command line it
@@ -122,7 +122,7 @@ pub const THIS_IS_THE_FIRST_PAGE: &str = "This is the first page";
 ///
 /// It is not opened, and this window cannot open it instead: wxWidgets
 /// carries a new-window request's address in `wxWebViewEvent::GetURL` and
-/// wxdragon 0.9.17 hands the handler only the command event's string, which
+/// wxdragon 0.9.23 hands the handler only the command event's string, which
 /// that event never sets, so there is no address to load. A link with
 /// `target="_blank"` never gets this far, because the page's own listener
 /// takes the click and posts the address; what does is `window.open` from a

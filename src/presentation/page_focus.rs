@@ -8,16 +8,16 @@
 //! wxWidgets does that by itself nearly every time. When a window is
 //! deactivated it remembers the focused child, and when it is activated again
 //! it gives the keyboard back to that child
-//! (`wxTopLevelWindowMSW::OnActivate`, `target/debug/wxWidgets/src/msw/toplevel.cpp:1326-1361`).
+//! (`wxTopLevelWindowMSW::OnActivate`, `target/debug/wxWidgets/src/msw/toplevel.cpp:1350-1385`).
 //! 12-01 measured that on a built window on 2026-09-22 and added nothing.
 //! The NVDA workflow then reversed it on 2026-09-23: runs 35839692317 and
 //! 35839954840 both came back to this window with a real activation and found
 //! the keyboard on the window's own frame. One path in wx's own code ends
 //! there, read in its source rather than inferred: `IsDescendant` is true for
-//! the frame itself (`common/wincmn.cpp:1273-1287`), so a frame holding the
+//! the frame itself (`common/wincmn.cpp:1347-1361`), so a frame holding the
 //! keyboard when it is deactivated is saved as its own last focused child,
 //! and restored to itself on every activation after that
-//! (`common/containr.cpp:611-661`). Whether the runner took that path is what
+//! (`common/containr.cpp:648-698`). Whether the runner took that path is what
 //! the NVDA case's record says at its next run; a test here can only take the
 //! path by messages it sends.
 //!
@@ -26,7 +26,7 @@
 //! A control beside the page that somebody moved to keeps it, nothing moves
 //! while the window is not the active one, and one activation moves the
 //! keyboard once and not again. An activation carrying the minimised flag gets no
-//! activate event from wx at all (`msw/window.cpp:4380-4388`), so this cannot
+//! activate event from wx at all (`msw/window.cpp:4666-4674`), so this cannot
 //! answer that one; it is left to the case's record by name.
 //!
 //! The decision is [`the_page_takes_the_keyboard`], pure and tested arm by
@@ -125,15 +125,17 @@ struct ThisActivation {
 /// The check reads the state as it is when it runs, not as it was when it
 /// was started, so a deactivation in between leaves the keyboard alone.
 ///
-/// **The timer belongs to the page, not the frame.** A timer event reaches
-/// every handler bound on its owner, because wxdragon's `on_tick` binds
-/// `TIMER` on the owner with any id (`wxdragon-sys` `event.cpp:617-658`), and
-/// the frame already owns the window's way back, whose tick takes the way
-/// back out of its cell and runs it. That cell is filled from the moment the
-/// window is built. A second timer on the frame would therefore open the
-/// conversation again on its first tick, over a window still showing. The
-/// page owns no timer of its own, and a timer event is not a command event,
-/// so it reaches the page and nothing else. The timer lives as long as the
+/// **The timer belongs to the page, whose keyboard it checks.** It was put
+/// there for a reason that has gone. Before wxdragon 0.9.19 a timer event
+/// reached every handler bound on its owner, because `on_tick` bound `TIMER`
+/// on the owner with any id, and the frame owns the window's way back, whose
+/// tick takes the way back out of its cell and runs it. A second timer on the
+/// frame would then have opened the conversation again on its first tick,
+/// over a window still showing. From 0.9.19 `on_tick` binds by the timer's
+/// own id (`wxdragon-0.9.23/src/timer.rs:63-65`, upstream #193), so a timer
+/// reaches only its own handler wherever it lives, and the guard record that
+/// held the old reason was retired at the move to 0.9.23. The timer stays on
+/// the page because the page is what it is about. It lives as long as the
 /// two handlers on the frame that hold it; the check itself holds none.
 ///
 /// When it moves the keyboard it logs one line naming `surface` and where it

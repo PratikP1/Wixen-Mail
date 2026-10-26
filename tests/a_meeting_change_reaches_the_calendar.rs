@@ -1493,23 +1493,6 @@ fn the_meeting_removed() -> Removal {
     }
 }
 
-struct Gathered {
-    harvest: Result<Harvest, String>,
-    page_windows: Vec<isize>,
-}
-
-/// The classes WebView2 gives the windows it puts under a host control.
-const CHROMIUMS_CLASSES: [&str; 2] = ["Chrome_WidgetWin_1", "Chrome_RenderWidgetHostHWND"];
-
-fn the_browser_is_there(page_window: isize) -> bool {
-    descendants_of(page_window)
-        .into_iter()
-        .any(|hwnd| CHROMIUMS_CLASSES.contains(&class_name(hwnd).as_str()))
-}
-
-/// Ticks before the session stops waiting for a browser: half a minute.
-const GIVE_UP_AFTER_TICKS: u32 = 1000;
-
 fn take_the_harvest() -> Result<Harvest, String> {
     if std::mem::size_of::<Variant>() != 24 {
         return Err("VARIANT is not 24 bytes here, so the reader's layout is wrong".to_string());
@@ -1578,8 +1561,12 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 PostMessageW(text, WM_SYSKEYUP, VK_R, ALT_RELEASED);
             }
 
+            // The key's time to arrive, then everything is read and the
+            // session ends, whether or not the formatted window's browser
+            // exists yet. Until wxWidgets 3.3.4 a browser still being made
+            // when the loop stopped took the process down with 0xc000041d, and
+            // this waited for it.
             let ticks = Rc::new(std::cell::Cell::new(0u32));
-            let gathered: Rc<RefCell<Option<Gathered>>> = Rc::default();
             let ticker = Rc::new(Timer::new(&parent));
             ticker.on_tick({
                 let ticker = ticker.clone();
@@ -1587,23 +1574,6 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 move |_| {
                     ticks.set(ticks.get() + 1);
                     if ticks.get() < TICKS_FOR_THE_KEY {
-                        return;
-                    }
-                    let waiting = match gathered.borrow().as_ref() {
-                        Some(already) => already
-                            .page_windows
-                            .iter()
-                            .any(|window| !the_browser_is_there(*window)),
-                        None => false,
-                    };
-                    if gathered.borrow().is_some() {
-                        if waiting && ticks.get() < GIVE_UP_AFTER_TICKS {
-                            return;
-                        }
-                        ticker.stop();
-                        if let Some(done) = gathered.borrow_mut().take() {
-                            settle(done.harvest);
-                        }
                         return;
                     }
                     only_these_modifiers_down(&[]);
@@ -1637,22 +1607,14 @@ fn take_the_harvest() -> Result<Harvest, String> {
                     }
                     let pressed_in_the_formatted_window = pressed.borrow()[before..].to_vec();
 
-                    let page_windows: Vec<isize> = formatted
-                        .as_ref()
-                        .ok()
-                        .map(|(window, _)| *window)
-                        .into_iter()
-                        .collect();
                     let harvest = formatted.map(|(_, formatted_window)| Harvest {
                         text_tab: text_tab.clone(),
                         pressed_by_alt_r,
                         formatted_window,
                         pressed_in_the_formatted_window,
                     });
-                    *gathered.borrow_mut() = Some(Gathered {
-                        harvest,
-                        page_windows,
-                    });
+                    ticker.stop();
+                    settle(harvest);
                 }
             });
             ticker.start(TICK_MS, false);

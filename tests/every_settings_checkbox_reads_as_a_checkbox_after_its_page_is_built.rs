@@ -7,8 +7,8 @@
 //! after General are built the first time their tab is shown, and the dialog
 //! painted their empty panels with the theme before that. wxWidgets hands a
 //! parent's foreground colour to every child created after it
-//! (`src/common/wincmn.cpp:1524-1552`) and makes a checkbox given a colour
-//! owner-drawn (`src/msw/control.cpp:422-444`), so its `BS_CHECKBOX` style
+//! (`src/common/wincmn.cpp:1598-1626`) and makes a checkbox given a colour
+//! owner-drawn (`src/msw/control.cpp:406-428`), so its `BS_CHECKBOX` style
 //! became `BS_OWNERDRAW`, which Windows' standard accessible object reports as
 //! a push button with no checked state. General was spared because its boxes
 //! existed before the paint.
@@ -411,21 +411,22 @@ struct Harvest {
 /// would have carried on a fresh install, and dark, which the tester runs.
 const THEMES: [&str; 2] = ["", "dark"];
 
-/// The six later tabs, in the notebook's order, and whether each holds a
+/// The seven later tabs, in the notebook's order, and whether each holds a
 /// checkbox. Calendar & PIM has none, and the reading holds that too.
-const LATER_PAGES: [(usize, &str, bool); 6] = [
+const LATER_PAGES: [(usize, &str, bool); 7] = [
     (1, "Compose", true),
     (2, "Reading", true),
     (3, "Permissions", true),
     (4, "Calendar & PIM", false),
     (5, "Feedback", true),
     (6, "Advanced", true),
+    (7, "Questions", true),
 ];
 
 /// The `Button`-class descendants of `panel` that are neither group boxes
 /// nor push buttons, which on a Settings page means the check boxes, however
 /// they are currently styled.
-fn checkbox_like_windows_under(panel: &Panel) -> Vec<isize> {
+fn checkbox_like_windows_under(panel: &dyn WxWidget) -> Vec<isize> {
     descendants_of(panel.get_handle() as isize)
         .into_iter()
         .filter(|hwnd| class_name(*hwnd) == "Button")
@@ -443,7 +444,7 @@ fn read_the_page(
     widgets: &wx_settings::SettingsWidgets,
     tab: usize,
     page: &'static str,
-    panel: &Panel,
+    panel: &dyn WxWidget,
 ) -> Result<Vec<Row>, String> {
     widgets.notebook.set_selection(tab);
     widgets.dialog.layout();
@@ -528,6 +529,21 @@ fn read_one_dialog(
     let mut rows = Vec::new();
     for (tab, page, panel) in pages {
         rows.extend(read_the_page(theme_name, &widgets, tab, page, panel)?);
+    }
+    // Questions, by its place in the tab row: a tab nothing added leaves no
+    // row, which the first test reports as a page that was not read. Counted
+    // first, because wxWidgets asserts on a page asked for past the end.
+    if let Some(questions) = (widgets.notebook.get_page_count() > 7)
+        .then(|| widgets.notebook.get_page(7))
+        .flatten()
+    {
+        rows.extend(read_the_page(
+            theme_name,
+            &widgets,
+            7,
+            "Questions",
+            &questions,
+        )?);
     }
     widgets.dialog.destroy();
     Ok((rows, ok_button))

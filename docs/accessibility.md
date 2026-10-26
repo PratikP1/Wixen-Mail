@@ -129,9 +129,12 @@ every one of them.
 
 A destructive action, deleting a task, a contact, a whole message, always
 asks first and names the specific thing it is about to remove, so answering
-too quickly does not lose the wrong item. Enter answers No on that question
-rather than Yes, on the theory that pressing the key you already know is
-safer than pressing the one that confirms.
+too quickly does not lose the wrong item. Its two buttons say what each
+does, Delete and Keep, so a screen reader reads the question and then
+"Keep, button" rather than "No, button", and Enter presses Keep, on the
+theory that pressing the key you already know is safer than pressing the one
+that confirms. `Escape` closes the question with nothing done. Every
+question's buttons are listed in the keyboard shortcuts page.
 
 ## Hearing and non-speech audio
 

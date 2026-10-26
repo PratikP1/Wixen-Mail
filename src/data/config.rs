@@ -311,6 +311,16 @@ pub struct AppConfig {
     /// dismissed every time.
     #[serde(default = "default_true")]
     pub check_spelling_before_send: bool,
+    /// The questions somebody has stopped being asked, by ticking "Don't ask
+    /// me again" on one and choosing the answer it remembers.
+    ///
+    /// Offered on Settings, Questions, one box per question, where ticking a
+    /// box asks that question again. The spelling question is never held
+    /// here: its box turns off `check_spelling_before_send` above, which is
+    /// where it comes back. Empty by default, and a file written before this
+    /// existed reads as every question asked.
+    #[serde(default)]
+    pub questions_not_asked: crate::application::questions_before_acting::QuestionsNotAsked,
     /// What Wixen Mail may change at a server, for every account.
     ///
     /// Defaults to `default_allowed` below, which names the answer instead of
@@ -830,6 +840,7 @@ impl Default for AppConfig {
             keep_selected_message_in_view: default_true(),
             language: default_language(),
             check_spelling_before_send: true,
+            questions_not_asked: Default::default(),
             allowed_changes: default_allowed(),
             message_text_kept: default_message_text_kept(),
             allowed_per_account: HashMap::new(),

@@ -99,19 +99,20 @@ fn the_arm_holding(lines: &[(usize, String)], at: usize) -> Option<String> {
         .next_back()
 }
 
-/// The style where Enter answers No, which here means "describe it".
+/// The question whose Enter means "describe it", in `presentation::asking`'s
+/// table since 13.4-12.3, where it was a style passed at the call.
 ///
-/// Spelled with its full path as well as bare, because a check anchored on a
+/// Matched inside its full path as well as bare, because a check anchored on a
 /// short spelling is walked past by the long one. 04-03 wrote one that was,
 /// and both spellings compile.
-const ENTER_MEANS_DESCRIBE_IT: &str = "yes_no_where_enter_answers_no()";
+const ENTER_MEANS_DESCRIBE_IT: &str = "Question::MarkAPictureDecorative";
 
-/// The style where Enter answers Yes, which here would mark a picture
-/// decorative because somebody pressed Enter partway through the question.
-const ENTER_MEANS_DECORATIVE: &str = "yes_no_where_enter_answers_yes()";
+/// Any question named at all, so a body asking a different one, whose Enter
+/// might be the first answer, is seen.
+const A_QUESTION: &str = "Question::";
 
-/// The button that means yes.
-const THE_YES_BUTTON: &str = "ID_YES";
+/// The answer that means yes.
+const THE_YES_BUTTON: &str = "Answered::Yes";
 
 /// The line `what_ships` looks at by its exact text, so it is the one line
 /// left unmarked below.
@@ -286,21 +287,89 @@ fn test_the_decorative_question_is_one_enter_answers_by_asking_for_a_description
     let lines = the_shipping_lines_of(&the_composer());
     let body = the_body_of(&lines, THE_ASKING);
 
+    let right = where_the_code_says(body, ENTER_MEANS_DESCRIBE_IT);
     assert!(
-        !where_the_code_says(body, ENTER_MEANS_DESCRIBE_IT).is_empty(),
-        "`{THE_ASKING}` does not build its question with \
-         `{ENTER_MEANS_DESCRIBE_IT}`, so Enter partway through hearing it marks \
-         a picture decorative and the person receiving the message is told \
+        !right.is_empty(),
+        "`{THE_ASKING}` does not ask `{ENTER_MEANS_DESCRIBE_IT}`, so nothing says \
+         Enter partway through hearing it describes the picture rather than \
+         marking it decorative and telling the person receiving the message \
          nothing about it."
     );
 
-    let wrong = where_the_code_says(body, ENTER_MEANS_DECORATIVE);
-    assert!(
-        wrong.is_empty(),
-        "`{THE_ASKING}` builds its question with `{ENTER_MEANS_DECORATIVE}` at \
-         lines {wrong:?}, which is the style for a question somebody came to \
-         answer yes to. This is not one."
+    let any = where_the_code_says(body, A_QUESTION);
+    assert_eq!(
+        any, right,
+        "`{THE_ASKING}` asks another question beside `{ENTER_MEANS_DESCRIBE_IT}`, \
+         at lines {any:?}, whose Enter may be the answer somebody came to give. \
+         This is not one."
     );
+
+    // What the question it asks gives Enter, read from the table rather than
+    // from the words: the second answer, Describe It.
+    use wixen_mail::application::questions_before_acting::Question;
+    use wixen_mail::presentation::asking::{Answered, answers, enter_gives};
+    assert_eq!(
+        enter_gives(Question::MarkAPictureDecorative),
+        Answered::No,
+        "Enter on the decorative question marks the picture decorative"
+    );
+    assert_eq!(
+        answers(Question::MarkAPictureDecorative).second,
+        "&Describe It"
+    );
+
+    // And the words say so by the buttons' names, since the buttons are no
+    // longer Yes and No. Read as the string the program holds: a `\` at a
+    // line's end joins it to the next with the next one's indentation
+    // dropped, as Rust reads it.
+    let words = the_words_of_the_decorative_question(&the_composer());
+    for wanted in [
+        "Mark as Decorative sends it with no description at all",
+        "Describe It is what Enter does.",
+    ] {
+        assert!(
+            words.contains(wanted),
+            "the words never say {wanted:?}: {words:?}"
+        );
+    }
+    let old = words
+        .lines()
+        .filter(|line| line.starts_with("Yes:") || line.starts_with("No:"))
+        .collect::<Vec<_>>();
+    assert!(old.is_empty(), "the words still answer Yes and No: {old:?}");
+}
+
+/// The decorative question's words as the program holds them.
+fn the_words_of_the_decorative_question(source: &str) -> String {
+    const OPENING: &str = "const THE_DECORATIVE_QUESTION: &str =";
+    let after = source
+        .split_once(OPENING)
+        .map(|(_, after)| after)
+        .expect("the composer no longer holds the decorative question");
+    let start = after.find('"').expect("the question's opening quote") + 1;
+    let end = after[start..]
+        .find("\";")
+        .expect("the question's closing quote")
+        + start;
+    let mut held = String::new();
+    let mut lines = after[start..end].split('\n').peekable();
+    while let Some(line) = lines.next() {
+        match line.strip_suffix('\\') {
+            Some(joined) => {
+                held.push_str(joined);
+                if let Some(next) = lines.peek_mut() {
+                    *next = next.trim_start();
+                }
+            }
+            None => {
+                held.push_str(line);
+                if lines.peek().is_some() {
+                    held.push('\n');
+                }
+            }
+        }
+    }
+    held
 }
 
 #[test]
@@ -454,22 +523,20 @@ fn test_a_narrowing_handed_a_measurement_split_over_lines_is_not_reported() {
 #[test]
 fn test_a_question_built_with_the_wrong_default_is_found() {
     let made_up = "fn ask_whether_it_is_decorative(a: u8) -> u8 {\n    \
-                       let style = yes_no_where_enter_answers_yes();\n    \
-                       style\n\
+                       let answered = ask(a, Question::SendDespiteSpelling, t, w);\n    \
+                       answered\n\
                    }\n";
     let lines = the_shipping_lines_of(made_up);
     let body = the_body_of(&lines, THE_ASKING);
 
     assert_eq!(
-        where_the_code_says(body, ENTER_MEANS_DECORATIVE),
+        where_the_code_says(body, A_QUESTION),
         vec![2],
-        "a question letting Enter answer Yes was not found"
+        "a question whose Enter sends was not found"
     );
     assert!(
         where_the_code_says(body, ENTER_MEANS_DESCRIBE_IT).is_empty(),
-        "the wrong style was read as the right one, which the two spellings \
-         sharing a prefix would do to a check written with `contains` the \
-         other way round"
+        "the wrong question was read as the right one"
     );
 }
 
@@ -478,8 +545,8 @@ fn test_the_full_path_spelling_of_the_right_style_is_seen() {
     // A check anchored on a short spelling is walked past by the long one, and
     // both compile. This is the long one.
     let made_up = "fn ask_whether_it_is_decorative(a: u8) -> u8 {\n    \
-                       let style = crate::presentation::asking::yes_no_where_enter_answers_no();\n    \
-                       style\n\
+                       let answered = ask(a, crate::application::questions_before_acting::Question::MarkAPictureDecorative, t, w);\n    \
+                       answered\n\
                    }\n";
     let lines = the_shipping_lines_of(made_up);
     let body = the_body_of(&lines, THE_ASKING);

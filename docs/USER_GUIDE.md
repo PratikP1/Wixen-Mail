@@ -2,6 +2,7 @@
 
 ## Table of Contents
 1. [Getting Started](#getting-started)
+   - [Questions Wixen Mail asks first](#questions-wixen-mail-asks-first)
 2. [Account Setup](#account-setup)
 3. [Email provider setup guides](PROVIDER_SETUP.md)
 4. [Reading and Managing Email](#reading-and-managing-email)
@@ -44,6 +45,45 @@ name:
 
 Until 2026-09-20 two more waited for a restart without saying so: Mark as read
 after, and how dates are written in the lists. Both apply on OK now.
+
+### Questions Wixen Mail asks first
+
+Before Wixen Mail does something you might not mean, such as deleting a saved
+search or running a rule over a folder, it asks. Each question has two buttons
+that say what they do, such as Delete and Keep, and a check box under them,
+**Don't ask me again** (`Alt+G`), which is never ticked when the question
+opens.
+
+- Tick **Don't ask me again** and choose the button that goes ahead, such as
+  Delete, and that question stops. Next time Wixen Mail does that straight
+  away, with no question, and says what it did.
+- Tick it and choose the other button, such as Keep, or press `Escape`, and
+  nothing is remembered. The question is asked again next time.
+- The question about a small picture in a message you write is the one
+  exception: there the box remembers **Describe It**, so a stopped question
+  goes straight to the description. It never remembers Mark as Decorative,
+  because that would send every later picture with no description.
+- The question about spelling before you send is stopped by turning off
+  **Check spelling before sending a message** on the General tab of Settings,
+  and that is also where it comes back.
+
+Every other question you stopped is on the **Questions** tab of Settings, the
+last tab, as a check box that starts "Ask before". A ticked box means the
+question is asked; tick an unticked one and press OK to have that question
+asked again.
+
+For example, move to a saved search called Weekly in the folder tree and
+choose Delete from Saved Searches on the Action menu. The question says
+"Delete the saved search Weekly? The mail it listed stays where it is." Press
+`Alt+G`, then `Alt+D` for Delete: Weekly is gone, and Wixen Mail says "Weekly is
+gone. The mail it listed is untouched." Delete another saved search and it
+goes at once, with its own sentence and no question. To have the question back, open Settings with
+`Ctrl+,`, move along the tabs to Questions, tick **Ask before deleting a saved
+search** (`Alt+S`), and press OK.
+
+A question stopped from inside Settings, deleting a sound scheme on the
+Feedback tab, shows ticked on the Questions tab until Settings is opened again.
+It is still stopped, and pressing OK does not undo it.
 
 ### Numbers you set
 
@@ -762,18 +802,17 @@ counted as changes, and the question says both numbers: "The rule Mark
 read matches 230 messages in Inbox; 12 would be marked read and 218 are
 read already."
 
-- **Yes** runs the rule, and one sentence says what it did:
+- **Run** (`R`) runs the rule, and one sentence says what it did:
   "Newsletters: 214 messages moved to Archive".
-- **No** changes nothing.
-- **Enter** answers Yes, except before a rule that deletes, where Enter
-  answers No, so a key pressed before the question has finished cannot
-  delete a folder's mail.
+- **Don't Run** (`D`) changes nothing, and so does `Escape`.
+- **Enter** presses Run, except before a rule that deletes, where Enter
+  presses Don't Run, so a key pressed before the question has finished
+  cannot delete a folder's mail.
 - When the rule would change nothing, you hear that instead, and nothing
   is asked.
 
-The buttons read Yes and No, rather than Run and Don't Run, because the
-toolkit this program is built on cannot rename them; the question ends
-"Run it?" so that Yes and No answer it.
+The buttons read Run and Don't Run, and your screen reader says the
+question and then the button the keyboard is on.
 
 One run changes at most 5,000 messages. When a rule would change more,
 the question says so, and running it again changes the next 5,000,
@@ -1091,7 +1130,7 @@ The buttons:
 | Paste a Key | `Alt+P` | Opens a box to paste a key's text into, then imports it |
 | Export Public Key | `Alt+X` | Writes the chosen key's public half to a file you choose. The private half never leaves |
 | Copy Public Key | `Alt+C` | Puts the chosen key's public half on the clipboard, to paste into a message |
-| Remove | `Alt+R` | Asks first, naming the key and its fingerprint, and says that signatures made with it will no longer be checked. For a private key it also says that messages encrypted to it will stop opening. `Enter` answers No |
+| Remove | `Alt+R` | Asks first, naming the key and its fingerprint, and says that signatures made with it will no longer be checked. For a private key it also says that messages encrypted to it will stop opening. The buttons are Remove and Keep, and `Enter` presses Keep |
 | Close | `Alt+O` | Closes the manager. `Esc` does the same |
 
 Every answer is shown on the line above the buttons and said aloud. A button
@@ -1100,8 +1139,8 @@ pressed with no key chosen says to choose one first.
 Somebody may send you their public key as an attachment, usually a `.asc` or
 `.key` file. Press `Enter` on it in the attachment list, in either reader
 window, and Wixen Mail says what kind of key it is, the name it gives and its
-key id, and asks whether to import it. `Enter` answers No, so nothing is
-imported by accident. A `.asc` file that holds no key, usually a signature, is
+key id, and asks whether to import it. The buttons are Import and Don't
+Import, and `Enter` presses Don't Import, so nothing is imported by accident. A `.asc` file that holds no key, usually a signature, is
 read as text instead.
 
 #### A key locked with a passphrase
@@ -1444,8 +1483,9 @@ been run against a real mail server.
    from now on. You can see it under Tools, Blocked Senders.
 2. If messages from them are already on this computer, one question asks
    whether to move them too, with the count: "Also move the 14 messages
-   already here from ada@example.com to Junk?" Enter answers Yes. No leaves
-   them where they are, and so does closing the question without an answer.
+   already here from ada@example.com to Junk?" The buttons are Move Them and
+   Leave Them, and Enter presses Move Them. Leave Them leaves them where they
+   are, and so does closing the question with `Escape`.
 3. One sentence says what happened, for example "14 messages already here
    were moved to Junk."
 
@@ -1453,7 +1493,7 @@ What the question counts and what it leaves alone:
 
 | Case | What happens |
 |---|---|
-| Messages in the inbox and your other folders | Counted, and moved on Yes |
+| Messages in the inbox and your other folders | Counted, and moved on Move Them |
 | Messages in Junk, Trash, Sent, Drafts or the Outbox | Left alone and not counted |
 | More than 5,000 messages | Nothing is asked and nothing moves. The sentence gives the count and says to search for the sender and use Move to |
 | Mail changes switched off under Allow Changes | Nothing is asked. The sentence says the messages stay where they are and that the block waits for mail changes |
@@ -2045,7 +2085,8 @@ switching back selects those messages again, not everything in their
 conversations.
 
 **Delete on a conversation row** asks first and names the number: "Delete 5
-messages in Quarterly report?". `Enter` answers no. How far it reaches is a
+messages in Quarterly report?". The buttons are Delete and Keep, or Delete
+Permanently and Keep after `Shift+Delete`, and `Enter` presses Keep. How far it reaches is a
 setting on the Reading page: only the messages in the folder you are reading,
 which is what it does unless you change it, or every message in the
 conversation wherever it is filed.

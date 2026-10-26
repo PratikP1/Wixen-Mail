@@ -33,7 +33,7 @@
 
 #![cfg(windows)]
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::{OsStr, c_void};
 use std::fmt;
@@ -59,6 +59,7 @@ use wixen_mail::presentation::wx_managers::{
     ManagedRow, SignatureAccount, SignatureEntry, build_sig_edit_dialog, build_signature_manager,
     offers_for, the_signature_as_edited,
 };
+use wxdragon::event::WebViewEvents;
 use wxdragon::prelude::*;
 use wxdragon::widgets::WebView;
 
@@ -764,11 +765,10 @@ struct ListViewItem {
 
 /// One cell of a live list, read from the list itself.
 ///
-/// Not through `ListCtrl::get_item_text`, which loses the last character of
-/// every cell and puts a NUL in its place (`wxdragon-0.9.17`,
-/// `src/widgets/list_ctrl.rs:429`, measured in
-/// `tests/manager_dialog_labels.rs`). This reading is about whole words, "Work"
-/// against "Work, Home", so the cell is read whole.
+/// Through `LVM_GETITEMTEXTW` rather than `ListCtrl::get_item_text`, so what is
+/// read is the text the native list holds, which is what a screen reader is
+/// given for the row, and not what the binding's own reader reports. This
+/// reading is about whole words, "Work" against "Work, Home".
 fn cell(list: &ListCtrl, row: i64, column: i32) -> String {
     let mut buffer = [0u16; 512];
     let mut item = ListViewItem {
@@ -1185,6 +1185,22 @@ fn unquoted(answer: Option<String>) -> String {
         .unwrap_or_else(|| "(run_script answered None)".to_string())
 }
 
+/// Set once WebView2 has made the browser in `view`, or failed to, which
+/// is when the page can be acted on. Bound before the loop turns, so the
+/// report cannot arrive before anything listens for it.
+fn the_browser_reports(view: &WebView) -> Rc<Cell<bool>> {
+    let made = Rc::new(Cell::new(false));
+    view.on_created({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    view.on_error({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    made
+}
+
 fn the_page_is_up(body_editor: &WebView) -> bool {
     unquoted(body_editor.run_script(
         "(typeof window.wixenRules === 'object' && !window.__signature_run) ? 'up' : 'not yet'",
@@ -1286,7 +1302,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
             let dialog = widgets.dialog;
             let body_editor = widgets.body_editor;
             let choice = widgets.account_choice;
-            let browser = widgets.browser.clone();
+            let browser_made = the_browser_reports(&body_editor);
             wx_compose::follow_the_from_account(
                 choice,
                 body_editor,
@@ -1328,7 +1344,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                         run.phase
                     };
                     let next = match phase {
-                        Phase::WaitingForBrowser if browser.is_ready() => Phase::Acting,
+                        Phase::WaitingForBrowser if browser_made.get() => Phase::Acting,
                         Phase::WaitingForPage if the_page_is_up(&body_editor) => {
                             let _ = body_editor.run_script("window.__signature_run = 1; 'marked'");
                             Phase::Settling(TICKS_TO_SETTLE)
@@ -1351,7 +1367,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                             Some(why) => Err(why),
                             None => Ok(std::mem::take(&mut run.harvest)),
                         };
-                        browser.destroy_when_ready(dialog);
+                        dialog.destroy();
                         finish(taken);
                     }
                 }

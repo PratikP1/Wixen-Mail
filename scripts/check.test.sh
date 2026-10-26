@@ -17,9 +17,16 @@
 # A router that runs everything always is as wrong as one that runs nothing, so
 # the cases below come in both halves. What must be answered: a real coupling to
 # a target the gate would otherwise skip. What must not: a file no record names,
-# a target the gate already runs on every scoped run, a record whose break lands
-# somewhere `--lib` was never going to reach, and anything read out of a
+# a target the gate already runs on every scoped run, a record coupling a
+# changed test file to that file's own target, and anything read out of a
 # record's prose rather than its `file` and `suite`.
+#
+# Until 2026-10-25 the third of those read "a record whose break lands
+# somewhere `--lib` was never going to reach", and it had been wrong since
+# 2026-09-12, as the correction in place further down says: the mapping answers
+# with a `--test` target, so a break landing where no `--lib` filter reaches is
+# the case it is for. The one exclusion left for a test file is its own target
+# (13.4-12.1, ledger 962).
 set -uo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -204,9 +211,12 @@ expect_among installer "the installer script a record couples to that suite answ
 expect "" "a workflow no record names answers nothing" \
     "$registry" .github/workflows/ci.yml
 
-# A changed test file is left out, because the run already ends with its own
-# target and a record coupling something to it would ask for the same target a
-# second time.
+# A changed test file is not answered its own target, because the run already
+# ends with it and a record coupling the file to its own target would ask for
+# that target a second time. A record coupling it to another target is
+# answered, which "a changed test file answers the targets its records name
+# other than its own" holds further down. The real registry's one record for
+# this file names its own target.
 expect "" "a changed test file is not coupled to itself a second time" \
     "$registry" tests/installer.rs
 
@@ -243,25 +253,28 @@ expect_among manager_dialog_labels "a coupled file beside an uncoupled one" \
     "$registry" src/presentation/wx_managers.rs src/application/threading.rs
 
 # ── The coupling really is what is being read ───────────────────────────────
-# Take the `suite` line off that one record, in a copy, and the answer goes
-# away. Demonstrated against a copy because editing the real registry to prove
-# a point is how a proof becomes a defect.
+# Take the `suite` line off every record naming that target, in a copy, and the
+# answer goes away. Demonstrated against a copy because editing the real
+# registry to prove a point is how a proof becomes a defect.
 #
-# The copy is checked to differ by exactly one line first. Without that, a
-# botched copy step, an empty file or a failed `grep`, makes the case below pass
-# for the wrong reason, and an empty answer would read as a finding when it is
-# really a broken fixture.
+# The copy is checked to lose exactly those lines first, and at least one.
+# Without that, a botched copy step, an empty file or a failed `grep`, makes the
+# case below pass for the wrong reason, and an empty answer would read as a
+# finding when it is really a broken fixture. Until 2026-10-25 it asked for
+# exactly one line, because one record named the target; 13.4-11 added a
+# second, and a count written into a fixture is a count that perishes.
 uncoupled="$work/registry-without-the-suite.toml"
+coupled=$(grep -c '^suite = "manager_dialog_labels"$' "$registry" || true)
 grep -v '^suite = "manager_dialog_labels"$' "$registry" > "$uncoupled" || true
 removed=$(( $(wc -l < "$registry") - $(wc -l < "$uncoupled") ))
-if [ "$removed" -ne 1 ]; then
-    suite_case_failed "the copy of the registry differs by exactly one line" \
-        "removed $removed lines, wanted 1" \
+if [ "$coupled" -lt 1 ] || [ "$removed" -ne "$coupled" ]; then
+    suite_case_failed "the copy of the registry loses exactly the suite lines naming that target" \
+        "removed $removed lines of $coupled naming it, wanted all of them and at least one" \
         "the case below would pass for the wrong reason"
 else
-    suite_case_passed "the copy of the registry differs by exactly one line"
+    suite_case_passed "the copy of the registry loses exactly the suite lines naming that target"
 fi
-expect_not_among manager_dialog_labels "taking the suite line off that record leaves the file uncoupled" \
+expect_not_among manager_dialog_labels "taking the suite line off those records leaves the file uncoupled" \
     "$uncoupled" src/presentation/wx_managers.rs
 # And the real one still answers, so the case above is about the edit rather
 # than about the mapping having stopped working between the two.
@@ -494,9 +507,16 @@ suite = "gamma"
 before = """e"""
 after = """f"""
 TOML
-# A changed test file already runs its own target a few lines up in `check.sh`,
-# so a record coupling something to it would ask for the same target twice.
-expect "" "a record whose break lands on a test file contributes nothing" \
+# **Until 2026-10-25 this case said the opposite.** It was "a record whose
+# break lands on a test file contributes nothing", wanting nothing, under the
+# comment "A changed test file already runs its own target a few lines up in
+# `check.sh`, so a record coupling something to it would ask for the same
+# target twice." That holds only for a record whose suite is the changed
+# file's own target, and this record's suite is `alpha`. What it cost is
+# ledger 962: the record whose break lands on `tests/tree_selection_raises.rs`
+# and reddens `every_window_test_ends_on_the_thread_that_owns_it` ran on no
+# commit changing that file.
+expect alpha "a record whose break lands on a test file answers a suite that is another target" \
     "$not_a_source_file" tests/house_style.rs
 
 # **These two said the opposite until 2026-09-12, and they were wrong on the
@@ -516,6 +536,31 @@ expect beta "a record whose break lands on a script answers its suite" \
     "$not_a_source_file" scripts/mutants.sh
 expect gamma "and so does one whose break lands on a workflow" \
     "$not_a_source_file" .github/workflows/mutants.yml
+
+# The record ledger 962 is about, standing in a registry of its own so the rule
+# is held even when the real record moves: a break landing on a test file and
+# reddening another target. Beside it a record coupling the same file to its
+# own target, which tells this rule from a mapping that answered every record
+# of a changed test file: that one would answer both.
+a_test_files_records="$work/a-test-files-records.toml"
+cat > "$a_test_files_records" <<'TOML'
+[[guard]]
+name = "a break applied to a test file and reddening its own target"
+file = "tests/tree_selection_raises.rs"
+suite = "tree_selection_raises"
+before = """a"""
+after = """b"""
+
+[[guard]]
+name = "a break applied to a test file and reddening another target"
+file = "tests/tree_selection_raises.rs"
+suite = "every_window_test_ends_on_the_thread_that_owns_it"
+before = """c"""
+after = """d"""
+TOML
+expect every_window_test_ends_on_the_thread_that_owns_it \
+    "a changed test file answers the targets its records name other than its own" \
+    "$a_test_files_records" tests/tree_selection_raises.rs
 
 no_suite="$work/no-suite.toml"
 cat > "$no_suite" <<'TOML'
@@ -689,9 +734,13 @@ case "$target_line" in
 esac
 
 # That one line names what the separate calls named: the changed test file's
-# target, every target the real registry couples the source to, and every
-# target that reads the whole tree, compared as sets.
-coupled="$(answer "$registry" src/presentation/wx_managers.rs)"
+# target, every target the real registry couples either changed file to, and
+# every target that reads the whole tree, compared as sets. Both files'
+# couplings since 2026-10-25 (13.4-12.1, ledger 962): a changed test file is
+# answered every target its records couple it to but its own, so a record
+# coupling `tests/checkbox_labels.rs` to another target would otherwise redden
+# this case for doing its job.
+coupled="$(answer "$registry" src/presentation/wx_managers.rs tests/checkbox_labels.rs)"
 wanted_targets="$(sorted_unique_words checkbox_labels $coupled $whole_tree_targets)"
 case "$target_line" in
     shape:*)
@@ -790,6 +839,25 @@ elif printf '%s\n' "$target_line" | grep -qE -- '--test gone( |$)'; then
     suite_case_failed "a deleted test file is not handed to cargo" "answered: $target_line"
 else
     suite_case_passed "a deleted test file is not handed to cargo"
+fi
+
+# The same for a deleted test file's own record, added 2026-10-25 by 13.4-12.1
+# (ledger 962). A changed test file is answered every target its records couple
+# it to but its own, and that exception is what keeps this green: the tree
+# holds no `tests/tree_selection_raises.rs`, as for a file the commit deleted,
+# and a mapping that answered the file's own record too would put its target
+# back on cargo's line through the record, where cargo refuses the whole call.
+# It passes before that plan's fix as well, and is here so a fix taking the
+# whole exception out goes red.
+runs="$(ask_from_the_tree --scoped-runs-for "$a_test_files_records" tests/tree_selection_raises.rs 2>/dev/null)"
+target_line="$(the_one_target_line "$runs")"
+if [ "${target_line%%:*}" = shape ]; then
+    suite_case_failed "a deleted test file's own record does not hand its target to cargo" "$target_line"
+elif [ "$(times_named tree_selection_raises "$(the_targets_named "$target_line")")" -ne 0 ]; then
+    suite_case_failed "a deleted test file's own record does not hand its target to cargo" \
+        "answered: $target_line"
+else
+    suite_case_passed "a deleted test file's own record does not hand its target to cargo"
 fi
 
 # A file the program compiles in reaches the tests of the source that compiles
@@ -2362,6 +2430,37 @@ else
                 "the refusal does not say why in:" "$locked_red_said"
             ;;
     esac
+fi
+
+# ── A commit changing a test file runs what its records couple it to ─────────
+# Added 2026-10-25 by 13.4-12.1, ledger 962, on Pratik's "Yes to fixes." of that
+# day. Until then the mapping passed over every changed test file, so the record
+# "a window test's queued ending asks for the application rather than capturing
+# it", whose break lands on `tests/tree_selection_raises.rs` and reddens
+# `every_window_test_ends_on_the_thread_that_owns_it`, ran on no commit changing
+# that file: green commit 40eb4c05 changed it and its hook ran no reading.
+#
+# Through the commit fixture, its mode left to `which-checks.sh` so the staged
+# list is read the way the hook reads it. The registry is the real one, because
+# the gate reads the registry beside the script and never the fixture's, so
+# this case pins that real record. If the record goes, point the case at
+# another record whose file is a test file and whose suite is another target,
+# found with `bash scripts/check.sh --records-in guards/guards.toml`. The
+# stand-in that says unlocked goes first on the path, so the case answers the
+# same on a locked session and on a machine whose `python` does not answer.
+test_file_commit="$work/test-file-commit"
+a_commit_being_made "$test_file_commit" tests/tree_selection_raises.rs
+test_file_calls="$(PATH="$unlocked_python:$PATH" commit_with_the_stand_in "$test_file_commit" "")"
+test_file_target_calls="$(printf '%s\n' "$test_file_calls" | grep -c '^test --no-fail-fast --test ' || true)"
+test_file_target_call="$(printf '%s\n' "$test_file_calls" | grep '^test --no-fail-fast --test ' || true)"
+if [ "$test_file_target_calls" -eq 1 ] &&
+    [ "$(times_named every_window_test_ends_on_the_thread_that_owns_it \
+        "$(the_targets_named "$test_file_target_call")")" -eq 1 ]; then
+    suite_case_passed "a commit changing a test file runs the target a record couples that file to"
+else
+    suite_case_failed "a commit changing a test file runs the target a record couples that file to" \
+        "wanted one test --no-fail-fast --test call naming" \
+        "every_window_test_ends_on_the_thread_that_owns_it once; the stand-in saw:" "$test_file_calls"
 fi
 
 suite_verdict

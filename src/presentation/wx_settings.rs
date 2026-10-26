@@ -11,6 +11,7 @@ use crate::application::describing_pictures::{
 };
 use crate::application::folder_settings::{self, UnreadOnAParent};
 use crate::application::opening_links::Where as OpenLinks;
+use crate::application::questions_before_acting::{Question, QuestionsNotAsked};
 use crate::application::reading_habits::{
     CopyLines, MarkRead, MarkReadWay, TAKES_EFFECT_AT_THE_NEXT_START, WHAT_MARK_READ_COUNTS_FROM,
     WHERE_THE_DEFAULT_SORT_ORDER_APPLIES, WorkingDay,
@@ -162,6 +163,7 @@ pub struct SettingsWidgets {
     pub pim_panel: Panel,
     pub feedback_panel: Panel,
     pub advanced_panel: Panel,
+    pub questions_panel: Panel,
     // General, the page the dialog opens on, built before it is shown.
     theme: Choice,
     pub font_size: SpinCtrl,
@@ -175,7 +177,7 @@ pub struct SettingsWidgets {
     language: Choice,
     check_spelling_before_send: CheckBox,
     check_spelling_as_you_type: CheckBox,
-    /// The six pages after General, each built when its tab is first
+    /// The seven pages after General, each built when its tab is first
     /// shown. Shared with the tab row's page-changed handler, which is what
     /// builds them in the running program.
     later: Rc<LaterPages>,
@@ -212,6 +214,11 @@ impl SettingsWidgets {
     pub fn advanced(&self) -> &AdvancedTabControls {
         self.later.advanced()
     }
+
+    /// The Questions page's controls, built now if its tab was never shown.
+    pub fn questions(&self) -> &QuestionsTabControls {
+        self.later.questions()
+    }
 }
 
 // ── The pages built when their tab is first shown ────────────────────────────
@@ -225,6 +232,7 @@ const THE_PERMISSIONS_TAB: usize = 3;
 const THE_CALENDAR_AND_PIM_TAB: usize = 4;
 const THE_FEEDBACK_TAB: usize = 5;
 const THE_ADVANCED_TAB: usize = 6;
+const THE_QUESTIONS_TAB: usize = 7;
 
 /// One page: its panel, which is in the notebook from the start so the tab
 /// row is complete, and its controls, which arrive the first time the tab
@@ -254,7 +262,7 @@ impl<T> APage<T> {
     }
 }
 
-/// The six pages after General, and what each is built from.
+/// The seven pages after General, and what each is built from.
 ///
 /// Before 09-09 every page was built before the dialog was shown, and the
 /// tester found the pause (#34). Measured on 2026-09-16 with the window
@@ -280,6 +288,7 @@ struct LaterPages {
     calendar_and_pim: APage<CalendarPimTabControls>,
     feedback: APage<FeedbackTabControls>,
     advanced: APage<AdvancedTabControls>,
+    questions: APage<QuestionsTabControls>,
 }
 
 impl LaterPages {
@@ -304,6 +313,7 @@ impl LaterPages {
             THE_CALENDAR_AND_PIM_TAB => Some(self.calendar_and_pim().first_in_tab_order()),
             THE_FEEDBACK_TAB => Some(self.feedback().first_in_tab_order()),
             THE_ADVANCED_TAB => Some(self.advanced().first_in_tab_order()),
+            THE_QUESTIONS_TAB => Some(self.questions().first_in_tab_order()),
             _ => None,
         };
         // The panel already has the size the notebook gave it, so its new
@@ -313,11 +323,11 @@ impl LaterPages {
         panel.thaw();
         // `wxNotebook::SetSelection` gives the reached page focus before it
         // sends the event this runs on, when the tab row does not hold focus
-        // (Ctrl+Tab from inside a page, `src/msw/notebook.cpp:364-391`). The
+        // (Ctrl+Tab from inside a page, `src/msw/notebook.cpp:322-354`). The
         // page was empty then, so the focus landed on the panel itself and a
         // screen reader spoke an unnamed pane (#68, 2026-09-17). Asking the
         // panel to move it on is refused, because the panel already has it
-        // (`src/common/containr.cpp:110-150`), so the page names its first
+        // (`src/common/containr.cpp:131-171`), so the page names its first
         // control. When the row holds focus nothing is touched, which is
         // what keeps #33's single focus event. Asked after the thaw, so the
         // answer is about the window as it will be shown.
@@ -336,6 +346,7 @@ impl LaterPages {
             THE_CALENDAR_AND_PIM_TAB => Some(&self.calendar_and_pim.panel),
             THE_FEEDBACK_TAB => Some(&self.feedback.panel),
             THE_ADVANCED_TAB => Some(&self.advanced.panel),
+            THE_QUESTIONS_TAB => Some(&self.questions.panel),
             _ => None,
         }
     }
@@ -348,6 +359,7 @@ impl LaterPages {
             THE_CALENDAR_AND_PIM_TAB => self.calendar_and_pim.if_built().is_some(),
             THE_FEEDBACK_TAB => self.feedback.if_built().is_some(),
             THE_ADVANCED_TAB => self.advanced.if_built().is_some(),
+            THE_QUESTIONS_TAB => self.questions.if_built().is_some(),
             _ => false,
         }
     }
@@ -358,8 +370,8 @@ impl LaterPages {
     // page-changed handler through `build_the_page_for`, and a caller of the
     // public accessors. The order is the whole point: a child created under
     // a panel that already carries a foreground colour inherits it at
-    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
-    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // creation (wxWidgets `src/common/wincmn.cpp:1598-1626`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:406-428`),
     // which Windows' accessible object reports as a push button with no
     // checked state. Painted after its controls exist, a panel hands its
     // colour to nothing (#67, found 2026-09-17 in `1.0.0-alpha.1`).
@@ -411,6 +423,23 @@ impl LaterPages {
             let controls = build_advanced_tab(panel, &self.config);
             self.paint(&self.advanced.panel);
             self.paint(&controls.download_folder);
+            controls
+        })
+    }
+
+    /// Built from the questions stopped in the stored settings when the page
+    /// is built, not from the copy taken when Settings opened: a question
+    /// stopped inside Settings since, the sound scheme's, shows unticked. One
+    /// stopped while the page is on screen shows ticked until Settings is
+    /// opened again, and stays stopped, because OK saves only the boxes the
+    /// person changed.
+    fn questions(&self) -> &QuestionsTabControls {
+        self.questions.built(|panel| {
+            let not_asked = the_stored_questions_not_asked()
+                .unwrap_or_else(|| self.config.questions_not_asked.clone());
+            let controls = build_questions_tab(panel, &not_asked);
+            self.paint(&self.questions.panel);
+            self.paint(&controls.list);
             controls
         })
     }
@@ -527,7 +556,15 @@ pub fn show_settings_dialog(
             crate::presentation::accessibility::announcements::Priority::High,
         );
     }
-    SettingsResult::Updated(Box::new(read_settings(&widgets, config)))
+    let mut saved = read_settings(&widgets, config);
+    // Read again now, the moment before the window saves: a question stopped
+    // from inside Settings while it was open, the sound scheme's, is in the
+    // stored settings and not in the copy this dialog opened with, and saving
+    // that copy would undo the stop.
+    if let Some(stored_now) = the_stored_questions_not_asked() {
+        saved.questions_not_asked = the_questions_not_asked(&widgets, &stored_now);
+    }
+    SettingsResult::Updated(Box::new(saved))
 }
 
 /// Build the Settings dialog without showing it.
@@ -599,7 +636,7 @@ pub fn build_settings_dialog(
     } = build_general_tab(&general_panel, config);
     notebook.add_page(&general_panel, "General", true, None);
 
-    // ── Tabs 2 to 7: in the tab row from the start, so every tab is
+    // ── Tabs 2 to 8: in the tab row from the start, so every tab is
     // there to be reached and read, and each built the first time its tab
     // is shown. The order here is the order the constants above name.
     let compose_panel = Panel::builder(&notebook).build();
@@ -614,6 +651,8 @@ pub fn build_settings_dialog(
     notebook.add_page(&feedback_panel, "Feedback", false, None);
     let advanced_panel = Panel::builder(&notebook).build();
     notebook.add_page(&advanced_panel, "Advanced", false, None);
+    let questions_panel = Panel::builder(&notebook).build();
+    notebook.add_page(&questions_panel, "Questions", false, None);
 
     // Computed from `config` rather than a fresh disk read (see this
     // function's own doc comment for why). `None` means high contrast is
@@ -632,6 +671,7 @@ pub fn build_settings_dialog(
         calendar_and_pim: APage::on(pim_panel),
         feedback: APage::on(feedback_panel),
         advanced: APage::on(advanced_panel),
+        questions: APage::on(questions_panel),
     });
     notebook.on_page_changed({
         let later = Rc::clone(&later);
@@ -706,8 +746,8 @@ pub fn build_settings_dialog(
     // exist. A page built later is painted at the end of its own build in
     // `LaterPages`, after its controls exist, and not before: a child created
     // under a panel that already carries a foreground colour inherits it at
-    // creation (wxWidgets `src/common/wincmn.cpp:1524-1552`), and a checkbox
-    // given a colour is made owner-drawn (`src/msw/control.cpp:422-444`),
+    // creation (wxWidgets `src/common/wincmn.cpp:1598-1626`), and a checkbox
+    // given a colour is made owner-drawn (`src/msw/control.cpp:406-428`),
     // which Windows' accessible object reports as a push button with no
     // checked state. From 09-09 until 10-01.1 the six empty panels were
     // painted here, and every checkbox built on them later read as a button
@@ -734,6 +774,7 @@ pub fn build_settings_dialog(
         pim_panel: later.calendar_and_pim.panel,
         feedback_panel: later.feedback.panel,
         advanced_panel: later.advanced.panel,
+        questions_panel: later.questions.panel,
         theme,
         font_size,
         font_family,
@@ -2817,6 +2858,123 @@ fn build_advanced_tab(panel: &Panel, config: &AppConfig) -> AdvancedTabControls 
     }
 }
 
+/// What the Questions page says above its boxes.
+const THE_QUESTIONS_PAGE_SAYS: &str = "Wixen Mail asks these questions before it does something. \
+     A question you stopped with \"Don't ask me again\" is unticked here. Tick it to be asked again.";
+
+/// What the Questions page says below its boxes, about the one question it
+/// has no box for.
+const THE_SPELLING_QUESTION_COMES_BACK: &str = "The question about spelling before a message is \
+     sent comes back with \"Check spelling before sending a message\" on the General page.";
+
+/// The controls `build_questions_tab` lays out: a box for each question a
+/// person can stop, and the set the boxes were built from, so OK saves only
+/// the boxes the person changed.
+pub struct QuestionsTabControls {
+    intro: StaticText,
+    /// The scrolled part of the page that holds the boxes: 21 of them are
+    /// taller than the dialog, and a box out of sight is one somebody moving
+    /// by keyboard cannot see they are on.
+    list: ScrolledWindow,
+    boxes: Vec<(Question, CheckBox)>,
+    as_built: QuestionsNotAsked,
+}
+
+impl QuestionsTabControls {
+    /// The control first in this page's tab order, which is where wx's own
+    /// first-child pick lands.
+    fn first_in_tab_order(&self) -> &dyn WxWidget {
+        self.boxes
+            .first()
+            .map_or(&self.intro as &dyn WxWidget, |(_, first)| first)
+    }
+
+    /// The questions the boxes say are stopped: every one unticked.
+    fn as_shown(&self) -> QuestionsNotAsked {
+        let mut stopped = QuestionsNotAsked::default();
+        self.boxes
+            .iter()
+            .filter(|(_, check_box)| !check_box.is_checked())
+            .for_each(|(question, _)| stopped.stop(*question));
+        stopped
+    }
+}
+
+/// Questions: a box for every question `asking::in_settings` offers, in the
+/// order the questions are listed, ticked while it is asked.
+fn build_questions_tab(panel: &Panel, not_asked: &QuestionsNotAsked) -> QuestionsTabControls {
+    let sizer = BoxSizer::builder(Orientation::Vertical).build();
+
+    let intro = StaticText::builder(panel)
+        .with_label(THE_QUESTIONS_PAGE_SAYS)
+        .build();
+    set_accessible_name(&intro, THE_QUESTIONS_PAGE_SAYS);
+    intro.wrap(500);
+    sizer.add(&intro, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    // A panel's own tab traversal, which wxdragon's scrolled window style has
+    // no name for, as the item form's scrolled pages carry it: without it Tab
+    // in a box would leave the page.
+    let list = ScrolledWindow::builder(panel)
+        .with_style(
+            ScrolledWindowStyle::VScroll
+                | ScrolledWindowStyle::from_bits_retain(PanelStyle::TabTraversal.bits()),
+        )
+        .build();
+    let list_sizer = BoxSizer::builder(Orientation::Vertical).build();
+    let mut boxes: Vec<(Question, CheckBox)> = Vec::new();
+    let offered = Question::ALL.into_iter().filter_map(|question| {
+        crate::presentation::asking::in_settings(question).map(|label| (question, label))
+    });
+    for (question, label) in offered {
+        let check_box = CheckBox::builder(&list).with_label(label).build();
+        set_accessible_name(&check_box, &label.replace('&', ""));
+        check_box.set_value(!not_asked.holds(question));
+        list_sizer.add(&check_box, 0, SizerFlag::All, 4);
+        boxes.push((question, check_box));
+    }
+    list.set_sizer(list_sizer, true);
+    list.set_scroll_rate(0, 10);
+    sizer.add(&list, 1, SizerFlag::Expand | SizerFlag::All, 4);
+
+    let spelling = StaticText::builder(panel)
+        .with_label(THE_SPELLING_QUESTION_COMES_BACK)
+        .build();
+    set_accessible_name(&spelling, THE_SPELLING_QUESTION_COMES_BACK);
+    spelling.wrap(500);
+    sizer.add(&spelling, 0, SizerFlag::Expand | SizerFlag::All, 8);
+
+    panel.set_sizer(sizer, true);
+    QuestionsTabControls {
+        intro,
+        list,
+        boxes,
+        as_built: not_asked.clone(),
+    }
+}
+
+/// The questions stopped in the stored settings now, or `None` when they
+/// cannot be read, in which case the copy Settings opened with stands in.
+fn the_stored_questions_not_asked() -> Option<QuestionsNotAsked> {
+    crate::data::config::ConfigManager::load_stored()
+        .map(|stored| stored.app_config().questions_not_asked.clone())
+        .map_err(|why| tracing::warn!("The questions somebody stopped could not be read: {why}"))
+        .ok()
+}
+
+/// The questions to save as stopped: `stored_now`, with only the boxes the
+/// person changed on the Questions page applied, or `stored_now` as it is
+/// when nobody showed the page.
+fn the_questions_not_asked(
+    w: &SettingsWidgets,
+    stored_now: &QuestionsNotAsked,
+) -> QuestionsNotAsked {
+    match w.later.questions.if_built() {
+        Some(page) => QuestionsNotAsked::with_changes(stored_now, &page.as_built, &page.as_shown()),
+        None => stored_now.clone(),
+    }
+}
+
 /// The three controls that answer for whichever event the picker is showing,
 /// and the two lines beneath them.
 ///
@@ -3399,15 +3557,17 @@ fn delete_sound_scheme(
     };
 
     let question = format!("Delete \"{}\"? This cannot be undone.", scheme.name);
-    // Enter answers No, the same reasoning every other delete confirmation
+    // Enter gives Keep, the same reasoning every other delete confirmation
     // in this application uses: a key one row away from every other key
     // somebody might have meant should not be the one that finishes an
     // irreversible action if pressed early.
-    let asked = MessageDialog::builder(panel, &question, "Delete")
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build()
-        .show_modal();
-    if asked != ID_YES {
+    let asked = crate::presentation::asking::ask(
+        panel,
+        crate::application::questions_before_acting::Question::DeleteASoundScheme,
+        "Delete",
+        &question,
+    );
+    if asked != crate::presentation::asking::Answered::Yes {
         return;
     }
 
@@ -3528,6 +3688,7 @@ pub fn read_settings(w: &SettingsWidgets, base: &AppConfig) -> AppConfig {
     if let Some(page) = w.later.advanced.if_built() {
         read_the_advanced_page(page, &mut cfg);
     }
+    cfg.questions_not_asked = the_questions_not_asked(w, &base.questions_not_asked);
 
     cfg
 }

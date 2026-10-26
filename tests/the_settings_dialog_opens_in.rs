@@ -110,13 +110,14 @@ fn a_figure_line(what: &str, runs: &[Duration]) -> String {
 
 /// The tabs after General, in the order the dialog adds them; each is built
 /// the first time it is shown, and the harness times that first showing.
-const THE_TABS_AFTER_GENERAL: [&str; 6] = [
+const THE_TABS_AFTER_GENERAL: [&str; 7] = [
     "Compose",
     "Reading",
     "Permissions",
     "Calendar & PIM",
     "Feedback",
     "Advanced",
+    "Questions",
 ];
 
 /// Word the cost of showing each later tab for the first time, in the
@@ -809,9 +810,9 @@ fn test_pages_after_the_first_are_built_when_their_tab_is_first_shown_and_read_f
             };
             let widgets = wx_settings::build_settings_dialog(&frame, &config, &[], false, &a11y);
 
-            if widgets.notebook.get_page_count() != 7 {
+            if widgets.notebook.get_page_count() != 8 {
                 wrong.push(format!(
-                    "the tab row holds {} tabs and there are seven pages, so a setting is off the screen",
+                    "the tab row holds {} tabs and there are eight pages, so a setting is off the screen",
                     widgets.notebook.get_page_count()
                 ));
             }

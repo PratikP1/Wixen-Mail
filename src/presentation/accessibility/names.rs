@@ -149,8 +149,8 @@ impl AccessibleImpl for FixedName {
 // by `tests/a_kept_folder_reads_as_a_checked_check_box.rs` (11-03, reading A)
 // the rows answered role check button and states 0xc000840 on the kept row and
 // 0x40 on the others: READONLY, BUSY and two ALERT bits, never CHECKED, which
-// is what the tester heard (#70). wxdragon 0.9.17 numbers those constants as
-// MSAA does (CHECKED 0x10, FOCUSABLE 0x100000, SELECTABLE 0x200000), its shim
+// is what the tester heard (#70). wxdragon 0.9.23 still numbers those constants
+// as MSAA does (CHECKED 0x10, FOCUSABLE 0x100000, SELECTABLE 0x200000), its shim
 // hands them to `wxAccessible::GetState` unconverted, and wxWidgets numbers its
 // own enumeration differently (BUSY 0x10, PROTECTED 0x100000, READONLY
 // 0x200000) before converting that to the platform's. The dialog is a native

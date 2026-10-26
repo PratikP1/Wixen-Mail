@@ -63,6 +63,133 @@ use wixen_mail::presentation::wx_managers::{
 use wixen_mail::service::safety::Verdict;
 use wxdragon::prelude::*;
 
+/// The MSAA name a reader is given for a window, read through
+/// `AccessibleObjectFromWindow` the way NVDA asks for a native control's.
+/// Read in this process, which is enough for a name written through
+/// wxWidgets' own accessible object: the object answers whoever asks.
+#[cfg(target_os = "windows")]
+mod msaa {
+    use std::ffi::c_void;
+
+    const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
+    const VT_I4: u16 = 3;
+    // IAccessible's vtable: IUnknown (3), IDispatch (4), then get_accParent
+    // (7), get_accChildCount (8), get_accChild (9), get_accName (10).
+    const VTBL_RELEASE: usize = 2;
+    const VTBL_GET_ACC_NAME: usize = 10;
+
+    #[repr(C)]
+    struct Guid {
+        data1: u32,
+        data2: u16,
+        data3: u16,
+        data4: [u8; 8],
+    }
+
+    /// {618736E0-3C3D-11CF-810C-00AA00389B71}
+    const IID_IACCESSIBLE: Guid = Guid {
+        data1: 0x618736E0,
+        data2: 0x3C3D,
+        data3: 0x11CF,
+        data4: [0x81, 0x0C, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71],
+    };
+
+    /// A VARIANT as the 64-bit ABI lays it out: 24 bytes, the type at offset
+    /// 0 and the payload at offset 8.
+    #[repr(C)]
+    struct Variant {
+        vt: u16,
+        reserved: [u16; 3],
+        val: i64,
+        extra: u64,
+    }
+
+    type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
+    type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> i32;
+
+    #[link(name = "oleacc")]
+    unsafe extern "system" {
+        fn AccessibleObjectFromWindow(
+            hwnd: isize,
+            id_object: u32,
+            riid: *const Guid,
+            out: *mut *mut c_void,
+        ) -> i32;
+    }
+
+    #[link(name = "oleaut32")]
+    unsafe extern "system" {
+        fn SysStringLen(s: *mut u16) -> u32;
+        fn SysFreeString(s: *mut u16);
+    }
+
+    unsafe fn vtable_entry(object: *mut c_void, index: usize) -> *const c_void {
+        // SAFETY: a COM object is a pointer to its vtable.
+        unsafe { *(*(object as *const *const *const c_void)).add(index) }
+    }
+
+    /// The name of `hwnd`'s client object at `CHILDID_SELF`, or why there
+    /// is none.
+    fn name_of(hwnd: isize) -> Result<String, String> {
+        let mut object: *mut c_void = std::ptr::null_mut();
+        // SAFETY: the out pointer is a local; on success it holds an
+        // IAccessible, released once below.
+        let hr = unsafe {
+            AccessibleObjectFromWindow(hwnd, OBJID_CLIENT, &IID_IACCESSIBLE, &mut object)
+        };
+        if hr < 0 || object.is_null() {
+            return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+        }
+        let child_self = Variant {
+            vt: VT_I4,
+            reserved: [0; 3],
+            val: 0,
+            extra: 0,
+        };
+        // SAFETY: a live IAccessible; the slots are get_accName and Release,
+        // and the BSTR it hands out carries its length and is freed once.
+        unsafe {
+            let get_name: GetBstrFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_NAME));
+            let mut s: *mut u16 = std::ptr::null_mut();
+            let hr = get_name(object, child_self, &mut s);
+            let name = (!s.is_null()).then(|| {
+                let text = String::from_utf16_lossy(std::slice::from_raw_parts(
+                    s,
+                    SysStringLen(s) as usize,
+                ));
+                SysFreeString(s);
+                text
+            });
+            let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+            release(object);
+            match hr >= 0 {
+                true => Ok(name.unwrap_or_default()),
+                false => Err(format!("get_accName failed 0x{hr:x}")),
+            }
+        }
+    }
+
+    /// Why `hwnd` is not named `words` on MSAA, or nothing when it is.
+    pub fn not_named(hwnd: isize, words: &str) -> Option<String> {
+        match name_of(hwnd) {
+            Ok(name) if name == words => None,
+            Ok(name) => Some(format!(
+                "reads {name:?} on MSAA, the channel NVDA reads, where the code sets {words:?}"
+            )),
+            Err(why) => Some(format!("has no name to read on MSAA: {why}")),
+        }
+    }
+}
+
+/// The value box's name as the code sets it from the label showing beside
+/// it, the mnemonic gone and the colon a pause. Windows names an edit with
+/// no name of its own from the static text before it, colon and all, so a
+/// box the code stopped naming reads "Action Value:" and not this.
+#[cfg(target_os = "windows")]
+fn the_value_box_is_named_by(label: &str) -> String {
+    wixen_mail::presentation::accessibility::names::name_from_label(label)
+}
+
 // ── The fixture ─────────────────────────────────────────────────────────────
 
 const THE_ACCOUNT: &str = "acct-one";
@@ -984,13 +1111,14 @@ fn what_is_wrong_with_the_editor(wrong: &mut Wrong) {
             "opens ticked, so a sound is on unless somebody turns it off".to_string(),
         ));
     }
-    // wxdragon has the accessible object on Windows only, since 0.9.23.
+    // Read over MSAA, on Windows only, where wxWidgets has an accessible
+    // object to carry the name.
     #[cfg(target_os = "windows")]
-    if fresh.action_value_f.get_accessible().is_none() {
-        wrong.push((
-            "the value box".to_string(),
-            "carries no accessible object, so NVDA reads an unnamed edit".to_string(),
-        ));
+    if let Some(why) = msaa::not_named(
+        fresh.action_value_f.get_handle() as isize,
+        &the_value_box_is_named_by(&fresh.value_label.get_label()),
+    ) {
+        wrong.push(("the value box".to_string(), why));
     }
     fresh.dialog.destroy();
 
@@ -1039,6 +1167,14 @@ fn what_is_wrong_with_the_editor(wrong: &mut Wrong) {
             "the value box's label under Say this first".to_string(),
             format!("reads {label:?}, which says nothing about what to type"),
         ));
+    }
+    // The name follows the label, so NVDA hears what the label says (#62).
+    #[cfg(target_os = "windows")]
+    if let Some(why) = msaa::not_named(
+        saying.action_value_f.get_handle() as isize,
+        &the_value_box_is_named_by(&saying.value_label.get_label()),
+    ) {
+        wrong.push(("the value box under Say this first".to_string(), why));
     }
     if saying.sound_check.get_value() {
         wrong.push((

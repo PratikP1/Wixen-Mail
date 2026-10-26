@@ -13,7 +13,7 @@
 //!
 //! # Why this is not the toolkit's own call
 //!
-//! wxdragon 0.9.17's `TreeCtrl` offers no check state and no style for one.
+//! wxdragon 0.9.23's `TreeCtrl` offers no check state and no style for one.
 //! Its sys crate exports `wxd_TreeCtrl_SetItemState` and
 //! `wxd_TreeCtrl_GetItemState`, but each takes a `wxd_TreeItemId_t` the
 //! wrapper keeps `pub(crate)`, and `u64::from(&TreeItemId)` answers the Rust

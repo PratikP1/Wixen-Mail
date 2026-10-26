@@ -300,6 +300,22 @@ fn unquoted(answer: Option<String>) -> String {
         .unwrap_or_else(|| "(run_script answered None)".to_string())
 }
 
+/// Set once WebView2 has made the browser in `view`, or failed to, which
+/// is when the page can be acted on. Bound before the loop turns, so the
+/// report cannot arrive before anything listens for it.
+fn the_browser_reports(view: &WebView) -> Rc<Cell<bool>> {
+    let made = Rc::new(Cell::new(false));
+    view.on_created({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    view.on_error({
+        let made = made.clone();
+        move |_| made.set(true)
+    });
+    made
+}
+
 fn the_page_is_up(body_editor: &WebView) -> bool {
     unquoted(body_editor.run_script(
         "(typeof window.wixenRules === 'object' && !window.__protection_run) ? 'up' : 'not yet'",
@@ -418,7 +434,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
 
             let dialog = widgets.dialog;
             let body_editor = widgets.body_editor;
-            let browser = widgets.browser.clone();
+            let browser_made = the_browser_reports(&body_editor);
             let sign = widgets.sign_box;
             let encrypt = widgets.encrypt_box;
             // The route the composer's own handler takes: the page posts the
@@ -469,7 +485,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                         run.phase
                     };
                     let next = match phase {
-                        Phase::WaitingForBrowser if browser.is_ready() => Phase::WaitingForPage,
+                        Phase::WaitingForBrowser if browser_made.get() => Phase::WaitingForPage,
                         Phase::WaitingForPage if the_page_is_up(&body_editor) => {
                             let _ = body_editor.run_script("window.__protection_run = 1; 'marked'");
                             Phase::Settling(TICKS_TO_SETTLE)
@@ -492,7 +508,7 @@ fn take_the_harvest() -> Result<Harvest, String> {
                             Some(why) => Err(why),
                             None => Ok(std::mem::take(&mut run.harvest)),
                         };
-                        browser.destroy_when_ready(dialog);
+                        dialog.destroy();
                         finish(taken);
                     }
                 }

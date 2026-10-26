@@ -11,7 +11,7 @@
 //! reader's own fold, from the same calendar documents the library's cases use.
 //!
 //! **Where Alt+C arrives, read from wx's source before anything was bound.**
-//! `wxWindowMSW::MSWProcessMessage` (`target/debug/wxWidgets/src/msw/window.cpp:2548-2749`)
+//! `wxWindowMSW::MSWProcessMessage` (`target/debug/wxWidgets/src/msw/window.cpp:2649-2850`)
 //! hands every key message for a window with `wxTAB_TRAVERSAL` and
 //! `WS_EX_CONTROLPARENT` to `::IsDialogMessage`, and a `wxPanel` has both. For
 //! `WM_SYSCHAR` the dialog manager looks for the letter among the panel's own
@@ -1060,28 +1060,6 @@ struct Harvest {
     two_messages: Vec<Control>,
 }
 
-/// What the session read, held while it waits for the formatted windows'
-/// browsers to exist.
-struct Gathered {
-    harvest: Result<Harvest, String>,
-    page_windows: Vec<isize>,
-}
-
-/// The classes WebView2 gives the windows it puts under a host control.
-const CHROMIUMS_CLASSES: [&str; 2] = ["Chrome_WidgetWin_1", "Chrome_RenderWidgetHostHWND"];
-
-/// Whether the browser under a formatted window's host control exists yet.
-fn the_browser_is_there(page_window: isize) -> bool {
-    descendants_of(page_window)
-        .into_iter()
-        .any(|hwnd| CHROMIUMS_CLASSES.contains(&class_name(hwnd).as_str()))
-}
-
-/// Ticks before the session stops waiting for a browser: half a minute,
-/// which is generous. GitHub's runners have taken over three seconds to make
-/// one.
-const GIVE_UP_AFTER_TICKS: u32 = 1000;
-
 fn take_the_harvest() -> Result<Harvest, String> {
     if std::mem::size_of::<Variant>() != 24 {
         return Err("VARIANT is not 24 bytes here, so the reader's layout is wrong".to_string());
@@ -1137,13 +1115,13 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 PostMessageW(text, WM_SYSKEYUP, VK_C, ALT_RELEASED);
             }
 
-            // The key's time to arrive, then everything is read, then the
-            // session waits for each formatted window's browser to exist
-            // before it ends: a browser still being made when the loop stops
-            // takes the process down with it, which the hook's run met here as
-            // 0xc000041d (tests/closing_a_window_before_its_browser_exists.rs).
+            // The key's time to arrive, then everything is read and the
+            // session ends, whether or not the formatted windows' browsers
+            // exist yet. Until wxWidgets 3.3.4 a browser still being made when
+            // the loop stopped took the process down with 0xc000041d, and this
+            // waited for them; tests/closing_a_window_before_its_browser_exists.rs
+            // closes the real composer that early and reads the exit status.
             let ticks = Rc::new(std::cell::Cell::new(0u32));
-            let gathered: Rc<RefCell<Option<Gathered>>> = Rc::default();
             let ticker = Rc::new(Timer::new(&parent));
             ticker.on_tick({
                 let ticker = ticker.clone();
@@ -1151,23 +1129,6 @@ fn take_the_harvest() -> Result<Harvest, String> {
                 move |_| {
                     ticks.set(ticks.get() + 1);
                     if ticks.get() < TICKS_FOR_THE_KEY {
-                        return;
-                    }
-                    let waiting = match gathered.borrow().as_ref() {
-                        Some(already) => already
-                            .page_windows
-                            .iter()
-                            .any(|window| !the_browser_is_there(*window)),
-                        None => false,
-                    };
-                    if gathered.borrow().is_some() {
-                        if waiting && ticks.get() < GIVE_UP_AFTER_TICKS {
-                            return;
-                        }
-                        ticker.stop();
-                        if let Some(done) = gathered.borrow_mut().take() {
-                            settle(done.harvest);
-                        }
                         return;
                     }
                     only_these_modifiers_down(&[]);
@@ -1215,10 +1176,6 @@ fn take_the_harvest() -> Result<Harvest, String> {
                         ],
                     );
 
-                    let page_windows: Vec<isize> = [&formatted, &two]
-                        .into_iter()
-                        .filter_map(|opened| opened.as_ref().ok().map(|(window, _)| *window))
-                        .collect();
                     let harvest = (|| {
                         Ok(Harvest {
                             invitation_tab: invitation_tab.clone(),
@@ -1232,10 +1189,8 @@ fn take_the_harvest() -> Result<Harvest, String> {
                             two_messages: two?.1,
                         })
                     })();
-                    *gathered.borrow_mut() = Some(Gathered {
-                        harvest,
-                        page_windows,
-                    });
+                    ticker.stop();
+                    settle(harvest);
                 }
             });
             ticker.start(TICK_MS, false);

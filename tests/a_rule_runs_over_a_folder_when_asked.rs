@@ -207,25 +207,27 @@ fn the_counted_arm_asks(app: &str) -> Result<(), String> {
 /// said in place of a question whose Yes would be refused.
 fn the_gate_is_met_before_the_question(app: &str) -> Result<(), String> {
     let question = body_of(app, THE_QUESTION)?;
-    called_before(
-        &question,
-        "permitted",
-        "MessageDialog::builder",
-        THE_QUESTION,
-    )
+    called_before(&question, "permitted", "asking::ask", THE_QUESTION)
 }
 
 /// The question is asked and its answer read before the runner is called,
 /// and the runner is called once.
 fn the_question_comes_before_the_run(app: &str) -> Result<(), String> {
     let question = body_of(app, THE_QUESTION)?;
-    called_before(
-        &question,
-        "MessageDialog::builder",
-        THE_RUNNER,
-        THE_QUESTION,
-    )?;
-    called_before(&question, "which_of_the_two", THE_RUNNER, THE_QUESTION)?;
+    called_before(&question, "asking::ask", THE_RUNNER, THE_QUESTION)?;
+    // The answer is read by comparing it, not by a call.
+    match (
+        question.find("Answered::Yes"),
+        calls_of(&question, THE_RUNNER).first(),
+    ) {
+        (Some(read), Some(run)) if read < *run => {}
+        (None, _) => return Err(format!("{THE_QUESTION} never reads Answered::Yes")),
+        _ => {
+            return Err(format!(
+                "{THE_QUESTION} reads Answered::Yes after {THE_RUNNER}("
+            ));
+        }
+    }
     called_once(&question, THE_RUNNER, THE_QUESTION)
 }
 
@@ -775,11 +777,8 @@ fn ask_then_run_the_counted_rule(
     if let Err(why) = crate::service::outward::permitted(allowed, "change these messages") {
         return send_refusal(tx, rt, &why.to_string());
     }
-    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")
-        .with_style(style)
-        .build()
-        .show_modal();
-    if which_of_the_two(answered) != Answered::Yes {
+    let answered = asking::ask(frame, asked_about, "Run a Rule", &question.text);
+    if answered != Answered::Yes {
         return;
     }
     let done = match run_these_actions_over(app, list, cache, &set, &outcome) {
@@ -871,8 +870,8 @@ fn test_companion_a_folder_door_that_counts_before_choosing_is_refused() {
 #[test]
 fn test_companion_a_run_before_the_question_is_refused() {
     let unasked = planted(
-        "    let answered = MessageDialog::builder(",
-        "    let _ = run_these_actions_over(app, list, cache, &set, &outcome);\n    let answered = MessageDialog::builder(",
+        "    let answered = asking::ask(",
+        "    let _ = run_these_actions_over(app, list, cache, &set, &outcome);\n    let answered = asking::ask(",
     );
 
     let said = the_question_comes_before_the_run(&unasked).expect_err("run before asking");
@@ -887,15 +886,15 @@ fn test_companion_a_gate_met_after_the_question_is_refused() {
         "",
     )
     .replacen(
-        "    if which_of_the_two(",
-        "    if let Err(why) = crate::service::outward::permitted(allowed, \"change these messages\") {\n        return send_refusal(tx, rt, &why.to_string());\n    }\n    if which_of_the_two(",
+        "    if answered != Answered::Yes {",
+        "    if let Err(why) = crate::service::outward::permitted(allowed, \"change these messages\") {\n        return send_refusal(tx, rt, &why.to_string());\n    }\n    if answered != Answered::Yes {",
         1,
     );
 
     let said = the_gate_is_met_before_the_question(&late).expect_err("gate after the question");
 
     assert!(
-        said.contains("calls permitted( after MessageDialog::builder("),
+        said.contains("calls permitted( after asking::ask("),
         "{said}"
     );
 }

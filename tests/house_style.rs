@@ -4123,6 +4123,16 @@ fn test_the_forgotten_control_check_can_tell_the_two_apart() {
 // purpose, and the way to make somebody make it is to leave nowhere else to
 // write the style. Both answers live in `presentation::asking` and nothing
 // else names the flag.
+//
+// Since 13.4-12.3 every question with two answers is asked through
+// `asking::ask`, with buttons that say what each does (ledger 967), and the
+// rule reads twice. The calls and flags that put two answers on a box,
+// wxWidgets' and Windows' own, are refused on every line of every Rust file
+// but `asking.rs`, comments and test modules included, as the flag was. And a
+// Yes or No label is refused in shipping code under `src/`, comments aside,
+// because a comment quoting the word is prose about a cell or a heading, not
+// a button: the hand-built Confirm Delete in the Calendar window carried
+// `&Yes` and `&No` for as long as this check read only the flag.
 
 /// Where the two answers to that question live.
 const WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED: &str = "src/presentation/asking.rs";
@@ -4134,9 +4144,77 @@ const WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED: &str = "src/presentation/asking.r
 /// Written out whole it would fail on the file that defines it.
 const A_QUESTION_WITH_TWO_ANSWERS: &str = concat!("MessageDialogStyle", "::YesNo");
 
+/// Windows' own call that puts a question up, which `asking::show` makes.
+const THE_TASK_DIALOG_CALL: &str = concat!("TaskDialog", "Indirect");
+
+/// Every call and flag that puts two answers on a box, each built from pieces
+/// for the reason above.
+const THE_WAYS_TO_PUT_TWO_ANSWERS_ON_A_BOX: [&str; 7] = [
+    A_QUESTION_WITH_TWO_ANSWERS,
+    concat!("MessageDialogStyle", "::NoDefault"),
+    concat!("MessageDialogStyle", "::Cancel"),
+    concat!("set_yes_no", "_labels"),
+    concat!("set_ok_cancel", "_labels"),
+    THE_TASK_DIALOG_CALL,
+    concat!("TASKDIALOG", "CONFIG"),
+];
+
+/// A button saying Yes or No, as a whole string literal.
+const A_YES_OR_NO_LABEL: [&str; 4] = ["\"&Yes\"", "\"Yes\"", "\"&No\"", "\"No\""];
+
+/// Every line of `text` naming a way to put two answers on a box, comments
+/// and test modules included, as `path:line: text`.
+fn the_boxes_built_by_hand(path: &str, text: &str) -> Vec<String> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            THE_WAYS_TO_PUT_TWO_ANSWERS_ON_A_BOX
+                .iter()
+                .any(|way| line.contains(way))
+        })
+        .map(|(number, line)| format!("{path}:{}: {}", number + 1, line.trim()))
+        .collect()
+}
+
+/// Every Yes or No label in the shipping code of `text`, as `path:line:
+/// text`: above its first `#[cfg(test)]`, a line starting `//` left out, and
+/// a code line read up to a `//` outside a string literal.
+fn the_yes_and_no_labels_in_code(path: &str, text: &str) -> Vec<String> {
+    let shipping = text.split("#[cfg(test)]").next().unwrap_or_default();
+    shipping
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim_start().starts_with("//"))
+        .filter(|(_, line)| {
+            let code = before_a_comment(line);
+            A_YES_OR_NO_LABEL.iter().any(|label| code.contains(label))
+        })
+        .map(|(number, line)| format!("{path}:{}: {}", number + 1, line.trim()))
+        .collect()
+}
+
+/// `line` up to its first `//` outside a string literal.
+fn before_a_comment(line: &str) -> &str {
+    let mut in_a_string = false;
+    let mut escaped = false;
+    let bytes = line.as_bytes();
+    for (at, &byte) in bytes.iter().enumerate() {
+        match byte {
+            _ if escaped => escaped = false,
+            b'\\' if in_a_string => escaped = true,
+            b'"' => in_a_string = !in_a_string,
+            b'/' if !in_a_string && bytes.get(at + 1) == Some(&b'/') => return &line[..at],
+            _ => {}
+        }
+    }
+    line
+}
+
 #[test]
 fn test_only_one_module_says_which_answer_enter_gives() {
-    let mut written = Vec::new();
+    let mut by_hand = Vec::new();
+    let mut labels = Vec::new();
+    let mut read = 0;
 
     for path in ours_apart_from_this_file() {
         if path.extension().is_none_or(|kind| kind != "rs") {
@@ -4148,27 +4226,69 @@ fn test_only_one_module_says_which_answer_enter_gives() {
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        for (number, line) in text.lines().enumerate() {
-            if line.contains(A_QUESTION_WITH_TWO_ANSWERS) {
-                written.push(format!(
-                    "{}:{}: {}",
-                    path.display(),
-                    number + 1,
-                    line.trim()
-                ));
-            }
+        read += 1;
+        let shown = path.display().to_string();
+        by_hand.extend(the_boxes_built_by_hand(&shown, &text));
+        if path.starts_with("src") {
+            labels.extend(the_yes_and_no_labels_in_code(&shown, &text));
         }
     }
+    assert!(
+        read > 300,
+        "read {read} Rust files, so the reading found nothing to judge"
+    );
 
     assert!(
-        written.is_empty(),
+        by_hand.is_empty(),
         "a message box with Yes and No answers gives Yes to Enter unless it is \
          told otherwise, and somebody who presses Enter partway through hearing \
          the question has answered it. Which answer Enter gives is a decision, \
          so it is made in {WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED} and \
-         nowhere else. These write the style themselves:\n  {}",
-        written.join("\n  ")
+         nowhere else. These build a box with two answers themselves:\n  {}",
+        by_hand.join("\n  ")
     );
+    assert!(
+        labels.is_empty(),
+        "a button saying Yes or No asks somebody to remember how the question was \
+         worded; every question names what each answer does, through \
+         {WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED}. These label a button Yes or No:\n  {}",
+        labels.join("\n  ")
+    );
+
+    // Both readings can see what they refuse, and pass what they should.
+    for way in THE_WAYS_TO_PUT_TWO_ANSWERS_ON_A_BOX {
+        let planted = format!("    let style = {way};");
+        assert_eq!(the_boxes_built_by_hand("p.rs", &planted).len(), 1, "{way}");
+    }
+    let in_a_comment = format!("    // {THE_TASK_DIALOG_CALL} is the call");
+    assert_eq!(
+        the_boxes_built_by_hand("p.rs", &in_a_comment).len(),
+        1,
+        "a comment naming the call is read"
+    );
+    for refused in [
+        "        .with_label(\"&Yes\")",
+        "const KEEP: &str = \"No\";",
+        "    call(\"https://example.com\", \"No\");",
+    ] {
+        assert_eq!(
+            the_yes_and_no_labels_in_code("p.rs", refused).len(),
+            1,
+            "{refused}"
+        );
+    }
+    for accepted in [
+        "        // The cell says what it means rather than \"Yes\".",
+        "/// reliably read and \"Yes\" on its own carries nothing.",
+        "    let cell = word; // not \"Yes\"",
+        "fn shipped() {}\n#[cfg(test)]\nmod tests {\n    const ANSWER: &str = \"No\";\n}",
+    ] {
+        assert_eq!(
+            the_yes_and_no_labels_in_code("p.rs", accepted),
+            Vec::<String>::new(),
+            "{accepted}"
+        );
+    }
 }
 
 #[test]
@@ -4179,16 +4299,24 @@ fn test_the_answer_enter_gives_is_decided_somewhere() {
     let decided = fs::read_to_string(WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED)
         .expect("the module that decides which answer Enter gives");
 
-    assert!(
-        decided.contains(A_QUESTION_WITH_TWO_ANSWERS),
-        "{WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED} no longer builds the style, \
-         so the check above is passing over a rule nobody keeps"
+    for way in [THE_TASK_DIALOG_CALL, A_QUESTION_WITH_TWO_ANSWERS] {
+        assert!(
+            decided.contains(way),
+            "{WHERE_THE_ANSWER_ENTER_GIVES_IS_DECIDED} no longer names {way}, so the \
+             check above is passing over a rule nobody keeps"
+        );
+    }
+    use wixen_mail::application::questions_before_acting::Question;
+    use wixen_mail::presentation::asking::{Answered, enter_gives};
+    assert_eq!(
+        enter_gives(Question::DeleteAFolder),
+        Answered::No,
+        "Enter deletes a folder on the server"
     );
     assert_eq!(
-        wixen_mail::presentation::asking::yes_no_where_enter_answers_no(),
-        wixen_mail::presentation::asking::yes_no_where_enter_answers_yes()
-            | wixen_mail::presentation::asking::ENTER_DOES_NOT_ANSWER_YES,
-        "the two answers no longer differ by the one flag that separates them"
+        enter_gives(Question::SendDespiteSpelling),
+        Answered::Yes,
+        "Enter no longer sends a message somebody chose to send"
     );
 }
 
