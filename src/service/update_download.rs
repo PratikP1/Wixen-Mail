@@ -556,6 +556,14 @@ pub enum NextStep {
 pub const WHERE_THE_PAGE_IS_OFFERED: &str =
     "To open the releases page, choose Check for Updates on the Help menu.";
 
+/// What is said when the releases page is opened, before the browser is
+/// asked to open it.
+///
+/// A browser can take a few seconds to come up, and with "Don't ask me
+/// again" ticked on the question there is no window either, so without this
+/// the key press seems to do nothing (13.4-12.4).
+pub const OPENING_THE_RELEASES_PAGE: &str = "Opening the releases page in your browser.";
+
 /// What to do about a check's answer, with the certificate profile this
 /// build ships.
 pub fn what_to_do_about(answer: &crate::service::update_check::Answer) -> NextStep {
@@ -1905,6 +1913,60 @@ mod tests {
         assert!(
             the_dialog_waits_for_a_check_by_hand(by_hand_only),
             "the reading above cannot see a dialog opened only by hand either"
+        );
+    }
+
+    /// Whether the arm says `OPENING_THE_RELEASES_PAGE` once the answer is
+    /// Yes and before it opens the page, and still says so when the browser
+    /// does not open.
+    ///
+    /// Reads source, not behaviour, for the reason the reading above gives.
+    fn the_opening_is_said_before_the_page_opens(arm: &str) -> bool {
+        let at = |text: &str| arm.find(text);
+        match (
+            at("Answered::Yes"),
+            at("OPENING_THE_RELEASES_PAGE"),
+            at("open::that("),
+            at("Could not open a browser"),
+        ) {
+            (Some(yes), Some(said), Some(opened), Some(could_not)) => {
+                yes < said && said < opened && opened < could_not
+            }
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn test_opening_the_releases_page_says_so_before_the_browser_opens() {
+        // With the question stopped there is no window, and a browser can
+        // take a few seconds, so a page opened in silence is a key press
+        // that seems to do nothing.
+        let arm = the_arm_for(&the_window(), "AnUpdateDidNotHappen")
+            .expect("the window to handle an update that did not happen");
+        assert!(
+            the_opening_is_said_before_the_page_opens(&arm),
+            "the releases page opens without saying so"
+        );
+    }
+
+    #[test]
+    fn test_that_reading_can_see_a_page_opened_in_silence() {
+        let in_silence = "if answered == Answered::Yes && open::that(&page).is_err() {\n\
+             \x20   let could_not = format!(\"Could not open a browser. The page is {page}\");\n\
+             }\n";
+        assert!(
+            !the_opening_is_said_before_the_page_opens(in_silence),
+            "the reading above cannot see a page opened without a word"
+        );
+        let said_first = "if answered == Answered::Yes {\n\
+             \x20   let opening = crate::service::update_download::OPENING_THE_RELEASES_PAGE;\n\
+             \x20   if open::that(&page).is_err() {\n\
+             \x20       let could_not = format!(\"Could not open a browser. The page is {page}\");\n\
+             \x20   }\n\
+             }\n";
+        assert!(
+            the_opening_is_said_before_the_page_opens(said_first),
+            "the reading above cannot see the sentence said first either"
         );
     }
 
