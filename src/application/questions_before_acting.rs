@@ -166,8 +166,17 @@ impl QuestionsNotAsked {
     /// its boxes say at OK. A question stopped from inside Settings after the
     /// page was built is in `stored_now` and in neither of the others, so it
     /// stays stopped; a box the person did change wins over what is stored.
-    pub fn with_changes(stored_now: &Self, _as_built: &Self, _as_shown: &Self) -> Self {
-        stored_now.clone()
+    pub fn with_changes(stored_now: &Self, as_built: &Self, as_shown: &Self) -> Self {
+        let mut saved = stored_now.clone();
+        as_shown
+            .0
+            .difference(&as_built.0)
+            .for_each(|stopped| saved.stop(*stopped));
+        as_built
+            .0
+            .difference(&as_shown.0)
+            .for_each(|asked_again| saved.ask_again(*asked_again));
+        saved
     }
 }
 

@@ -194,33 +194,69 @@ pub fn remembers(question: Question) -> Answered {
 /// The question to stop asking after one was answered: `question` when "Don't
 /// ask me again" was ticked and the answer is the one it remembers, and
 /// nothing otherwise. A box closed without an answer is never remembered.
-pub fn what_to_remember(
-    _question: Question,
-    _answered: Answered,
-    _ticked: bool,
-) -> Option<Question> {
-    None
+pub fn what_to_remember(question: Question, answered: Answered, ticked: bool) -> Option<Question> {
+    (ticked && answered == remembers(question)).then_some(question)
 }
 
 /// The answer a stopped question gives without a window, or `None` when it is
 /// still asked.
 pub fn answered_without_asking(
-    _question: Question,
-    _not_asked: &QuestionsNotAsked,
+    question: Question,
+    not_asked: &QuestionsNotAsked,
 ) -> Option<Answered> {
-    None
+    not_asked.holds(question).then(|| remembers(question))
 }
 
 /// Write the stop for `question` into `settings`: the spelling question turns
 /// off "Check spelling before sending a message", which is where it comes
 /// back; every other question joins the set Settings, Questions offers.
-pub fn stop_asking(_question: Question, _settings: &mut AppConfig) {}
+pub fn stop_asking(question: Question, settings: &mut AppConfig) {
+    match question {
+        Question::SendDespiteSpelling => settings.check_spelling_before_send = false,
+        _ => settings.questions_not_asked.stop(question),
+    }
+}
 
 /// The check box on Settings, Questions that asks `question` again, with its
 /// access letter, or `None` for the spelling question, which comes back
 /// through its own setting on General.
-pub fn in_settings(_question: Question) -> Option<&'static str> {
-    None
+///
+/// Every letter is the page's own: the dialog's OK and Cancel carry none and
+/// its tab row names none, so the 21 need only differ from each other, which
+/// a test holds.
+pub fn in_settings(question: Question) -> Option<&'static str> {
+    Some(match question {
+        Question::SendDespiteSpelling => return None,
+        Question::DeleteAnItem => "Ask before deleting a &contact, event, task, note or reminder",
+        Question::TakeAwayACopy => "Ask before Undo takes away a cop&y",
+        Question::DeleteAContainer => {
+            "Ask before deleting a &list, calendar, notebook or contact group"
+        }
+        Question::DeleteAConversation => "Ask before deleting a con&versation",
+        Question::DeleteAConversationPermanently => {
+            "Ask before deleting a conversation &permanently"
+        }
+        Question::DeleteASavedSearch => "Ask before deleting a &saved search",
+        Question::MoveAFolder => "Ask before &moving a folder",
+        Question::DeleteAFolder => "Ask before deleting a &folder from the server",
+        Question::EmptyAFolder => "Ask before &emptying a folder into the Trash",
+        Question::EmptyAFolderForGood => "Ask before emptying a folder for &good",
+        Question::RunARule => "Ask before running a &rule over a folder",
+        Question::RunARuleThatDeletes => "Ask before running a rule that &deletes",
+        Question::RemoveFoldersTheServerNoLongerLists => {
+            "Ask before removing folders the mail server &no longer lists"
+        }
+        Question::ImportAKey => "Ask before importing a &key from an attachment",
+        Question::ApplyAViewToOtherFolders => "Ask before applying a vie&w to other folders",
+        Question::OpenTheReleasesPage => "Ask before &opening the releases page",
+        Question::InstallAnUpdate => "Ask before &installing an update",
+        Question::MoveTheMailABlockCatches => {
+            "Ask before moving mail already here when &blocking a sender"
+        }
+        Question::MarkAPictureDecorative => "Ask whether a small pic&ture is decorative",
+        Question::RemoveAKey => "&Ask before removing a PGP key",
+        Question::DeleteASoundScheme => "Ask before deleting a sound sc&heme",
+    })
 }
 
 /// The words on every box's check box, with G as its letter, the one
@@ -273,20 +309,55 @@ pub fn the_box(question: Question, title: &str, words: &str) -> TheBox {
         },
         cancellation_allowed: true,
         sized_to_content: true,
-        verification: None,
+        verification: Some(DONT_ASK_ME_AGAIN),
     }
 }
 
 /// Ask `question` over the window `over`, with `title` and `words`, and hand
 /// back the answer.
-#[cfg(windows)]
+///
+/// A question somebody stopped is answered without a window, with the answer
+/// it remembers, and the caller goes on to do that and say what it did. One
+/// answered with "Don't ask me again" ticked and the answer it remembers is
+/// stopped from then on.
 pub fn ask(
     over: &dyn wxdragon::window::WxWidget,
     question: Question,
     title: &str,
     words: &str,
 ) -> Answered {
-    show(&the_box(question, title, words), owner_of(over)).answered
+    let stored = crate::data::config::ConfigManager::load_stored();
+    if let Ok(settings) = &stored
+        && let Some(answered) =
+            answered_without_asking(question, &settings.app_config().questions_not_asked)
+    {
+        return answered;
+    }
+    #[cfg(windows)]
+    let Shown { answered, ticked } = show(&the_box(question, title, words), owner_of(over));
+    #[cfg(not(windows))]
+    let Shown { answered, ticked } = shown_by_wxwidgets(over, question, title, words);
+    if let Some(stopped) = what_to_remember(question, answered, ticked) {
+        keep_the_stop(stopped);
+    }
+    answered
+}
+
+/// Write the stop for `question` to the stored settings, read again rather
+/// than taken from before the box opened. A stop that cannot be kept is
+/// logged with the question's name, and the question is asked again next
+/// time, which is how the person learns it did not hold.
+fn keep_the_stop(question: Question) {
+    let kept = crate::data::config::ConfigManager::load_stored().and_then(|mut settings| {
+        stop_asking(question, settings.app_config_mut());
+        settings.save()
+    });
+    if let Err(why) = kept {
+        tracing::warn!(
+            "\"Don't ask me again\" on {question:?} could not be kept, so it will be asked \
+             again: {why}"
+        );
+    }
 }
 
 /// The window a question asked over `over` belongs to: the top-level window
@@ -307,18 +378,18 @@ fn owner_of(over: &dyn wxdragon::window::WxWidget) -> Option<windows::Win32::Fou
     (!top.is_invalid() && unsafe { IsWindowVisible(top) }.as_bool()).then_some(top)
 }
 
-/// Ask `question` over the window `over`, off Windows: wxWidgets' own message
-/// box with the two labels and the answer Enter gives, and no "Don't ask me
-/// again" box, which it cannot carry. Nothing this project runs by default
-/// compiles this; `.github/workflows/other-platforms.yml` does, when it is
-/// dispatched.
+/// Put `question` up over the window `over`, off Windows: wxWidgets' own
+/// message box with the two labels and the answer Enter gives, and no "Don't
+/// ask me again" box, which it cannot carry, so it is never ticked. Nothing
+/// this project runs by default compiles this;
+/// `.github/workflows/other-platforms.yml` does, when it is dispatched.
 #[cfg(not(windows))]
-pub fn ask(
+fn shown_by_wxwidgets(
     over: &dyn wxdragon::window::WxWidget,
     question: Question,
     title: &str,
     words: &str,
-) -> Answered {
+) -> Shown {
     use wxdragon::dialogs::message_dialog::{MessageDialog, MessageDialogStyle};
 
     let two_answers = MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion;
@@ -331,7 +402,10 @@ pub fn ask(
         .with_style(style)
         .build();
     dialog.set_yes_no_labels(first, second);
-    which_of_the_two(dialog.show_modal())
+    Shown {
+        answered: which_of_the_two(dialog.show_modal()),
+        ticked: false,
+    }
 }
 
 /// A first line followed by a blank one stands out above the rest, the way
@@ -396,6 +470,7 @@ pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -
     let main_instruction = the_box.main_instruction.as_deref().map(wide);
     let content = wide(&the_box.content);
     let labels = the_box.buttons.map(|(_, label)| wide(label));
+    let verification = the_box.verification.map(wide);
     let buttons = [0, 1].map(|at| TASKDIALOG_BUTTON {
         nButtonID: the_box.buttons[at].0,
         pszButtonText: PCWSTR(labels[at].as_ptr()),
@@ -426,24 +501,33 @@ pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -
         cButtons: buttons.len() as u32,
         pButtons: buttons.as_ptr(),
         nDefaultButton: the_box.default_button,
+        // Unticked when the box opens: `TDF_VERIFICATION_FLAG_CHECKED` is
+        // left off on purpose, so nothing is stopped by an Enter.
+        pszVerificationText: verification
+            .as_ref()
+            .map_or(PCWSTR::null(), |words| PCWSTR(words.as_ptr())),
         ..Default::default()
     };
     let mut pressed = 0i32;
+    let mut ticked = windows::core::BOOL(0);
     // SAFETY: the configuration and everything it points at outlive the call,
-    // and the out pointer is a local.
-    let answered = match unsafe { TaskDialogIndirect(&config, Some(&mut pressed), None, None) } {
-        Ok(()) => answered_from(pressed),
+    // and both out pointers are locals.
+    let shown = unsafe { TaskDialogIndirect(&config, Some(&mut pressed), None, Some(&mut ticked)) };
+    match shown {
+        Ok(()) => Shown {
+            answered: answered_from(pressed),
+            ticked: ticked.as_bool(),
+        },
         Err(why) => {
             tracing::warn!(
                 "The question \"{}\" could not be shown: {why}",
                 the_box.title
             );
-            Answered::Neither
+            Shown {
+                answered: Answered::Neither,
+                ticked: false,
+            }
         }
-    };
-    Shown {
-        answered,
-        ticked: false,
     }
 }
 

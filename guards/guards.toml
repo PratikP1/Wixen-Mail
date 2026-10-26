@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 987 records have arrived since and have not been through it.
+# 993 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -3553,7 +3553,7 @@ red = [
     "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
+    { file = "src/presentation/asking.rs", tests = 14 },
 ]
 
 # What each first-run answer costs is the button's description, which is what a
@@ -46215,7 +46215,7 @@ red = [
     "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
+    { file = "src/presentation/asking.rs", tests = 14 },
 ]
 
 # Escape and Alt+F4 close a question with nothing done, which on a box with no
@@ -46239,8 +46239,8 @@ red = [
     "test_escape_closes_a_question_with_neither_answer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
-    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
 ]
 
 # A question's buttons say what each does, read from another process on both
@@ -46263,8 +46263,8 @@ red = [
     "test_a_question_names_both_answers_on_both_channels_with_the_keyboard_on_keep",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
-    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
 ]
 
 # Every other shown, enabled window of the asking thread is disabled while a
@@ -46280,7 +46280,7 @@ red = [
     "presentation::asking::tests::test_every_other_shown_window_is_disabled_while_a_question_is_up",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
+    { file = "src/presentation/asking.rs", tests = 14 },
 ]
 
 # A first line followed by a blank one stands out above the rest, the way
@@ -46296,7 +46296,7 @@ red = [
     "presentation::asking::tests::test_the_words_split_the_way_wx_splits_them",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
+    { file = "src/presentation/asking.rs", tests = 14 },
 ]
 
 # A box closed without a button is neither answer, never the second: every
@@ -46313,5 +46313,109 @@ red = [
     "presentation::asking::tests::test_a_box_closed_without_a_button_is_neither_answer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 9 },
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# Every question carries "Don't ask me again", read from another process on
+# both channels where the keyboard lands, and a tick on it reaches the answer.
+# The break takes the check box away. Measured against the window target; the
+# same break also reddens test_every_question_carries_dont_ask_me_again and
+# test_a_box_carries_its_questions_buttons_with_enter_on_keep in the library.
+
+[[guard]]
+name = "every question carries don't ask me again"
+file = "src/presentation/asking.rs"
+suite = "a_question_names_what_each_answer_does"
+before = '''        verification: Some(DONT_ASK_ME_AGAIN),'''
+after = '''        verification: None,'''
+red = [
+    "test_a_question_carries_dont_ask_me_again_unticked_on_both_channels",
+    "test_ticked_and_answered_with_the_first_button_is_yes_and_ticked",
+    "test_ticked_and_answered_with_the_second_button_is_no_and_ticked",
+    "test_ticked_and_closed_with_escape_is_neither_and_ticked",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+    { file = "tests/a_question_names_what_each_answer_does.rs", tests = 10 },
+]
+
+# The box counts only with the answer the question remembers: a tick with
+# Keep, or with Escape, stops nothing, so a command never silently does
+# nothing. The break remembers any answer but Neither.
+
+[[guard]]
+name = "don't ask me again counts only with the answer the question remembers"
+file = "src/presentation/asking.rs"
+before = '''    (ticked && answered == remembers(question)).then_some(question)'''
+after = '''    (ticked && answered != Answered::Neither).then_some(question)'''
+red = [
+    "presentation::asking::tests::test_the_box_counts_only_with_the_answer_the_question_remembers",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# A stopped question is answered without a window, with the answer it
+# remembers. The break never finds a question stopped.
+
+[[guard]]
+name = "a stopped question is answered without a window"
+file = "src/presentation/asking.rs"
+before = '''    not_asked.holds(question).then(|| remembers(question))'''
+after = '''    (not_asked.holds(question) && false).then(|| remembers(question))'''
+red = [
+    "presentation::asking::tests::test_a_stopped_question_is_answered_without_asking",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# The spelling question's stop is its own setting on General, "Check spelling
+# before sending a message", and not a second setting meaning the same thing.
+# The break holds it in the Questions set instead.
+
+[[guard]]
+name = "a stop on the spelling question turns off its own setting"
+file = "src/presentation/asking.rs"
+before = '''        Question::SendDespiteSpelling => settings.check_spelling_before_send = false,'''
+after = '''        Question::SendDespiteSpelling => settings.questions_not_asked.stop(question),'''
+red = [
+    "presentation::asking::tests::test_a_stop_is_written_where_its_question_comes_back",
+]
+tests_last_seen = [
+    { file = "src/presentation/asking.rs", tests = 14 },
+]
+
+# Settings saves the set stored now with only the boxes the person changed,
+# so a stop made inside Settings, the sound scheme's, survives its OK. The
+# break saves the set the page was built from.
+
+[[guard]]
+name = "settings' save keeps a stop made inside it"
+file = "src/application/questions_before_acting.rs"
+before = '''        let mut saved = stored_now.clone();'''
+after = '''        let mut saved = as_built.clone();'''
+red = [
+    "application::questions_before_acting::tests::test_settings_saves_only_what_the_person_changed_on_the_page",
+]
+tests_last_seen = [
+    { file = "src/application/questions_before_acting.rs", tests = 6 },
+]
+
+# Settings, Questions offers a box for every question asking::in_settings
+# names, each read by its words on both channels where the keyboard lands.
+# The break leaves the first question off the page.
+
+[[guard]]
+name = "the questions page offers every question in_settings names"
+file = "src/presentation/wx_settings.rs"
+suite = "the_questions_page_is_named_on_both_channels"
+before = '''    let offered = Question::ALL.into_iter().filter_map(|question| {'''
+after = '''    let offered = Question::ALL.into_iter().skip(1).filter_map(|question| {'''
+red = [
+    "test_every_box_on_the_questions_page_is_named_where_the_keyboard_lands_on_both_channels",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_settings.rs", tests = 0 },
+    { file = "tests/the_questions_page_is_named_on_both_channels.rs", tests = 3 },
 ]

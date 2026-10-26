@@ -10,13 +10,16 @@
 //!
 //! The shape is `tests/an_editable_combo_box_is_named_where_typing_lands.rs`'s:
 //! the window process builds the program's condition, the annotation store
-//! readied and then a WebView2 preview, builds Settings hidden, reaches the
-//! eighth tab the way the tab row does, gives each box the keyboard and takes
-//! the window Windows says has it, and a reader process it starts reads each
-//! handle by `AccessibleObjectFromWindow`, which is MSAA, NVDA's channel for a
+//! readied and then a WebView2 preview, shows Settings on a desktop made for
+//! the run, reaches the eighth tab the way the tab row does, gives each box
+//! the keyboard and takes the window Windows says has it, and a reader
+//! process it starts on the same desktop reads each handle by
+//! `AccessibleObjectFromWindow`, which is MSAA, NVDA's channel for a
 //! `Button`-class window, and by `ElementFromHandle`, which is UI Automation,
-//! Narrator's. Nothing is shown, so nothing here moves the foreground or
-//! takes a key.
+//! Narrator's. A box in a hidden dialog cannot be given the keyboard, and a
+//! dialog shown on the interactive desktop is put in front of whoever uses
+//! the machine, so the run has a desktop of its own; nothing here sends a
+//! key.
 //!
 //! Each box's role, state and whether a click moves it are read by
 //! `tests/every_settings_checkbox_reads_as_a_checkbox_after_its_page_is_built.rs`,
@@ -111,10 +114,75 @@ unsafe extern "system" {
     fn GetWindowLongPtrW(hwnd: isize, index: i32) -> isize;
     fn GetFocus() -> isize;
     fn SetFocus(hwnd: isize) -> isize;
+    fn CreateDesktopW(
+        name: *const u16,
+        device: *const u16,
+        mode: *const u8,
+        flags: u32,
+        access: u32,
+        attributes: *const u8,
+    ) -> isize;
+    fn OpenDesktopW(name: *const u16, flags: u32, inherit: i32, access: u32) -> isize;
+    fn SetThreadDesktop(desktop: isize) -> i32;
     fn PeekMessageW(message: *mut [u8; 48], hwnd: isize, first: u32, last: u32, remove: u32)
     -> i32;
     fn TranslateMessage(message: *const [u8; 48]) -> i32;
     fn DispatchMessageW(message: *const [u8; 48]) -> isize;
+}
+
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetLastError() -> u32;
+}
+
+const GENERIC_ALL: u32 = 0x1000_0000;
+/// The environment variable that hands the reader the run's desktop.
+const THE_RUNS_DESKTOP: &str = "WIXEN_QUESTIONS_PAGE_DESKTOP";
+
+fn wide(text: &str) -> Vec<u16> {
+    text.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// Move the calling thread onto the desktop called `name`, made here when
+/// `make` says so and opened otherwise, before the thread has a window.
+///
+/// Settings is shown, since a box in a hidden dialog cannot be given the
+/// keyboard, and a window shown on the interactive desktop is put in front of
+/// whoever uses the machine and read by their screen reader. So the window
+/// process makes a desktop named for its process, and the reader moves onto
+/// it, because MSAA and UI Automation ask a window by messages, which pass
+/// only between threads on one desktop. The handle stays open for the life
+/// of the process.
+fn move_onto_the_desktop(name: &str, make: bool) -> Result<(), String> {
+    let name = wide(name);
+    // SAFETY: the name is null-terminated and every other pointer is null,
+    // which CreateDesktopW takes as "none".
+    unsafe {
+        let desktop = if make {
+            CreateDesktopW(
+                name.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                0,
+                GENERIC_ALL,
+                std::ptr::null(),
+            )
+        } else {
+            OpenDesktopW(name.as_ptr(), 0, 0, GENERIC_ALL)
+        };
+        if desktop == 0 {
+            return Err(format!("the run's desktop: {}", GetLastError()));
+        }
+        if SetThreadDesktop(desktop) == 0 {
+            return Err(format!("SetThreadDesktop failed: {}", GetLastError()));
+        }
+    }
+    Ok(())
+}
+
+/// The name of this run's desktop, made by the window process.
+fn the_runs_desktop_name() -> String {
+    format!("wixen-questions-page-{}", std::process::id())
 }
 
 #[link(name = "oleacc")]
@@ -211,9 +279,16 @@ fn uia_name_of(hwnd: isize) -> String {
 #[test]
 #[ignore = "started by the window process, in a process of its own"]
 fn the_reader_process_reads_each_box_it_is_handed() {
-    let Ok(list) = std::env::var(THE_HANDLES_TO_READ) else {
+    let (Ok(list), Ok(desktop)) = (
+        std::env::var(THE_HANDLES_TO_READ),
+        std::env::var(THE_RUNS_DESKTOP),
+    ) else {
         return;
     };
+    if let Err(why) = move_onto_the_desktop(&desktop, false) {
+        println!("{A_FAILURE}the reader: {why}");
+        return;
+    }
     // SAFETY: this thread is the reader's own and nothing else uses COM on it.
     unsafe {
         let _ = windows::Win32::System::Com::CoInitializeEx(
@@ -280,7 +355,7 @@ fn answer_waiting_messages() {
 /// `done`, the line that says it finished.
 fn run_a_child(
     test: &str,
-    env: (&str, String),
+    env: &[(&str, String)],
     at_most: std::time::Duration,
     done: &str,
 ) -> Result<String, String> {
@@ -293,7 +368,7 @@ fn run_a_child(
             "--test-threads=1",
             test,
         ])
-        .env(env.0, env.1)
+        .envs(env.iter().map(|(name, value)| (*name, value.as_str())))
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -371,8 +446,12 @@ fn build_and_read() -> Result<Vec<String>, String> {
         .then(|| widgets.notebook.get_page(THE_QUESTIONS_TAB))
         .flatten()
         .ok_or("Settings has no Questions page: its tab row has no eighth tab")?;
-    // The way the tab row reaches a page, which is what builds it.
+    // Shown, on the run's desktop, because a box in a hidden dialog cannot be
+    // given the keyboard; then reached the way the tab row reaches a page,
+    // which is what builds it.
+    widgets.dialog.show(true);
     widgets.notebook.set_selection(THE_QUESTIONS_TAB);
+    widgets.dialog.layout();
 
     let mut landed_on = Vec::new();
     for check_box in the_check_boxes_under(page.get_handle() as isize) {
@@ -391,7 +470,10 @@ fn build_and_read() -> Result<Vec<String>, String> {
     }
     let printed = run_a_child(
         THE_READER_PROCESS,
-        (THE_HANDLES_TO_READ, landed_on.join(";")),
+        &[
+            (THE_HANDLES_TO_READ, landed_on.join(";")),
+            (THE_RUNS_DESKTOP, the_runs_desktop_name()),
+        ],
         std::time::Duration::from_secs(60),
         THE_READER_PASSED,
     );
@@ -401,7 +483,12 @@ fn build_and_read() -> Result<Vec<String>, String> {
 
     Ok(printed?
         .lines()
-        .filter_map(|line| line.find(A_HANDLE_HEARD).map(|at| line[at..].to_string()))
+        .filter_map(|line| {
+            [A_HANDLE_HEARD, A_FAILURE]
+                .iter()
+                .find_map(|marker| line.find(marker))
+                .map(|at| line[at..].to_string())
+        })
         .collect())
 }
 
@@ -412,6 +499,11 @@ fn build_and_read() -> Result<Vec<String>, String> {
 #[ignore = "started by the tests below, in a process of its own"]
 fn the_window_process_builds_the_questions_page_and_has_it_read() {
     if std::env::var(RUN_THE_WINDOWS).is_err() {
+        return;
+    }
+    if let Err(why) = move_onto_the_desktop(&the_runs_desktop_name(), true) {
+        println!("{A_FAILURE}the window process: {why}");
+        println!("{THE_READING_PRINTED}");
         return;
     }
     let result = wxdragon::main(move |_| {
@@ -436,7 +528,7 @@ fn the_reading() -> &'static Result<Vec<(String, String)>, String> {
     READING.get_or_init(|| {
         let printed = run_a_child(
             THE_WINDOW_PROCESS,
-            (RUN_THE_WINDOWS, "yes".to_string()),
+            &[(RUN_THE_WINDOWS, "yes".to_string())],
             std::time::Duration::from_secs(180),
             THE_READING_PRINTED,
         )?;
