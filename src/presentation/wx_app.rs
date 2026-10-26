@@ -24853,7 +24853,17 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                             "Update",
                             &format!("{said}\n\nOpen the releases page in your browser?"),
                         );
-                        if answered == Answered::Yes && open::that(&page).is_err() {
+                        if answered != Answered::Yes {
+                            return;
+                        }
+                        // Said before the browser is asked: it can take a few
+                        // seconds, and with the question stopped there was no
+                        // window either, so a page opened in silence is a key
+                        // press that seems to do nothing.
+                        let opening = crate::service::update_download::OPENING_THE_RELEASES_PAGE;
+                        frame.set_status_text(opening, 0);
+                        let _ = a11y.announce_topic(opening, Priority::High, "command");
+                        if open::that(&page).is_err() {
                             let could_not = format!("Could not open a browser. The page is {page}");
                             frame.set_status_text(&could_not, 0);
                             let _ = a11y.announce_topic(&could_not, Priority::High, "command");

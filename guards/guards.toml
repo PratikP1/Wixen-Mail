@@ -81,7 +81,7 @@
 # ── What the sweep of 2026-09-15 covered, and what it did not ───────────────
 #
 # 786 records were swept that day.
-# 993 records have arrived since and have not been through it.
+# 994 records have arrived since and have not been through it.
 #
 # 786 rather than 787 since 2026-10-19: the swept record on the copy of the
 # fold-joining loop in `contacts.rs` was retired by 13.2-32 when the vCard
@@ -22542,7 +22542,7 @@ red = [
     "service::update_download::tests::test_the_usages_read_off_a_signed_file_include_code_signing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # An installer carrying this project's name is refused unless its certificate
@@ -22562,7 +22562,7 @@ red = [
     "service::update_download::tests::test_while_the_profile_is_unknown_even_our_name_is_refused",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The break is a second way to make a checked installer, and it is the shape a
@@ -22603,7 +22603,7 @@ red = [
     "service::update_download::tests::test_only_the_check_can_make_a_checked_installer",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The person chose whether the day comes before the month and whether the month
@@ -45084,7 +45084,7 @@ red = [
     "service::update_download::tests::test_while_no_installer_could_pass_an_offer_sends_the_person_to_the_page",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # The window's releases-page dialog waits for a check asked for by hand, so a
@@ -45104,7 +45104,7 @@ red = [
 ]
 tests_last_seen = [
     { file = "src/presentation/wx_app.rs", tests = 199 },
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # One check for a newer version at a time: while one is under way no other is
@@ -45170,7 +45170,7 @@ red = [
     "service::update_download::tests::test_a_download_that_goes_quiet_partway_is_given_up_on_and_leaves_nothing",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # Each download is written into a folder of its own, so two downloads of one
@@ -45185,7 +45185,7 @@ red = [
     "service::update_download::tests::test_two_downloads_of_one_name_are_two_files",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # A refused or declined installer takes the folder of its own with it (13.3-23,
@@ -45201,7 +45201,7 @@ red = [
     "service::update_download::tests::test_a_refused_installer_takes_its_folder_with_it",
 ]
 tests_last_seen = [
-    { file = "src/service/update_download.rs", tests = 59 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
 
 # Yes to an installed update closes Wixen Mail the way Quit does, so the
@@ -46418,4 +46418,21 @@ red = [
 tests_last_seen = [
     { file = "src/presentation/wx_settings.rs", tests = 0 },
     { file = "tests/the_questions_page_is_named_on_both_channels.rs", tests = 3 },
+]
+
+# Opening the releases page says so before the browser comes up, because with
+# the question stopped there is no window and a page opened in silence is a
+# key press that seems to do nothing. The break says nothing.
+
+[[guard]]
+name = "opening the releases page says so before the browser opens"
+file = "src/presentation/wx_app.rs"
+before = '''                        let opening = crate::service::update_download::OPENING_THE_RELEASES_PAGE;'''
+after = '''                        let opening = "";'''
+red = [
+    "service::update_download::tests::test_opening_the_releases_page_says_so_before_the_browser_opens",
+]
+tests_last_seen = [
+    { file = "src/presentation/wx_app.rs", tests = 199 },
+    { file = "src/service/update_download.rs", tests = 61 },
 ]
