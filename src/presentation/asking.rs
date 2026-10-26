@@ -57,8 +57,18 @@
 //!
 //! A house style check holds that nothing outside this file builds a box with
 //! two answers.
+//!
+//! **"Don't ask me again".** Every box carries the task dialog's own check
+//! box with those words, Alt+G, unticked when it opens (Pratik's answer of
+//! 2026-10-25). It counts only with the answer the question remembers, the
+//! one that goes ahead, or Describe It on the decorative-picture question:
+//! ticked with that answer, the question is not asked again and the program
+//! does what that answer does; ticked with the other answer, or with the box
+//! closed by Escape, nothing is remembered. A stopped question is a setting,
+//! offered on Settings, Questions, where ticking its box asks it again.
 
-use crate::application::questions_before_acting::Question;
+use crate::application::questions_before_acting::{Question, QuestionsNotAsked};
+use crate::data::config::AppConfig;
 
 /// Which of a question's two answers came back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,6 +175,66 @@ pub fn enter_gives(question: Question) -> Answered {
     }
 }
 
+/// The answer a ticked "Don't ask me again" remembers, and so the answer a
+/// stopped question gives without a window.
+///
+/// The first answer, which goes ahead, everywhere but the decorative-picture
+/// question. There it is Describe It: remembering Mark as Decorative would
+/// send every later small picture with no description, and the person who
+/// pays is the one reading the message with a screen reader, who is told
+/// nothing. A question added later remembers its first answer too, which is
+/// the one its call site goes ahead on.
+pub fn remembers(question: Question) -> Answered {
+    match question {
+        Question::MarkAPictureDecorative => Answered::No,
+        _ => Answered::Yes,
+    }
+}
+
+/// The question to stop asking after one was answered: `question` when "Don't
+/// ask me again" was ticked and the answer is the one it remembers, and
+/// nothing otherwise. A box closed without an answer is never remembered.
+pub fn what_to_remember(
+    _question: Question,
+    _answered: Answered,
+    _ticked: bool,
+) -> Option<Question> {
+    None
+}
+
+/// The answer a stopped question gives without a window, or `None` when it is
+/// still asked.
+pub fn answered_without_asking(
+    _question: Question,
+    _not_asked: &QuestionsNotAsked,
+) -> Option<Answered> {
+    None
+}
+
+/// Write the stop for `question` into `settings`: the spelling question turns
+/// off "Check spelling before sending a message", which is where it comes
+/// back; every other question joins the set Settings, Questions offers.
+pub fn stop_asking(_question: Question, _settings: &mut AppConfig) {}
+
+/// The check box on Settings, Questions that asks `question` again, with its
+/// access letter, or `None` for the spelling question, which comes back
+/// through its own setting on General.
+pub fn in_settings(_question: Question) -> Option<&'static str> {
+    None
+}
+
+/// The words on every box's check box, with G as its letter, the one
+/// 13.4-12.3 kept free in every box.
+pub const DONT_ASK_ME_AGAIN: &str = "Don't ask me a&gain";
+
+/// What a box came back with: the answer, and whether "Don't ask me again"
+/// was ticked when it closed, whichever way it closed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Shown {
+    pub answered: Answered,
+    pub ticked: bool,
+}
+
 /// Everything Windows is handed to put one question up, as data.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TheBox {
@@ -183,6 +253,9 @@ pub struct TheBox {
     pub cancellation_allowed: bool,
     /// Whether the box grows to fit its words rather than cutting them short.
     pub sized_to_content: bool,
+    /// The words of the check box under the buttons, unticked when the box
+    /// opens, or `None` for a box without one.
+    pub verification: Option<&'static str>,
 }
 
 /// The box that asks `question`, with `title` and `words`.
@@ -200,17 +273,12 @@ pub fn the_box(question: Question, title: &str, words: &str) -> TheBox {
         },
         cancellation_allowed: true,
         sized_to_content: true,
+        verification: None,
     }
 }
 
 /// Ask `question` over the window `over`, with `title` and `words`, and hand
 /// back the answer.
-///
-/// The box is owned by the top-level window `over` sits in when that is shown,
-/// the first of the three owners wxWidgets tries
-/// (`src/common/dlgcmn.cpp:179-204`); its other two, the active window and the
-/// main window, are that same frame or nothing in this program, since every
-/// question names the frame or a dialog on it. A hidden one gives no owner.
 #[cfg(windows)]
 pub fn ask(
     over: &dyn wxdragon::window::WxWidget,
@@ -218,6 +286,17 @@ pub fn ask(
     title: &str,
     words: &str,
 ) -> Answered {
+    show(&the_box(question, title, words), owner_of(over)).answered
+}
+
+/// The window a question asked over `over` belongs to: the top-level window
+/// `over` sits in when that is shown, the first of the three owners wxWidgets
+/// tries (`src/common/dlgcmn.cpp:179-204`); its other two, the active window
+/// and the main window, are that same frame or nothing in this program, since
+/// every question names the frame or a dialog on it. A hidden one gives no
+/// owner.
+#[cfg(windows)]
+fn owner_of(over: &dyn wxdragon::window::WxWidget) -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, IsWindowVisible};
 
@@ -225,8 +304,7 @@ pub fn ask(
     // SAFETY: a window this program built, or null, which both calls refuse.
     let top = unsafe { GetAncestor(asking, GA_ROOT) };
     // SAFETY: as above.
-    let owner = (!top.is_invalid() && unsafe { IsWindowVisible(top) }.as_bool()).then_some(top);
-    show(&the_box(question, title, words), owner)
+    (!top.is_invalid() && unsafe { IsWindowVisible(top) }.as_bool()).then_some(top)
 }
 
 /// Ask `question` over the window `over`, off Windows: wxWidgets' own message
@@ -301,9 +379,10 @@ pub fn the_windows_to_disable(windows: &[TopWindow], owner: Option<isize>) -> Ve
         .collect()
 }
 
-/// Put `the_box` up over `owner` and wait for its answer.
+/// Put `the_box` up over `owner` and wait for its answer, and whether its
+/// check box was ticked when it closed.
 #[cfg(windows)]
-pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -> Answered {
+pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -> Shown {
     use windows::Win32::UI::Controls::{
         TASKDIALOG_BUTTON, TASKDIALOGCONFIG, TDF_ALLOW_DIALOG_CANCELLATION, TDF_EXPAND_FOOTER_AREA,
         TDF_POSITION_RELATIVE_TO_WINDOW, TDF_SIZE_TO_CONTENT, TaskDialogIndirect,
@@ -352,7 +431,7 @@ pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -
     let mut pressed = 0i32;
     // SAFETY: the configuration and everything it points at outlive the call,
     // and the out pointer is a local.
-    match unsafe { TaskDialogIndirect(&config, Some(&mut pressed), None, None) } {
+    let answered = match unsafe { TaskDialogIndirect(&config, Some(&mut pressed), None, None) } {
         Ok(()) => answered_from(pressed),
         Err(why) => {
             tracing::warn!(
@@ -361,6 +440,10 @@ pub fn show(the_box: &TheBox, owner: Option<windows::Win32::Foundation::HWND>) -
             );
             Answered::Neither
         }
+    };
+    Shown {
+        answered,
+        ticked: false,
     }
 }
 
@@ -617,7 +700,245 @@ mod tests {
                 default_button: 7,
                 cancellation_allowed: true,
                 sized_to_content: true,
+                verification: Some("Don't ask me a&gain"),
             }
+        );
+    }
+
+    #[test]
+    fn test_every_question_carries_dont_ask_me_again() {
+        // The spelling question included: its box turns off the spelling
+        // check, which is its stop.
+        let without: Vec<_> = Question::ALL
+            .iter()
+            .filter(|question| {
+                the_box(**question, "A title", "Words").verification != Some("Don't ask me a&gain")
+            })
+            .collect();
+        assert!(without.is_empty(), "no Don't ask me again on {without:?}");
+    }
+
+    #[test]
+    fn test_the_box_counts_only_with_the_answer_the_question_remembers() {
+        let saved_search = Question::DeleteASavedSearch;
+        assert_eq!(
+            what_to_remember(saved_search, Answered::Yes, true),
+            Some(saved_search),
+            "ticked with Delete"
+        );
+        assert_eq!(
+            what_to_remember(saved_search, Answered::No, true),
+            None,
+            "ticked with Keep"
+        );
+        assert_eq!(
+            what_to_remember(saved_search, Answered::Neither, true),
+            None,
+            "ticked and closed with Escape"
+        );
+        assert_eq!(
+            what_to_remember(saved_search, Answered::Yes, false),
+            None,
+            "Delete, not ticked"
+        );
+
+        // The decorative question remembers Describe It, its second answer.
+        let picture = Question::MarkAPictureDecorative;
+        assert_eq!(
+            what_to_remember(picture, Answered::No, true),
+            Some(picture),
+            "ticked with Describe It"
+        );
+        assert_eq!(
+            what_to_remember(picture, Answered::Yes, true),
+            None,
+            "ticked with Mark as Decorative"
+        );
+    }
+
+    #[test]
+    fn test_a_stop_is_written_where_its_question_comes_back() {
+        let mut settings = AppConfig::default();
+        stop_asking(Question::DeleteASavedSearch, &mut settings);
+        assert!(
+            settings
+                .questions_not_asked
+                .holds(Question::DeleteASavedSearch)
+        );
+        assert!(settings.check_spelling_before_send);
+
+        let mut settings = AppConfig::default();
+        stop_asking(Question::SendDespiteSpelling, &mut settings);
+        assert!(
+            !settings.check_spelling_before_send,
+            "the spelling question's stop is its own setting on General"
+        );
+        assert_eq!(
+            settings.questions_not_asked,
+            QuestionsNotAsked::default(),
+            "and it is not held a second time on the Questions page"
+        );
+    }
+
+    #[test]
+    fn test_a_stopped_question_is_answered_without_asking() {
+        let mut not_asked = QuestionsNotAsked::default();
+        assert_eq!(
+            answered_without_asking(Question::DeleteASavedSearch, &not_asked),
+            None
+        );
+        assert_eq!(
+            answered_without_asking(Question::MarkAPictureDecorative, &not_asked),
+            None
+        );
+        not_asked.stop(Question::DeleteASavedSearch);
+        not_asked.stop(Question::MarkAPictureDecorative);
+        assert_eq!(
+            answered_without_asking(Question::DeleteASavedSearch, &not_asked),
+            Some(Answered::Yes),
+            "Delete"
+        );
+        assert_eq!(
+            answered_without_asking(Question::MarkAPictureDecorative, &not_asked),
+            Some(Answered::No),
+            "Describe It"
+        );
+        assert_eq!(
+            answered_without_asking(Question::MoveAFolder, &not_asked),
+            None,
+            "a question nobody stopped"
+        );
+    }
+
+    /// Settings, Questions, a box per question, written from 13.4-12.4's
+    /// premise 5 rather than read from `in_settings`.
+    const ON_THE_QUESTIONS_PAGE: [(Question, Option<&str>); 22] = [
+        (
+            Question::DeleteAnItem,
+            Some("Ask before deleting a &contact, event, task, note or reminder"),
+        ),
+        (
+            Question::TakeAwayACopy,
+            Some("Ask before Undo takes away a cop&y"),
+        ),
+        (
+            Question::DeleteAContainer,
+            Some("Ask before deleting a &list, calendar, notebook or contact group"),
+        ),
+        (
+            Question::DeleteAConversation,
+            Some("Ask before deleting a con&versation"),
+        ),
+        (
+            Question::DeleteAConversationPermanently,
+            Some("Ask before deleting a conversation &permanently"),
+        ),
+        (
+            Question::DeleteASavedSearch,
+            Some("Ask before deleting a &saved search"),
+        ),
+        (Question::MoveAFolder, Some("Ask before &moving a folder")),
+        (
+            Question::DeleteAFolder,
+            Some("Ask before deleting a &folder from the server"),
+        ),
+        (
+            Question::EmptyAFolder,
+            Some("Ask before &emptying a folder into the Trash"),
+        ),
+        (
+            Question::EmptyAFolderForGood,
+            Some("Ask before emptying a folder for &good"),
+        ),
+        (
+            Question::RunARule,
+            Some("Ask before running a &rule over a folder"),
+        ),
+        (
+            Question::RunARuleThatDeletes,
+            Some("Ask before running a rule that &deletes"),
+        ),
+        (
+            Question::RemoveFoldersTheServerNoLongerLists,
+            Some("Ask before removing folders the mail server &no longer lists"),
+        ),
+        (
+            Question::ImportAKey,
+            Some("Ask before importing a &key from an attachment"),
+        ),
+        (
+            Question::ApplyAViewToOtherFolders,
+            Some("Ask before applying a vie&w to other folders"),
+        ),
+        (
+            Question::OpenTheReleasesPage,
+            Some("Ask before &opening the releases page"),
+        ),
+        (
+            Question::InstallAnUpdate,
+            Some("Ask before &installing an update"),
+        ),
+        (
+            Question::MoveTheMailABlockCatches,
+            Some("Ask before moving mail already here when &blocking a sender"),
+        ),
+        (Question::SendDespiteSpelling, None),
+        (
+            Question::MarkAPictureDecorative,
+            Some("Ask whether a small pic&ture is decorative"),
+        ),
+        (Question::RemoveAKey, Some("&Ask before removing a PGP key")),
+        (
+            Question::DeleteASoundScheme,
+            Some("Ask before deleting a sound sc&heme"),
+        ),
+    ];
+
+    /// Two of `labels` sharing a letter, or a label with none.
+    fn letters_shared_or_missing(labels: &[&str]) -> Vec<String> {
+        let mut seen = std::collections::BTreeMap::new();
+        let mut wrong = Vec::new();
+        for label in labels {
+            match letter_of(label) {
+                None => wrong.push(format!("{label:?} has no letter")),
+                Some(letter) => {
+                    if let Some(first) = seen.insert(letter, *label) {
+                        wrong.push(format!("{first:?} and {label:?} both take {letter}"));
+                    }
+                }
+            }
+        }
+        wrong
+    }
+
+    #[test]
+    fn test_settings_offers_every_question_but_spelling_each_with_a_letter_of_its_own() {
+        for (question, label) in ON_THE_QUESTIONS_PAGE {
+            assert_eq!(in_settings(question), label, "{question:?}");
+        }
+        assert_eq!(
+            ON_THE_QUESTIONS_PAGE
+                .iter()
+                .map(|row| row.0)
+                .collect::<Vec<_>>(),
+            Question::ALL.to_vec(),
+            "the table above no longer lists every question in order"
+        );
+        let labels: Vec<&str> = Question::ALL.into_iter().filter_map(in_settings).collect();
+        assert_eq!(labels.len(), 21, "{labels:#?}");
+        assert!(
+            labels
+                .iter()
+                .all(|label| label.replace('&', "").starts_with("Ask")),
+            "{labels:#?}"
+        );
+        assert_eq!(letters_shared_or_missing(&labels), Vec::<String>::new());
+
+        // The reading can see each fault, so the pass above is not a pass
+        // over nothing.
+        assert_eq!(
+            letters_shared_or_missing(&["&Ask one", "&Another", "No letter"]).len(),
+            2
         );
     }
 

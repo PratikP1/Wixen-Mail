@@ -30,6 +30,13 @@
 //! box is given five seconds; if the box is still up after them the reader
 //! answers it with the second button and says the attempt left it open, so a
 //! red case fails at once with a sentence rather than at the bound.
+//!
+//! The box's "Don't ask me again" (13.4-12.4) is read the same way, at its own
+//! window: its name on both channels, its MSAA role and state and its UI
+//! Automation control type, unticked when the box opens. Where a case ticks
+//! it, the reader does so with the task dialog's own `TDM_CLICK_VERIFICATION`
+//! before it answers, and the window process prints whether `asking::show`
+//! saw it ticked beside the answer.
 
 #![cfg(windows)]
 
@@ -60,6 +67,16 @@ const BS_DEFPUSHBUTTON: isize = 0x0000_0001;
 const BS_TYPEMASK: isize = 0x0000_000F;
 /// The task dialog's message that presses one of its buttons (commctrl.h).
 const TDM_CLICK_BUTTON: u32 = 0x0400 + 102;
+/// The task dialog's message that ticks or clears its check box: `wParam`
+/// says which, `lParam` whether it takes the keyboard (commctrl.h).
+const TDM_CLICK_VERIFICATION: u32 = 0x0400 + 113;
+/// `BS_PUSHBUTTON`, the other push-button style (winuser.h).
+const BS_PUSHBUTTON: isize = 0x0000_0000;
+/// What MSAA answers for a check box's role, and the state bit for ticked.
+const ROLE_SYSTEM_CHECKBUTTON: i64 = 0x2c;
+const STATE_SYSTEM_CHECKED: i64 = 0x10;
+/// What UI Automation answers for a check box's control type.
+const UIA_CHECKBOX_CONTROL_TYPE: i32 = 50002;
 const VK_RETURN: usize = 0x0D;
 const VK_ESCAPE: usize = 0x1B;
 
@@ -165,6 +182,8 @@ const OBJID_CLIENT: u32 = 0xFFFF_FFFC;
 const VT_I4: u16 = 3;
 const VTBL_RELEASE: usize = 2;
 const VTBL_GET_ACC_NAME: usize = 10;
+const VTBL_GET_ACC_ROLE: usize = 13;
+const VTBL_GET_ACC_STATE: usize = 14;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -201,6 +220,7 @@ const CHILD_SELF: Variant = Variant {
 };
 
 type GetBstrFn = unsafe extern "system" fn(*mut c_void, Variant, *mut *mut u16) -> i32;
+type GetVariantFn = unsafe extern "system" fn(*mut c_void, Variant, *mut Variant) -> i32;
 type ReleaseFn = unsafe extern "system" fn(*mut c_void) -> u32;
 
 #[link(name = "oleacc")]
@@ -260,6 +280,47 @@ fn msaa_name_of(window: HWND) -> String {
     }
 }
 
+/// The MSAA role and state of `window`'s own client object.
+fn msaa_role_and_state_of(window: HWND) -> Result<(i64, i64), String> {
+    let mut object: *mut c_void = std::ptr::null_mut();
+    // SAFETY: the out pointer is a local; on success it holds an IAccessible.
+    let hr = unsafe {
+        AccessibleObjectFromWindow(
+            window.0 as isize,
+            OBJID_CLIENT,
+            &IID_IACCESSIBLE,
+            &mut object,
+        )
+    };
+    if hr < 0 || object.is_null() {
+        return Err(format!("AccessibleObjectFromWindow failed 0x{hr:x}"));
+    }
+    let empty = Variant {
+        vt: 0,
+        reserved: [0; 3],
+        val: 0,
+        extra: 0,
+    };
+    // SAFETY: a live IAccessible; its get_accRole, get_accState and Release
+    // slots, the object released once.
+    unsafe {
+        let get_role: GetVariantFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_ROLE));
+        let get_state: GetVariantFn = std::mem::transmute(vtable_entry(object, VTBL_GET_ACC_STATE));
+        let (mut role, mut state) = (empty, empty);
+        let role_read = get_role(object, CHILD_SELF, &mut role);
+        let state_read = get_state(object, CHILD_SELF, &mut state);
+        let release: ReleaseFn = std::mem::transmute(vtable_entry(object, VTBL_RELEASE));
+        release(object);
+        if role_read < 0 || role.vt != VT_I4 || state_read < 0 || state.vt != VT_I4 {
+            return Err(format!(
+                "role 0x{role_read:x} vt {}, state 0x{state_read:x} vt {}",
+                role.vt, state.vt
+            ));
+        }
+        Ok((role.val & 0xFFFF_FFFF, state.val & 0xFFFF_FFFF))
+    }
+}
+
 // ── UI Automation ──────────────────────────────────────────────────────────
 
 fn automation() -> windows::core::Result<windows::Win32::UI::Accessibility::IUIAutomation> {
@@ -298,6 +359,17 @@ fn uia_name_of(window: HWND) -> String {
         answered = ask();
     }
     answered.map_or_else(|why| format!("({why})"), |name| name.to_string())
+}
+
+/// What UI Automation answers as the control type of the element for
+/// `window`.
+fn uia_control_type_of(window: HWND) -> Result<i32, String> {
+    // SAFETY: a live window handle in the window process.
+    automation()
+        .and_then(|automation| unsafe { automation.ElementFromHandle(window) })
+        .and_then(|element| unsafe { element.CurrentControlType() })
+        .map(|control_type| control_type.0)
+        .map_err(|why| why.to_string())
 }
 
 /// Every name on the UI Automation tree under `dialog`.
@@ -378,11 +450,32 @@ fn the_box_of(process: u32) -> Option<HWND> {
     })
 }
 
+/// The kind of a `Button`-class window, the low nibble of its style.
+fn button_kind_of(window: HWND) -> isize {
+    // SAFETY: a live window handle; only its style is read.
+    let style = unsafe { GetWindowLongPtrW(window, GWL_STYLE) };
+    style & BS_TYPEMASK
+}
+
+fn is_a_push_button(window: HWND) -> bool {
+    class_of(window) == "Button"
+        && matches!(button_kind_of(window), BS_PUSHBUTTON | BS_DEFPUSHBUTTON)
+}
+
+/// The box's check boxes: its `Button`-class windows that are not push
+/// buttons.
+fn the_check_boxes_of(dialog: HWND) -> Vec<HWND> {
+    descendants_of(dialog)
+        .into_iter()
+        .filter(|&window| class_of(window) == "Button" && !is_a_push_button(window))
+        .collect()
+}
+
 /// The box's buttons, left to right.
 fn the_buttons_of(dialog: HWND) -> Vec<HWND> {
     let mut buttons: Vec<(i32, HWND)> = descendants_of(dialog)
         .into_iter()
-        .filter(|&window| class_of(window) == "Button")
+        .filter(|&window| is_a_push_button(window))
         .map(|window| {
             let mut placed = RECT::default();
             // SAFETY: a live window and a local rectangle.
@@ -408,9 +501,7 @@ fn the_keyboard_is_on(dialog: HWND) -> Option<HWND> {
 }
 
 fn is_the_default_button(window: HWND) -> bool {
-    // SAFETY: a live window handle; only its style is read.
-    let style = unsafe { GetWindowLongPtrW(window, GWL_STYLE) };
-    style & BS_TYPEMASK == BS_DEFPUSHBUTTON
+    button_kind_of(window) == BS_DEFPUSHBUTTON
 }
 
 fn post(window: HWND, message: u32, wparam: usize, lparam: isize) -> Result<(), String> {
@@ -449,8 +540,8 @@ fn the_window_process_asks_one_question() {
     }
     only_these_modifiers_down(&[]);
     let the_box = asking::the_box(Question::DeleteASavedSearch, TITLE, WORDS);
-    let answered = asking::show(&the_box, None);
-    println!("{ANSWERED}{answered:?}");
+    let asking::Shown { answered, ticked } = asking::show(&the_box, None);
+    println!("{ANSWERED}{answered:?}\t{ticked}");
 }
 
 // ── The reading ────────────────────────────────────────────────────────────
@@ -462,6 +553,25 @@ enum Answer {
     Escape,
     AltF4,
     TheFirstButton,
+    TheSecondButton,
+}
+
+/// Whether the reader ticks "Don't ask me again" before it answers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Tick {
+    First,
+    Not,
+}
+
+/// The box's check box as the reader found it when the box opened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CheckBoxHeard {
+    /// Its name on MSAA and on UI Automation.
+    names: (String, String),
+    /// Its MSAA role and state.
+    role_and_state: Result<(i64, i64), String>,
+    /// Its UI Automation control type.
+    control_type: Result<i32, String>,
 }
 
 /// What one reading found.
@@ -469,6 +579,8 @@ enum Answer {
 struct Reading {
     /// Each button left to right, as MSAA and UI Automation name it.
     buttons: Vec<(String, String)>,
+    /// Each check box the box holds.
+    check_boxes: Vec<CheckBoxHeard>,
     /// The name of the button the keyboard was on when the box opened, and
     /// whether it carried the default button's style.
     keyboard: Option<(String, bool)>,
@@ -478,11 +590,13 @@ struct Reading {
     left_open: bool,
     /// What the window process printed it answered.
     answered: String,
+    /// Whether the window process printed that the check box was ticked.
+    ticked: String,
 }
 
 /// Start the window process, read its box, answer it with `answer`, and hand
 /// back what was found; every failure is a sentence.
-fn read_then_answer(answer: Answer) -> Result<Reading, String> {
+fn read_then_answer(answer: Answer, tick: Tick) -> Result<Reading, String> {
     let deadline = Instant::now() + Duration::from_secs(60);
     move_this_thread_to(the_runs_desktop()?)?;
     let me = std::env::current_exe().map_err(|why| format!("current_exe: {why}"))?;
@@ -512,7 +626,7 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
             }
         });
     }
-    let reading = read_and_answer(child.id(), answer, deadline, &printed);
+    let reading = read_and_answer(child.id(), (answer, tick), deadline, &printed);
     if reading.is_err() {
         // Nothing will answer the box now, so the process is stopped by its id
         // rather than left waiting for the bound.
@@ -542,7 +656,10 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
         }
         std::thread::sleep(Duration::from_millis(20));
     };
-    reading.answered = answered?;
+    let answered = answered?;
+    let (answered, ticked) = answered.split_once('\t').unwrap_or((&answered, ""));
+    reading.answered = answered.to_string();
+    reading.ticked = ticked.to_string();
     Ok(reading)
 }
 
@@ -551,7 +668,7 @@ fn read_then_answer(answer: Answer) -> Result<Reading, String> {
 /// its box opened is reported with its own words rather than at the bound.
 fn read_and_answer(
     process: u32,
-    answer: Answer,
+    (answer, tick): (Answer, Tick),
     deadline: Instant,
     printed: &Mutex<String>,
 ) -> Result<Reading, String> {
@@ -588,16 +705,29 @@ fn read_and_answer(
             .iter()
             .map(|&button| (msaa_name_of(button), uia_name_of(button)))
             .collect(),
+        check_boxes: the_check_boxes_of(dialog)
+            .into_iter()
+            .map(|check_box| CheckBoxHeard {
+                names: (msaa_name_of(check_box), uia_name_of(check_box)),
+                role_and_state: msaa_role_and_state_of(check_box),
+                control_type: uia_control_type_of(check_box),
+            })
+            .collect(),
         keyboard: keyboard.map(|on| (msaa_name_of(on), is_the_default_button(on))),
         tree: uia_names_under(dialog),
         ..Reading::default()
     };
 
+    if tick == Tick::First {
+        // Ticked, and the keyboard left where it was.
+        post(dialog, TDM_CLICK_VERIFICATION, 1, 0)?;
+    }
     match answer {
         Answer::Enter => press(keyboard.ok_or("the keyboard is on no button")?, VK_RETURN)?,
         Answer::Escape => press(keyboard.ok_or("the keyboard is on no button")?, VK_ESCAPE)?,
         Answer::AltF4 => post(dialog, WM_SYSCOMMAND, SC_CLOSE as usize, 0)?,
         Answer::TheFirstButton => post(dialog, TDM_CLICK_BUTTON, asking::IDYES as usize, 0)?,
+        Answer::TheSecondButton => post(dialog, TDM_CLICK_BUTTON, asking::IDNO as usize, 0)?,
     }
     let gone_by = Instant::now() + Duration::from_secs(5);
     // SAFETY: IsWindow only asks whether the handle still names a window.
@@ -617,10 +747,15 @@ fn read_and_answer(
 static ONE_BOX_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 fn reading_after(answer: Answer) -> Reading {
+    reading_after_ticking(answer, Tick::Not)
+}
+
+fn reading_after_ticking(answer: Answer, tick: Tick) -> Reading {
     let _turn = ONE_BOX_AT_A_TIME
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    read_then_answer(answer).unwrap_or_else(|why| panic!("answered by {answer:?}: {why}"))
+    read_then_answer(answer, tick)
+        .unwrap_or_else(|why| panic!("answered by {answer:?}, {tick:?}: {why}"))
 }
 
 // ── The tests ──────────────────────────────────────────────────────────────
@@ -678,4 +813,69 @@ fn test_alt_f4_closes_a_question_with_neither_answer() {
     let reading = reading_after(Answer::AltF4);
     assert!(!reading.left_open, "Alt+F4 left the box open: {reading:#?}");
     assert_eq!(reading.answered, "Neither", "{reading:#?}");
+}
+
+#[test]
+fn test_a_question_carries_dont_ask_me_again_unticked_on_both_channels() {
+    let reading = reading_after(Answer::Escape);
+    println!("{:#?}", reading.check_boxes);
+    let heard = |state| CheckBoxHeard {
+        names: (
+            "Don't ask me again".to_string(),
+            "Don't ask me again".to_string(),
+        ),
+        role_and_state: Ok((ROLE_SYSTEM_CHECKBUTTON, state)),
+        control_type: Ok(UIA_CHECKBOX_CONTROL_TYPE),
+    };
+    let [check_box] = reading.check_boxes.as_slice() else {
+        panic!("the box holds no one check box: {reading:#?}");
+    };
+    let state = check_box
+        .role_and_state
+        .clone()
+        .map_or(0, |(_, state)| state);
+    assert_eq!(
+        check_box,
+        &heard(state),
+        "its names on MSAA and UI Automation, its role and its control type"
+    );
+    assert_eq!(
+        state & STATE_SYSTEM_CHECKED,
+        0,
+        "ticked when the box opened"
+    );
+    assert_eq!(reading.ticked, "false", "{reading:#?}");
+}
+
+#[test]
+fn test_ticked_and_answered_with_the_first_button_is_yes_and_ticked() {
+    let reading = reading_after_ticking(Answer::TheFirstButton, Tick::First);
+    assert!(!reading.left_open, "{reading:#?}");
+    assert_eq!(
+        (reading.answered.as_str(), reading.ticked.as_str()),
+        ("Yes", "true"),
+        "{reading:#?}"
+    );
+}
+
+#[test]
+fn test_ticked_and_answered_with_the_second_button_is_no_and_ticked() {
+    let reading = reading_after_ticking(Answer::TheSecondButton, Tick::First);
+    assert!(!reading.left_open, "{reading:#?}");
+    assert_eq!(
+        (reading.answered.as_str(), reading.ticked.as_str()),
+        ("No", "true"),
+        "{reading:#?}"
+    );
+}
+
+#[test]
+fn test_ticked_and_closed_with_escape_is_neither_and_ticked() {
+    let reading = reading_after_ticking(Answer::Escape, Tick::First);
+    assert!(!reading.left_open, "{reading:#?}");
+    assert_eq!(
+        (reading.answered.as_str(), reading.ticked.as_str()),
+        ("Neither", "true"),
+        "{reading:#?}"
+    );
 }
