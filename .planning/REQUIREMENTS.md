@@ -7942,6 +7942,10 @@ changed.
     `test_a_rules_changes_are_sent_only_by_the_check_that_brought_the_mail` and
     `test_a_rules_deletes_are_sent_only_by_the_check_that_brought_the_mail`. The real server
     is ledger 680 and the ear ledger 762.
+    Buttons named 2026-10-25 by 13.4-12.3 (ledger 967): the question's buttons read Run and
+    Don't Run rather than Yes and No, a rule that deletes being a question of its own; Enter
+    is unchanged, Run except before a rule that deletes, and Escape now closes the question
+    with nothing done. Adds no `[D]` clause and leaves the box as 13-44 ticked it.
   - [S] Whether the count and the result read as one act is the tester's ear.
   - Closing read, 2026-10-03, 13-51: stands, every name found. 13-23, 13-24, 13-24.1, 13-43,
     13-44 and 13-44.3 merged at `0cc5acc3`, `21da5ba3`, `89dff93d`, `1dced160`, `e4d5b400` and

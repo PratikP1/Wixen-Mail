@@ -801,6 +801,21 @@ Versioning follows [SemVer](https://semver.org/). The version the tree carries i
 
 ### Changed
 
+- **Every question Wixen Mail asks before it does something now has buttons that say what each
+  does (2026-10-25).** Delete and Keep, Run and Don't Run, Send Anyway and Back to the Message,
+  and so on, instead of Yes and No, so a screen reader reads the question and then "Keep,
+  button" rather than "No, button". Enter presses the same answer as before, which keeps things
+  as they are except where you asked for the thing: sending past the spelling check, running a
+  rule that does not delete, and moving the mail a new block catches. Escape and Alt+F4 now
+  close a question without doing anything, which they could not do before. The Calendar
+  window's Confirm Delete asks the same way, so Enter there now keeps the event rather than
+  deleting it, and the box takes Windows' own colours. Delete and Delete Permanently on a
+  conversation, and emptying a folder into the Trash or for good, say on their first button
+  which one they are. The question about folders your mail server no longer lists no longer
+  ends "Answer No to keep it", and the question about a small picture names Mark as Decorative
+  and Describe It. Each button's letter is in the keyboard shortcuts page, under Questions with
+  Two Answers. Known limitations: nobody has heard these buttons with a screen reader yet.
+
 - **The window toolkit moved to its newest release, wxWidgets 3.3.4 (2026-10-25, SHIP-05).**
   Wixen Mail draws its windows with wxWidgets, through a Rust layer over it, and both moved from
   the versions it had used since July, wxWidgets 3.3.2 among them, to their newest releases. Two

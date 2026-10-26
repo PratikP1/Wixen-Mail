@@ -1247,6 +1247,13 @@ fn bound_by_a_handler_rather_than_a_menu() -> Vec<&'static str> {
         // the string `Alt+Left`, and posts the way back to the window.
         // src/presentation/page_links.rs.
         "Alt+Left",
+        // Closing a question with two answers (13.4-12.3). Windows' own task
+        // dialog binds it once `asking::the_box` allows cancellation, as it
+        // does for Escape; no source here names the key.
+        // `tests/a_question_names_what_each_answer_does.rs` closes a real box
+        // with `WM_SYSCOMMAND` and `SC_CLOSE`, what the key sends, and reads
+        // neither answer back.
+        "Alt+F4",
     ]
 }
 

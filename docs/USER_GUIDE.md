@@ -762,18 +762,17 @@ counted as changes, and the question says both numbers: "The rule Mark
 read matches 230 messages in Inbox; 12 would be marked read and 218 are
 read already."
 
-- **Yes** runs the rule, and one sentence says what it did:
+- **Run** (`R`) runs the rule, and one sentence says what it did:
   "Newsletters: 214 messages moved to Archive".
-- **No** changes nothing.
-- **Enter** answers Yes, except before a rule that deletes, where Enter
-  answers No, so a key pressed before the question has finished cannot
-  delete a folder's mail.
+- **Don't Run** (`D`) changes nothing, and so does `Escape`.
+- **Enter** presses Run, except before a rule that deletes, where Enter
+  presses Don't Run, so a key pressed before the question has finished
+  cannot delete a folder's mail.
 - When the rule would change nothing, you hear that instead, and nothing
   is asked.
 
-The buttons read Yes and No, rather than Run and Don't Run, because the
-toolkit this program is built on cannot rename them; the question ends
-"Run it?" so that Yes and No answer it.
+The buttons read Run and Don't Run, and your screen reader says the
+question and then the button the keyboard is on.
 
 One run changes at most 5,000 messages. When a rule would change more,
 the question says so, and running it again changes the next 5,000,
@@ -1091,7 +1090,7 @@ The buttons:
 | Paste a Key | `Alt+P` | Opens a box to paste a key's text into, then imports it |
 | Export Public Key | `Alt+X` | Writes the chosen key's public half to a file you choose. The private half never leaves |
 | Copy Public Key | `Alt+C` | Puts the chosen key's public half on the clipboard, to paste into a message |
-| Remove | `Alt+R` | Asks first, naming the key and its fingerprint, and says that signatures made with it will no longer be checked. For a private key it also says that messages encrypted to it will stop opening. `Enter` answers No |
+| Remove | `Alt+R` | Asks first, naming the key and its fingerprint, and says that signatures made with it will no longer be checked. For a private key it also says that messages encrypted to it will stop opening. The buttons are Remove and Keep, and `Enter` presses Keep |
 | Close | `Alt+O` | Closes the manager. `Esc` does the same |
 
 Every answer is shown on the line above the buttons and said aloud. A button
@@ -1100,8 +1099,8 @@ pressed with no key chosen says to choose one first.
 Somebody may send you their public key as an attachment, usually a `.asc` or
 `.key` file. Press `Enter` on it in the attachment list, in either reader
 window, and Wixen Mail says what kind of key it is, the name it gives and its
-key id, and asks whether to import it. `Enter` answers No, so nothing is
-imported by accident. A `.asc` file that holds no key, usually a signature, is
+key id, and asks whether to import it. The buttons are Import and Don't
+Import, and `Enter` presses Don't Import, so nothing is imported by accident. A `.asc` file that holds no key, usually a signature, is
 read as text instead.
 
 #### A key locked with a passphrase
@@ -1444,8 +1443,9 @@ been run against a real mail server.
    from now on. You can see it under Tools, Blocked Senders.
 2. If messages from them are already on this computer, one question asks
    whether to move them too, with the count: "Also move the 14 messages
-   already here from ada@example.com to Junk?" Enter answers Yes. No leaves
-   them where they are, and so does closing the question without an answer.
+   already here from ada@example.com to Junk?" The buttons are Move Them and
+   Leave Them, and Enter presses Move Them. Leave Them leaves them where they
+   are, and so does closing the question with `Escape`.
 3. One sentence says what happened, for example "14 messages already here
    were moved to Junk."
 
@@ -1453,7 +1453,7 @@ What the question counts and what it leaves alone:
 
 | Case | What happens |
 |---|---|
-| Messages in the inbox and your other folders | Counted, and moved on Yes |
+| Messages in the inbox and your other folders | Counted, and moved on Move Them |
 | Messages in Junk, Trash, Sent, Drafts or the Outbox | Left alone and not counted |
 | More than 5,000 messages | Nothing is asked and nothing moves. The sentence gives the count and says to search for the sender and use Move to |
 | Mail changes switched off under Allow Changes | Nothing is asked. The sentence says the messages stay where they are and that the block waits for mail changes |
@@ -2045,7 +2045,8 @@ switching back selects those messages again, not everything in their
 conversations.
 
 **Delete on a conversation row** asks first and names the number: "Delete 5
-messages in Quarterly report?". `Enter` answers no. How far it reaches is a
+messages in Quarterly report?". The buttons are Delete and Keep, or Delete
+Permanently and Keep after `Shift+Delete`, and `Enter` presses Keep. How far it reaches is a
 setting on the Reading page: only the messages in the folder you are reading,
 which is what it does unless you change it, or every message in the
 conversation wherever it is filed.
