@@ -121,9 +121,9 @@ pub struct Question {
     pub folders: Vec<i64>,
     /// The window's title.
     pub title: String,
-    /// The whole question. It names every folder, says plainly that the mail
-    /// cached in them goes with them, and says what No does, because the two
-    /// buttons are Yes and No and the words are all somebody hearing this has.
+    /// The whole question. It names every folder and says plainly that the
+    /// mail cached in them goes with them; the two buttons, Remove and Keep,
+    /// say what each answer does (`presentation::asking`).
     pub words: String,
 }
 
@@ -211,13 +211,13 @@ pub fn what_to_raise(
         1 => (
             "Folder your mail server no longer lists".to_string(),
             format!(
-                "Your mail server no longer lists the folder {listed}. Remove it from this computer? The mail cached in it goes with it. Answer No to keep it."
+                "Your mail server no longer lists the folder {listed}. Remove it from this computer? The mail cached in it goes with it."
             ),
         ),
         several => (
             "Folders your mail server no longer lists".to_string(),
             format!(
-                "Your mail server no longer lists {several} folders: {listed}. Remove them from this computer? The mail cached in them goes with them. Answer No to keep them."
+                "Your mail server no longer lists {several} folders: {listed}. Remove them from this computer? The mail cached in them goes with them."
             ),
         ),
     };

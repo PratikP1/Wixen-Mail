@@ -3533,17 +3533,27 @@ tests_last_seen = [
 # Re-measured on 2026-10-25 by 13.4-11, after the flag became the binding's own
 # `MessageDialogStyle::NoDefault` at wxdragon 0.9.23: the anchor still names
 # one place, and against the whole library exactly the one test named went red.
+#
+# Rewritten on 2026-10-25 by 13.4-12.3, when the flag and the two style
+# functions went and every question took its Enter from `enter_gives`. The
+# break is the same kind: it gives the first answer, Delete, to Enter on the
+# question asked before deleting a contact, event, task, note or reminder.
 
 [[guard]]
 name = "a deletion that cannot be undone does not let Enter answer Yes"
 file = "src/presentation/asking.rs"
-before = """    two_answers | ENTER_DOES_NOT_ANSWER_YES"""
-after = """    two_answers"""
+before = """        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer"""
+after = """        Question::DeleteAnItem => Answered::Yes,
+        Question::DeleteAnItem
+        | Question::TakeAwayACopy
+        | Question::DeleteAContainer"""
 red = [
-    "presentation::asking::tests::test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes",
+    "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
 ]
 
 # What each first-run answer costs is the button's description, which is what a
@@ -18244,13 +18254,21 @@ tests_last_seen = [
 #
 # Measured by hand on 2026-09-06 the same way. One test in the census, nothing
 # else in 6,416.
+#
+# Rewritten on 2026-10-25 by 13.4-12.3: the question now names itself and
+# `presentation::asking` gives its Enter, so the break asks the spelling
+# question instead, whose Enter is the first answer. The same break leaves
+# `tests/every_question_is_asked_by_something.rs` red as well, a suite of its
+# own.
 
 [[guard]]
 name = "enter does not mark a picture decorative"
 file = "src/presentation/wx_compose.rs"
 suite = "a_picture_is_only_decorative_because_somebody_said_so"
-before = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())"""
-after = """    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())"""
+before = """        Question::MarkAPictureDecorative,
+        THE_DECORATIVE_QUESTION_TITLE,"""
+after = """        Question::SendDespiteSpelling,
+        THE_DECORATIVE_QUESTION_TITLE,"""
 red = [
     "test_the_decorative_question_is_one_enter_answers_by_asking_for_a_description",
 ]
@@ -32676,19 +32694,21 @@ tests_last_seen = [
 # A delete answered No touching the undo step, here by clearing it, so the
 # last thing somebody did can no longer be taken back because they declined
 # to delete something else. Written 2026-09-25 by 13-09, the break measured
-# against `cargo test --test undoing_a_mark_names_the_message`.
+# against `cargo test --test undoing_a_mark_names_the_message`. Rewritten on
+# 2026-10-25 by 13.4-12.3 onto the question's new text, Keep where it said No,
+# with the same break.
 [[guard]]
 name = "a delete answered No leaves the undo step as it was"
 file = "src/presentation/managers.rs"
 suite = "undoing_a_mark_names_the_message"
-before = '''        // The one silence that is right here. The question was answered No,
-        // and the answer to No is that nothing happens.
-        if asked != ID_YES {
+before = '''        // The one silence that is right here. The question was answered Keep,
+        // or closed, and the answer to either is that nothing happens.
+        if asked != Answered::Yes {
             return;
         }'''
-after = '''        // The one silence that is right here. The question was answered No,
-        // and the answer to No is that nothing happens.
-        if asked != ID_YES {
+after = '''        // The one silence that is right here. The question was answered Keep,
+        // or closed, and the answer to either is that nothing happens.
+        if asked != Answered::Yes {
             remember_an_item_action(state, None);
             return;
         }'''
@@ -36889,14 +36909,17 @@ tests_last_seen = [
 # A rule run by hand that calls the runner before the question is built, so
 # a folder's mail changes before anybody answered (T-13-44-02). Written
 # 2026-09-30 by 13-44, measured through `scripts/guards.sh --remeasure`
-# against the target.
+# against the target. Rewritten on 2026-10-25 by 13.4-12.3 onto the question
+# asked through `asking::ask`, with the same break.
 [[guard]]
 name = "a rule run by hand is asked about before the runner runs"
 file = "src/presentation/wx_app.rs"
 suite = "a_rule_runs_over_a_folder_when_asked"
-before = '''    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+before = '''    let answered =
+        crate::presentation::asking::ask(frame, asked_about, "Run a Rule", &question.text);'''
 after = '''    let _ = run_these_actions_over(app, list, held, set, outcome);
-    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")'''
+    let answered =
+        crate::presentation::asking::ask(frame, asked_about, "Run a Rule", &question.text);'''
 red = [
     "test_the_question_is_answered_before_the_one_runner_runs_once",
 ]
@@ -45683,19 +45706,20 @@ tests_last_seen = [
 # The question about a ready installer opens after the main window's tick
 # returns (13.4-06). Broken by handing its closure to `identity` instead of
 # the queue, which leaves the dialog in the arm, outside any work handed on;
-# the census of the whole handler sees it too.
+# the census of the whole handler sees it too. Rewritten on 2026-10-25 by
+# 13.4-12.3 onto the question asked through `asking::ask`, with the same break.
 [[guard]]
 name = "the question about a ready installer opens after the tick"
 file = "src/presentation/wx_app.rs"
 suite = "the_main_window_opens_its_windows_after_its_tick"
 before = '''            after_the_tick(move || {
-                let asked = MessageDialog::builder(
+                let asked = crate::presentation::asking::ask(
                     &frame,
-                    &update_download::the_question_about(&installer),'''
+                    Question::InstallAnUpdate,'''
 after = '''            std::convert::identity(move || {
-                let asked = MessageDialog::builder(
+                let asked = crate::presentation::asking::ask(
                     &frame,
-                    &update_download::the_question_about(&installer),'''
+                    Question::InstallAnUpdate,'''
 red = [
     "test_no_window_opens_inside_handle_update",
     "test_the_two_update_questions_open_after_the_tick",
@@ -46191,7 +46215,7 @@ red = [
     "presentation::asking::tests::test_enter_keeps_things_as_they_are_except_where_it_was_chosen",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
 ]
 
 # Escape and Alt+F4 close a question with nothing done, which on a box with no
@@ -46215,7 +46239,7 @@ red = [
     "test_escape_closes_a_question_with_neither_answer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
     { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
 ]
 
@@ -46239,7 +46263,7 @@ red = [
     "test_a_question_names_both_answers_on_both_channels_with_the_keyboard_on_keep",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
     { file = "tests/a_question_names_what_each_answer_does.rs", tests = 6 },
 ]
 
@@ -46256,7 +46280,7 @@ red = [
     "presentation::asking::tests::test_every_other_shown_window_is_disabled_while_a_question_is_up",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
 ]
 
 # A first line followed by a blank one stands out above the rest, the way
@@ -46272,7 +46296,7 @@ red = [
     "presentation::asking::tests::test_the_words_split_the_way_wx_splits_them",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
 ]
 
 # A box closed without a button is neither answer, never the second: every
@@ -46289,5 +46313,5 @@ red = [
     "presentation::asking::tests::test_a_box_closed_without_a_button_is_neither_answer",
 ]
 tests_last_seen = [
-    { file = "src/presentation/asking.rs", tests = 13 },
+    { file = "src/presentation/asking.rs", tests = 9 },
 ]

@@ -408,7 +408,7 @@ pub struct CalendarDialogState {
 /// it, the same reason Account Manager's Add and Edit stay wired to
 /// `end_modal` too. Delete looks similar at first glance: it always shows
 /// Confirm Delete before it can act, but its "nothing is selected" answer
-/// runs before that dialog is ever built, and [`edit_selected_event`]'s own
+/// runs before that question is ever asked, and [`edit_selected_event`]'s own
 /// refusal for a day that does not repeat runs before `which_days_are_meant`
 /// ever shows one either. Both are exactly the shape this bug needs:
 /// `end_modal` hides the dialog, the answer runs with nothing shown,
@@ -580,13 +580,18 @@ pub fn delete_selected_event(
         said_and_shown(status, a11y, &nothing_chosen(Thing::EVENT), Priority::High);
         return;
     };
-    let (confirm, _yes_btn, _no_btn) = build_confirm_delete_dialog(dialog, &item.summary, palette);
-
     // Asked here, where the person is standing, rather than after this
     // window closes. A calendar that will refuse the answer refuses it now,
     // instead of saying the day is off and then saying nothing was changed
-    // a moment later.
-    if confirm.show_modal() == ID_OK
+    // a moment later. Asked the way every question is, with Delete and Keep
+    // and Enter on Keep; until 13.4-12.3 this window built its own box with
+    // Yes and No and Enter on Yes, the one question where Enter deleted.
+    if crate::presentation::asking::ask(
+        dialog,
+        crate::application::questions_before_acting::Question::DeleteAnItem,
+        "Confirm Delete",
+        &format!("Delete '{}'?", item.summary),
+    ) == crate::presentation::asking::Answered::Yes
         && let Some(means) = which_days_are_meant(
             dialog,
             &item.summary,
@@ -615,7 +620,6 @@ pub fn delete_selected_event(
             );
         }
     }
-    confirm.destroy();
 }
 
 /// The New/Close modal loop `show_calendar_dialog` runs against the dialog
@@ -707,69 +711,6 @@ pub fn show_calendar_dialog(
 
     widgets.dialog.destroy();
     state.borrow().actions.clone()
-}
-
-/// Build the Confirm Delete dialog `show_calendar_dialog` opens before
-/// deleting one event, without showing it.
-///
-/// Everything the delete branch used to build up to its own `.show_modal()`
-/// call, split out the same way [`crate::presentation::wx_settings::build_settings_dialog`]
-/// splits Settings: a test can build the real dialog and read back the real
-/// colour a live control holds, and never call `.show_modal()` at all.
-///
-/// Returns the dialog alongside the two buttons the caller still needs after
-/// a real `.show_modal()`, though both only ever end the dialog with the id
-/// already wired here.
-pub fn build_confirm_delete_dialog(
-    parent: &Dialog,
-    summary: &str,
-    palette: Option<theme::Palette>,
-) -> (Dialog, Button, Button) {
-    let confirm = Dialog::builder(parent, "Confirm Delete")
-        .with_size(350, 150)
-        .build();
-    let cs = BoxSizer::builder(Orientation::Vertical).build();
-    let msg = StaticText::builder(&confirm)
-        .with_label(&format!("Delete '{summary}'?"))
-        .build();
-    cs.add(&msg, 0, SizerFlag::Expand | SizerFlag::All, 12);
-    let cbs = BoxSizer::builder(Orientation::Horizontal).build();
-    let yes_btn = Button::builder(&confirm)
-        .with_label("&Yes")
-        .with_id(ID_OK)
-        .build();
-    let no_btn = Button::builder(&confirm)
-        .with_label("&No")
-        .with_id(ID_CANCEL)
-        .build();
-    cbs.add(&yes_btn, 0, SizerFlag::All, 4);
-    cbs.add(&no_btn, 0, SizerFlag::All, 4);
-    cs.add_sizer(&cbs, 0, SizerFlag::AlignRight | SizerFlag::All, 8);
-    confirm.set_sizer(*cs, true);
-    confirm.centre();
-    yes_btn.on_click({
-        let d = confirm;
-        move |_| {
-            d.end_modal(ID_OK);
-        }
-    });
-    no_btn.on_click({
-        let d = confirm;
-        move |_| {
-            d.end_modal(ID_CANCEL);
-        }
-    });
-
-    // Painted last. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this
-    // dialog, so the dialog itself is the only site, the same shape as
-    // `build_which_days_dialog`. `None` means high contrast is on, or the
-    // system is set up in a way this application should not paint over, so
-    // nothing is set here and Windows decides.
-    if let Some(palette) = palette {
-        theme::paint(&confirm, palette.main_surface());
-    }
-
-    (confirm, yes_btn, no_btn)
 }
 
 fn populate_event_list(list: &ListCtrl, events: &[CalendarEventItem]) {

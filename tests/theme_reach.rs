@@ -624,22 +624,11 @@ fn check_calendar_list(parent: &Frame, palette: theme::Palette, into: &mut Vec<S
     check("calendar list", &widgets.list, palette.main_surface(), into);
 }
 
-/// The Confirm Delete dialog the Calendar list window opens before deleting
-/// one event. Parented to a throwaway `Dialog`, mirroring the way the real
-/// caller nests it inside the Calendar list window rather than the main
-/// frame. No `TextCtrl`, `ListCtrl` or `TreeCtrl` anywhere in this dialog, so
-/// the dialog itself is the only site.
-fn check_confirm_delete(parent: &Frame, palette: theme::Palette, into: &mut Vec<SiteResult>) {
-    let scratch_parent = Dialog::builder(parent, "scratch parent for confirm delete").build();
-    let (dialog, _yes_btn, _no_btn) =
-        wx_calendar::build_confirm_delete_dialog(&scratch_parent, "Test event", Some(palette));
-    check(
-        "confirm delete dialog",
-        &dialog,
-        palette.main_surface(),
-        into,
-    );
-}
+// The Confirm Delete dialog the Calendar list window opened before deleting
+// one event was checked here until 13.4-12.3. It is asked through
+// `presentation::asking` now, Windows' own task dialog like every other
+// question, which takes Windows' colours rather than this program's, so
+// there is nothing of ours to paint and nothing here to check.
 
 /// The Search dialog. The scope `Choice` is left to Windows, matching every
 /// other `Choice` this round paints around, so only the dialog and the
@@ -1456,7 +1445,6 @@ fn test_every_site_this_round_reaches_carries_the_colour_a_live_control_reports(
             check_insert_table(&frame, palette, &mut sites);
             check_send_preview(&frame, palette, &mut sites);
             check_calendar_list(&frame, palette, &mut sites);
-            check_confirm_delete(&frame, palette, &mut sites);
             check_search(&frame, palette, &mut sites);
             check_ask_for_a_name(&frame, palette, &mut sites);
             check_add_calendar(&frame, palette, &mut sites);

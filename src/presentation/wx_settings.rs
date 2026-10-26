@@ -3399,15 +3399,17 @@ fn delete_sound_scheme(
     };
 
     let question = format!("Delete \"{}\"? This cannot be undone.", scheme.name);
-    // Enter answers No, the same reasoning every other delete confirmation
+    // Enter gives Keep, the same reasoning every other delete confirmation
     // in this application uses: a key one row away from every other key
     // somebody might have meant should not be the one that finishes an
     // irreversible action if pressed early.
-    let asked = MessageDialog::builder(panel, &question, "Delete")
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build()
-        .show_modal();
-    if asked != ID_YES {
+    let asked = crate::presentation::asking::ask(
+        panel,
+        crate::application::questions_before_acting::Question::DeleteASoundScheme,
+        "Delete",
+        &question,
+    );
+    if asked != crate::presentation::asking::Answered::Yes {
         return;
     }
 

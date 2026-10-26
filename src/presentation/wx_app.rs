@@ -9,6 +9,7 @@ use crate::application::destinations::Deleting;
 use crate::application::draft_copy::Save;
 use crate::application::identities;
 use crate::application::mail_controller::{MailController, SendEmailRequest};
+use crate::application::questions_before_acting::Question;
 use crate::application::reply::{self, ReplyMode};
 use crate::application::saved_searches::{TheFolderSearched, TheSearchThatWasRun};
 // The one wording for a refusal when nothing was chosen (#75). Named here so
@@ -30,6 +31,7 @@ use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
 use crate::presentation::accessibility::platform_bridge;
 use crate::presentation::after_the_tick::after_the_tick;
+use crate::presentation::asking::Answered;
 use crate::presentation::folder_tree::{self, TreeRow};
 use crate::presentation::html_renderer::HtmlRenderer;
 use crate::presentation::landing_after_a_removal;
@@ -5805,17 +5807,22 @@ impl WxMailApp {
                                     &question,
                                     crate::presentation::accessibility::announcements::Priority::High,
                                 );
-                                let answer = MessageDialog::builder(
+                                // Two questions, so somebody who stops
+                                // being asked about the Trash is still asked
+                                // before a delete that cannot be undone.
+                                let asking = match asked {
+                                    Deleting::Outright => {
+                                        Question::DeleteAConversationPermanently
+                                    }
+                                    Deleting::ToTrash => Question::DeleteAConversation,
+                                };
+                                let answer = crate::presentation::asking::ask(
                                     &frame,
-                                    &question,
+                                    asking,
                                     "Delete Conversation",
-                                )
-                                .with_style(
-                                    crate::presentation::asking::yes_no_where_enter_answers_no(),
-                                )
-                                .build()
-                                .show_modal();
-                                if answer != ID_YES {
+                                    &question,
+                                );
+                                if answer != Answered::Yes {
                                     return;
                                 }
                             }
@@ -9366,9 +9373,7 @@ fn delete_the_chosen_search(
     frame: &Frame,
     a11y: &Arc<Accessibility>,
 ) {
-    use crate::application::questions_before_acting::Question;
     use crate::presentation::accessibility::announcements::Priority;
-    use crate::presentation::asking::Answered;
 
     let AppHandles { state, tx, rt } = app;
     let chosen = the_chosen_saved_search(&lock_state(state));
@@ -10118,17 +10123,15 @@ fn move_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache>>
     } else {
         format!("Move {name} into {where_to}?")
     };
-    let asked = MessageDialog::builder(
+    let asked = crate::presentation::asking::ask(
         frame,
+        Question::MoveAFolder,
+        "Move Folder",
         &format!(
             "{question} Everything in it comes too, and the mail stays where it is inside it."
         ),
-        "Move Folder",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build()
-    .show_modal();
-    if asked != ID_YES {
+    );
+    if asked != Answered::Yes {
         return;
     }
 
@@ -10220,15 +10223,15 @@ fn delete_the_chosen_folder(app: AppHandles<'_>, cache: &Option<Arc<MessageCache
             "Delete {name} from the server, along with the {inside_it} folders inside it and all the mail in them?"
         )
     };
-    let asked = MessageDialog::builder(
+    let asked = crate::presentation::asking::ask(
         frame,
-        &format!("{and_what_is_in_it} This cannot be undone, and it happens on the server, so every mail app using this account loses them too."),
+        Question::DeleteAFolder,
         "Delete Folder",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build()
-    .show_modal();
-    if asked != ID_YES {
+        &format!(
+            "{and_what_is_in_it} This cannot be undone, and it happens on the server, so every mail app using this account loses them too."
+        ),
+    );
+    if asked != Answered::Yes {
         return;
     }
 
@@ -10441,19 +10444,28 @@ fn empty_the_chosen_folder(
         return;
     }
 
-    // Enter answers No, the same as it does on every other question in this
-    // program that destroys something. `delete_the_chosen_search`'s comment
-    // gives the reason and it applies at least as strongly here: hearing the
-    // question and reflexively pressing Enter must not empty a folder.
-    let asked = MessageDialog::builder(
+    // Enter gives Don't Empty, the same as Enter keeps things on every other
+    // question in this program that destroys something.
+    // `delete_the_chosen_search`'s comment gives the reason and it applies at
+    // least as strongly here: hearing the question and reflexively pressing
+    // Enter must not empty a folder. Two questions, so somebody who stops
+    // being asked about emptying into a Trash is still asked before mail is
+    // taken off for good.
+    let asking = match what {
+        WhatEmptyingDoes::RemoveFromThisComputer | WhatEmptyingDoes::RemoveFromTheServer => {
+            Question::EmptyAFolderForGood
+        }
+        WhatEmptyingDoes::MoveToOnThisComputer(_)
+        | WhatEmptyingDoes::MoveToOnTheServer(_)
+        | WhatEmptyingDoes::Refuse(_) => Question::EmptyAFolder,
+    };
+    let asked = crate::presentation::asking::ask(
         frame,
-        &the_question(&name, &what, stored_here, subfolders),
+        asking,
         "Empty Folder",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build()
-    .show_modal();
-    if asked != ID_YES {
+        &the_question(&name, &what, stored_here, subfolders),
+    );
+    if asked != Answered::Yes {
         return;
     }
 
@@ -11024,11 +11036,12 @@ fn count_what_a_rule_would_change(
 /// count that arrives after somebody opened another account is refused,
 /// because the runner reads a message's account off the one open. Then the
 /// account's gate, when the run reaches the server, so a refusal is said in
-/// place of a question whose Yes would be refused; then the question, with
-/// Enter answering no before a rule that deletes. Yes hands the counted set
-/// to 13-24.1's runner once, which meets the gate again and writes through
-/// the set commands' own paths, and one sentence and one Confirmed say what
-/// it did. No, or closing the question, changes nothing and says nothing.
+/// place of a question whose Run would be refused; then the question, with
+/// Enter giving Don't Run before a rule that deletes. Run hands the counted
+/// set to 13-24.1's runner once, which meets the gate again and writes
+/// through the set commands' own paths, and one sentence and one Confirmed
+/// say what it did. Don't Run, or closing the question, changes nothing and
+/// says nothing.
 fn ask_then_run_the_counted_rule(
     app: AppHandles<'_>,
     cache: &Option<Arc<MessageCache>>,
@@ -11039,9 +11052,6 @@ fn ask_then_run_the_counted_rule(
 ) {
     use crate::application::running_a_rule_now::what_the_rule_did;
     use crate::presentation::accessibility::announcements::Priority;
-    use crate::presentation::asking::{
-        Answered, which_of_the_two, yes_no_where_enter_answers_no, yes_no_where_enter_answers_yes,
-    };
 
     let AppHandles { state, tx, rt } = app;
     let (question, set, outcome, reaches_the_server) = match &counted.found {
@@ -11079,14 +11089,14 @@ fn ask_then_run_the_counted_rule(
     {
         return send_refusal(tx, rt, &why.to_string());
     }
-    let answered = MessageDialog::builder(frame, &question.text, "Run a Rule")
-        .with_style(match question.enter_answers_yes {
-            true => yes_no_where_enter_answers_yes(),
-            false => yes_no_where_enter_answers_no(),
-        })
-        .build()
-        .show_modal();
-    if which_of_the_two(answered) != Answered::Yes {
+    // A rule that deletes is its own question, whose Enter gives Don't Run.
+    let asked_about = match question.enter_answers_yes {
+        true => Question::RunARule,
+        false => Question::RunARuleThatDeletes,
+    };
+    let answered =
+        crate::presentation::asking::ask(frame, asked_about, "Run a Rule", &question.text);
+    if answered != Answered::Yes {
         return;
     }
     let done = match run_these_actions_over(app, list, held, set, outcome) {
@@ -13900,13 +13910,16 @@ fn ask_about_the_folders_that_have_gone(
     after_the_tick(move || {
         let _turn = turn;
 
-        // Enter answers No, because Yes here removes mail and cannot be undone.
-        let asked = MessageDialog::builder(&frame, &question.words, &question.title)
-            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-            .build()
-            .show_modal();
+        // Enter gives Keep, because Remove here removes mail and cannot be
+        // undone.
+        let asked = crate::presentation::asking::ask(
+            &frame,
+            Question::RemoveFoldersTheServerNoLongerLists,
+            &question.title,
+            &question.words,
+        );
 
-        match what_they_said(crate::presentation::asking::which_of_the_two(asked)) {
+        match what_they_said(asked) {
             // Nobody answered. Nothing is written, so a later run of the program
             // asks again, and nothing has been removed in the meantime.
             Answer::NotNow => (),
@@ -17116,9 +17129,10 @@ fn manage_pgp_keys(
 /// (#49, 13-17).
 ///
 /// The question says whose key it names, its kind and its short identifier,
-/// and nothing of its text; Enter answers No, so a second press of the Enter
-/// that opened the attachment imports nothing. Over the reader window when it
-/// is open, since that is where the key was chosen and where focus goes back.
+/// and nothing of its text; Enter gives Don't Import, so a second press of the
+/// Enter that opened the attachment imports nothing. Over the reader window
+/// when it is open, since that is where the key was chosen and where focus
+/// goes back.
 fn offer_the_key_attachment(
     over: &Frame,
     cache: &Option<Arc<MessageCache>>,
@@ -17127,15 +17141,13 @@ fn offer_the_key_attachment(
 ) {
     use crate::application::pgp_keys;
 
-    let asked = MessageDialog::builder(
+    let asked = crate::presentation::asking::ask(
         over,
-        &pgp_keys::the_attachment_question(&offered.listings()),
+        Question::ImportAKey,
         "Import a PGP Key",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build()
-    .show_modal();
-    if asked != ID_YES {
+        &pgp_keys::the_attachment_question(&offered.listings()),
+    );
+    if asked != Answered::Yes {
         let _ = tx.try_send(UIUpdate::StatusUpdated(
             "The key was not imported.".to_string(),
         ));
@@ -18788,11 +18800,13 @@ fn apply_the_view_elsewhere(
                 &said,
                 crate::presentation::accessibility::announcements::Priority::High,
             );
-            let answer = MessageDialog::builder(frame, &said, "Apply View To Other Folders")
-                .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-                .build()
-                .show_modal();
-            if answer != ID_YES {
+            let answer = crate::presentation::asking::ask(
+                frame,
+                Question::ApplyAViewToOtherFolders,
+                "Apply View To Other Folders",
+                &said,
+            );
+            if answer != Answered::Yes {
                 return;
             }
             let mut written = 0;
@@ -24826,22 +24840,20 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
                     // about opening a page in a browser, never about running
                     // the file: a question offering to run an installer that
                     // failed its check is the one thing this feature may not
-                    // do. Enter answers no, so nothing opens for somebody who
-                    // pressed Enter to dismiss the sentence. After this tick
-                    // returns, so the tick runs beside it rather than inside
-                    // itself.
+                    // do. Enter gives Don't Open, so nothing opens for
+                    // somebody who pressed Enter to dismiss the sentence.
+                    // After this tick returns, so the tick runs beside it
+                    // rather than inside itself.
                     let (frame, said, page) = (*frame, said.clone(), page.clone());
                     let a11y = Arc::clone(a11y);
                     after_the_tick(move || {
-                        let answered = MessageDialog::builder(
+                        let answered = crate::presentation::asking::ask(
                             &frame,
-                            &format!("{said}\n\nOpen the releases page in your browser?"),
+                            Question::OpenTheReleasesPage,
                             "Update",
-                        )
-                        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-                        .build()
-                        .show_modal();
-                        if answered == ID_YES && open::that(&page).is_err() {
+                            &format!("{said}\n\nOpen the releases page in your browser?"),
+                        );
+                        if answered == Answered::Yes && open::that(&page).is_err() {
                             let could_not = format!("Could not open a browser. The page is {page}");
                             frame.set_status_text(&could_not, 0);
                             let _ = a11y.announce_topic(&could_not, Priority::High, "command");
@@ -24863,24 +24875,23 @@ fn handle_update(update: &UIUpdate, targets: UpdateTargets<'_>) {
             // code that puts "run it anyway?" in front of somebody about a file
             // that failed its check.
             //
-            // Enter answers no, so somebody who pressed Enter to dismiss a
-            // sentence does not find their program replacing itself.
+            // Enter gives Don't Install, so somebody who pressed Enter to
+            // dismiss a sentence does not find their program replacing
+            // itself. Closing the question does what Don't Install does.
             //
             // The question and what follows its answer run after this tick
             // returns, so the tick runs beside it rather than inside itself.
             let (frame, installer) = (*frame, installer.clone());
             let (a11y, really_quitting) = (Arc::clone(a11y), Rc::clone(really_quitting));
             after_the_tick(move || {
-                let asked = MessageDialog::builder(
+                let asked = crate::presentation::asking::ask(
                     &frame,
-                    &update_download::the_question_about(&installer),
+                    Question::InstallAnUpdate,
                     "Install Update",
-                )
-                .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-                .build()
-                .show_modal();
+                    &update_download::the_question_about(&installer),
+                );
 
-                if asked != ID_YES {
+                if asked != Answered::Yes {
                     let declined = format!(
                         "Wixen Mail {} was not installed. You are still running {}, and the \
                          downloaded file has been removed.",
@@ -39599,7 +39610,6 @@ fn answer_what_a_block_caught(
 ) {
     use crate::application::blocking::{self, MailAlreadyHere};
     use crate::application::choosing_messages::too_many;
-    use crate::presentation::asking::{Answered, which_of_the_two, yes_no_where_enter_answers_yes};
     let AppHandles { tx, rt, .. } = app;
     let chosen = match &caught.here {
         Ok(chosen) => chosen.clone(),
@@ -39622,19 +39632,17 @@ fn answer_what_a_block_caught(
     } else if !caught.allowed.mail {
         MailAlreadyHere::Left(count)
     } else {
-        let asked = MessageDialog::builder(
+        let asked = crate::presentation::asking::ask(
             frame,
+            Question::MoveTheMailABlockCatches,
+            "Block",
             &blocking::the_question_about_mail_already_here(
                 &caught.block,
                 count,
                 &caught.junk_folder,
             ),
-            "Block",
-        )
-        .with_style(yes_no_where_enter_answers_yes())
-        .build()
-        .show_modal();
-        match which_of_the_two(asked) {
+        );
+        match asked {
             Answered::Yes => {
                 let outcome = crate::application::filters::Outcome {
                     move_to: Some(caught.junk_folder.clone()),

@@ -14,11 +14,13 @@ use crate::application::collection_sync;
 // The one wording for a refusal when nothing was chosen (#75), so the four
 // places this layer refuses for that reason say what every other window says.
 use crate::application::new_item::LOCAL_ACCOUNT_ID;
+use crate::application::questions_before_acting::Question;
 use crate::application::quick_steps::StoredStep;
 use crate::application::status_sentences::{Thing, nothing_chosen, nothing_chosen_named};
 use crate::data::message_cache::{MessageCache, WhereToSearch};
 use crate::presentation::accessibility::Accessibility;
 use crate::presentation::accessibility::feedback::Event as FeedbackEvent;
+use crate::presentation::asking::Answered;
 use crate::presentation::contact_convert;
 use crate::presentation::ui_types::{CalendarEventItem, CalendarShowing, UIUpdate};
 use crate::presentation::wx_app::{WxUIState, lock_state, send_refusal, send_status};
@@ -3271,16 +3273,18 @@ pub fn pim_command(
         // action, and a Delete key is one row away from every other key
         // somebody might have meant.
         //
-        // Enter answers No. It answered Yes until now, which meant somebody who
+        // Enter gives Keep. It once gave Yes, which meant somebody who
         // pressed it partway through hearing the question had deleted the
         // thing. See `presentation::asking`.
-        let asked = MessageDialog::builder(frame, &confirm_delete(kind, &name), "Delete")
-            .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-            .build()
-            .show_modal();
-        // The one silence that is right here. The question was answered No,
-        // and the answer to No is that nothing happens.
-        if asked != ID_YES {
+        let asked = crate::presentation::asking::ask(
+            frame,
+            Question::DeleteAnItem,
+            "Delete",
+            &confirm_delete(kind, &name),
+        );
+        // The one silence that is right here. The question was answered Keep,
+        // or closed, and the answer to either is that nothing happens.
+        if asked != Answered::Yes {
             return;
         }
         // This is the door people actually use, and every day of a repeating
@@ -3854,7 +3858,12 @@ fn take_the_copy_away(
                 )
             });
     }
-    if !asked_yes(frame, &take_away_the_copy(item), "Undo Copy") {
+    if !asked_yes(
+        frame,
+        Question::TakeAwayACopy,
+        &take_away_the_copy(item),
+        "Undo Copy",
+    ) {
         return Ok(Carried::NotAsked);
     }
     delete_one(cache, item.kind, copy_id)
@@ -3886,7 +3895,7 @@ fn delete_it_again(
         }
     };
     let question = crate::application::pim_command::confirm_delete(after.kind, &after.name);
-    if !asked_yes(frame, &question, "Delete") {
+    if !asked_yes(frame, Question::DeleteAnItem, &question, "Delete") {
         return Ok(Carried::NotAsked);
     }
     delete_one(cache, after.kind, &after.id)
@@ -3895,14 +3904,10 @@ fn delete_it_again(
     Ok(Carried::AsAsked)
 }
 
-/// The question before a delete, where Enter answers No, as `pim_command`
-/// asks it (`presentation::asking`).
-fn asked_yes(frame: &Frame, question: &str, title: &str) -> bool {
-    MessageDialog::builder(frame, question, title)
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build()
-        .show_modal()
-        == ID_YES
+/// Whether `asking` was answered with its first button, where Enter gives
+/// Keep, as `pim_command` asks it (`presentation::asking`).
+fn asked_yes(frame: &Frame, asking: Question, question: &str, title: &str) -> bool {
+    crate::presentation::asking::ask(frame, asking, title, question) == Answered::Yes
 }
 
 /// One item deleted through its kind's own delete, which leaves the deletion
@@ -7528,15 +7533,16 @@ pub fn delete_container(
         where_it_came_from(&cache, kind, &id),
     );
 
-    // Enter answers No. This one takes everything the list, calendar or
+    // Enter gives Keep. This one takes everything the list, calendar or
     // notebook holds with it, so it is the most expensive question in the
     // program to answer by accident. See `presentation::asking`.
-    let confirm = MessageDialog::builder(frame, &asked, &format!("Delete {}", kind.label()))
-        .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-        .build();
-    let answer = confirm.show_modal();
-    confirm.destroy();
-    if answer != ID_YES {
+    let answer = crate::presentation::asking::ask(
+        frame,
+        Question::DeleteAContainer,
+        &format!("Delete {}", kind.label()),
+        &asked,
+    );
+    if answer != Answered::Yes {
         return;
     }
 

@@ -6,12 +6,14 @@
 
 use crate::application::conversations;
 use crate::application::identities::FromEntry;
+use crate::application::questions_before_acting::Question;
 use crate::application::reading_habits::CopyLines;
 use crate::common::types::MessageBody;
 use crate::presentation::accessibility::names::{
     name_from_label, name_the_spin_control, set_accessible_name,
     set_accessible_name_and_description,
 };
+use crate::presentation::asking::Answered;
 use crate::presentation::compose_toolbar;
 use crate::presentation::editor_document;
 use crate::presentation::editor_document::Reached;
@@ -3080,31 +3082,23 @@ fn confirm_spelling(parent: &Dialog, data: &ComposeData) -> bool {
         return true;
     };
 
-    // Enter sends, deliberately, and this is the one question in the program
-    // where that is the right way round. Somebody who meant to send and heard
-    // the warning should not have to find a button, and the words are in the
-    // question, so the decision can be made from hearing it alone. The two
-    // deletion questions answer Enter with No for the opposite reason; see
-    // `presentation::asking`.
-    let asker = MessageDialog::builder(
+    // Enter sends, deliberately, and this is one of the three questions in the
+    // program where that is the right way round. Somebody who meant to send
+    // and heard the warning should not have to find a button, and the words
+    // are in the question, so the decision can be made from hearing it alone.
+    // The deletion questions give Enter the answer that keeps things for the
+    // opposite reason; see `presentation::asking`. The buttons say Send Anyway
+    // and Back to the Message.
+    crate::presentation::asking::ask(
         parent,
-        // The buttons are Yes and No, which this builder cannot relabel, so
-        // the question has to say what each one means. "Send anyway?" answered
-        // Yes or No is unambiguous; "Send anyway, or go back?" answered Yes is
-        // not.
+        Question::SendDespiteSpelling,
+        "Check the spelling",
         &format!(
             "{said}
 
 Send it anyway?"
         ),
-        "Check the spelling",
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_yes())
-    .build();
-    let answer = asker.show_modal();
-    asker.destroy();
-
-    answer == ID_YES
+    ) == Answered::Yes
 }
 
 /// Ask for a URL and put it on the selected text.
@@ -3724,50 +3718,43 @@ enum TheDecorativeAnswer {
 
 /// The question, as somebody hears it.
 ///
-/// The buttons are Yes and No and `MessageDialog` cannot relabel them, so the
-/// question has to be one those two words answer and has to say what each one
-/// does. It also has to say what decorative *costs*, because the person
-/// answering is not the person who pays: the cost lands on somebody reading
-/// the message with a screen reader, who is told nothing.
+/// The buttons say Mark as Decorative and Describe It, so the question says
+/// what each does by those names, heard before the button the keyboard is on.
+/// It also has to say what decorative *costs*, because the person answering
+/// is not the person who pays: the cost lands on somebody reading the message
+/// with a screen reader, who is told nothing.
 const THE_DECORATIVE_QUESTION: &str =
     "This picture is small enough to be furniture: a spacer, a rule, a line under \
      a signature.
 
-Yes: send it as decorative. It goes with no description at all, and a screen \
-reader skips over it. Choose this only when there is genuinely nothing to \
-tell somebody.
+Mark as Decorative sends it with no description at all, and a screen reader \
+skips over it. Choose it only when there is genuinely nothing to tell \
+somebody.
 
-No: describe it. This is what Enter does.";
+Describe It is what Enter does.";
 
 /// The title on that question.
 const THE_DECORATIVE_QUESTION_TITLE: &str = "Is this picture decorative?";
 
 /// Ask whether a picture is decorative.
 ///
-/// Enter answers No, through
-/// [`crate::presentation::asking::yes_no_where_enter_answers_no`]. Enter is how
-/// somebody working by keyboard answers everything, so it is already on its
-/// way while the question is still being read out, and the answer it gives has
-/// to be the one that costs nothing. Describing a picture that turned out to
-/// be a spacer costs a moment. Marking a picture decorative that turned out to
-/// say something costs the person receiving it the fact that it was there.
+/// Enter gives Describe It, through `presentation::asking`'s table. Enter is
+/// how somebody working by keyboard answers everything, so it is already on
+/// its way while the question is still being read out, and the answer it
+/// gives has to be the one that costs nothing. Describing a picture that
+/// turned out to be a spacer costs a moment. Marking a picture decorative
+/// that turned out to say something costs the person receiving it the fact
+/// that it was there.
 fn ask_whether_it_is_decorative(dialog: &Dialog) -> TheDecorativeAnswer {
-    let question = MessageDialog::builder(
+    match crate::presentation::asking::ask(
         dialog,
-        THE_DECORATIVE_QUESTION,
+        Question::MarkAPictureDecorative,
         THE_DECORATIVE_QUESTION_TITLE,
-    )
-    .with_style(crate::presentation::asking::yes_no_where_enter_answers_no())
-    .build();
-    let answer = question.show_modal();
-    question.destroy();
-
-    if answer == ID_YES {
-        TheDecorativeAnswer::ItIsDecorative
-    } else if answer == ID_NO {
-        TheDecorativeAnswer::DescribeIt
-    } else {
-        TheDecorativeAnswer::NeverMind
+        THE_DECORATIVE_QUESTION,
+    ) {
+        Answered::Yes => TheDecorativeAnswer::ItIsDecorative,
+        Answered::No => TheDecorativeAnswer::DescribeIt,
+        Answered::Neither => TheDecorativeAnswer::NeverMind,
     }
 }
 

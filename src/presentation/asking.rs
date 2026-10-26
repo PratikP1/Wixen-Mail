@@ -59,61 +59,6 @@
 //! two answers.
 
 use crate::application::questions_before_acting::Question;
-use wxdragon::dialogs::message_dialog::MessageDialogStyle;
-
-/// The flag that stops Enter answering Yes.
-///
-/// `wxNO_DEFAULT`, which the binding calls `NoDefault`. This project calls it
-/// by what it does here, so a question reads as a decision about Enter rather
-/// than about a default button.
-pub const ENTER_DOES_NOT_ANSWER_YES: MessageDialogStyle = MessageDialogStyle::NoDefault;
-
-/// A question with two answers, where Enter answers No.
-///
-/// For anything that cannot be undone, on a question not yet asked through
-/// `ask`, which names its buttons; it goes when the last one moves.
-pub fn yes_no_where_enter_answers_no() -> MessageDialogStyle {
-    let two_answers = yes_no_where_enter_answers_yes();
-    // `|` here could be `^` and nothing would change: `ENTER_DOES_NOT_ANSWER_YES`
-    // is bit 7 (128) and `two_answers` never sets it, the same disjointness
-    // `yes_no_where_enter_answers_yes` checks below for its own two flags. The
-    // assert is what would notice a future wxdragon giving `NoDefault` a
-    // bit one of `MessageDialogStyle::YesNo` or `IconQuestion` already uses,
-    // which is the only way `|` and `^` could ever start disagreeing here.
-    debug_assert_eq!(
-        two_answers.bits() & ENTER_DOES_NOT_ANSWER_YES.bits(),
-        0,
-        "yes_no_where_enter_answers_yes now shares a bit with \
-         ENTER_DOES_NOT_ANSWER_YES, so combining them is no longer safe to \
-         read as an OR of two independent flags"
-    );
-    two_answers | ENTER_DOES_NOT_ANSWER_YES
-}
-
-/// A question with two answers, where Enter answers Yes.
-///
-/// For a question standing between somebody and the thing they came to do,
-/// where the answer that gets on with it is the one they meant. Choosing this
-/// is choosing that pressing Enter without hearing the end of the question does
-/// the thing, so it belongs only where the thing can be undone or was asked
-/// for.
-pub fn yes_no_where_enter_answers_yes() -> MessageDialogStyle {
-    // `|` and `^` compute the same value here, always: wxWidgets gives every
-    // style flag its own bit, and `YesNo` (10, bits 1 and 3) and
-    // `IconQuestion` (1024, bit 10) share none of them, which is the one case
-    // where OR and XOR cannot disagree. A mutation test replacing this `|`
-    // with `^` found exactly that: nothing failed, because nothing could.
-    // The assert stands in for that proof at run time, so a future flag value
-    // that starts overlapping fails loudly here instead of quietly changing
-    // what this function returns.
-    debug_assert_eq!(
-        MessageDialogStyle::YesNo.bits() & MessageDialogStyle::IconQuestion.bits(),
-        0,
-        "YesNo and IconQuestion now share a bit, so combining them is no \
-         longer safe to read as an OR of two independent flags"
-    );
-    MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion
-}
 
 /// Which of a question's two answers came back.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,12 +77,11 @@ pub enum Answered {
     Neither,
 }
 
-/// What a two-answer question came back as.
+/// What a wxWidgets message box with two answers came back as, which the
+/// fallback off Windows reads.
 ///
-/// Here beside the flag that decides which answer Enter gives, because the two
-/// are one subject: how a question with two answers is put and how its answer
-/// is read. It used to be written once for each question, and a second copy of
-/// a mapping this small is a copy nobody would notice going wrong.
+/// It used to be written once for each question, and a second copy of a
+/// mapping this small is a copy nobody would notice going wrong.
 pub fn which_of_the_two(from_the_dialog: wxdragon::Id) -> Answered {
     match from_the_dialog {
         wxdragon::id::ID_YES => Answered::Yes,
@@ -297,13 +241,12 @@ pub fn ask(
     title: &str,
     words: &str,
 ) -> Answered {
-    use wxdragon::dialogs::message_dialog::MessageDialog;
+    use wxdragon::dialogs::message_dialog::{MessageDialog, MessageDialogStyle};
 
+    let two_answers = MessageDialogStyle::YesNo | MessageDialogStyle::IconQuestion;
     let style = match enter_gives(question) {
-        Answered::Yes => MessageDialogStyle::YesNo,
-        Answered::No | Answered::Neither => {
-            MessageDialogStyle::YesNo | MessageDialogStyle::NoDefault
-        }
+        Answered::Yes => two_answers,
+        Answered::No | Answered::Neither => two_answers | MessageDialogStyle::NoDefault,
     };
     let TwoAnswers { first, second } = answers(question);
     let dialog = MessageDialog::builder(over, words, title)
@@ -497,66 +440,6 @@ fn top_windows_of_this_thread() -> Vec<TopWindow> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// What wxWidgets calls it, so the two answers can be told apart by number
-    /// rather than by the name this file gives them.
-    const WX_NO_DEFAULT: i64 = 0x0000_0080;
-
-    #[test]
-    fn test_a_question_that_cannot_be_undone_does_not_let_enter_answer_yes() {
-        // The whole point. Without the flag, wxWidgets puts the focus on Yes
-        // and Enter deletes the thing.
-        let style = yes_no_where_enter_answers_no();
-
-        assert_eq!(
-            style.bits() & WX_NO_DEFAULT,
-            WX_NO_DEFAULT,
-            "Enter still answers Yes on a question asked before a deletion"
-        );
-    }
-
-    #[test]
-    fn test_the_deliberate_one_still_lets_enter_answer_yes() {
-        // The composer's send question. Getting this wrong in the other
-        // direction is quieter and still wrong: somebody who meant to send
-        // would have to find a button.
-        let style = yes_no_where_enter_answers_yes();
-
-        assert_eq!(
-            style.bits() & WX_NO_DEFAULT,
-            0,
-            "Enter no longer sends a message somebody chose to send"
-        );
-    }
-
-    #[test]
-    fn test_both_still_ask_a_question_with_two_answers() {
-        // The flag is added to the style rather than replacing it. Losing the
-        // Yes and No answers would leave a box with one button on it, and the
-        // deletion would go ahead on any answer.
-        for style in [
-            yes_no_where_enter_answers_no(),
-            yes_no_where_enter_answers_yes(),
-        ] {
-            assert!(
-                style.contains(MessageDialogStyle::YesNo),
-                "a question with no answers to choose between"
-            );
-            assert!(
-                style.contains(MessageDialogStyle::IconQuestion),
-                "a question that does not look like one"
-            );
-        }
-    }
-
-    #[test]
-    fn test_the_flag_is_the_number_wxwidgets_uses() {
-        // Read from the binding rather than written here, so this is the one
-        // place the two are compared. A wrong number would be a style flag
-        // meaning something else, which is the kind of mistake that looks like
-        // nothing at all until a dialog behaves oddly.
-        assert_eq!(ENTER_DOES_NOT_ANSWER_YES.bits(), WX_NO_DEFAULT);
-    }
 
     #[test]
     fn test_closing_the_window_is_neither_answer() {
